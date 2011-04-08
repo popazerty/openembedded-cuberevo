@@ -1,0 +1,4511 @@
+diff --git a/board/st/hdk7108/hdk7108-stx7108.romgen b/board/st/hdk7108/hdk7108-stx7108.romgen
+index 9b2deb4..75ca849 100644
+--- a/board/st/hdk7108/hdk7108-stx7108.romgen
++++ b/board/st/hdk7108/hdk7108-stx7108.romgen
+@@ -1,5 +1,5 @@
+ /*
+-This file was automatically generated on Thu 01 Jul 10 at 18:01:35 by user mcgoogan, host hoiho.bri.st.com using romgen R1.4.0 with the ST TargetPack hdk7108stx7108
++This file was automatically generated on Thu 07 Oct 10 at 15:32:44 by user mcgoogan, host hoiho using romgen R1.5.0 with the ST TargetPack hdk7108stx7108
+ 
+ TargetPack files used:
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/boards/hdk7108stx7108/hdk7108stx7108.py
+@@ -18,8 +18,10 @@ TargetPack files used:
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_data_array_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_regs.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/debug/tapmux.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/convertor.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_emi_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/tapmux.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/clk_common.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/l2_cache_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/st40_ddr3mixer_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/st40_ddr3pctl_regs.xml
+@@ -30,18 +32,81 @@ TargetPack files used:
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_clockgenb_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_ddrdbg.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_interco_init.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_spi_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_0_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_1_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_2_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_3_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_4_regs.xml
+-/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/__init__.py
+-/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/jtag.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/tap/__init__.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/tap/jtag.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/utilities.py
+ */
+ 
+ 
+ /*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++stx7108_spi_regs.SPI_CLOCKDIV
++*/
++  POKE32(0xfe902010, 0x00000006)
++
++
++/*
++stx7108_spi_regs.SPI_CONFIGDATA
++*/
++  POKE32(0xfe902020, 0x00020011)
++
++
++/*
++stx7108_spi_regs.SPI_STATUSMODECHANGE
++*/
++  WHILE_NE32(0xfe902028, 0x00000001, 0x00000001)
++
++
++/*
++stx7108_spi_regs.SPI_MODESELECT
++*/
++  POKE32(0xfe902018, 0x00000003)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++ELSE(1)
++
++
++/*
++stx7108_spi_regs.SPI_CLOCKDIV
++*/
++  POKE32(0xfe902010, 0x00000002)
++
++
++/*
++stx7108_spi_regs.SPI_CONFIGDATA
++*/
++  POKE32(0xfe902020, 0x00020011)
++
++
++/*
++stx7108_spi_regs.SPI_STATUSMODECHANGE
++*/
++  WHILE_NE32(0xfe902028, 0x00000001, 0x00000001)
++
++
++/*
++stx7108_spi_regs.SPI_MODESELECT
++*/
++  POKE32(0xfe902018, 0x00000005)
++ENDIF(1)
++
++
++/*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+ POKE32(0xfde98014, 0x00000000)
+@@ -104,7 +169,7 @@ OR32(0xfde98010, 0x00000002)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-UPDATE32(0xfde98004, 0xfff80000, 0x00018709)
++UPDATE32(0xfde98004, 0xfff80000, 0x00000f02)
+ 
+ 
+ /*
+@@ -123,6 +188,13 @@ WHILE_NE32(0xfde98004, 0x80000000, 0x80000000)
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+ UPDATE32(0xfde98004, 0xffefffff, 0x00000000)
++POKE32(0xfde98904, 0x00000004)
++
++
++/*
++stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
++*/
++UPDATE32(0xfde98014, 0xfffffff3, 0x00000004)
+ POKE32(0xfde98908, 0x00000004)
+ 
+ 
+@@ -228,13 +300,33 @@ POKE32(0xfde98b40, 0x00000000)
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+ UPDATE32(0xfde98024, 0xfffffffc, 0x00000002)
+-POKE32(0xfde98b44, 0x00000001)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++  POKE32(0xfde98b44, 0x00000001)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+-UPDATE32(0xfde98024, 0xfffffff3, 0x00000008)
++  UPDATE32(0xfde98024, 0xfffffff3, 0x00000008)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++ELSE(1)
++  POKE32(0xfde98a44, 0x00000001)
++
++
++/*
++stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
++*/
++  UPDATE32(0xfde98024, 0xfffffff3, 0x00000004)
++ENDIF(1)
+ 
+ 
+ /*
+@@ -264,7 +356,7 @@ OR32(0xfdab8010, 0x00000001)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-UPDATE32(0xfdab8000, 0xfff80000, 0x00004e07)
++UPDATE32(0xfdab8000, 0xfff80000, 0x00000b01)
+ 
+ 
+ /*
+@@ -354,6 +446,13 @@ POKE32(0xfdab8b14, 0x00000003)
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+ UPDATE32(0xfdab8014, 0xfffff3ff, 0x00000800)
++POKE32(0xfdab8b18, 0x00000002)
++
++
++/*
++stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
++*/
++UPDATE32(0xfdab8014, 0xffffcfff, 0x00002000)
+ POKE32(0xfdab8b1c, 0x00000002)
+ 
+ 
+@@ -482,65 +581,64 @@ POKE32(0xfd546010, 0x0000c1a0)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_0
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   UPDATE32(0xfde2004c, 0xfffffffe, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+-  UPDATE32(0xfde2004c, 0xfe0000ff, 0x02200200)
++  UPDATE32(0xfde2004c, 0xfe0000ff, 0x00040100)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   OR32(0xfde2004c, 0x00000001)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_5
++stx7108_sysconf_1_regs.SYSTEM_STATUS5
+ */
+   WHILE_NE32(0xfde20014, 0x00000001, 0x00000001)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_0
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+ ELSE(1)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   UPDATE32(0xfde2004c, 0xfffffffe, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+-  UPDATE32(0xfde2004c, 0xfe0000ff, 0x02200200)
++  UPDATE32(0xfde2004c, 0xfe0000ff, 0x01850f00)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   OR32(0xfde2004c, 0x00000001)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_5
++stx7108_sysconf_1_regs.SYSTEM_STATUS5
+ */
+   WHILE_NE32(0xfde20014, 0x00000001, 0x00000001)
+ ENDIF(1)
+-POKE32(0x10008000, 0x00000000)
+ 
+ 
+ /*
+@@ -682,35 +780,42 @@ POKE32(0xfe900028, 0x00000010)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ UPDATE32(0xfde30028, 0xfffffffd, 0x00000000)
+-DELAY(100000)
++DELAY(45000000)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ OR32(0xfde30028, 0x00000002)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_18
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_CONFIG18
+ */
+-OR32(0xfde20084, 0x00000003)
+-DELAY(10000)
++  OR32(0xfde20084, 0x00000003)
++ENDIF(1)
++DELAY(4500000)
+ 
+ 
+ /*
+ st40_ddr3mixer_regs.DDR3MIXER_DDR_BASE_ADDR
+ */
+-POKE32(0xfde52030, 0x00500040)
++POKE32(0xfde52030, 0x00600040)
+ 
+ 
+ /*
+ st40_ddr3mixer_regs.DDR3MIXER_DDR_PARAMETER
+ */
+-POKE32(0xfde52038, 0x33220e29)
++POKE32(0xfde52038, 0x23220e29)
+ 
+ 
+ /*
+@@ -740,7 +845,7 @@ POKE32(0xfde52028, 0xfffffc00)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT1U
+ */
+-POKE32(0xfde500c0, 0x000000f0)
++POKE32(0xfde500c0, 0x0000010a)
+ 
+ 
+ /*
+@@ -752,14 +857,14 @@ POKE32(0xfde500c4, 0x000000c8)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT100N
+ */
+-POKE32(0xfde500cc, 0x00000018)
++POKE32(0xfde500cc, 0x0000001a)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRSTH
+ */
+ POKE32(0xfde500c8, 0x000001f4)
+-DELAY(10000)
++DELAY(4500000)
+ 
+ 
+ /*
+@@ -783,13 +888,45 @@ OR32(0xfde50434, 0x00000001)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
+ */
+-UPDATE32(0xfde5031c, 0xfffffffb, 0x00000000)
++POKE32(0xfde5031c, 0x00004301)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3pctl_regs.DDR3PCTL_ODTCFG1
++*/
++  POKE32(0xfde500bc, 0x06060200)
++ENDIF(1)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++*/
++  POKE32(0xfde50484, 0xbfd80002)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++ELSE(1)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-OR32(0xfde50484, 0xbfd80002)
++  POKE32(0xfde50484, 0xa5580002)
++ENDIF(1)
+ 
+ 
+ /*
+@@ -829,6 +966,19 @@ POKE32(0xfde50090, 0x00111111)
+ 
+ 
+ /*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3phy_regs.DDR3PHY_PUB_SLCR
++*/
++  POKE32(0xfde504ac, 0x00111100)
++ENDIF(1)
++
++
++/*
+ st40_ddr3pctl_regs.DDR3PCTL_TREFI
+ */
+ POKE32(0xfde500d0, 0x0000004e)
+@@ -843,7 +993,7 @@ POKE32(0xfde500d4, 0x00000004)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRFC
+ */
+-POKE32(0xfde500d8, 0x0000003b)
++POKE32(0xfde500d8, 0x00000056)
+ 
+ 
+ /*
+@@ -855,7 +1005,7 @@ POKE32(0xfde500dc, 0x00000008)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRTW
+ */
+-POKE32(0xfde500e0, 0x00000006)
++POKE32(0xfde500e0, 0x00000002)
+ 
+ 
+ /*
+@@ -951,7 +1101,7 @@ POKE32(0xfde5011c, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TDQS
+ */
+-POKE32(0xfde50120, 0x00000004)
++POKE32(0xfde50120, 0x00000003)
+ 
+ 
+ /*
+@@ -1011,7 +1161,7 @@ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde50040, 0x00140083)
++POKE32(0xfde50040, 0x00144083)
+ 
+ 
+ /*
+@@ -1047,7 +1197,7 @@ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde50040, 0x00120043)
++POKE32(0xfde50040, 0x00120003)
+ 
+ 
+ /*
+@@ -1195,6 +1345,12 @@ POKE32(0xfde50320, 0x00000003)
+ 
+ 
+ /*
++st40_ddr3pctl_regs.DDR3PCTL_PVTTUPDWAIT
++*/
++POKE32(0xfde50324, 0x00000003)
++
++
++/*
+ st40_ddr3pctl_regs.DDR3PCTL_SCTL
+ */
+ POKE32(0xfde50004, 0x00000002)
+@@ -1207,23 +1363,30 @@ WHILE_NE32(0xfde50008, 0x00000007, 0x00000003)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ UPDATE32(0xfde30028, 0xfffffffb, 0x00000000)
+-DELAY(100000)
++DELAY(45000000)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ OR32(0xfde30028, 0x00000004)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_18
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-OR32(0xfde20084, 0x00000003)
+-DELAY(10000)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_CONFIG18
++*/
++  OR32(0xfde20084, 0x00000003)
++ENDIF(1)
++DELAY(4500000)
+ 
+ 
+ /*
+@@ -1235,7 +1398,7 @@ POKE32(0xfde72030, 0x00900080)
+ /*
+ st40_ddr3mixer_regs.DDR3MIXER_DDR_PARAMETER
+ */
+-POKE32(0xfde72038, 0x33220e29)
++POKE32(0xfde72038, 0x23220e29)
+ 
+ 
+ /*
+@@ -1265,7 +1428,7 @@ POKE32(0xfde72028, 0xfffffc00)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT1U
+ */
+-POKE32(0xfde700c0, 0x000000f0)
++POKE32(0xfde700c0, 0x0000010a)
+ 
+ 
+ /*
+@@ -1277,14 +1440,14 @@ POKE32(0xfde700c4, 0x000000c8)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT100N
+ */
+-POKE32(0xfde700cc, 0x00000018)
++POKE32(0xfde700cc, 0x0000001a)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRSTH
+ */
+ POKE32(0xfde700c8, 0x000001f4)
+-DELAY(10000)
++DELAY(4500000)
+ 
+ 
+ /*
+@@ -1308,13 +1471,45 @@ OR32(0xfde70434, 0x00000001)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
+ */
+-UPDATE32(0xfde7031c, 0xfffffffb, 0x00000000)
++POKE32(0xfde7031c, 0x00004301)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3pctl_regs.DDR3PCTL_ODTCFG1
++*/
++  POKE32(0xfde700bc, 0x06060200)
++ENDIF(1)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++*/
++  POKE32(0xfde70484, 0xbfd80002)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++ELSE(1)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-OR32(0xfde70484, 0xbfd80002)
++  POKE32(0xfde70484, 0xa5580002)
++ENDIF(1)
+ 
+ 
+ /*
+@@ -1354,6 +1549,19 @@ POKE32(0xfde70090, 0x00111111)
+ 
+ 
+ /*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3phy_regs.DDR3PHY_PUB_SLCR
++*/
++  POKE32(0xfde704ac, 0x00111100)
++ENDIF(1)
++
++
++/*
+ st40_ddr3pctl_regs.DDR3PCTL_TREFI
+ */
+ POKE32(0xfde700d0, 0x0000004e)
+@@ -1380,7 +1588,7 @@ POKE32(0xfde700dc, 0x00000008)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRTW
+ */
+-POKE32(0xfde700e0, 0x00000006)
++POKE32(0xfde700e0, 0x00000002)
+ 
+ 
+ /*
+@@ -1476,7 +1684,7 @@ POKE32(0xfde7011c, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TDQS
+ */
+-POKE32(0xfde70120, 0x00000004)
++POKE32(0xfde70120, 0x00000003)
+ 
+ 
+ /*
+@@ -1536,7 +1744,7 @@ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde70040, 0x00140083)
++POKE32(0xfde70040, 0x00144083)
+ 
+ 
+ /*
+@@ -1572,7 +1780,7 @@ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde70040, 0x00120043)
++POKE32(0xfde70040, 0x00120003)
+ 
+ 
+ /*
+@@ -1720,6 +1928,12 @@ POKE32(0xfde70320, 0x00000003)
+ 
+ 
+ /*
++st40_ddr3pctl_regs.DDR3PCTL_PVTTUPDWAIT
++*/
++POKE32(0xfde70324, 0x00000003)
++
++
++/*
+ st40_ddr3pctl_regs.DDR3PCTL_SCTL
+ */
+ POKE32(0xfde70004, 0x00000002)
+@@ -1729,143 +1943,289 @@ POKE32(0xfde70004, 0x00000002)
+ st40_ddr3pctl_regs.DDR3PCTL_STAT
+ */
+ WHILE_NE32(0xfde70008, 0x00000007, 0x00000003)
+-UPDATE32(0xfdea3a00, 0x00000000, 0x0a0d0b0c)
+-UPDATE32(0xfd2e0004, 0xfffffff0, 0x00000001)
+-UPDATE32(0xfd2e0008, 0xfffffff8, 0x00000003)
+-UPDATE32(0xfd2e000c, 0xfffffff8, 0x00000006)
+-UPDATE32(0xfd2e0010, 0xfffffff8, 0x00000001)
+-UPDATE32(0xfd2e0014, 0xfffffff8, 0x00000000)
+-UPDATE32(0xfd2e0018, 0x0000ffff, 0x00000000)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfd544010, 0xffff5f1c, 0x000000a3)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfd5440b0, 0xffffff00, 0x000000a3)
+-ENDIF(1)
+-UPDATE32(0xfe76b0fc, 0xfffffff8, 0x00000005)
+-UPDATE32(0xfd5450ec, 0xfffffff0, 0x00000001)
+-UPDATE32(0xfd5450f0, 0xfffffff8, 0x00000005)
+-UPDATE32(0xfd5450f4, 0xfffffff8, 0x00000003)
+-UPDATE32(0xfd5450f8, 0xfffffff8, 0x00000002)
+-UPDATE32(0xfd5450fc, 0xfffffff8, 0x00000000)
+-UPDATE32(0xfd5451ec, 0xfffffff0, 0x00000001)
+-UPDATE32(0xfd5451f0, 0xfffffff8, 0x00000005)
+-UPDATE32(0xfd5451f4, 0xfffffff8, 0x00000003)
+-UPDATE32(0xfd5451f8, 0xfffffff8, 0x00000002)
+-UPDATE32(0xfd5451fc, 0xfffffff8, 0x00000000)
+-UPDATE32(0xfd5452ec, 0xfffffff0, 0x00000001)
+-UPDATE32(0xfd5452f0, 0xfffffff8, 0x00000005)
+-UPDATE32(0xfd5452f4, 0xfffffff8, 0x00000003)
+-UPDATE32(0xfd5452f8, 0xfffffff8, 0x00000002)
+-UPDATE32(0xfd5452fc, 0xfffffff8, 0x00000000)
+-UPDATE32(0xfd5453ec, 0xfffffff0, 0x00000001)
+-UPDATE32(0xfd5453f0, 0xfffffff8, 0x00000005)
+-UPDATE32(0xfd5453f4, 0xfffffff8, 0x00000003)
+-UPDATE32(0xfd5453f8, 0xfffffff8, 0x00000002)
+-UPDATE32(0xfd5453fc, 0xfffffff8, 0x00000000)
+-UPDATE32(0xfd545efc, 0xfffffff8, 0x00000005)
+-UPDATE32(0xfde00030, 0xfffffff8, 0x00000006)
+-UPDATE32(0xfde00034, 0xfffffff8, 0x00000001)
+-UPDATE32(0xfde00038, 0xfffffff8, 0x00000000)
+-UPDATE32(0xfde0004c, 0xfffffc00, 0x00000000)
+-UPDATE32(0xfde00050, 0xfffffc00, 0x00000000)
+-UPDATE32(0xfde00108, 0x1fffffff, 0xa0000000)
+-UPDATE32(0xfde0010c, 0xfffffff8, 0x00000005)
+-UPDATE32(0xfde00110, 0xfff8f8f8, 0x00010202)
+-UPDATE32(0xfde00114, 0xfff8f8f8, 0x00000000)
+-UPDATE32(0xfde20044, 0xfffffffc, 0x00000000)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0004, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0008, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab000c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0010, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0024, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0028, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab002c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab002c, 0x0000fff8, 0x00000002)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0030, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab0030, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0044, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0048, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab004c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab004c, 0x0000fff8, 0x00000003)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0050, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab0050, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0084, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0088, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab008c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab008c, 0x0000fff8, 0x00000002)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0090, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab0090, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-UPDATE32(0xfd002024, 0xfff01fff, 0x0003c000)
+-UPDATE32(0xfd003024, 0xfff01fff, 0x0003c000)
+-UPDATE32(0xfd004024, 0xfff01fff, 0x0003c000)
+-IF_EQ32(1, 0xfe7000b8, 0x00000001, 0x00000000)
+-  UPDATE32(0xfe0fff04, 0xffc00000, 0x00264207)
+-ENDIF(1)
+-IF_EQ32(1, 0xfe7000b8, 0x00000002, 0x00000000)
+-  UPDATE32(0xfe1fff04, 0xffc00000, 0x00264207)
+-ENDIF(1)
+-IF_EQ32(1, 0xfe7000b8, 0x00000004, 0x00000000)
+-  UPDATE32(0xfe2fff04, 0xffc00000, 0x00264207)
+-ENDIF(1)
+-IF_EQ32(1, 0xfda500d4, 0x00000001, 0x00000001)
+-  UPDATE32(0xfda8f000, 0xffd00000, 0x0026c207)
+-ENDIF(1)
+-IF_EQ32(1, 0xfda500d4, 0x00000001, 0x00000001)
+-  UPDATE32(0xfda89000, 0xfffec0ff, 0x00000800)
+-ENDIF(1)
+-IF_EQ32(1, 0xfe70010c, 0x00000001, 0x00000001)
+-  UPDATE32(0xfe737000, 0xffd00000, 0x0026c207)
+-ENDIF(1)
+-IF_EQ32(1, 0xfe70010c, 0x00000001, 0x00000001)
+-  UPDATE32(0xfe731000, 0xfffec0ff, 0x00000800)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++  UPDATE32(0xfdea3a00, 0x00000000, 0x0a0d0b0c)
++  UPDATE32(0xfdea3a0c, 0x0000ffff, 0x0b0c0000)
++  UPDATE32(0xfdea3a10, 0xffff0000, 0x00000a0d)
++  UPDATE32(0xfd2e1004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e1008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e100c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e1010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e1014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e1018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd2e3004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e3008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e300c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e3010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e3014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e3018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd544010, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfd5440b0, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfe76b0fc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5450ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5450f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5450f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5450f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5450fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5451ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5451f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5451f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5451f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5451fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5452ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5452f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5452f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5452f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5452fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5453ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5453f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5453f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5453f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5453fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5454ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5454f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5454f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5454f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5454fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd545efc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00030, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfde00034, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfde00038, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfde0004c, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00050, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00108, 0x1fffffff, 0xa0000000)
++  UPDATE32(0xfde0010c, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00110, 0xfff8f8f8, 0x00010202)
++  UPDATE32(0xfde00114, 0xfff8f8f8, 0x00000000)
++  UPDATE32(0xfde20044, 0xfffffffc, 0x00000000)
++  UPDATE32(0xfdabeb04, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb08, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb0c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb10, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb24, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb28, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb2c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb30, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb44, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb48, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb4c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb50, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb84, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb88, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb8c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb90, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd002024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd003024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd004024, 0xfff01fff, 0x0003c000)
++  IF_EQ32(2, 0xfe7000b8, 0x00000001, 0x00000000)
++    UPDATE32(0xfe0fff04, 0xffc00000, 0x00264006)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000002, 0x00000000)
++    UPDATE32(0xfe1fff04, 0xffc00000, 0x00264006)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000004, 0x00000000)
++    UPDATE32(0xfe2fff04, 0xffc00000, 0x00264006)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda500d4, 0x00000001, 0x00000001)
++    UPDATE32(0xfda8f000, 0xffd00000, 0x00264006)
++    UPDATE32(0xfda89000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe70010c, 0x00000001, 0x00000001)
++    UPDATE32(0xfe737000, 0xffd00000, 0x00264006)
++    UPDATE32(0xfe731000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda50078, 0x00000004, 0x00000000)
++    UPDATE32(0xfdaa9744, 0xffd00000, 0x00264006)
++  ENDIF(2)
++  UPDATE32(0xfe768000, 0xffffffe8, 0x00000004)
++  UPDATE32(0xfe768004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfe768008, 0xfffffff0, 0x00000001)
++  IF_EQ32(2, 0xfe7000b8, 0x00000010, 0x00000000)
++    UPDATE32(0xfe769000, 0xffffffe8, 0x00000004)
++    UPDATE32(0xfe769004, 0xfffffff0, 0x00000001)
++    UPDATE32(0xfe769008, 0xfffffff0, 0x00000001)
++  ENDIF(2)
++  UPDATE32(0xfd62a000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd62a004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd62a008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62a00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd62a010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd628000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd628004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd628008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd628010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6aa000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6aa004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6aa008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6aa00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6aa010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6a8000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6a8004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6a8008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6a800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6a8010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfda40c18, 0xfffffff0, 0x00000002)
++  UPDATE32(0xfde52048, 0x00000000, 0x40404040)
++  UPDATE32(0xfde72048, 0x00000000, 0x40404040)
++ELSE(1)
++  UPDATE32(0xfdea3a00, 0x00000000, 0x0a0d0b0c)
++  UPDATE32(0xfdea3a10, 0x00000000, 0x0a0d0b0c)
++  UPDATE32(0xfd2e1004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e1008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e100c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e1010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e1014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e1018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd2e3004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e3008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e300c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e3010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e3014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e3018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd544010, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfd5440b0, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfe76b0fc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5450ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5450f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5450f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5450f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5450fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5451ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5451f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5451f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5451f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5451fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5452ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5452f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5452f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5452f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5452fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5453ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5453f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5453f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5453f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5453fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5454ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5454f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5454f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5454f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5454fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd545efc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00030, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfde00034, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfde00038, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfde0004c, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00050, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00108, 0x1fffffff, 0xa0000000)
++  UPDATE32(0xfde0010c, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00110, 0xfff8f8f8, 0x00010202)
++  UPDATE32(0xfde00114, 0xfff8f8f8, 0x00000000)
++  UPDATE32(0xfde20044, 0xfffffffc, 0x00000000)
++  UPDATE32(0xfdabeb04, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb08, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb0c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb10, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb24, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb28, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb2c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb30, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb44, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb48, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb4c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb50, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb84, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb88, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb8c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb90, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd002024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd003024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd004024, 0xfff01fff, 0x0003c000)
++  IF_EQ32(2, 0xfe7000b8, 0x00000001, 0x00000000)
++    UPDATE32(0xfe0fff04, 0xffc00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000002, 0x00000000)
++    UPDATE32(0xfe1fff04, 0xffc00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000004, 0x00000000)
++    UPDATE32(0xfe2fff04, 0xffc00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda500d4, 0x00000001, 0x00000001)
++    UPDATE32(0xfda8f000, 0xffd00000, 0x00264207)
++    UPDATE32(0xfda89000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe70010c, 0x00000001, 0x00000001)
++    UPDATE32(0xfe737000, 0xffd00000, 0x00264207)
++    UPDATE32(0xfe731000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda50078, 0x00000004, 0x00000000)
++    UPDATE32(0xfdaa9744, 0xffd00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe700110, 0x00000002, 0x00000000)
++    UPDATE32(0xfe772348, 0xffd00000, 0x00264207)
++  ENDIF(2)
++  UPDATE32(0xfe768000, 0xffffffe8, 0x00000004)
++  UPDATE32(0xfe768004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfe768008, 0xfffffff0, 0x00000001)
++  IF_EQ32(2, 0xfe700110, 0x00000002, 0x00000002)
++    UPDATE32(0xfe769000, 0xffffffe8, 0x00000004)
++    UPDATE32(0xfe769004, 0xfffffff0, 0x00000001)
++    UPDATE32(0xfe769008, 0xfffffff0, 0x00000001)
++  ENDIF(2)
++  UPDATE32(0xfd62a000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd62a004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd62a008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62a00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd62a010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd628000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd628004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd628008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd628010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6aa000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6aa004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6aa008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6aa00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6aa010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6a8000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6a8004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6a8008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6a800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6a8010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfda40c18, 0xfffffff0, 0x00000002)
++  UPDATE32(0xfde52048, 0x00000000, 0x40404040)
++  UPDATE32(0xfde72048, 0x00000000, 0x40404040)
+ ENDIF(1)
+-IF_EQ32(1, 0xfda50078, 0x00000004, 0x00000000)
+-  UPDATE32(0xfdaa9744, 0xffd00000, 0x0026c207)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_CONFIG1
++*/
++  UPDATE32(0xfde20040, 0xffffc0ff, 0x00001000)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_CONFIG0
++*/
++  OR32(0xfde2003c, 0x00000002)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++ELSE(1)
++
++
++/*
++stx7108_sysconf_1_regs.SYSTEM_CONFIG0
++*/
++  OR32(0xfde2003c, 0x00010000)
+ ENDIF(1)
+ 
+ 
+@@ -2071,7 +2431,7 @@ POKE32(0xf6100000, 0x80000000)
+ /*
+ st40_pmb_data_array_regs.PMB_DATA_ARRAY_ENTRY0
+ */
+-POKE32(0xf7100000, 0x40000188)
++POKE32(0xf7100000, 0x40000198)
+ 
+ 
+ /*
+@@ -2087,6 +2447,18 @@ POKE32(0xf7100100, 0x80000188)
+ 
+ 
+ /*
++st40_pmb_addr_array_regs.PMB_ADDR_ARRAY_ENTRY2
++*/
++POKE32(0xf6100200, 0xa8000000)
++
++
++/*
++st40_pmb_data_array_regs.PMB_DATA_ARRAY_ENTRY2
++*/
++POKE32(0xf7100200, 0x88000188)
++
++
++/*
+ st40_ccn_regs.CCN_MMUCR
+ */
+ OR32(0xff000010, 0x00000010)
+@@ -2115,10 +2487,4 @@ st40_ccn_regs.CCN_PASCR
+ */
+   UPDATE32(0xff000070, 0x7fffffff, 0x80000000)
+ ENDIF(1)
+-
+-
+-/*
+-st40_ccn_regs.CCN_CCR
+-*/
+-POKE32(0xff00001c, 0x8000090d)
+ #endif	/* added by Sean McGoogan <Sean.McGoogan@st.com> */
+diff --git a/board/st/hdk7108/init-hdk7108.S b/board/st/hdk7108/init-hdk7108.S
+index 1dd0172..56a10d7 100644
+--- a/board/st/hdk7108/init-hdk7108.S
++++ b/board/st/hdk7108/init-hdk7108.S
+@@ -31,14 +31,14 @@ __memory_setup_table:
+ 	 * include the appropriate set of "GDB pokes", (usually) generated
+ 	 * using the "romgen" utility, from a known good target-pack.
+ 	 *
+-	 * This file may be regenerated by connecting your specific board
+-	 * to an STMC2 (note: currently it must be version 2) and then
+-	 * executing the following command (redirecting the output):
++	 * This file may be regenerated by executing the following
++	 * command (redirecting the output), *without* needing any
++	 * access to either a MicroConnect or a target board:
+ 	 *
+-	 * host% romgen --show-comment <stmc2>:hdk7108stx7108:host
++	 * host% romgen --show-comment dummy:hdk7108stx7108:host
+ 	 *
+-	 * Where "<stmc2>" should be replaced with the IP address
+-	 * (or the DNS name) of the STMC2 box.  Also the "hdk7108stx7108" should
++	 * Where "dummy" need not correspond to any real IP address on
++	 * your network.  In addition, note that "hdk7108stx7108" should
+ 	 * substituted if you have a custom target-pack connect command.
+ 	 *
+ 	 * At the time of writing this (July 2010) the output from "romgen"
+diff --git a/board/st/mb837/init-mb837.S b/board/st/mb837/init-mb837.S
+index a7c28dd..68a2c68 100644
+--- a/board/st/mb837/init-mb837.S
++++ b/board/st/mb837/init-mb837.S
+@@ -31,14 +31,14 @@ __memory_setup_table:
+ 	 * include the appropriate set of "GDB pokes", (usually) generated
+ 	 * using the "romgen" utility, from a known good target-pack.
+ 	 *
+-	 * This file may be regenerated by connecting your specific board
+-	 * to an STMC2 (note: currently it must be version 2) and then
+-	 * executing the following command (redirecting the output):
++	 * This file may be regenerated by executing the following
++	 * command (redirecting the output), *without* needing any
++	 * access to either a MicroConnect or a target board:
+ 	 *
+-	 * host% romgen --target-connect --show-comment <stmc2>:mb837stx7108:host
++	 * host% romgen --show-comment dummy:mb837stx7108:host
+ 	 *
+-	 * Where "<stmc2>" should be replaced with the IP address
+-	 * (or the DNS name) of the STMC2 box.  Also the "mb837stx7108" should
++	 * Where "dummy" need not correspond to any real IP address on
++	 * your network.  In addition, note that "mb837stx7108" should
+ 	 * substituted if you have a custom target-pack connect command.
+ 	 *
+ 	 * At the time of writing this (April 2010) the output from "romgen"
+diff --git a/board/st/mb837/mb837-stx7108.romgen b/board/st/mb837/mb837-stx7108.romgen
+index 862f5f6..a5717f1 100644
+--- a/board/st/mb837/mb837-stx7108.romgen
++++ b/board/st/mb837/mb837-stx7108.romgen
+@@ -1,5 +1,5 @@
+ /*
+-This file was automatically generated on Mon 22 Mar 10 at 15:03:36 by user mcgoogans, host hoiho.bri.st.com using romgen R1.4.0 with the ST TargetPack mb837stx7108 using the option --target-connect with the ST Micro Connect hesiod-hti
++This file was automatically generated on Tue 28 Sep 10 at 18:31:56 by user mcgoogan, host hoiho using romgen R1.5.0 with the ST TargetPack mb837stx7108
+ 
+ TargetPack files used:
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/boards/mb837stx7108/mb837stx7108.py
+@@ -17,8 +17,10 @@ TargetPack files used:
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_data_array_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_regs.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/debug/tapmux.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/convertor.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_emi_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/tapmux.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/clk_common.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/l2_cache_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/st40_ddr3mixer_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/st40_ddr3pctl_regs.xml
+@@ -29,178 +31,170 @@ TargetPack files used:
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_clockgenb_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_ddrdbg.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_interco_init.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_spi_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_0_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_1_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_2_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_3_regs.xml
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7108/stx7108_sysconf_4_regs.xml
+-/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/__init__.py
+-/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/jtag.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/tap/__init__.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/tap/jtag.py
+ /opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/utilities.py
+ */
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+-POKE32(0xfde98014, 0x00000000)
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-POKE32(0xfde98024, 0x00000000)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
++stx7108_spi_regs.SPI_CLOCKDIV
+ */
+-/* PEEK(0xfde98000) (used target peek value 0x80003203) */
++  POKE32(0xfe902010, 0x00000006)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
++stx7108_spi_regs.SPI_CONFIGDATA
+ */
+-OR32(0xfde98000, 0x00100000)
++  POKE32(0xfe902020, 0x00020011)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
++stx7108_spi_regs.SPI_STATUSMODECHANGE
+ */
+-/* PEEK(0xfde98010) (used target peek value 0x00000000) */
++  WHILE_NE32(0xfe902028, 0x00000001, 0x00000001)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
++stx7108_spi_regs.SPI_MODESELECT
+ */
+-OR32(0xfde98010, 0x00000001)
++  POKE32(0xfe902018, 0x00000003)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-/* PEEK(0xfde98000) (used target peek value 0x00183203) */
++ELSE(1)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
++stx7108_spi_regs.SPI_CLOCKDIV
+ */
+-UPDATE32(0xfde98000, 0xfff80000, 0x00003203)
++  POKE32(0xfe902010, 0x00000002)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
++stx7108_spi_regs.SPI_CONFIGDATA
+ */
+-/* PEEK(0xfde98010) (used target peek value 0x00000001) */
++  POKE32(0xfe902020, 0x00020011)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
++stx7108_spi_regs.SPI_STATUSMODECHANGE
+ */
+-UPDATE32(0xfde98010, 0xfffffffe, 0x00000000)
++  WHILE_NE32(0xfe902028, 0x00000001, 0x00000001)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
++stx7108_spi_regs.SPI_MODESELECT
+ */
+-/* PEEK(0xfde98000) (used target peek value 0x80103203) */
++  POKE32(0xfe902018, 0x00000005)
++ENDIF(1)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
++stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-WHILE_NE32(0xfde98000, 0x80000000, 0x80000000)
++POKE32(0xfde98014, 0x00000000)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
++stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+-/* PEEK(0xfde98000) (used target peek value 0x80103203) */
++POKE32(0xfde98024, 0x00000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-UPDATE32(0xfde98000, 0xffefffff, 0x00000000)
++OR32(0xfde98000, 0x00100000)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
++stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+ */
+-/* PEEK(0xfde98004) (used target peek value 0x80004a05) */
++OR32(0xfde98010, 0x00000001)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
++stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-OR32(0xfde98004, 0x00100000)
++UPDATE32(0xfde98000, 0xfff80000, 0x00003203)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+ */
+-/* PEEK(0xfde98010) (used target peek value 0x00000000) */
++UPDATE32(0xfde98010, 0xfffffffe, 0x00000000)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
++stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-OR32(0xfde98010, 0x00000002)
++WHILE_NE32(0xfde98000, 0x80000000, 0x80000000)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
++stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-/* PEEK(0xfde98004) (used target peek value 0x00184a05) */
++UPDATE32(0xfde98000, 0xffefffff, 0x00000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-UPDATE32(0xfde98004, 0xfff80000, 0x00018709)
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+-*/
+-/* PEEK(0xfde98010) (used target peek value 0x00000002) */
++OR32(0xfde98004, 0x00100000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+ */
+-UPDATE32(0xfde98010, 0xfffffffd, 0x00000000)
++OR32(0xfde98010, 0x00000002)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-/* PEEK(0xfde98004) (used target peek value 0x80118709) */
++UPDATE32(0xfde98004, 0xfff80000, 0x00000f02)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
++stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+ */
+-WHILE_NE32(0xfde98004, 0x80000000, 0x80000000)
++UPDATE32(0xfde98010, 0xfffffffd, 0x00000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-/* PEEK(0xfde98004) (used target peek value 0x80118709) */
++WHILE_NE32(0xfde98004, 0x80000000, 0x80000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+ UPDATE32(0xfde98004, 0xffefffff, 0x00000000)
+-POKE32(0xfde98908, 0x00000004)
++POKE32(0xfde98904, 0x00000004)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00000000) */
++UPDATE32(0xfde98014, 0xfffffff3, 0x00000004)
++POKE32(0xfde98908, 0x00000004)
+ 
+ 
+ /*
+@@ -213,12 +207,6 @@ POKE32(0xfde9890c, 0x00000003)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00000010) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xffffff3f, 0x00000040)
+ POKE32(0xfde98a10, 0x00000000)
+ 
+@@ -226,12 +214,6 @@ POKE32(0xfde98a10, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00000050) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xfffffcff, 0x00000100)
+ POKE32(0xfde98a14, 0x00000000)
+ 
+@@ -239,12 +221,6 @@ POKE32(0xfde98a14, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00000150) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xfffff3ff, 0x00000400)
+ POKE32(0xfde98b18, 0x00000000)
+ 
+@@ -252,12 +228,6 @@ POKE32(0xfde98b18, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00000550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xffffcfff, 0x00002000)
+ POKE32(0xfde98a1c, 0x00000000)
+ 
+@@ -265,12 +235,6 @@ POKE32(0xfde98a1c, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00002550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xffff3fff, 0x00004000)
+ POKE32(0xfde98a20, 0x00000000)
+ 
+@@ -278,12 +242,6 @@ POKE32(0xfde98a20, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00006550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xfffcffff, 0x00010000)
+ POKE32(0xfde98a24, 0x00000000)
+ 
+@@ -291,12 +249,6 @@ POKE32(0xfde98a24, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00016550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xfff3ffff, 0x00040000)
+ POKE32(0xfde98a28, 0x00000004)
+ 
+@@ -304,12 +256,6 @@ POKE32(0xfde98a28, 0x00000004)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00056550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xffcfffff, 0x00100000)
+ POKE32(0xfde98a2c, 0x0000000e)
+ 
+@@ -317,12 +263,6 @@ POKE32(0xfde98a2c, 0x0000000e)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00156550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xff3fffff, 0x00400000)
+ POKE32(0xfde98a30, 0x00000004)
+ 
+@@ -330,12 +270,6 @@ POKE32(0xfde98a30, 0x00000004)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x00556550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xfcffffff, 0x01000000)
+ POKE32(0xfde98a34, 0x00000009)
+ 
+@@ -343,12 +277,6 @@ POKE32(0xfde98a34, 0x00000009)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x01556550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xf3ffffff, 0x04000000)
+ POKE32(0xfde98b38, 0x00000011)
+ 
+@@ -356,12 +284,6 @@ POKE32(0xfde98b38, 0x00000011)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x05556550) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfde98014, 0xcfffffff, 0x20000000)
+ POKE32(0xfde98a3c, 0x00000004)
+ 
+@@ -369,39 +291,41 @@ POKE32(0xfde98a3c, 0x00000004)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfde98014) (used target peek value 0x25556550) */
++UPDATE32(0xfde98014, 0x3fffffff, 0x40000000)
++POKE32(0xfde98b40, 0x00000000)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
++stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+-UPDATE32(0xfde98014, 0x3fffffff, 0x40000000)
+-POKE32(0xfde98b40, 0x00000000)
++UPDATE32(0xfde98024, 0xfffffffc, 0x00000002)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-/* PEEK(0xfde98024) (used target peek value 0x00000000) */
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++  POKE32(0xfde98b44, 0x00000001)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+-UPDATE32(0xfde98024, 0xfffffffc, 0x00000002)
+-POKE32(0xfde98b44, 0x00000001)
++  UPDATE32(0xfde98024, 0xfffffff3, 0x00000008)
+ 
+ 
+ /*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-/* PEEK(0xfde98024) (used target peek value 0x00000002) */
++ELSE(1)
++  POKE32(0xfde98a44, 0x00000001)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+-UPDATE32(0xfde98024, 0xfffffff3, 0x00000008)
++  UPDATE32(0xfde98024, 0xfffffff3, 0x00000004)
++ENDIF(1)
+ 
+ 
+ /*
+@@ -419,43 +343,19 @@ POKE32(0xfdab8024, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-/* PEEK(0xfdab8000) (used target peek value 0x80003203) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+-*/
+ OR32(0xfdab8000, 0x00100000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+ */
+-/* PEEK(0xfdab8010) (used target peek value 0x00000000) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+-*/
+ OR32(0xfdab8010, 0x00000001)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-/* PEEK(0xfdab8000) (used target peek value 0x00183203) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+-*/
+-UPDATE32(0xfdab8000, 0xfff80000, 0x00004e07)
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+-*/
+-/* PEEK(0xfdab8010) (used target peek value 0x00000001) */
++UPDATE32(0xfdab8000, 0xfff80000, 0x00000b01)
+ 
+ 
+ /*
+@@ -467,96 +367,48 @@ UPDATE32(0xfdab8010, 0xfffffffe, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-/* PEEK(0xfdab8000) (used target peek value 0x80104e07) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+-*/
+ WHILE_NE32(0xfdab8000, 0x80000000, 0x80000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+ */
+-/* PEEK(0xfdab8000) (used target peek value 0x80104e07) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL0_CFG
+-*/
+ UPDATE32(0xfdab8000, 0xffefffff, 0x00000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-/* PEEK(0xfdab8004) (used target peek value 0x80004a05) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+-*/
+ OR32(0xfdab8004, 0x00100000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+ */
+-/* PEEK(0xfdab8010) (used target peek value 0x00000000) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+-*/
+ OR32(0xfdab8010, 0x00000002)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-/* PEEK(0xfdab8004) (used target peek value 0x00184a05) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+-*/
+ UPDATE32(0xfdab8004, 0xfff80000, 0x00002803)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+ */
+-/* PEEK(0xfdab8010) (used target peek value 0x00000002) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_POWER_CFG
+-*/
+ UPDATE32(0xfdab8010, 0xfffffffd, 0x00000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-/* PEEK(0xfdab8004) (used target peek value 0x80102803) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+-*/
+ WHILE_NE32(0xfdab8004, 0x80000000, 0x80000000)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+ */
+-/* PEEK(0xfdab8004) (used target peek value 0x80102803) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_PLL1_CFG
+-*/
+ UPDATE32(0xfdab8004, 0xffefffff, 0x00000000)
+ POKE32(0xfdab8b04, 0x00000001)
+ 
+@@ -564,12 +416,6 @@ POKE32(0xfdab8b04, 0x00000001)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x00000000) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xfffffff3, 0x00000008)
+ POKE32(0xfdab8b08, 0x00000001)
+ 
+@@ -577,12 +423,6 @@ POKE32(0xfdab8b08, 0x00000001)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x00000008) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xffffffcf, 0x00000020)
+ POKE32(0xfdab8b0c, 0x00000001)
+ 
+@@ -590,12 +430,6 @@ POKE32(0xfdab8b0c, 0x00000001)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x00000028) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xffffff3f, 0x00000080)
+ POKE32(0xfdab8a10, 0x00000000)
+ 
+@@ -603,12 +437,6 @@ POKE32(0xfdab8a10, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x000000a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xfffffcff, 0x00000100)
+ POKE32(0xfdab8b14, 0x00000003)
+ 
+@@ -616,20 +444,15 @@ POKE32(0xfdab8b14, 0x00000003)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x000001a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xfffff3ff, 0x00000800)
+-POKE32(0xfdab8b1c, 0x00000002)
++POKE32(0xfdab8b18, 0x00000002)
+ 
+ 
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x000009a8) */
++UPDATE32(0xfdab8014, 0xffffcfff, 0x00002000)
++POKE32(0xfdab8b1c, 0x00000002)
+ 
+ 
+ /*
+@@ -642,12 +465,6 @@ POKE32(0xfdab8b20, 0x00000003)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x000089a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xfffcffff, 0x00020000)
+ POKE32(0xfdab8b24, 0x00000003)
+ 
+@@ -655,12 +472,6 @@ POKE32(0xfdab8b24, 0x00000003)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x000289a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xfff3ffff, 0x00080000)
+ POKE32(0xfdab8b28, 0x0000001f)
+ 
+@@ -668,12 +479,6 @@ POKE32(0xfdab8b28, 0x0000001f)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x000a89a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xffcfffff, 0x00200000)
+ POKE32(0xfdab8b2c, 0x00000007)
+ 
+@@ -681,12 +486,6 @@ POKE32(0xfdab8b2c, 0x00000007)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x002a89a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xff3fffff, 0x00800000)
+ POKE32(0xfdab8b30, 0x00000007)
+ 
+@@ -694,12 +493,6 @@ POKE32(0xfdab8b30, 0x00000007)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x00aa89a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xfcffffff, 0x02000000)
+ POKE32(0xfdab8b34, 0x00000007)
+ 
+@@ -707,12 +500,6 @@ POKE32(0xfdab8b34, 0x00000007)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x02aa89a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xf3ffffff, 0x08000000)
+ POKE32(0xfdab8a38, 0x00000000)
+ 
+@@ -720,12 +507,6 @@ POKE32(0xfdab8a38, 0x00000000)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x0aaa89a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0xcfffffff, 0x10000000)
+ POKE32(0xfdab8b3c, 0x00000003)
+ 
+@@ -733,12 +514,6 @@ POKE32(0xfdab8b3c, 0x00000003)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+ */
+-/* PEEK(0xfdab8014) (used target peek value 0x1aaa89a8) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG
+-*/
+ UPDATE32(0xfdab8014, 0x3fffffff, 0x80000000)
+ POKE32(0xfdab8b40, 0x0000000f)
+ 
+@@ -746,12 +521,6 @@ POKE32(0xfdab8b40, 0x0000000f)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+-/* PEEK(0xfdab8024) (used target peek value 0x00000000) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+-*/
+ UPDATE32(0xfdab8024, 0xfffffffc, 0x00000002)
+ POKE32(0xfdab8b44, 0x00000003)
+ 
+@@ -759,12 +528,6 @@ POKE32(0xfdab8b44, 0x00000003)
+ /*
+ stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+ */
+-/* PEEK(0xfdab8024) (used target peek value 0x00000002) */
+-
+-
+-/*
+-stx7108_clockgena_regs.CLOCKGENA_CLKOPSRC_SWITCH_CFG2
+-*/
+ UPDATE32(0xfdab8024, 0xfffffff3, 0x00000008)
+ 
+ 
+@@ -817,98 +580,67 @@ POKE32(0xfd546010, 0x0000c1a0)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_0
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   UPDATE32(0xfde2004c, 0xfffffffe, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+-  UPDATE32(0xfde2004c, 0xfe0000ff, 0x02200200)
++  UPDATE32(0xfde2004c, 0xfe0000ff, 0x00040100)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   OR32(0xfde2004c, 0x00000001)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_5
++stx7108_sysconf_1_regs.SYSTEM_STATUS5
+ */
+   WHILE_NE32(0xfde20014, 0x00000001, 0x00000001)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_0
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+ ELSE(1)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   UPDATE32(0xfde2004c, 0xfffffffe, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+-  UPDATE32(0xfde2004c, 0xfe0000ff, 0x02200200)
++  UPDATE32(0xfde2004c, 0xfe0000ff, 0x01850f00)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
++stx7108_sysconf_1_regs.SYSTEM_CONFIG4
+ */
+   OR32(0xfde2004c, 0x00000001)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_5
++stx7108_sysconf_1_regs.SYSTEM_STATUS5
+ */
+   WHILE_NE32(0xfde20014, 0x00000001, 0x00000001)
+ ENDIF(1)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_0
+-*/
+-/* PEEK(0xfde20000) (used target peek value 0x0d443041) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
+-*/
+-/* PEEK(0xfde2004c) (used target peek value 0x01850ff7) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
+-*/
+-/* PEEK(0xfde2004c) (used target peek value 0x01850ff6) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_4
+-*/
+-/* PEEK(0xfde2004c) (used target peek value 0x022002f6) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_STATUS_5
+-*/
+-/* PEEK(0xfde20014) (used target peek value 0x00000001) */
+-POKE32(0x10008000, 0x00000000)
+-
+-
+-/*
+ st40_emi_regs.EMI_BANK_ENABLE
+ */
+ POKE32(0xfe900860, 0x00000005)
+@@ -1047,41 +779,30 @@ POKE32(0xfe900028, 0x00000010)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
+-*/
+-/* PEEK(0xfde30028) (used target peek value 0xffffffff) */
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ UPDATE32(0xfde30028, 0xfffffffd, 0x00000000)
+-DELAY(100000)
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
+-*/
+-/* PEEK(0xfde30028) (used target peek value 0xfffffffd) */
++DELAY(45000000)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ OR32(0xfde30028, 0x00000002)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_18
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-/* PEEK(0xfde20084) (used target peek value 0x00000000) */
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_18
++stx7108_sysconf_1_regs.SYSTEM_CONFIG18
+ */
+-OR32(0xfde20084, 0x00000003)
+-DELAY(10000)
++  OR32(0xfde20084, 0x00000003)
++ENDIF(1)
++DELAY(4500000)
+ 
+ 
+ /*
+@@ -1093,7 +814,7 @@ POKE32(0xfde52030, 0x00500040)
+ /*
+ st40_ddr3mixer_regs.DDR3MIXER_DDR_PARAMETER
+ */
+-POKE32(0xfde52038, 0x33220e29)
++POKE32(0xfde52038, 0x23220e29)
+ 
+ 
+ /*
+@@ -1123,7 +844,7 @@ POKE32(0xfde52028, 0xfffffc00)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT1U
+ */
+-POKE32(0xfde500c0, 0x000000f0)
++POKE32(0xfde500c0, 0x0000010a)
+ 
+ 
+ /*
+@@ -1135,20 +856,14 @@ POKE32(0xfde500c4, 0x000000c8)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT100N
+ */
+-POKE32(0xfde500cc, 0x00000018)
++POKE32(0xfde500cc, 0x0000001a)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRSTH
+ */
+ POKE32(0xfde500c8, 0x000001f4)
+-DELAY(10000)
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PGSR0
+-*/
+-/* PEEK(0xfde50410) (used target peek value 0x00000027) */
++DELAY(4500000)
+ 
+ 
+ /*
+@@ -1160,61 +875,63 @@ WHILE_NE32(0xfde50410, 0x00000027, 0x00000027)
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0x00010000) */
++WHILE_NE32(0xfde50484, 0x00010000, 0x00010000)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++st40_ddr3phy_regs.DDR3PHY_DXCCR
+ */
+-WHILE_NE32(0xfde50484, 0x00010000, 0x00010000)
++OR32(0xfde50434, 0x00000001)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_DXCCR
++st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
+ */
+-/* PEEK(0xfde50434) (used target peek value 0x00001884) */
++POKE32(0xfde5031c, 0x00004301)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_DXCCR
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-OR32(0xfde50434, 0x00000001)
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
++st40_ddr3pctl_regs.DDR3PCTL_ODTCFG1
+ */
+-/* PEEK(0xfde5031c) (used target peek value 0x00002105) */
++  POKE32(0xfde500bc, 0x06060200)
++ENDIF(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-UPDATE32(0xfde5031c, 0xfffffffb, 0x00000000)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0x00010000) */
++  POKE32(0xfde50484, 0xbfd80002)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-OR32(0xfde50484, 0xbfd80002)
++ELSE(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_POWCTL
++st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-POKE32(0xfde50044, 0x00000001)
++  POKE32(0xfde50484, 0xa5580002)
++ENDIF(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_POWSTAT
++st40_ddr3pctl_regs.DDR3PCTL_POWCTL
+ */
+-/* PEEK(0xfde50048) (used target peek value 0x00000003) */
++POKE32(0xfde50044, 0x00000001)
+ 
+ 
+ /*
+@@ -1248,6 +965,19 @@ POKE32(0xfde50090, 0x00111111)
+ 
+ 
+ /*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3phy_regs.DDR3PHY_PUB_SLCR
++*/
++  POKE32(0xfde504ac, 0x00111100)
++ENDIF(1)
++
++
++/*
+ st40_ddr3pctl_regs.DDR3PCTL_TREFI
+ */
+ POKE32(0xfde500d0, 0x0000004e)
+@@ -1274,7 +1004,7 @@ POKE32(0xfde500dc, 0x00000008)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRTW
+ */
+-POKE32(0xfde500e0, 0x00000006)
++POKE32(0xfde500e0, 0x00000002)
+ 
+ 
+ /*
+@@ -1370,7 +1100,7 @@ POKE32(0xfde5011c, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TDQS
+ */
+-POKE32(0xfde50120, 0x00000004)
++POKE32(0xfde50120, 0x00000003)
+ 
+ 
+ /*
+@@ -1418,37 +1148,19 @@ POKE32(0xfde50040, 0x07100000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x07100000) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde50040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x07100000) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde50040, 0x00140083)
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+-/* PEEK(0xfde50040) (used target peek value 0x00140083) */
++POKE32(0xfde50040, 0x00144083)
+ 
+ 
+ /*
+@@ -1460,12 +1172,6 @@ OR32(0xfde50040, 0x80000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00140083) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -1478,37 +1184,19 @@ POKE32(0xfde50040, 0x00160003)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00160003) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde50040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00160003) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde50040, 0x00120043)
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+-/* PEEK(0xfde50040) (used target peek value 0x00120043) */
++POKE32(0xfde50040, 0x00120003)
+ 
+ 
+ /*
+@@ -1520,12 +1208,6 @@ OR32(0xfde50040, 0x80000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00120043) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -1538,24 +1220,12 @@ POKE32(0xfde50040, 0x00109403)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00109403) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde50040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00109403) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -1568,24 +1238,12 @@ POKE32(0xfde50040, 0x00100005)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00100005) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde50040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde50040) (used target peek value 0x00100005) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde50040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -1598,156 +1256,78 @@ POKE32(0xfde50004, 0x00000001)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_STAT
+ */
+-/* PEEK(0xfde50008) (used target peek value 0x00000001) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_STAT
+-*/
+ WHILE_NE32(0xfde50008, 0x00000007, 0x00000001)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xbfd90002) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ UPDATE32(0xfde50484, 0xfffffffd, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xbfd90000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ OR32(0xfde50484, 0x00020000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x00020000, 0x00020000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x00040000, 0x00040000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x00080000, 0x00080000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x00200000, 0x00200000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x00400000, 0x00400000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x01000000, 0x01000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x02000000, 0x02000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x08000000, 0x08000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x10000000, 0x10000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde50484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde50484, 0x40000000, 0x40000000)
+ 
+ 
+@@ -1764,15 +1344,15 @@ POKE32(0xfde50320, 0x00000003)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_SCTL
++st40_ddr3pctl_regs.DDR3PCTL_PVTTUPDWAIT
+ */
+-POKE32(0xfde50004, 0x00000002)
++POKE32(0xfde50324, 0x00000003)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_STAT
++st40_ddr3pctl_regs.DDR3PCTL_SCTL
+ */
+-/* PEEK(0xfde50008) (used target peek value 0x00000003) */
++POKE32(0xfde50004, 0x00000002)
+ 
+ 
+ /*
+@@ -1782,41 +1362,30 @@ WHILE_NE32(0xfde50008, 0x00000007, 0x00000003)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
+-*/
+-/* PEEK(0xfde30028) (used target peek value 0xffffffff) */
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ UPDATE32(0xfde30028, 0xfffffffb, 0x00000000)
+-DELAY(100000)
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
+-*/
+-/* PEEK(0xfde30028) (used target peek value 0xfffffffb) */
++DELAY(45000000)
+ 
+ 
+ /*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_12
++stx7108_sysconf_0_regs.SYSTEM_CONFIG12
+ */
+ OR32(0xfde30028, 0x00000004)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_18
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-/* PEEK(0xfde20084) (used target peek value 0x00000003) */
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_18
++stx7108_sysconf_1_regs.SYSTEM_CONFIG18
+ */
+-OR32(0xfde20084, 0x00000003)
+-DELAY(10000)
++  OR32(0xfde20084, 0x00000003)
++ENDIF(1)
++DELAY(4500000)
+ 
+ 
+ /*
+@@ -1828,7 +1397,7 @@ POKE32(0xfde72030, 0x00900080)
+ /*
+ st40_ddr3mixer_regs.DDR3MIXER_DDR_PARAMETER
+ */
+-POKE32(0xfde72038, 0x33220e29)
++POKE32(0xfde72038, 0x23220e29)
+ 
+ 
+ /*
+@@ -1858,7 +1427,7 @@ POKE32(0xfde72028, 0xfffffc00)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT1U
+ */
+-POKE32(0xfde700c0, 0x000000f0)
++POKE32(0xfde700c0, 0x0000010a)
+ 
+ 
+ /*
+@@ -1870,20 +1439,14 @@ POKE32(0xfde700c4, 0x000000c8)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TOGCNT100N
+ */
+-POKE32(0xfde700cc, 0x00000018)
++POKE32(0xfde700cc, 0x0000001a)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRSTH
+ */
+ POKE32(0xfde700c8, 0x000001f4)
+-DELAY(10000)
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PGSR0
+-*/
+-/* PEEK(0xfde70410) (used target peek value 0x00000027) */
++DELAY(4500000)
+ 
+ 
+ /*
+@@ -1895,61 +1458,63 @@ WHILE_NE32(0xfde70410, 0x00000027, 0x00000027)
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0x00010000) */
++WHILE_NE32(0xfde70484, 0x00010000, 0x00010000)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++st40_ddr3phy_regs.DDR3PHY_DXCCR
+ */
+-WHILE_NE32(0xfde70484, 0x00010000, 0x00010000)
++OR32(0xfde70434, 0x00000001)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_DXCCR
++st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
+ */
+-/* PEEK(0xfde70434) (used target peek value 0x00001884) */
++POKE32(0xfde7031c, 0x00004301)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_DXCCR
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-OR32(0xfde70434, 0x00000001)
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
++st40_ddr3pctl_regs.DDR3PCTL_ODTCFG1
+ */
+-/* PEEK(0xfde7031c) (used target peek value 0x00002105) */
++  POKE32(0xfde700bc, 0x06060200)
++ENDIF(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_PHYIOCRV1
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-UPDATE32(0xfde7031c, 0xfffffffb, 0x00000000)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0x00010000) */
++  POKE32(0xfde70484, 0xbfd80002)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-OR32(0xfde70484, 0xbfd80002)
++ELSE(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_POWCTL
++st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-POKE32(0xfde70044, 0x00000001)
++  POKE32(0xfde70484, 0xa5580002)
++ENDIF(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_POWSTAT
++st40_ddr3pctl_regs.DDR3PCTL_POWCTL
+ */
+-/* PEEK(0xfde70048) (used target peek value 0x00000003) */
++POKE32(0xfde70044, 0x00000001)
+ 
+ 
+ /*
+@@ -1983,6 +1548,19 @@ POKE32(0xfde70090, 0x00111111)
+ 
+ 
+ /*
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
++*/
++IF_GT32(1, 0xfde20000, 0xf0000000, 0x00000000)
++
++
++/*
++st40_ddr3phy_regs.DDR3PHY_PUB_SLCR
++*/
++  POKE32(0xfde704ac, 0x00111100)
++ENDIF(1)
++
++
++/*
+ st40_ddr3pctl_regs.DDR3PCTL_TREFI
+ */
+ POKE32(0xfde700d0, 0x0000004e)
+@@ -2009,7 +1587,7 @@ POKE32(0xfde700dc, 0x00000008)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TRTW
+ */
+-POKE32(0xfde700e0, 0x00000006)
++POKE32(0xfde700e0, 0x00000002)
+ 
+ 
+ /*
+@@ -2105,7 +1683,7 @@ POKE32(0xfde7011c, 0x00000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_TDQS
+ */
+-POKE32(0xfde70120, 0x00000004)
++POKE32(0xfde70120, 0x00000003)
+ 
+ 
+ /*
+@@ -2153,37 +1731,19 @@ POKE32(0xfde70040, 0x07100000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x07100000) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde70040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x07100000) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde70040, 0x00140083)
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+-/* PEEK(0xfde70040) (used target peek value 0x00140083) */
++POKE32(0xfde70040, 0x00144083)
+ 
+ 
+ /*
+@@ -2195,12 +1755,6 @@ OR32(0xfde70040, 0x80000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00140083) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -2213,37 +1767,19 @@ POKE32(0xfde70040, 0x00160003)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00160003) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde70040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00160003) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-POKE32(0xfde70040, 0x00120043)
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+-/* PEEK(0xfde70040) (used target peek value 0x00120043) */
++POKE32(0xfde70040, 0x00120003)
+ 
+ 
+ /*
+@@ -2255,12 +1791,6 @@ OR32(0xfde70040, 0x80000000)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00120043) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -2273,24 +1803,12 @@ POKE32(0xfde70040, 0x00109403)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00109403) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde70040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00109403) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -2303,24 +1821,12 @@ POKE32(0xfde70040, 0x00100005)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00100005) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ OR32(0xfde70040, 0x80000000)
+ 
+ 
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_MCMD
+ */
+-/* PEEK(0xfde70040) (used target peek value 0x00100005) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_MCMD
+-*/
+ WHILE_NE32(0xfde70040, 0x80000000, 0x00000000)
+ 
+ 
+@@ -2333,418 +1839,393 @@ POKE32(0xfde70004, 0x00000001)
+ /*
+ st40_ddr3pctl_regs.DDR3PCTL_STAT
+ */
+-/* PEEK(0xfde70008) (used target peek value 0x00000001) */
+-
+-
+-/*
+-st40_ddr3pctl_regs.DDR3PCTL_STAT
+-*/
+ WHILE_NE32(0xfde70008, 0x00000007, 0x00000001)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xbfd90002) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ UPDATE32(0xfde70484, 0xfffffffd, 0x00000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xbfd90000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ OR32(0xfde70484, 0x00020000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde70484, 0x00020000, 0x00020000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde70484, 0x00040000, 0x00040000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde70484, 0x00080000, 0x00080000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde70484, 0x00200000, 0x00200000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
+-
+-
+-/*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+-*/
+ WHILE_NE32(0xfde70484, 0x00400000, 0x00400000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
++WHILE_NE32(0xfde70484, 0x01000000, 0x01000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-WHILE_NE32(0xfde70484, 0x01000000, 0x01000000)
++WHILE_NE32(0xfde70484, 0x02000000, 0x02000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
++WHILE_NE32(0xfde70484, 0x08000000, 0x08000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-WHILE_NE32(0xfde70484, 0x02000000, 0x02000000)
++WHILE_NE32(0xfde70484, 0x10000000, 0x10000000)
+ 
+ 
+ /*
+ st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
++WHILE_NE32(0xfde70484, 0x40000000, 0x40000000)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++st40_ddr3pctl_regs.DDR3PCTL_PHYPVTCFG
+ */
+-WHILE_NE32(0xfde70484, 0x08000000, 0x08000000)
++POKE32(0xfde70300, 0x000045d0)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++st40_ddr3pctl_regs.DDR3PCTL_PHYTUPDWAIT
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
++POKE32(0xfde70320, 0x00000003)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++st40_ddr3pctl_regs.DDR3PCTL_PVTTUPDWAIT
+ */
+-WHILE_NE32(0xfde70484, 0x10000000, 0x10000000)
++POKE32(0xfde70324, 0x00000003)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++st40_ddr3pctl_regs.DDR3PCTL_SCTL
+ */
+-/* PEEK(0xfde70484) (used target peek value 0xffff0000) */
++POKE32(0xfde70004, 0x00000002)
+ 
+ 
+ /*
+-st40_ddr3phy_regs.DDR3PHY_PUB_SMCTL
++st40_ddr3pctl_regs.DDR3PCTL_STAT
+ */
+-WHILE_NE32(0xfde70484, 0x40000000, 0x40000000)
++WHILE_NE32(0xfde70008, 0x00000007, 0x00000003)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
++  UPDATE32(0xfdea3a00, 0x00000000, 0x0a0d0b0c)
++  UPDATE32(0xfdea3a0c, 0x0000ffff, 0x0b0c0000)
++  UPDATE32(0xfdea3a10, 0xffff0000, 0x00000a0d)
++  UPDATE32(0xfd2e1004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e1008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e100c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e1010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e1014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e1018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd2e3004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e3008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e300c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e3010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e3014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e3018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd544010, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfd5440b0, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfe76b0fc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5450ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5450f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5450f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5450f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5450fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5451ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5451f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5451f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5451f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5451fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5452ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5452f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5452f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5452f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5452fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5453ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5453f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5453f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5453f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5453fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5454ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5454f0, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5454f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5454f8, 0xfffffff8, 0x00000002)
++  UPDATE32(0xfd5454fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd545efc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00030, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfde00034, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfde00038, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfde0004c, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00050, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00108, 0x1fffffff, 0xa0000000)
++  UPDATE32(0xfde0010c, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00110, 0xfff8f8f8, 0x00010202)
++  UPDATE32(0xfde00114, 0xfff8f8f8, 0x00000000)
++  UPDATE32(0xfde20044, 0xfffffffc, 0x00000000)
++  UPDATE32(0xfdabeb04, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb08, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb0c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb10, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb24, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb28, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb2c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb30, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb44, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb48, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb4c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb50, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb84, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb88, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb8c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb90, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd002024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd003024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd004024, 0xfff01fff, 0x0003c000)
++  IF_EQ32(2, 0xfe7000b8, 0x00000001, 0x00000000)
++    UPDATE32(0xfe0fff04, 0xffc00000, 0x00264006)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000002, 0x00000000)
++    UPDATE32(0xfe1fff04, 0xffc00000, 0x00264006)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000004, 0x00000000)
++    UPDATE32(0xfe2fff04, 0xffc00000, 0x00264006)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda500d4, 0x00000001, 0x00000001)
++    UPDATE32(0xfda8f000, 0xffd00000, 0x00264006)
++    UPDATE32(0xfda89000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe70010c, 0x00000001, 0x00000001)
++    UPDATE32(0xfe737000, 0xffd00000, 0x00264006)
++    UPDATE32(0xfe731000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda50078, 0x00000004, 0x00000000)
++    UPDATE32(0xfdaa9744, 0xffd00000, 0x00264006)
++  ENDIF(2)
++  UPDATE32(0xfe768000, 0xffffffe8, 0x00000004)
++  UPDATE32(0xfe768004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfe768008, 0xfffffff0, 0x00000001)
++  IF_EQ32(2, 0xfe7000b8, 0x00000010, 0x00000000)
++    UPDATE32(0xfe769000, 0xffffffe8, 0x00000004)
++    UPDATE32(0xfe769004, 0xfffffff0, 0x00000001)
++    UPDATE32(0xfe769008, 0xfffffff0, 0x00000001)
++  ENDIF(2)
++  UPDATE32(0xfd62a000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd62a004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd62a008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62a00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd62a010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd628000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd628004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd628008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd628010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6aa000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6aa004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6aa008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6aa00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6aa010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6a8000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6a8004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6a8008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6a800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6a8010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfda40c18, 0xfffffff0, 0x00000002)
++  UPDATE32(0xfde52048, 0x00000000, 0x40404040)
++  UPDATE32(0xfde72048, 0x00000000, 0x40404040)
++ELSE(1)
++  UPDATE32(0xfdea3a00, 0x00000000, 0x0a0d0b0c)
++  UPDATE32(0xfdea3a10, 0x00000000, 0x0a0d0b0c)
++  UPDATE32(0xfd2e1004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e1008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e100c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e1010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e1014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e1018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd2e3004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd2e3008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd2e300c, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd2e3010, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd2e3014, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd2e3018, 0x0000ffff, 0x00060000)
++  UPDATE32(0xfd544010, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfd5440b0, 0xfc00ff00, 0x000600a3)
++  UPDATE32(0xfe76b0fc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfd5450ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5450f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5450f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5450f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5450fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5451ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5451f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5451f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5451f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5451fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5452ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5452f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5452f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5452f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5452fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5453ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5453f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5453f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5453f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5453fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd5454ec, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd5454f0, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd5454f4, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd5454f8, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd5454fc, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd545efc, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00030, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfde00034, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfde00038, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfde0004c, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00050, 0xfffffc00, 0x00000000)
++  UPDATE32(0xfde00108, 0x1fffffff, 0xa0000000)
++  UPDATE32(0xfde0010c, 0xfffffff8, 0x00000005)
++  UPDATE32(0xfde00110, 0xfff8f8f8, 0x00010202)
++  UPDATE32(0xfde00114, 0xfff8f8f8, 0x00000000)
++  UPDATE32(0xfde20044, 0xfffffffc, 0x00000000)
++  UPDATE32(0xfdabeb04, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb08, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb0c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb10, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb24, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb28, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb2c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb30, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb44, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb48, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb4c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb50, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfdabeb84, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfdabeb88, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfdabeb8c, 0x0000fff8, 0x00000000)
++  UPDATE32(0xfdabeb90, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd002024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd003024, 0xfff01fff, 0x0003c000)
++  UPDATE32(0xfd004024, 0xfff01fff, 0x0003c000)
++  IF_EQ32(2, 0xfe7000b8, 0x00000001, 0x00000000)
++    UPDATE32(0xfe0fff04, 0xffc00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000002, 0x00000000)
++    UPDATE32(0xfe1fff04, 0xffc00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe7000b8, 0x00000004, 0x00000000)
++    UPDATE32(0xfe2fff04, 0xffc00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda500d4, 0x00000001, 0x00000001)
++    UPDATE32(0xfda8f000, 0xffd00000, 0x00264207)
++    UPDATE32(0xfda89000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe70010c, 0x00000001, 0x00000001)
++    UPDATE32(0xfe737000, 0xffd00000, 0x00264207)
++    UPDATE32(0xfe731000, 0xfffec0ff, 0x00000800)
++  ENDIF(2)
++  IF_EQ32(2, 0xfda50078, 0x00000004, 0x00000000)
++    UPDATE32(0xfdaa9744, 0xffd00000, 0x00264207)
++  ENDIF(2)
++  IF_EQ32(2, 0xfe700110, 0x00000002, 0x00000000)
++    UPDATE32(0xfe772348, 0xffd00000, 0x00264207)
++  ENDIF(2)
++  UPDATE32(0xfe768000, 0xffffffe8, 0x00000004)
++  UPDATE32(0xfe768004, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfe768008, 0xfffffff0, 0x00000001)
++  IF_EQ32(2, 0xfe700110, 0x00000002, 0x00000002)
++    UPDATE32(0xfe769000, 0xffffffe8, 0x00000004)
++    UPDATE32(0xfe769004, 0xfffffff0, 0x00000001)
++    UPDATE32(0xfe769008, 0xfffffff0, 0x00000001)
++  ENDIF(2)
++  UPDATE32(0xfd62a000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd62a004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd62a008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62a00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd62a010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd628000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd628004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd628008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd62800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd628010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6aa000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6aa004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6aa008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6aa00c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6aa010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfd6a8000, 0xfffffff0, 0x00000001)
++  UPDATE32(0xfd6a8004, 0xfffffff8, 0x00000006)
++  UPDATE32(0xfd6a8008, 0xfffffff8, 0x00000003)
++  UPDATE32(0xfd6a800c, 0xfffffff8, 0x00000001)
++  UPDATE32(0xfd6a8010, 0xfffffff8, 0x00000000)
++  UPDATE32(0xfda40c18, 0xfffffff0, 0x00000002)
++  UPDATE32(0xfde52048, 0x00000000, 0x40404040)
++  UPDATE32(0xfde72048, 0x00000000, 0x40404040)
++ENDIF(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_PHYPVTCFG
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-POKE32(0xfde70300, 0x000045d0)
++IF_EQ32(1, 0xfde20000, 0xf0000000, 0x00000000)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_PHYTUPDWAIT
++stx7108_sysconf_1_regs.SYSTEM_CONFIG1
+ */
+-POKE32(0xfde70320, 0x00000003)
++  UPDATE32(0xfde20040, 0xffffc0ff, 0x00001000)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_SCTL
++stx7108_sysconf_1_regs.SYSTEM_CONFIG0
+ */
+-POKE32(0xfde70004, 0x00000002)
++  OR32(0xfde2003c, 0x00000002)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_STAT
++stx7108_sysconf_1_regs.SYSTEM_STATUS0
+ */
+-/* PEEK(0xfde70008) (used target peek value 0x00000003) */
++ELSE(1)
+ 
+ 
+ /*
+-st40_ddr3pctl_regs.DDR3PCTL_STAT
++stx7108_sysconf_1_regs.SYSTEM_CONFIG0
+ */
+-WHILE_NE32(0xfde70008, 0x00000007, 0x00000003)
+-/* PEEK(0xfdea3a00) (used target peek value 0x0a0b0c0d) */
+-UPDATE32(0xfdea3a00, 0x00000000, 0x0a0d0b0c)
+-/* PEEK(0xfd2e0004) (used target peek value 0x00000000) */
+-UPDATE32(0xfd2e0004, 0xfffffff0, 0x00000001)
+-/* PEEK(0xfd2e0008) (used target peek value 0x00000000) */
+-UPDATE32(0xfd2e0008, 0xfffffff8, 0x00000003)
+-/* PEEK(0xfd2e000c) (used target peek value 0x00000000) */
+-UPDATE32(0xfd2e000c, 0xfffffff8, 0x00000006)
+-/* PEEK(0xfd2e0010) (used target peek value 0x00000000) */
+-UPDATE32(0xfd2e0010, 0xfffffff8, 0x00000001)
+-/* PEEK(0xfd2e0014) (used target peek value 0x00000000) */
+-UPDATE32(0xfd2e0014, 0xfffffff8, 0x00000000)
+-/* PEEK(0xfd2e0018) (used target peek value 0x00000000) */
+-UPDATE32(0xfd2e0018, 0x0000ffff, 0x00000000)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfd544010, 0xffff5f1c, 0x000000a3)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x00000060) */
+-/* PEEK(0xfd544010) (used target peek value 0x00000060) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfd5440b0, 0xffffff00, 0x000000a3)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfd5440b0) (used target peek value 0x00000060) */
+-/* PEEK(0xfe76b0fc) (used target peek value 0x00000000) */
+-UPDATE32(0xfe76b0fc, 0xfffffff8, 0x00000005)
+-/* PEEK(0xfd5450ec) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5450ec, 0xfffffff0, 0x00000001)
+-/* PEEK(0xfd5450f0) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5450f0, 0xfffffff8, 0x00000005)
+-/* PEEK(0xfd5450f4) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5450f4, 0xfffffff8, 0x00000003)
+-/* PEEK(0xfd5450f8) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5450f8, 0xfffffff8, 0x00000002)
+-/* PEEK(0xfd5450fc) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5450fc, 0xfffffff8, 0x00000000)
+-/* PEEK(0xfd5451ec) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5451ec, 0xfffffff0, 0x00000001)
+-/* PEEK(0xfd5451f0) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5451f0, 0xfffffff8, 0x00000005)
+-/* PEEK(0xfd5451f4) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5451f4, 0xfffffff8, 0x00000003)
+-/* PEEK(0xfd5451f8) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5451f8, 0xfffffff8, 0x00000002)
+-/* PEEK(0xfd5451fc) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5451fc, 0xfffffff8, 0x00000000)
+-/* PEEK(0xfd5452ec) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5452ec, 0xfffffff0, 0x00000001)
+-/* PEEK(0xfd5452f0) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5452f0, 0xfffffff8, 0x00000005)
+-/* PEEK(0xfd5452f4) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5452f4, 0xfffffff8, 0x00000003)
+-/* PEEK(0xfd5452f8) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5452f8, 0xfffffff8, 0x00000002)
+-/* PEEK(0xfd5452fc) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5452fc, 0xfffffff8, 0x00000000)
+-/* PEEK(0xfd5453ec) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5453ec, 0xfffffff0, 0x00000001)
+-/* PEEK(0xfd5453f0) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5453f0, 0xfffffff8, 0x00000005)
+-/* PEEK(0xfd5453f4) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5453f4, 0xfffffff8, 0x00000003)
+-/* PEEK(0xfd5453f8) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5453f8, 0xfffffff8, 0x00000002)
+-/* PEEK(0xfd5453fc) (used target peek value 0x00000000) */
+-UPDATE32(0xfd5453fc, 0xfffffff8, 0x00000000)
+-/* PEEK(0xfd545efc) (used target peek value 0x00000000) */
+-UPDATE32(0xfd545efc, 0xfffffff8, 0x00000005)
+-/* PEEK(0xfde00030) (used target peek value 0x00000005) */
+-UPDATE32(0xfde00030, 0xfffffff8, 0x00000006)
+-/* PEEK(0xfde00034) (used target peek value 0x00000000) */
+-UPDATE32(0xfde00034, 0xfffffff8, 0x00000001)
+-/* PEEK(0xfde00038) (used target peek value 0x00000003) */
+-UPDATE32(0xfde00038, 0xfffffff8, 0x00000000)
+-/* PEEK(0xfde0004c) (used target peek value 0x00000000) */
+-UPDATE32(0xfde0004c, 0xfffffc00, 0x00000000)
+-/* PEEK(0xfde00050) (used target peek value 0x00000000) */
+-UPDATE32(0xfde00050, 0xfffffc00, 0x00000000)
+-/* PEEK(0xfde00108) (used target peek value 0xe0000081) */
+-UPDATE32(0xfde00108, 0x1fffffff, 0xa0000000)
+-/* PEEK(0xfde0010c) (used target peek value 0x00000005) */
+-UPDATE32(0xfde0010c, 0xfffffff8, 0x00000005)
+-/* PEEK(0xfde00110) (used target peek value 0x00000000) */
+-UPDATE32(0xfde00110, 0xfff8f8f8, 0x00010202)
+-/* PEEK(0xfde00114) (used target peek value 0x00010303) */
+-UPDATE32(0xfde00114, 0xfff8f8f8, 0x00000000)
+-/* PEEK(0xfde20044) (used target peek value 0x00000000) */
+-UPDATE32(0xfde20044, 0xfffffffc, 0x00000000)
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0004, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0004) (used target peek value 0x01000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0008, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0008) (used target peek value 0x80100000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab000c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab000c) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0010, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0010) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0024, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0024) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0028, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0028) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab002c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab002c) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab002c, 0x0000fff8, 0x00000002)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0030, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0030) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab0030, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0044, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0044) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0048, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0048) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab004c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab004c) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab004c, 0x0000fff8, 0x00000003)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0050, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0050) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab0050, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0084, 0xfffffff8, 0x00000006)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0084) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0088, 0xfffffff8, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0088) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab008c, 0x0000fff8, 0x00000000)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab008c) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab008c, 0x0000fff8, 0x00000002)
++  OR32(0xfde2003c, 0x00010000)
+ ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00000000)
+-  UPDATE32(0xfdab0090, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfdab0090) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfd544010, 0x00002000, 0x00002000)
+-  UPDATE32(0xfdab0090, 0xfffffff0, 0x00000001)
+-ENDIF(1)
+-/* PEEK(0xfd544010) (used target peek value 0x000000a3) */
+-/* PEEK(0xfd002024) (used target peek value 0x00000000) */
+-UPDATE32(0xfd002024, 0xfff01fff, 0x0003c000)
+-/* PEEK(0xfd003024) (used target peek value 0x00000000) */
+-UPDATE32(0xfd003024, 0xfff01fff, 0x0003c000)
+-/* PEEK(0xfd004024) (used target peek value 0x00000000) */
+-UPDATE32(0xfd004024, 0xfff01fff, 0x0003c000)
+-IF_EQ32(1, 0xfe7000b8, 0x00000001, 0x00000000)
+-  UPDATE32(0xfe0fff04, 0xffc00000, 0x00264207)
+-ENDIF(1)
+-/* PEEK(0xfe7000b8) (used target peek value 0x00000006) */
+-/* PEEK(0xfe0fff04) (used target peek value 0x0002c007) */
+-IF_EQ32(1, 0xfe7000b8, 0x00000002, 0x00000000)
+-  UPDATE32(0xfe1fff04, 0xffc00000, 0x00264207)
+-ENDIF(1)
+-/* PEEK(0xfe7000b8) (used target peek value 0x00000006) */
+-IF_EQ32(1, 0xfe7000b8, 0x00000004, 0x00000000)
+-  UPDATE32(0xfe2fff04, 0xffc00000, 0x00264207)
+-ENDIF(1)
+-/* PEEK(0xfe7000b8) (used target peek value 0x00000006) */
+-IF_EQ32(1, 0xfda500d4, 0x00000001, 0x00000001)
+-  UPDATE32(0xfda8f000, 0xffd00000, 0x0026c207)
+-ENDIF(1)
+-/* PEEK(0xfda500d4) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfda500d4, 0x00000001, 0x00000001)
+-  UPDATE32(0xfda89000, 0xfffec0ff, 0x00000800)
+-ENDIF(1)
+-/* PEEK(0xfda500d4) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfe70010c, 0x00000001, 0x00000001)
+-  UPDATE32(0xfe737000, 0xffd00000, 0x0026c207)
+-ENDIF(1)
+-/* PEEK(0xfe70010c) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfe70010c, 0x00000001, 0x00000001)
+-  UPDATE32(0xfe731000, 0xfffec0ff, 0x00000800)
+-ENDIF(1)
+-/* PEEK(0xfe70010c) (used target peek value 0x00000000) */
+-IF_EQ32(1, 0xfda50078, 0x00000004, 0x00000000)
+-  UPDATE32(0xfdaa9744, 0xffd00000, 0x0026c207)
+-ENDIF(1)
+-/* PEEK(0xfda50078) (used target peek value 0x00000006) */
+ 
+ 
+ #if 0		/* added by Sean McGoogan <Sean.McGoogan@st.com> */
+@@ -2955,156 +2436,66 @@ POKE32(0xf7100000, 0x40000188)
+ /*
+ st40_pmb_addr_array_regs.PMB_ADDR_ARRAY_ENTRY1
+ */
+-POKE32(0xf6100100, 0xa0000000)
++POKE32(0xf6100100, 0x88000000)
+ 
+ 
+ /*
+ st40_pmb_data_array_regs.PMB_DATA_ARRAY_ENTRY1
+ */
+-POKE32(0xf7100100, 0x80000188)
++POKE32(0xf7100100, 0x48000188)
+ 
+ 
+ /*
+-st40_ccn_regs.CCN_MMUCR
++st40_pmb_addr_array_regs.PMB_ADDR_ARRAY_ENTRY2
+ */
+-/* PEEK(0xff000010) (used target peek value 0x00000000) */
++POKE32(0xf6100200, 0xa0000000)
+ 
+ 
+ /*
+-st40_ccn_regs.CCN_MMUCR
++st40_pmb_data_array_regs.PMB_DATA_ARRAY_ENTRY2
+ */
+-OR32(0xff000010, 0x00000010)
++POKE32(0xf7100200, 0x80000188)
+ 
+ 
+ /*
+-st40_ccn_regs.CCN_MMUCR
++st40_pmb_addr_array_regs.PMB_ADDR_ARRAY_ENTRY3
+ */
+-IF_EQ32(1, 0xff000010, 0x00000010, 0x00000010)
++POKE32(0xf6100300, 0xa8000000)
+ 
+ 
+ /*
+-st40_ccn_regs.CCN_MMUCR
++st40_pmb_data_array_regs.PMB_DATA_ARRAY_ENTRY3
+ */
+-  UPDATE32(0xff000010, 0xffffffef, 0x00000010)
++POKE32(0xf7100300, 0x88000188)
+ 
+ 
+ /*
+ st40_ccn_regs.CCN_MMUCR
+ */
+-ELSE(1)
++OR32(0xff000010, 0x00000010)
+ 
+ 
+ /*
+-st40_ccn_regs.CCN_PASCR
++st40_ccn_regs.CCN_MMUCR
+ */
+-  UPDATE32(0xff000070, 0x7fffffff, 0x80000000)
+-ENDIF(1)
++IF_EQ32(1, 0xff000010, 0x00000010, 0x00000010)
+ 
+ 
+ /*
+ st40_ccn_regs.CCN_MMUCR
+ */
+-/* PEEK(0xff000010) (used target peek value 0x00000000) */
++  UPDATE32(0xff000010, 0xffffffef, 0x00000010)
+ 
+ 
+ /*
+-st40_ccn_regs.CCN_PASCR
++st40_ccn_regs.CCN_MMUCR
+ */
+-/* PEEK(0xff000070) (used target peek value 0x00000000) */
++ELSE(1)
+ 
+ 
+ /*
+-st40_ccn_regs.CCN_CCR
++st40_ccn_regs.CCN_PASCR
+ */
+-POKE32(0xff00001c, 0x8000090d)
++  UPDATE32(0xff000070, 0x7fffffff, 0x80000000)
++ENDIF(1)
+ #endif	/* added by Sean McGoogan <Sean.McGoogan@st.com> */
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_1
+-*/
+-/* PEEK(0xfde30008) (used target peek value 0x00000002) */
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_1
+-*/
+-OR32(0xfde30008, 0x00000002)
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-/* PEEK(0xfde20048) (used target peek value 0x00003010) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-OR32(0xfde20048, 0x00000800)
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-/* PEEK(0xfde20048) (used target peek value 0x00003810) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-OR32(0xfde20048, 0x00000400)
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_0
+-*/
+-/* PEEK(0xfde30004) (used target peek value 0x0000000d) */
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_0
+-*/
+-OR32(0xfde30004, 0x00000002)
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-/* PEEK(0xfde20048) (used target peek value 0x00003c10) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-UPDATE32(0xfde20048, 0xfffff7ff, 0x00000000)
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-/* PEEK(0xfde20048) (used target peek value 0x00003410) */
+-
+-
+-/*
+-stx7108_sysconf_1_regs.SYSCONF_1_SYSTEM_CONFIG_3
+-*/
+-UPDATE32(0xfde20048, 0xfffffbff, 0x00000000)
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_6
+-*/
+-POKE32(0xfde3001c, 0xfec04000)
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_0
+-*/
+-/* PEEK(0xfde30004) (used target peek value 0x0000000f) */
+-
+-
+-/*
+-stx7108_sysconf_0_regs.SYSCONF_0_SYSTEM_CONFIG_0
+-*/
+-OR32(0xfde30004, 0x00000010)
+diff --git a/cpu/sh/sata-init.c b/cpu/sh/sata-init.c
+index 4530e53..137e308 100644
+--- a/cpu/sh/sata-init.c
++++ b/cpu/sh/sata-init.c
+@@ -1,7 +1,7 @@
+ /*
+  * STM SATA initialization
+  *
+- * Copyright (C) 2007,2009 STMicroelectronics Limited
++ * Copyright (C) 2007,2009-2010 STMicroelectronics Limited
+  * Author: Stuart Menefy <stuart.menefy@st.com>
+  * Sean McGoogan <Sean.McGoogan@st.com>
+  *
+@@ -29,12 +29,15 @@
+ #if defined(CONFIG_SH_STX7105)		/* Cut 3.x (or later) */
+ #define SYS_STA00	STX7105_SYSCONF_SYS_STA00
+ #define SYS_CFG33	STX7105_SYSCONF_SYS_CFG33
++#define soft_jtag_en	(1<<6)
+ #elif defined(CONFIG_SH_STX7141)	/* Cut 2.x (or later) */
+ #define SYS_STA00	STX7141_SYSCONF_SYS_STA00
+ #define SYS_CFG33	STX7141_SYSCONF_SYS_CFG33
++#define soft_jtag_en	(0<<6)		/* STx7141 has this bit inverted */
+ #elif defined(CONFIG_SH_STX7200)	/* Cut 3.x (or later) */
+ #define SYS_STA00	STX7200_SYSCONF_SYS_STA00
+ #define SYS_CFG33	STX7200_SYSCONF_SYS_CFG33
++#define soft_jtag_en	(1<<6)
+ #else
+ #	error Missing Device Definitions!
+ #endif
+@@ -44,7 +47,6 @@
+ #define sata_tdo	(1<<1)
+ 
+ /* sysconf config 33 */
+-#define soft_jtag_en	(1<<6)
+ #define tms_sata_en	(1<<5)
+ #define trstn_sata	(1<<4)
+ #define tdi_high	(1<<1)
+@@ -351,8 +353,8 @@ extern void stm_sata_miphy_init(void)
+ 	/* Release Rx_Clock on first I-DLL phase on macro1 */
+ 	SATA_JTAG_DR_Write_MIPHY(sc, 0x72, 0x00);
+ 
+-	/* Deassert deserializer reset */
+-	SATA_JTAG_DR_Write_MIPHY(sc, 0x00, 0x00);
++	/* Assert deserializer reset */
++	SATA_JTAG_DR_Write_MIPHY(sc, 0x00, 0x10);
+ 	/* des_bit_lock_en is set */
+ 	SATA_JTAG_DR_Write_MIPHY(sc, 0x02, 0x08);
+ 
+@@ -360,6 +362,13 @@ extern void stm_sata_miphy_init(void)
+ 	SATA_JTAG_DR_Write_MIPHY(sc, 0x86, 0x61);
+ }
+ 
++extern void stm_sata_miphy_deassert_des_reset(void)
++{
++	const sysconf_field sc = (sysconf_field)SYS_CFG33;	/* SYS_CFG33[6:0] */
++
++	/* Deassert deserializer reset */
++	SATA_JTAG_DR_Write_MIPHY(sc, 0x00, 0x00);
++}
+ 
+ #endif	/* CONFIG_SH_STM_SATA */
+ 
+diff --git a/cpu/sh/sata-probe.c b/cpu/sh/sata-probe.c
+index 67be239..6fdf75a 100644
+--- a/cpu/sh/sata-probe.c
++++ b/cpu/sh/sata-probe.c
+@@ -1,7 +1,7 @@
+ /*
+  * STM SATA initialization
+  *
+- * Copyright (C) 2005-2009 STMicroelectronics Limited
++ * Copyright (C) 2005-2010 STMicroelectronics Limited
+  * Stuart Menefy <stuart.menefy@st.com>
+  * Sean McGoogan <Sean.McGoogan@st.com>
+  *
+@@ -76,6 +76,7 @@
+ #define SATA_DBTSR				(SATA_AHBHOST_BASE + 0x074)
+ #define SATA_PHYCR				(SATA_AHBHOST_BASE + 0x088)
+ #define SATA_VERSIONR				(SATA_AHBHOST_BASE + 0x0f8)
++#define SATA_INTPR				(SATA_AHBHOST_BASE + 0x078)
+ 
+ /* AHB DMA controller */
+ #define DMAC_COMP_VERSION			(SATA_AHBDMA_BASE + 0x3fc)
+@@ -150,8 +151,22 @@ extern int stm_sata_probe(void)
+ 	udelay(1000);			/* 1 ms  -  a guess */
+ 	writel(0x300, SATA_SCR2);	/* phy wake/clear reset */
+ 
++	/* For HDD detection issue */
++	timeout = 25;			/* 2.5 ms */
++	do
++	{
++		udelay(100);		/* 100 us */
++		t = readl(SATA_SCR1);
++		/* Wait till COMWAKE detected? */
++		if (t & 0x40000)	/* bit #18, DIAG_W */
++			break;
++	} while (--timeout);
++
++	/* now, deassert the deserializer reset */
++	stm_sata_miphy_deassert_des_reset();
++
+ 	/* wait for phy to become ready, if necessary */
+-	timeout = 25;
++	timeout = 25;			/* 5 sec */
+ 	do
+ 	{
+ 		udelay(200000);		/* 200 ms */
+diff --git a/cpu/sh/start.S b/cpu/sh/start.S
+index c4b775e..99767f6 100644
+--- a/cpu/sh/start.S
++++ b/cpu/sh/start.S
+@@ -482,9 +482,15 @@ set_pmb:
+ #else
+ 	#error Do not know which board/chip we are using for PMB setup.
+ #endif	/* defined(CONFIG_SH_STB7100) */
++
++	/* invalidate the ITLB, in case GDB put a 512 MiB page in slot #0 */
++invalidate_itlb:
++	MOV_CONST32_R0 SH4_CCN_MMUCR
++	mov	#(SH4_MMUCR_TI), r1
++	mov.l	r1, @r0			/* MMUCR.TI = 1 */
+ #endif	/* CONFIG_SH_SE_MODE */
+ 
+-concider_hyperspace:
++consider_hyperspace:
+ 	cmp/pl	r8			/* Are we in correct place already ? */
+ 	bt	hyperspace
+ 
+diff --git a/cpu/sh/stx7108/stx7108.c b/cpu/sh/stx7108/stx7108.c
+index 528493f..17c2558 100644
+--- a/cpu/sh/stx7108/stx7108.c
++++ b/cpu/sh/stx7108/stx7108.c
+@@ -77,11 +77,11 @@ extern void stx7108_pioalt_select(const int port, const int pin, const int alt)
+ 	{
+ 	case 0 ... 14:
+ 		num = port;		/* in Bank #2 */
+-		sysconfReg = (unsigned long*)STX7108_BANK2_SYSGFG(num);
++		sysconfReg = (unsigned long*)STX7108_BANK2_SYSCFG(num);
+ 		break;
+ 	case 15 ... 26:
+ 		num = port - 15;	/* in Bank #4 */
+-		sysconfReg = (unsigned long*)STX7108_BANK4_SYSGFG(num);
++		sysconfReg = (unsigned long*)STX7108_BANK4_SYSCFG(num);
+ 		break;
+ 	default:
+ 		BUG();
+@@ -139,12 +139,12 @@ void stx7108_pioalt_pad(int port, const int pin,
+ 	{
+ 	case 0 ... 14:
+ 		num = 15 + (port / 4);	/* in Bank #2 */
+-		sysconfReg = (unsigned long*)STX7108_BANK2_SYSGFG(num);
++		sysconfReg = (unsigned long*)STX7108_BANK2_SYSCFG(num);
+ 		break;
+ 	case 15 ... 26:
+ 		port -= 15;
+ 		num = 12 + (port / 4);	/* in Bank #4 */
+-		sysconfReg = (unsigned long*)STX7108_BANK4_SYSGFG(num);
++		sysconfReg = (unsigned long*)STX7108_BANK4_SYSCFG(num);
+ 		break;
+ 	default:
+ 		BUG();
+@@ -228,11 +228,11 @@ static void stx7108_pioalt_retime(const int port, const int pin,
+ 			BUG();
+ 			return;
+ 		}
+-		sysconfReg = (unsigned long*)STX7108_BANK2_SYSGFG(num);
++		sysconfReg = (unsigned long*)STX7108_BANK2_SYSCFG(num);
+ 		break;
+ 	case 15 ... 23:
+ 		num = 48 + ((port - 15) * 2);
+-		sysconfReg = (unsigned long*)STX7108_BANK4_SYSGFG(num);
++		sysconfReg = (unsigned long*)STX7108_BANK4_SYSCFG(num);
+ 		break;
+ 	default:
+ 		BUG();
+@@ -431,9 +431,9 @@ extern int stmac_default_pbl(void)
+ }
+ 
+ #if CFG_STM_STMAC_BASE == CFG_STM_STMAC0_BASE		/* MII0 */
+-#	define STX7108_MII_SYSGFG(x)	(STX7108_BANK2_SYSGFG(x))
++#	define STX7108_MII_SYSGFG(x)	(STX7108_BANK2_SYSCFG(x))
+ #elif CFG_STM_STMAC_BASE == CFG_STM_STMAC1_BASE		/* MII1 */
+-#	define STX7108_MII_SYSGFG(x)	(STX7108_BANK4_SYSGFG(x))
++#	define STX7108_MII_SYSGFG(x)	(STX7108_BANK4_SYSCFG(x))
+ #else
+ #error Unknown base address for the STM GMAC
+ #endif
+@@ -603,72 +603,88 @@ extern int soc_init(void)
+ 	bd->bi_devid = *STX7108_SYSCONF_DEVICEID_0;
+ 
+ 	/* Make sure reset period is shorter than WDT time-out */
+-	*STX7108_BANK0_SYSGFG(14) = 3000;	/* about 100 us */
++	*STX7108_BANK0_SYSCFG(14) = 3000;	/* about 100 us */
+ 
+ 	return 0;
+ }
+ 
+ 
+ #if defined(CONFIG_USB_OHCI_NEW)
+-extern int stx7108_usb_init(int port, int over_current, int power_ctrl)
++extern int stx7108_usb_init(const int port)
+ {
+-#ifdef QQQ	/* QQQ - DELETE */
+-	unsigned long reg;
+-	const unsigned char oc_pins[2]    = {4, 6};	/* PIO4 */
+-	const unsigned char power_pins[2] = {5, 7};	/* PIO4 */
++//QQQ	DECLARE_GLOBAL_DATA_PTR;
++//QQQ	bd_t *bd = gd->bd;
++	static int initialized = 0;
++	unsigned int flags;
++	const struct {
++		struct {
++			unsigned char port, pin, alt;
++		} oc, pwr;
++	} usb_pins[] = {
++		{ .oc = { 23, 6, 1 }, .pwr = { 23, 7, 1 } },
++		{ .oc = { 24, 0, 1 }, .pwr = { 24, 1, 1 } },
++		{ .oc = { 24, 2, 1 }, .pwr = { 24, 3, 1 } },
++	};
+ 
+-	if (port >= sizeof(oc_pins))	/* invalid port number ? */
++	if (port < 0 || port >= 3)	/* invalid port number ? */
+ 		return -1;		/* failed to initialize! */
+ 
+-	/* Power on the USB */
+-	reg = readl(STX7105_SYSCONF_SYS_CFG32);
+-	/* Power up USB host controller */
+-	/* USBn_HC_POWER_DOWN_REQ = 0 = Powered Up */
+-	reg &= ~(1ul<<(4+port));
+-	/* Power up USB PHY */
+-	/* USBn_PHY_POWER_DOWN_REQ = 0 = Powered Up */
+-	reg &= ~(1ul<<(6+port));
+-	writel(reg, STX7105_SYSCONF_SYS_CFG32);
+-
+-	if (over_current) {
+-		/* USB overcurrent enable */
+-		reg = readl(STX7105_SYSCONF_SYS_CFG04);
+-		/* USB0_PRT_OVCURR_POL = 0 = Active Low */
+-		reg &= ~(1ul<<(3+port));
+-		/* USBn_PRT_OVCURR_IN = 0 = PIO4[oc_pins[port]] */
+-		reg &= ~(1ul<<(5+port));
+-		/* CFG_USBn_OVRCURR_ENABLE = 1 = OC Enabled */
+-		reg |= 1ul<<(11+port);
+-		writel(reg, STX7105_SYSCONF_SYS_CFG04);
+-
+-		/* Route USBn OC Routing via PIO4[oc_pins[port]] */
+-		reg = readl(STX7105_SYSCONF_SYS_CFG34);
+-		/* PIO4[oc_pins[port]] CFG34[8+oc_pins[port],oc_pins[port]] = Alternate4 */
+-		reg &= ~(0x0101ul<<(oc_pins[port]));	/* Mask=3 */
+-		reg |=   0x0101ul<<(oc_pins[port]);	/* OR=3 */
+-		writel(reg, STX7105_SYSCONF_SYS_CFG34);
+-		/* set PIO directionality, for OC as IN */
+-		SET_PIO_PIN(ST40_PIO_BASE(4), oc_pins[port], STPIO_IN);
++	if (!initialized)		/* first time ? */
++	{	/* set USB2TRIPPHY_OSCIOK = 1 */
++		unsigned long * const sysconfReg = (unsigned long*)STX7108_BANK4_SYSCFG(44);
++		unsigned long sysconf = readl(sysconfReg);
++		SET_SYSCONF_BIT(sysconf, TRUE, 6);
++		writel(sysconf, sysconfReg);
++		initialized = 1;	/* do this just once */
+ 	}
+ 
+-	if (power_ctrl) {
+-		/* Route USBn POWER Routing via PIO4[power_pins[port]] */
+-		reg = readl(STX7105_SYSCONF_SYS_CFG34);
+-		/* PIO4[power_pins[port]] CFG34[8+power_pins[port],power_pins[port]] = Alternate4 */
+-		reg &= ~(0x0101ul<<(power_pins[port]));	/* Mask=3 */
+-		reg |=   0x0101ul<<(power_pins[port]);	/* OR=3 */
+-		writel(reg, STX7105_SYSCONF_SYS_CFG34);
+-		/* set PIO directionality, for POWER as ALT_OUT */
+-		SET_PIO_PIN(ST40_PIO_BASE(4), power_pins[port], STPIO_ALT_OUT);
++	/* Power up the USB port, i.e. set USB_x_POWERDOWN_REQ = 0 */
++	{
++		unsigned long * const sysconfReg = (unsigned long*)STX7108_BANK4_SYSCFG(46);
++		unsigned long sysconf = readl(sysconfReg);
++		SET_SYSCONF_BIT(sysconf, FALSE, port);
++		writel(sysconf, sysconfReg);
+ 	}
++	/* wait until USBx_PWR_DWN_GRANT == 0 */
++	while (*STX7108_BANK4_SYSSTS(2) & (1u<<port))
++		;	/* just wait ... */
++
++	/* route the USB power enable (output) signal */
++	stx7108_pioalt_select(usb_pins[port].pwr.port,
++			    usb_pins[port].pwr.pin,
++			    usb_pins[port].pwr.alt);
++	stx7108_pioalt_pad(usb_pins[port].pwr.port,
++			  usb_pins[port].pwr.pin, OUT);
++
++	/* route the USB over-current (input) signal */
++	stx7108_pioalt_select(usb_pins[port].oc.port,
++			    usb_pins[port].oc.pin,
++			    usb_pins[port].oc.alt);
++	stx7108_pioalt_pad(usb_pins[port].oc.port,
++			  usb_pins[port].oc.pin, IN);
+ 
+ 	/* start the USB Wrapper Host Controller */
+-	ST40_start_host_control(
+-		USB_FLAGS_STRAP_8BIT |
+-		USB_FLAGS_STBUS_CONFIG_THRESHOLD128);
++#if 1	/* QQQ - DELETE */
++	flags = USB_FLAGS_STRAP_8BIT | USB_FLAGS_STBUS_CONFIG_THRESHOLD128;
++#else	/* QQQ - DELETE */
++	if (STX7108_DEVICEID_CUT(bd->bi_devid) < 2)
++	{		/* for cut 1.x */
++		flags = USB_FLAGS_STRAP_8BIT |
++			USB_FLAGS_STBUS_CONFIG_OPCODE_LD64_ST64 |
++			USB_FLAGS_STBUS_CONFIG_PKTS_PER_CHUNK_1 |
++			USB_FLAGS_STBUS_CONFIG_THRESHOLD_64;
++	}
++	else
++	{		/* for cut 2.x */
++		flags = USB_FLAGS_STRAP_8BIT |
++			USB_FLAGS_STBUS_CONFIG_OPCODE_LD64_ST64 |
++			USB_FLAGS_STBUS_CONFIG_PKTS_PER_CHUNK_2 |
++			USB_FLAGS_STBUS_CONFIG_THRESHOLD_128;
++	}
++#endif	/* QQQ - DELETE */
++	ST40_start_host_control(flags);
+ 
+ 	return 0;
+-#endif		/* QQQ - DELETE */
+ }
+ 
+ #endif /* defined(CONFIG_USB_OHCI_NEW) */
+diff --git a/cpu/sh/usb.c b/cpu/sh/usb.c
+index 09ad445..2a54d29 100644
+--- a/cpu/sh/usb.c
++++ b/cpu/sh/usb.c
+@@ -53,6 +53,14 @@ extern int usb_cpu_init(void)
+ 			 CONFIG_SH_STX_STX7105_USB_OC,
+ 			 CONFIG_SH_STX_STX7105_USB_PW);
+ #endif
++#elif defined(CONFIG_SH_STX7108)
++#if CFG_USB_BASE == CFG_USB0_BASE	/* USB #0 */
++	stx7108_usb_init(0);
++#elif CFG_USB_BASE == CFG_USB1_BASE	/* USB #1 */
++	stx7108_usb_init(1);
++#elif CFG_USB_BASE == CFG_USB2_BASE	/* USB #2 */
++	stx7108_usb_init(2);
++#endif
+ #elif defined(CONFIG_SH_STX7111)
+ 	stx7111_usb_init();
+ #elif defined(CONFIG_SH_STX7141)
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 810f92e..1aa2e41 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -2319,6 +2319,12 @@ int nand_scan (struct mtd_info *mtd, int maxchips)
+ 	/* Select the device */
+ 	this->select_chip(mtd, 0);
+ 
++	/*
++	 * Reset the chip, required by some chips (e.g. Micron MT29FxGxxxxx)
++	 * after power-up
++	 */
++	this->cmdfunc(mtd, NAND_CMD_RESET, -1, -1);
++
+ 	/* Send the command for reading device ID */
+ 	this->cmdfunc (mtd, NAND_CMD_READID, 0x00, -1);
+ 
+@@ -2416,6 +2422,11 @@ int nand_scan (struct mtd_info *mtd, int maxchips)
+ 	}
+ 
+ 	if (!nand_flash_ids[i].name) {
++#if 1		/* QQQ - DELETE */
++		/* dump out some of the interesting data we probed */
++		printf ("Unknown NAND (Manufacturer=0x%02X, DeviceID=0x%02X)\n",
++			nand_maf_id, nand_dev_id);
++#endif		/* QQQ - DELETE */
+ #ifndef CFG_NAND_QUIET_TEST
+ 		printk (KERN_WARNING "No NAND device found!!!\n");
+ #endif
+@@ -2426,6 +2437,9 @@ int nand_scan (struct mtd_info *mtd, int maxchips)
+ 	for (i=1; i < maxchips; i++) {
+ 		this->select_chip(mtd, i);
+ 
++		/* See comment in nand_get_flash_type for reset */
++		this->cmdfunc(mtd, NAND_CMD_RESET, -1, -1);
++
+ 		/* Send the command for reading device ID */
+ 		this->cmdfunc (mtd, NAND_CMD_READID, 0x00, -1);
+ 
+diff --git a/drivers/net/stm-stmac.c b/drivers/net/stm-stmac.c
+index 3de854d..ed1927f 100644
+--- a/drivers/net/stm-stmac.c
++++ b/drivers/net/stm-stmac.c
+@@ -149,6 +149,16 @@ static void *rx_packets[CONFIG_DMA_RX_SIZE];
+ #define PHY_ADDR_MSK		0x001f	/* PHY Address Mask */
+ #define PHY_ADDR_SHIFT		0	/* PHY Address Mask */
+ 
++#elif defined(CONFIG_STMAC_LAN8710)	/* SMSC LAN8710/20 */
++
++/* SMSC LAN8710 phy identifier values */
++#define LAN8710_PHY_ID		0x0007c0f0u
++#define LAN8710_PHY_ID_MASK	0xfffffff0u
++
++#define SPECIAL_MODE_REG	0x12	/* Special Modes Register */
++#define PHY_ADDR_MSK		0x001f	/* PHY Address Mask */
++#define PHY_ADDR_SHIFT		0	/* PHY Address Mask */
++
+ #elif defined(CONFIG_STMAC_DP83865)	/* Nat Semi DP83865 */
+ 
+ /* Nat Semi DP83865 phy identifier values */
+@@ -290,6 +300,11 @@ static unsigned int stmac_phy_get_addr (void)
+ 			printf (STMAC "SMSC LAN8700 found\n");
+ 			return phyaddr;
+ 		}
++#elif defined(CONFIG_STMAC_LAN8710)
++		if ((id & LAN8710_PHY_ID_MASK) == LAN8710_PHY_ID) {
++			printf (STMAC "SMSC LAN8710/20 found\n");
++			return phyaddr;
++		}
+ #elif defined(CONFIG_STMAC_DP83865)
+ 		if ((id & DP83865_PHY_ID_MASK) == DP83865_PHY_ID) {
+ 			printf (STMAC "NS DP83865 found\n");
+@@ -337,7 +352,7 @@ static int stmac_phy_init (void)
+ 	/* test for H/W address disagreement with the assigned address */
+ #if defined(CONFIG_STMAC_STE10XP)
+ 	value = stmac_mii_read (eth_phy_addr, MII_XMC);
+-#elif defined(CONFIG_STMAC_LAN8700)
++#elif defined(CONFIG_STMAC_LAN8700) || defined(CONFIG_STMAC_LAN8710)
+ 	value = stmac_mii_read (eth_phy_addr, SPECIAL_MODE_REG);
+ #elif defined(CONFIG_STMAC_DP83865)
+ 	value = stmac_mii_read (eth_phy_addr, PHY_SUP_REG);
+diff --git a/include/asm-sh/soc.h b/include/asm-sh/soc.h
+index 0023ef8..0753d71 100644
+--- a/include/asm-sh/soc.h
++++ b/include/asm-sh/soc.h
+@@ -131,6 +131,7 @@ extern void fli7540_configure_ethernet(
+  * SATA initialization functions.
+  */
+ extern void stm_sata_miphy_init(void);
++extern void stm_sata_miphy_deassert_des_reset(void);
+ extern int  stm_sata_probe(void);
+ 
+ extern void stb7100_sata_init(void);
+@@ -161,6 +162,7 @@ extern void stb7100_usb_init(void);
+ extern void stx5197_usb_init(void);
+ extern void stx5206_usb_init(void);
+ extern int  stx7105_usb_init(int port, int over_current, int power_ctrl);
++extern int  stx7108_usb_init(const int port);
+ extern void stx7111_usb_init(void);
+ extern void stx7141_usb_init(void);
+ extern void stx7200_usb_init(void);
+diff --git a/include/asm-sh/stx7108reg.h b/include/asm-sh/stx7108reg.h
+index 029c034..1b2d46e 100644
+--- a/include/asm-sh/stx7108reg.h
++++ b/include/asm-sh/stx7108reg.h
+@@ -202,11 +202,21 @@
+  *
+  * Note: for Bank#0, there are no SYSCFG9, SYSCFG10, nor SYSCFG11 registers!
+  */
+-#define STX7108_BANK0_SYSGFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK0_BASE + 0x04 + (((x)>8)?(x)-3:(x))*0x4)
+-#define STX7108_BANK1_SYSGFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK1_BASE + 0x3c + (x)*0x4)
+-#define STX7108_BANK2_SYSGFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK2_BASE + 0x00 + (x)*0x4)
+-#define STX7108_BANK3_SYSGFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK3_BASE + 0x18 + (x)*0x4)
+-#define STX7108_BANK4_SYSGFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK4_BASE + 0x00 + (x)*0x4)
++#define STX7108_BANK0_SYSCFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK0_BASE + 0x004 + (((x)>8)?(x)-3:(x))*0x4)
++#define STX7108_BANK1_SYSCFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK1_BASE + 0x03c + (x)*0x4)
++#define STX7108_BANK2_SYSCFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK2_BASE + 0x000 + (x)*0x4)
++#define STX7108_BANK3_SYSCFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK3_BASE + 0x018 + (x)*0x4)
++#define STX7108_BANK4_SYSCFG(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK4_BASE + 0x000 + (x)*0x4)
++
++/*
++ * STx7108 System Status "accessors"
++ */
++#define STX7108_BANK0_SYSSTS(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK0_BASE + 0x000 + (x)*0x4)
++#define STX7108_BANK1_SYSSTS(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK1_BASE + 0x000 + (x)*0x4)
++#define STX7108_BANK2_SYSSTS(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK2_BASE + 0x0e4 + (x)*0x4)
++#define STX7108_BANK3_SYSSTS(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK3_BASE + 0x000 + (x)*0x4)
++#define STX7108_BANK4_SYSSTS(x)		SH4_DWORD_REG(STX7108_SYSCONF_BANK4_BASE + 0x11c + (x)*0x4)
++
+ 
+ /*----------------------------------------------------------------------------*/
+ 
+diff --git a/include/configs/hdk7108.h b/include/configs/hdk7108.h
+index d4328db..cee1c52 100644
+--- a/include/configs/hdk7108.h
++++ b/include/configs/hdk7108.h
+@@ -205,7 +205,7 @@
+  */
+ 
+ /* Choose if we want USB Mass-Storage Support */
+-//QQQ #define CONFIG_SH_STB7100_USB
++#define CONFIG_SH_STB7100_USB
+ 
+ #ifdef CONFIG_SH_STB7100_USB
+ #	define CONFIG_CMD_USB
+@@ -213,12 +213,10 @@
+ #	define CONFIG_USB_OHCI_NEW
+ #	define CONFIG_USB_STORAGE
+ #	define CFG_USB_OHCI_CPU_INIT
+-#	define CFG_USB0_BASE			0xfe100000	/* upper */
+-#	define CFG_USB1_BASE			0xfea00000	/* lower */
+-#	define CFG_USB_BASE			CFG_USB0_BASE
+-#	define CONFIG_SH_STX_STX7105_USB_PORT0		/* enable Port #0 */
+-#	define CONFIG_SH_STX_STX7105_USB_OC	1	/* use overcurrent */
+-#	define CONFIG_SH_STX_STX7105_USB_PW	1	/* use power control */
++#	define CFG_USB0_BASE			0xfe000000	/* #0 is rear, next to E-SATA */
++#	define CFG_USB1_BASE			0xfe100000	/* #1 is rear, next to HDMI */
++#	define CFG_USB2_BASE			0xfe200000	/* #2 is front port */
++#	define CFG_USB_BASE			CFG_USB2_BASE
+ #	define CFG_USB_OHCI_REGS_BASE		(CFG_USB_BASE+0xffc00)
+ #	define CFG_USB_OHCI_SLOT_NAME		"ohci"
+ #	define CFG_USB_OHCI_MAX_ROOT_PORTS	1
+diff --git a/include/configs/mb837.h b/include/configs/mb837.h
+index 70c7f2f..3429257 100644
+--- a/include/configs/mb837.h
++++ b/include/configs/mb837.h
+@@ -216,7 +216,7 @@
+  */
+ 
+ /* Choose if we want USB Mass-Storage Support */
+-//QQQ #define CONFIG_SH_STB7100_USB
++#define CONFIG_SH_STB7100_USB
+ 
+ #ifdef CONFIG_SH_STB7100_USB
+ #	define CONFIG_CMD_USB
+@@ -224,12 +224,10 @@
+ #	define CONFIG_USB_OHCI_NEW
+ #	define CONFIG_USB_STORAGE
+ #	define CFG_USB_OHCI_CPU_INIT
+-#	define CFG_USB0_BASE			0xfe100000	/* upper */
+-#	define CFG_USB1_BASE			0xfea00000	/* lower */
++#	define CFG_USB0_BASE			0xfe000000	/* #0 is right-most */
++#	define CFG_USB1_BASE			0xfe100000	/* #1 is middle one */
++#	define CFG_USB2_BASE			0xfe200000	/* #2 is left-most */
+ #	define CFG_USB_BASE			CFG_USB0_BASE
+-#	define CONFIG_SH_STX_STX7105_USB_PORT0		/* enable Port #0 */
+-#	define CONFIG_SH_STX_STX7105_USB_OC	1	/* use overcurrent */
+-#	define CONFIG_SH_STX_STX7105_USB_PW	1	/* use power control */
+ #	define CFG_USB_OHCI_REGS_BASE		(CFG_USB_BASE+0xffc00)
+ #	define CFG_USB_OHCI_SLOT_NAME		"ohci"
+ #	define CFG_USB_OHCI_MAX_ROOT_PORTS	1
+diff --git a/include/configs/mb903.h b/include/configs/mb903.h
+index b6b591a..dd4d7ea 100644
+--- a/include/configs/mb903.h
++++ b/include/configs/mb903.h
+@@ -192,7 +192,7 @@
+  */
+ 
+ /* Choose if we want USB Mass-Storage Support */
+-//QQQ #define CONFIG_SH_STB7100_USB
++#define CONFIG_SH_STB7100_USB
+ 
+ #ifdef CONFIG_SH_STB7100_USB
+ #	define CONFIG_CMD_USB
+@@ -200,12 +200,10 @@
+ #	define CONFIG_USB_OHCI_NEW
+ #	define CONFIG_USB_STORAGE
+ #	define CFG_USB_OHCI_CPU_INIT
+-#	define CFG_USB0_BASE			0xfe100000	/* upper */
+-#	define CFG_USB1_BASE			0xfea00000	/* lower */
++#	define CFG_USB0_BASE			0xfe000000	/* #0 is front port */
++#	define CFG_USB1_BASE			0xfe100000	/* #1 is upper-rear */
++#	define CFG_USB2_BASE			0xfe200000	/* #2 is lower-rear */
+ #	define CFG_USB_BASE			CFG_USB0_BASE
+-#	define CONFIG_SH_STX_STX7105_USB_PORT0		/* enable Port #0 */
+-#	define CONFIG_SH_STX_STX7105_USB_OC	1	/* use overcurrent */
+-#	define CONFIG_SH_STX_STX7105_USB_PW	1	/* use power control */
+ #	define CFG_USB_OHCI_REGS_BASE		(CFG_USB_BASE+0xffc00)
+ #	define CFG_USB_OHCI_SLOT_NAME		"ohci"
+ #	define CFG_USB_OHCI_MAX_ROOT_PORTS	1
+diff --git a/lib_sh/time.c b/lib_sh/time.c
+index 1d4af56..02b4ffd 100644
+--- a/lib_sh/time.c
++++ b/lib_sh/time.c
+@@ -117,20 +117,24 @@ unsigned long long get_ticks (void)
+ static inline void tick_delay (const unsigned long long delta)
+ {
+ 	const u64 start = get_ticks();		/* get timestamp on entry */
+-	u64 tmp = start + delta;		/* calculate end timestamp */
++	u64 end = start + delta;		/* calculate end timestamp */
+ 
+ 	if (delta == 0)				/* zero delay ? */
+-		tmp++;				/* minimum of ONE tick */
++		end++;				/* minimum of ONE tick */
+ 
+-	if (tmp > TMU_MAX_COUNTER)		/* overflows 32-bits ? */
++	if (end > TMU_MAX_COUNTER)		/* overflows 32-bits ? */
+ 	{
+ 		while (get_ticks() >= start)	/* loop till overflowed */
+ 			/*NOP*/;
+-		tmp &= TMU_MAX_COUNTER;		/* mask off upper 32-bits */
++		end &= TMU_MAX_COUNTER;		/* mask off upper 32-bits */
++		while (get_ticks() < end)	/* loop till event */
++			/*NOP*/;
++	}
++	else					/* no overflow */
++	{
++		while ( (get_ticks() >= start) && (get_ticks() < end) )
++			/*NOP*/;
+ 	}
+-
+-	while (get_ticks() < tmp)		/* loop till event */
+-		/*NOP*/;
+ }
+ 
+ void udelay (unsigned long usec)		/* delay in micro-seconds */
+@@ -151,8 +155,21 @@ void ndelay (unsigned long nsec)		/* delay in nano-seconds */
+ 
+ unsigned long get_timer (unsigned long base)
+ {
+-	/* return msec */
+-	return tick_to_time(get_ticks()) - base;
++	const unsigned long now = (unsigned long)tick_to_time(get_ticks());
++	unsigned long result;
++
++	if (now < base)		/* have we over-flowed ? */
++	{
++		result = (unsigned long)tick_to_time(TMU_MAX_COUNTER) - base;
++		result += now + 1u;
++	}
++	else			/* we have not over-flowed */
++	{
++		result = now - base;
++	}
++
++	/* return delta (in msec) from 'now' w.r.t. 'base' */
++	return result;
+ }
+ 
+ void set_timer (unsigned long t)
+diff --git a/sh_config.mk b/sh_config.mk
+index 5c2d77f..0de8db8 100644
+--- a/sh_config.mk
++++ b/sh_config.mk
+@@ -27,7 +27,7 @@
+ # for actual build number, in the following identifier.
+ # Regular Expression for string is:
+ # 	"stm[2-9][0-9]-[2-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]"
+-SH_IDENT_STRING="\"stm23-2010-08-17\""
++SH_IDENT_STRING="\"stm23-2010-10-22\""
+ 
+ PLATFORM_CPPFLAGS += -DCONFIG_SH4 -D__SH4__ -DCONFIG_IDENT_STRING=$(SH_IDENT_STRING)
+ PLATFORM_LDFLAGS  += -n

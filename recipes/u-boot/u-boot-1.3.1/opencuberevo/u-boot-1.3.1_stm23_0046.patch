@@ -1,0 +1,4864 @@
+diff --git a/MAKEALL b/MAKEALL
+index 5f58efc..a351f53 100755
+--- a/MAKEALL
++++ b/MAKEALL
+@@ -694,6 +694,7 @@ LIST_sh="		\
+ 	cb101se		\
+ 	cb102		\
+ 	cb102se		\
++	fldbse		\
+ "
+ 
+ #########################################################################
+diff --git a/Makefile b/Makefile
+index d6837c2..bac3df1 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2847,6 +2847,13 @@ cb102se_config :		unconfig
+ 	@echo "TEXT_BASE = 0x8FF00000" >$(obj)board/st/cb102/config.tmp)
+ 	@$(MKCONFIG) -a cb102 sh sh cb102 st stx7200
+ 
++fldbse_config :		unconfig
++	@mkdir -p $(obj)include $(obj)board/st/fldb
++	@echo "#define CONFIG_SH_FLI7510   1" >>$(obj)include/config.h
++	@echo "#define CONFIG_SH_FLDB      1" >>$(obj)include/config.h
++	@echo "#define CONFIG_SH_SE_MODE   1" >>$(obj)include/config.h
++	@$(MKCONFIG) -a fldb sh sh fldb st fli7510
++
+ 
+ #========================================================================
+ # STMicroelectronics ST200
+diff --git a/board/st/fldb/Makefile b/board/st/fldb/Makefile
+new file mode 100644
+index 0000000..e71bce4
+--- /dev/null
++++ b/board/st/fldb/Makefile
+@@ -0,0 +1,54 @@
++#
++# (C) Copyright 2007 STMicroelectronics.
++# Stuart Menefy <stuart.menefy@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++SOBJS-y	= init-$(BOARD).o
++
++COBJS-y	+= $(BOARD).o
++COBJS-$(CONFIG_CMD_NAND) += nand.o
++
++
++SRCS	:= $(SOBJS-y:.o=.S) $(COBJS-y:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS-y))
++SOBJS	:= $(addprefix $(obj),$(SOBJS-y))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/st/fldb/config.mk b/board/st/fldb/config.mk
+new file mode 100644
+index 0000000..66364e6
+--- /dev/null
++++ b/board/st/fldb/config.mk
+@@ -0,0 +1,42 @@
++#
++# (C) Copyright 2009 STMicroelectronics.
++# Sean McGoogan <Sean.McGoogan@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++#
++# Freeman-Lite (FLI7510) Development Board:
++#
++#	Valid values for TEXT_BASE are:
++#
++#	0x87F00000	32-bit mode (Space-Enhancement Mode)
++#
++# Note:	Alternative definitions of TEXT_BASE are put into
++#	'config.tmp' from the top-level 'Makefile'.
++#
++
++sinclude $(OBJTREE)/board/$(BOARDDIR)/config.tmp
++
++ifndef TEXT_BASE
++# Installs at LMI0 BASE + 127MB in P1 (cachable)
++TEXT_BASE = 0x87F00000
++endif
++
++PLATFORM_LDFLAGS +=
+diff --git a/board/st/fldb/fldb.c b/board/st/fldb/fldb.c
+new file mode 100644
+index 0000000..15ffaf8
+--- /dev/null
++++ b/board/st/fldb/fldb.c
+@@ -0,0 +1,210 @@
++/*
++ * (C) Copyright 2009 STMicroelectronics.
++ *
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <command.h>
++#include <asm/fli7510reg.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++#include <asm/soc.h>
++#include <i2c.h>
++
++
++extern void flashWriteEnable (void)
++{
++	/* Enable Vpp for writing to flash */
++	/* Nothing to do! */
++}
++
++extern void flashWriteDisable (void)
++{
++	/* Disable Vpp for writing to flash */
++	/* Nothing to do! */
++}
++
++
++#ifdef CONFIG_STM_ASC_SERIAL
++static void configSerial (void)
++{
++#if (CFG_STM_ASC_BASE == ST40_ASC0_REGS_BASE)	/* UART #1 */
++	/* Route UART #1 via PIO9 for TX, RX, CTS & RTS */
++	SET_PIO_ASC(PIO_PORT(9), 3, 2, 1, 0);
++#elif (CFG_STM_ASC_BASE == ST40_ASC1_REGS_BASE)	/* UART #2 */
++	/* Route UART #2 via PIO25 for TX, RX, CTS & RTS */
++	SET_PIO_ASC(PIO_PORT(25), 5, 4, 3, 2);
++#elif (CFG_STM_ASC_BASE == ST40_ASC2_REGS_BASE)	/* UART #3 */
++	/* Route UART #3 via PIO25 for TX & RX */
++	SET_PIO_ASC(PIO_PORT(25), 7, 6, STPIO_NO_PIN, STPIO_NO_PIN);
++#else
++#error Unknown serial port configuration!
++#endif
++}
++#endif /* CONFIG_STM_ASC_SERIAL */
++
++
++#if defined(CONFIG_SPI)
++static void configSpi(void)
++{
++	unsigned long sysconf;
++
++	/*
++	 * CFG_COMMS_CONFIG_2[13] = spi_enable = 0
++	 * i.e. disable the SPI boot-controller.
++	 */
++	sysconf = readl(CFG_COMMS_CONFIG_2);
++	sysconf &= ~(1ul<<13);
++	writel(sysconf, CFG_COMMS_CONFIG_2);
++
++	/*
++	 *	For both S/W "bit-banging" and H/W SSC, the SPI is on PIO17[5:0].
++	 *	Now, we set up the PIO pins correctly.
++	 */
++	SET_PIO_PIN(PIO_PORT(17),5,STPIO_IN);	/* SPI_MISO */
++	SET_PIO_PIN(PIO_PORT(17),4,STPIO_OUT);	/* SPI_CSN */
++#if defined(CONFIG_SOFT_SPI)	/* Configure SPI Serial Flash for PIO "bit-banging" */
++	SET_PIO_PIN(PIO_PORT(17),2,STPIO_OUT);	/* SPI_CLK */
++	SET_PIO_PIN(PIO_PORT(17),3,STPIO_OUT);	/* SPI_MOSI */
++#else	/* Configure SPI Serial Flash for the H/W SSC */
++	SET_PIO_PIN(PIO_PORT(17),2,STPIO_ALT_OUT);/* SPI_CLK */
++	SET_PIO_PIN(PIO_PORT(17),3,STPIO_ALT_OUT);/* SPI_MOSI */
++#endif	/* CONFIG_SOFT_SPI */
++
++	/* drive (non-SSC) outputs with sensible initial values */
++	STPIO_SET_PIN(PIO_PORT(17), 4, 1);	/* deassert SPI_CSN */
++#if defined(CONFIG_SOFT_SPI)
++	STPIO_SET_PIN(PIO_PORT(17), 2, 1);	/* assert SPI_CLK */
++	STPIO_SET_PIN(PIO_PORT(17), 3, 0);	/* deassert SPI_MOSI */
++#endif	/* CONFIG_SOFT_SPI */
++}
++#endif	/* CONFIG_SPI */
++
++
++#if defined(CONFIG_SOFT_I2C)
++static void configI2c(void)
++{
++	/*
++	 * The I2C busses are routed as follows:
++	 *
++	 *	Bus	  SCL		  SDA
++	 *	---	  ---		  ---
++	 *	 1	PIO10[2]	PIO10[3]
++	 *	 2	PIO9[4]		PIO9[5]
++	 *	 3	PIO9[6]		PIO9[7]
++	 */
++#if defined(CONFIG_I2C_BUS_1)			/* Use I2C Bus "1" */
++	SET_PIO_PIN(PIO_PORT(10),2,STPIO_BIDIR);/* I2C1_SCL */
++	SET_PIO_PIN(PIO_PORT(10),3,STPIO_BIDIR);/* I2C1_SDA */
++#elif defined(CONFIG_I2C_BUS_2)			/* Use I2C Bus "2" */
++	SET_PIO_PIN(PIO_PORT(9),4,STPIO_BIDIR);	/* I2C2_SCL */
++	SET_PIO_PIN(PIO_PORT(9),5,STPIO_BIDIR);	/* I2C2_SDA */
++#elif defined(CONFIG_I2C_BUS_3)			/* Use I2C Bus "3" */
++	SET_PIO_PIN(PIO_PORT(9),6,STPIO_BIDIR);	/* I2C3_SCL */
++	SET_PIO_PIN(PIO_PORT(9),7,STPIO_BIDIR);	/* I2C3_SDA */
++#else
++#error Unknown I2C Bus!
++#endif
++}
++
++extern void fli7510_i2c_scl(const int val)
++{
++#if defined(CONFIG_I2C_BUS_1)			/* Use I2C Bus "1" */
++	STPIO_SET_PIN(PIO_PORT(10), 2, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_2)			/* Use I2C Bus "2" */
++	STPIO_SET_PIN(PIO_PORT(9), 4, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_3)			/* Use I2C Bus "3" */
++	STPIO_SET_PIN(PIO_PORT(9), 6, (val) ? 1 : 0);
++#endif
++}
++
++extern void fli7510_i2c_sda(const int val)
++{
++#if defined(CONFIG_I2C_BUS_1)			/* Use I2C Bus "1" */
++	STPIO_SET_PIN(PIO_PORT(10), 3, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_2)			/* Use I2C Bus "2" */
++	STPIO_SET_PIN(PIO_PORT(9), 5, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_3)			/* Use I2C Bus "3" */
++	STPIO_SET_PIN(PIO_PORT(9), 7, (val) ? 1 : 0);
++#endif
++}
++
++extern int fli7510_i2c_read(void)
++{
++#if defined(CONFIG_I2C_BUS_1)			/* Use I2C Bus "1" */
++	return STPIO_GET_PIN(PIO_PORT(10), 3);
++#elif defined(CONFIG_I2C_BUS_2)			/* Use I2C Bus "2" */
++	return STPIO_GET_PIN(PIO_PORT(9), 5);
++#elif defined(CONFIG_I2C_BUS_3)			/* Use I2C Bus "3" */
++	return STPIO_GET_PIN(PIO_PORT(9), 7);
++#endif
++}
++#endif	/* CONFIG_SOFT_I2C */
++
++#if defined(CONFIG_I2C_CMD_TREE)
++extern unsigned int i2c_get_bus_speed(void)
++{
++	return CFG_I2C_SPEED;
++}
++extern int i2c_set_bus_speed(unsigned int speed)
++{
++	return -1;
++}
++#endif	/* CONFIG_I2C_CMD_TREE */
++
++
++extern int board_init (void)
++{
++#ifdef CONFIG_STM_ASC_SERIAL
++	configSerial ();
++#endif /* CONFIG_STM_ASC_SERIAL */
++
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++	fli7510_configure_ethernet (fli7510_ethernet_mii, 0, 0);
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++#if defined(CONFIG_SPI)
++	/* Configure for SPI Serial Flash */
++	configSpi();
++#endif	/* CONFIG_SPI */
++
++#if defined(CONFIG_SOFT_I2C)
++	/* Configuration for the I2C bus */
++	configI2c();
++#endif	/* CONFIG_SOFT_I2C */
++
++	return 0;
++}
++
++
++extern int checkboard (void)
++{
++	printf ("\n\nBoard: FLI7510 Development Board"
++#ifdef CONFIG_SH_SE_MODE
++		"  [32-bit mode]"
++#else
++		"  [29-bit mode]"
++#endif
++		"\n");
++
++	return 0;
++}
+diff --git a/board/st/fldb/fli7510.romgen b/board/st/fldb/fli7510.romgen
+new file mode 100644
+index 0000000..9e245f8
+--- /dev/null
++++ b/board/st/fldb/fli7510.romgen
+@@ -0,0 +1,1900 @@
++/*
++This file was automatically generated on Thu 03 Dec 09 at 17:20:54 by user mcgoogans, host hoiho.bri.st.com using romgen R1.4.0 with the ST TargetPack fldb_gpd201
++
++TargetPack files used:
++/home/afra/users/mcgoogans/freeman/targetpack/boards/fldb_gpd201/fldb_gpd201.py
++/home/afra/users/mcgoogans/freeman/targetpack/boards/fldb_gpd201/fldb_gpd201.xml
++/home/afra/users/mcgoogans/freeman/targetpack/boards/fldb_gpd201/fldb_gpd201_design.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/c9ckg_ddr.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/c9ckg_south_reg.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/emireg.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/fli7510.pyc
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/fli7510.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/fli7510_design.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/pctl16.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/pctl32.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/stx7510_clockgena_regs.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/vlnv_library_c9t1s_t1i_1.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/vlnv_library_c9t1s_t1i_2.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/vlnv_library_c9trs_pu_config_reg1.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/vlnv_library_c9vdec_pu_config_reg0.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/vlnv_library_c9vdec_pu_config_reg1.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/vlnv_library_mixer.xml
++/home/afra/users/mcgoogans/freeman/targetpack/socs/fli7510/vlnv_library_mixer16.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/jtag_core.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st231.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st231.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_ccn_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_addr_array_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_data_array_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_regs.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/debug/tapmux.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_emi_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_pio.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/tapmux.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/__init__.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/jtag.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/utilities.py
++*/
++
++
++/*
++st40_ccn_regs.CCN_CCR
++*/
++POKE32(0xff00001c, 0x8000090d)
++
++
++/*
++stx7510_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++POKE32(0xfde00014, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++POKE32(0xfde00024, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0_ENABLE_FB
++*/
++WHILE_NE32(0xfde0001c, 0xffffffff, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_ENABLE_FB
++*/
++WHILE_NE32(0xfde00020, 0xffffffff, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0_CFG
++*/
++OR32(0xfde00000, 0x00100000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_POWER_CFG
++*/
++OR32(0xfde00010, 0x00000001)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0_CFG
++*/
++UPDATE32(0xfde00000, 0xffff00f8, 0x00001e02)
++
++
++/*
++stx7510_clockgena_regs.CKGA_POWER_CFG
++*/
++UPDATE32(0xfde00010, 0xfffffffe, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0_CFG
++*/
++WHILE_NE32(0xfde00000, 0x80000000, 0x80000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0_CFG
++*/
++UPDATE32(0xfde00000, 0xffefffff, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_CFG
++*/
++OR32(0xfde00004, 0x00100000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_POWER_CFG
++*/
++OR32(0xfde00010, 0x00000002)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_CFG
++*/
++UPDATE32(0xfde00004, 0xfff800f8, 0x00002803)
++
++
++/*
++stx7510_clockgena_regs.CKGA_POWER_CFG
++*/
++UPDATE32(0xfde00010, 0xfffffffd, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_CFG
++*/
++WHILE_NE32(0xfde00004, 0x80000000, 0x80000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_CFG
++*/
++UPDATE32(0xfde00004, 0xffefffff, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV0_CFG
++*/
++POKE32(0xfde00b00, 0x00000001)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0HS_DIV1_CFG
++*/
++POKE32(0xfde00904, 0x00000002)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0HS_DIV2_CFG
++*/
++POKE32(0xfde00908, 0x00000002)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV3_CFG
++*/
++POKE32(0xfde00b0c, 0x00000002)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0LS_DIV4_CFG
++*/
++POKE32(0xfde00a10, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0LS_DIV5_CFG
++*/
++POKE32(0xfde00a14, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0LS_DIV6_CFG
++*/
++POKE32(0xfde00a18, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0LS_DIV7_CFG
++*/
++POKE32(0xfde00a1c, 0x00000000)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV8_CFG
++*/
++POKE32(0xfde00b20, 0x00000002)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV9_CFG
++*/
++POKE32(0xfde00b24, 0x00000003)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV10_CFG
++*/
++POKE32(0xfde00b28, 0x00000007)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0LS_DIV11_CFG
++*/
++POKE32(0xfde00a2c, 0x00000002)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0LS_DIV12_CFG
++*/
++POKE32(0xfde00a30, 0x00000011)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV13_CFG
++*/
++POKE32(0xfde00b34, 0x0000000b)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV14_CFG
++*/
++POKE32(0xfde00b38, 0x00000007)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL0LS_DIV15_CFG
++*/
++POKE32(0xfde00a3c, 0x00000002)
++
++
++/*
++stx7510_clockgena_regs.CKGA_PLL1_DIV17_CFG
++*/
++POKE32(0xfde00b44, 0x00000003)
++
++
++/*
++stx7510_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++POKE32(0xfde00014, 0x696a5596)
++
++
++/*
++stx7510_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++POKE32(0xfde00024, 0x0000000b)
++
++
++/*
++clk_south_reg.CTL_SEL
++*/
++UPDATE32(0xfdea0000, 0xffffff80, 0x00000780)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_1
++*/
++POKE32(0xfdea0008, 0x00000032)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_2
++*/
++POKE32(0xfdea001c, 0x00000032)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_3
++*/
++POKE32(0xfdea0030, 0x00000032)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_1_1
++*/
++UPDATE32(0xfdea000c, 0xf8000000, 0x071c7271)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_1_2
++*/
++UPDATE32(0xfdea0010, 0xf8000000, 0x071c7271)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_1_3
++*/
++UPDATE32(0xfdea0014, 0xf8000000, 0x071c7231)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_1_4
++*/
++UPDATE32(0xfdea0018, 0xf8000000, 0x07333439)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_2_1
++*/
++UPDATE32(0xfdea0020, 0xf8000000, 0x072aab3a)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_2_2
++*/
++UPDATE32(0xfdea0024, 0xf8000000, 0x07666613)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_2_3
++*/
++UPDATE32(0xfdea0028, 0xf8000000, 0x0744ec52)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_2_4
++*/
++UPDATE32(0xfdea002c, 0xf8000000, 0x07333439)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_3_1
++*/
++UPDATE32(0xfdea0034, 0xf8000000, 0x07000073)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_3_2
++*/
++UPDATE32(0xfdea0038, 0xf8000000, 0x0700005f)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_3_3
++*/
++UPDATE32(0xfdea003c, 0xf8000000, 0x0703a92a)
++
++
++/*
++clk_south_reg.CTL_FS_SOUTH_3_4
++*/
++UPDATE32(0xfdea0040, 0xf8000000, 0x0744edb2)
++
++
++/*
++clk_south_reg.CTL_EN
++*/
++POKE32(0xfdea0004, 0x003fffff)
++
++
++/*
++c9ckg_ddr.CTL_PLL_DDR_FREQ
++*/
++POKE32(0xfde80004, 0x00002306)
++
++
++/*
++c9ckg_ddr.STATUS_PLL_DDR
++*/
++WHILE_NE32(0xfde8000c, 0x00000001, 0x00000001)
++
++
++/*
++c9ckg_ddr.CTL_EN
++*/
++POKE32(0xfde80000, 0x00000006)
++
++
++/*
++st40_emi_regs.EMI_BANK_ENABLE
++*/
++POKE32(0xfd100860, 0x00000005)
++
++
++/*
++st40_emi_regs.EMI_BANK0_BASEADDRESS
++*/
++POKE32(0xfd100800, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_BASEADDRESS
++*/
++POKE32(0xfd100810, 0x00000008)
++
++
++/*
++st40_emi_regs.EMI_BANK2_BASEADDRESS
++*/
++POKE32(0xfd100820, 0x00000010)
++
++
++/*
++st40_emi_regs.EMI_BANK3_BASEADDRESS
++*/
++POKE32(0xfd100830, 0x00000014)
++
++
++/*
++st40_emi_regs.EMI_BANK4_BASEADDRESS
++*/
++POKE32(0xfd100840, 0x0000001c)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA0
++*/
++POKE32(0xfd100100, 0x001126d1)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA1
++*/
++POKE32(0xfd100108, 0x8d200000)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA2
++*/
++POKE32(0xfd100110, 0x9a200000)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA3
++*/
++POKE32(0xfd100118, 0x0400021d)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA0
++*/
++POKE32(0xfd100140, 0x001126d1)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA1
++*/
++POKE32(0xfd100148, 0x8d200000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA2
++*/
++POKE32(0xfd100150, 0x9a200000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA3
++*/
++POKE32(0xfd100158, 0x0400021d)
++
++
++/*
++st40_pio.PIO_CLEAR_PC0
++*/
++POKE32(0xfd9c4028, 0x00000001)
++
++
++/*
++st40_pio.PIO_SET_PC1
++*/
++POKE32(0xfd9c4034, 0x00000001)
++
++
++/*
++st40_pio.PIO_CLEAR_PC2
++*/
++POKE32(0xfd9c4048, 0x00000001)
++
++
++/*
++st40_pio.PIO_SET_POUT
++*/
++POKE32(0xfd9c4004, 0x00000001)
++
++
++/*
++st40_pio.PIO_CLEAR_PC0
++*/
++POKE32(0xfd9b4028, 0x00000003)
++
++
++/*
++st40_pio.PIO_SET_PC1
++*/
++POKE32(0xfd9b4034, 0x00000003)
++
++
++/*
++st40_pio.PIO_CLEAR_PC2
++*/
++POKE32(0xfd9b4048, 0x00000003)
++
++
++/*
++st40_pio.PIO_SET_POUT
++*/
++POKE32(0xfd9b4004, 0x00000003)
++
++
++/*
++st40_pio.PIO_CLEAR_PC0
++*/
++POKE32(0xfd988028, 0x00000040)
++
++
++/*
++st40_pio.PIO_SET_PC1
++*/
++POKE32(0xfd988034, 0x00000040)
++
++
++/*
++st40_pio.PIO_CLEAR_PC2
++*/
++POKE32(0xfd988048, 0x00000040)
++
++
++/*
++st40_pio.PIO_SET_POUT
++*/
++POKE32(0xfd988004, 0x00000040)
++DELAY(100)
++
++
++/*
++st40_pio.PIO_CLEAR_POUT
++*/
++POKE32(0xfd988008, 0x00000040)
++DELAY(100)
++
++
++/*
++st40_pio.PIO_SET_POUT
++*/
++POKE32(0xfd988004, 0x00000040)
++
++
++/*
++mixer.GENC
++*/
++POKE32(0xfd350000, 0x00090710)
++
++
++/*
++mixer.ROWADDRMSK
++*/
++POKE32(0xfd350028, 0xfffffc00)
++
++
++/*
++mixer.LMIBADDR
++*/
++POKE32(0xfd350030, 0x007f0040)
++
++
++/*
++mixer.DDRP1
++*/
++POKE32(0xfd350038, 0x4331cf04)
++
++
++/*
++mixer.BDLCK
++*/
++POKE32(0xfd350040, 0x00000717)
++
++
++/*
++mixer.BDLAT
++*/
++POKE32(0xfd350048, 0x3f3f1707)
++
++
++/*
++mixer.BDCRIS
++*/
++POKE32(0xfd350050, 0x00101010)
++
++
++/*
++mixer.BDHPP
++*/
++POKE32(0xfd350058, 0x00000707)
++
++
++/*
++mixer.BDQTHD
++*/
++POKE32(0xfd350060, 0x00000002)
++
++
++/*
++mixer.BDLDINEF
++*/
++POKE32(0xfd350068, 0x00222190)
++
++
++/*
++mixer.BDSTINEF
++*/
++POKE32(0xfd350070, 0x00222190)
++
++
++/*
++mixer.INFLWREG
++*/
++POKE32(0xfd350080, 0x1f2f3f7f)
++
++
++/*
++mixer.ARBFLWREG
++*/
++POKE32(0xfd350088, 0x2f070003)
++
++
++/*
++mixer.BKFLWREG
++*/
++POKE32(0xfd350090, 0x0e0c4032)
++
++
++/*
++mixer.HPPFLWREG1
++*/
++POKE32(0xfd3500a0, 0x1f032080)
++
++
++/*
++mixer.HPPFLWREG2
++*/
++POKE32(0xfd3500a8, 0x0030004c)
++
++
++/*
++mixer.REQMEM
++*/
++POKE32(0xfd3500b0, 0x00800040)
++
++
++/*
++mixer.RESMEM
++*/
++POKE32(0xfd3500b8, 0x02000080)
++
++
++/*
++mixer.RESMEM0
++*/
++POKE32(0xfd3500c0, 0x01000080)
++
++
++/*
++mixer.RESMEM1
++*/
++POKE32(0xfd3500c8, 0x01000080)
++
++
++/*
++mixer.GENP0
++*/
++POKE32(0xfd3501c0, 0x104018ca)
++
++
++/*
++mixer.SPBKREG_0
++*/
++POKE32(0xfd350200, 0x00080706)
++
++
++/*
++mixer.SPBKREG_1
++*/
++POKE32(0xfd350204, 0x00080706)
++
++
++/*
++mixer.SPBKREG_2
++*/
++POKE32(0xfd350208, 0x00080706)
++
++
++/*
++mixer.SPBKREG_3
++*/
++POKE32(0xfd35020c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_4
++*/
++POKE32(0xfd350210, 0x00080706)
++
++
++/*
++mixer.SPBKREG_5
++*/
++POKE32(0xfd350214, 0x00080706)
++
++
++/*
++mixer.SPBKREG_6
++*/
++POKE32(0xfd350218, 0x00080706)
++
++
++/*
++mixer.SPBKREG_7
++*/
++POKE32(0xfd35021c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_8
++*/
++POKE32(0xfd350220, 0x00080706)
++
++
++/*
++mixer.SPBKREG_9
++*/
++POKE32(0xfd350224, 0x00080706)
++
++
++/*
++mixer.SPBKREG_10
++*/
++POKE32(0xfd350228, 0x00080706)
++
++
++/*
++mixer.SPBKREG_11
++*/
++POKE32(0xfd35022c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_12
++*/
++POKE32(0xfd350230, 0x00080706)
++
++
++/*
++mixer.SPBKREG_13
++*/
++POKE32(0xfd350234, 0x00080706)
++
++
++/*
++mixer.SPBKREG_14
++*/
++POKE32(0xfd350238, 0x00080706)
++
++
++/*
++mixer.SPBKREG_15
++*/
++POKE32(0xfd35023c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_16
++*/
++POKE32(0xfd350240, 0x00080706)
++
++
++/*
++mixer.SPBKREG_17
++*/
++POKE32(0xfd350244, 0x00080706)
++
++
++/*
++mixer.SPBKREG_18
++*/
++POKE32(0xfd350248, 0x00080706)
++
++
++/*
++mixer.SPBKREG_19
++*/
++POKE32(0xfd35024c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_20
++*/
++POKE32(0xfd350250, 0x00080706)
++
++
++/*
++mixer.SPBKREG_21
++*/
++POKE32(0xfd350254, 0x00080706)
++
++
++/*
++mixer.SPBKREG_22
++*/
++POKE32(0xfd350258, 0x00080706)
++
++
++/*
++mixer.SPBKREG_23
++*/
++POKE32(0xfd35025c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_24
++*/
++POKE32(0xfd350260, 0x00080706)
++
++
++/*
++mixer.SPBKREG_25
++*/
++POKE32(0xfd350264, 0x00080706)
++
++
++/*
++mixer.SPBKREG_26
++*/
++POKE32(0xfd350268, 0x00080706)
++
++
++/*
++mixer.SPBKREG_27
++*/
++POKE32(0xfd35026c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_28
++*/
++POKE32(0xfd350270, 0x00080706)
++
++
++/*
++mixer.SPBKREG_29
++*/
++POKE32(0xfd350274, 0x00080706)
++
++
++/*
++mixer.SPBKREG_30
++*/
++POKE32(0xfd350278, 0x00080706)
++
++
++/*
++mixer.SPBKREG_31
++*/
++POKE32(0xfd35027c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_32
++*/
++POKE32(0xfd350280, 0x00080706)
++
++
++/*
++mixer.SPBKREG_33
++*/
++POKE32(0xfd350284, 0x00080706)
++
++
++/*
++mixer.SPBKREG_34
++*/
++POKE32(0xfd350288, 0x00080706)
++
++
++/*
++mixer.SPBKREG_35
++*/
++POKE32(0xfd35028c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_36
++*/
++POKE32(0xfd350290, 0x00080706)
++
++
++/*
++mixer.SPBKREG_37
++*/
++POKE32(0xfd350294, 0x00080706)
++
++
++/*
++mixer.SPBKREG_38
++*/
++POKE32(0xfd350298, 0x00080706)
++
++
++/*
++mixer.SPBKREG_39
++*/
++POKE32(0xfd35029c, 0x00080706)
++
++
++/*
++mixer.SPBKREG_40
++*/
++POKE32(0xfd3502a0, 0x00080706)
++
++
++/*
++mixer.SPBKREG_41
++*/
++POKE32(0xfd3502a4, 0x00080706)
++
++
++/*
++mixer.SPBKREG_42
++*/
++POKE32(0xfd3502a8, 0x00080706)
++
++
++/*
++mixer.SPBKREG_43
++*/
++POKE32(0xfd3502ac, 0x00080706)
++
++
++/*
++mixer.SPBKREG_44
++*/
++POKE32(0xfd3502b0, 0x00080706)
++
++
++/*
++mixer.SPBKREG_45
++*/
++POKE32(0xfd3502b4, 0x00080706)
++
++
++/*
++mixer.SPBKREG_46
++*/
++POKE32(0xfd3502b8, 0x00080706)
++
++
++/*
++mixer.SPBKREG_47
++*/
++POKE32(0xfd3502bc, 0x00080706)
++
++
++/*
++mixer.SPBKREG_48
++*/
++POKE32(0xfd3502c0, 0x00080706)
++
++
++/*
++mixer.SPBKREG_49
++*/
++POKE32(0xfd3502c4, 0x00080706)
++
++
++/*
++mixer.SPBKREG_50
++*/
++POKE32(0xfd3502c8, 0x00080706)
++
++
++/*
++mixer.SPBKREG_51
++*/
++POKE32(0xfd3502cc, 0x00080706)
++
++
++/*
++mixer.SPBKREG_52
++*/
++POKE32(0xfd3502d0, 0x00080706)
++
++
++/*
++mixer.SPBKREG_53
++*/
++POKE32(0xfd3502d4, 0x00080706)
++
++
++/*
++mixer.SPBKREG_54
++*/
++POKE32(0xfd3502d8, 0x00080706)
++
++
++/*
++mixer.SPBKREG_55
++*/
++POKE32(0xfd3502dc, 0x00080706)
++
++
++/*
++mixer.SPBKREG_56
++*/
++POKE32(0xfd3502e0, 0x00080706)
++
++
++/*
++mixer.SPBKREG_57
++*/
++POKE32(0xfd3502e4, 0x00080706)
++
++
++/*
++mixer.SPBKREG_58
++*/
++POKE32(0xfd3502e8, 0x00080706)
++
++
++/*
++mixer.SPBKREG_59
++*/
++POKE32(0xfd3502ec, 0x00080706)
++
++
++/*
++mixer.SPBKREG_60
++*/
++POKE32(0xfd3502f0, 0x00080706)
++
++
++/*
++mixer.SPBKREG_61
++*/
++POKE32(0xfd3502f4, 0x00080706)
++
++
++/*
++mixer.SPBKREG_62
++*/
++POKE32(0xfd3502f8, 0x00080706)
++
++
++/*
++mixer.SPBKREG_63
++*/
++POKE32(0xfd3502fc, 0x00080706)
++
++
++/*
++mixer.SPSRCREG_0
++*/
++POKE32(0xfd350400, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_1
++*/
++POKE32(0xfd350404, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_2
++*/
++POKE32(0xfd350408, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_3
++*/
++POKE32(0xfd35040c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_4
++*/
++POKE32(0xfd350410, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_5
++*/
++POKE32(0xfd350414, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_6
++*/
++POKE32(0xfd350418, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_7
++*/
++POKE32(0xfd35041c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_8
++*/
++POKE32(0xfd350420, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_9
++*/
++POKE32(0xfd350424, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_10
++*/
++POKE32(0xfd350428, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_11
++*/
++POKE32(0xfd35042c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_12
++*/
++POKE32(0xfd350430, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_13
++*/
++POKE32(0xfd350434, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_14
++*/
++POKE32(0xfd350438, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_15
++*/
++POKE32(0xfd35043c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_16
++*/
++POKE32(0xfd350440, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_17
++*/
++POKE32(0xfd350444, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_18
++*/
++POKE32(0xfd350448, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_19
++*/
++POKE32(0xfd35044c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_20
++*/
++POKE32(0xfd350450, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_21
++*/
++POKE32(0xfd350454, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_22
++*/
++POKE32(0xfd350458, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_23
++*/
++POKE32(0xfd35045c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_24
++*/
++POKE32(0xfd350460, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_25
++*/
++POKE32(0xfd350464, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_26
++*/
++POKE32(0xfd350468, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_27
++*/
++POKE32(0xfd35046c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_28
++*/
++POKE32(0xfd350470, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_29
++*/
++POKE32(0xfd350474, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_30
++*/
++POKE32(0xfd350478, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_31
++*/
++POKE32(0xfd35047c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_32
++*/
++POKE32(0xfd350480, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_33
++*/
++POKE32(0xfd350484, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_34
++*/
++POKE32(0xfd350488, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_35
++*/
++POKE32(0xfd35048c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_36
++*/
++POKE32(0xfd350490, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_37
++*/
++POKE32(0xfd350494, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_38
++*/
++POKE32(0xfd350498, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_39
++*/
++POKE32(0xfd35049c, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_40
++*/
++POKE32(0xfd3504a0, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_41
++*/
++POKE32(0xfd3504a4, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_42
++*/
++POKE32(0xfd3504a8, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_43
++*/
++POKE32(0xfd3504ac, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_44
++*/
++POKE32(0xfd3504b0, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_45
++*/
++POKE32(0xfd3504b4, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_46
++*/
++POKE32(0xfd3504b8, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_47
++*/
++POKE32(0xfd3504bc, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_48
++*/
++POKE32(0xfd3504c0, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_49
++*/
++POKE32(0xfd3504c4, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_50
++*/
++POKE32(0xfd3504c8, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_51
++*/
++POKE32(0xfd3504cc, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_52
++*/
++POKE32(0xfd3504d0, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_53
++*/
++POKE32(0xfd3504d4, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_54
++*/
++POKE32(0xfd3504d8, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_55
++*/
++POKE32(0xfd3504dc, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_56
++*/
++POKE32(0xfd3504e0, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_57
++*/
++POKE32(0xfd3504e4, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_58
++*/
++POKE32(0xfd3504e8, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_59
++*/
++POKE32(0xfd3504ec, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_60
++*/
++POKE32(0xfd3504f0, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_61
++*/
++POKE32(0xfd3504f4, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_62
++*/
++POKE32(0xfd3504f8, 0x09090909)
++
++
++/*
++mixer.SPSRCREG_63
++*/
++POKE32(0xfd3504fc, 0x09090909)
++
++
++/*
++pctl.PHY_PLLCR
++*/
++OR32(0xfd360418, 0x0005c000)
++
++
++/*
++pctl.TOGCNT1U
++*/
++POKE32(0xfd3600c0, 0x000000f0)
++
++
++/*
++pctl.TINIT
++*/
++POKE32(0xfd3600c4, 0x000000c8)
++
++
++/*
++pctl.TRSTH
++*/
++POKE32(0xfd3600c8, 0x00000000)
++
++
++/*
++pctl.TOGCNT100N
++*/
++POKE32(0xfd3600cc, 0x00000018)
++
++
++/*
++pctl.PHY_PTR1
++*/
++POKE32(0xfd360420, 0x5de604b0)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x00010000, 0x00010000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++POKE32(0xfd360484, 0x24980002)
++
++
++/*
++pctl.POWCTL
++*/
++POKE32(0xfd360044, 0x00000001)
++
++
++/*
++pctl.POWSTAT
++*/
++WHILE_NE32(0xfd360048, 0x00000001, 0x00000001)
++
++
++/*
++pctl.MCFG
++*/
++POKE32(0xfd360080, 0x00060041)
++
++
++/*
++pctl.PPCFG
++*/
++POKE32(0xfd360084, 0x00000000)
++
++
++/*
++pctl.ODTCFG
++*/
++POKE32(0xfd36008c, 0x00000008)
++
++
++/*
++pctl.DQSECFG
++*/
++POKE32(0xfd360090, 0x00112211)
++
++
++/*
++pctl.TREFI
++*/
++POKE32(0xfd3600d0, 0x000000ff)
++
++
++/*
++pctl.TMRD
++*/
++POKE32(0xfd3600d4, 0x00000002)
++
++
++/*
++pctl.TRFC
++*/
++POKE32(0xfd3600d8, 0x0000003e)
++
++
++/*
++pctl.TRP
++*/
++POKE32(0xfd3600dc, 0x00000006)
++
++
++/*
++pctl.TRTW
++*/
++POKE32(0xfd3600e0, 0x00000006)
++
++
++/*
++pctl.TAL
++*/
++POKE32(0xfd3600e4, 0x00000003)
++
++
++/*
++pctl.TCL
++*/
++POKE32(0xfd3600e8, 0x00000007)
++
++
++/*
++pctl.TCWL
++*/
++POKE32(0xfd3600ec, 0x00000006)
++
++
++/*
++pctl.TRAS
++*/
++POKE32(0xfd3600f0, 0x00000016)
++
++
++/*
++pctl.TRC
++*/
++POKE32(0xfd3600f4, 0x0000001b)
++
++
++/*
++pctl.TRCD
++*/
++POKE32(0xfd3600f8, 0x00000006)
++
++
++/*
++pctl.TRRD
++*/
++POKE32(0xfd3600fc, 0x00000005)
++
++
++/*
++pctl.TRTP
++*/
++POKE32(0xfd360100, 0x00000004)
++
++
++/*
++pctl.TWR
++*/
++POKE32(0xfd360104, 0x00000007)
++
++
++/*
++pctl.TWTR
++*/
++POKE32(0xfd360108, 0x00000004)
++
++
++/*
++pctl.TEXSR
++*/
++POKE32(0xfd36010c, 0x000000c8)
++
++
++/*
++pctl.TXP
++*/
++POKE32(0xfd360110, 0x00000003)
++
++
++/*
++pctl.TXPDLL
++*/
++POKE32(0xfd360114, 0x00000007)
++
++
++/*
++pctl.TCKE
++*/
++POKE32(0xfd36012c, 0x00000003)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x80100000)
++DELAY(1)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x80100001)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x80140003)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x80160003)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x801201a3)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x8010d733)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x80100001)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x80100002)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x80100002)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x8010c733)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++DELAY(1)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x801239a3)
++DELAY(1)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.MCMD
++*/
++POKE32(0xfd360040, 0x821201a3)
++
++
++/*
++pctl.MCMD
++*/
++WHILE_NE32(0xfd360040, 0x80000000, 0x00000000)
++
++
++/*
++pctl.SCTL
++*/
++POKE32(0xfd360004, 0x00000001)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++OR32(0xfd360484, 0x00020000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++OR32(0xfd360484, 0x00020000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x00040000, 0x00040000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x00200000, 0x00200000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++OR32(0xfd360484, 0xffff0000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x00400000, 0x00400000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++OR32(0xfd360484, 0xffff0000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x01000000, 0x01000000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x02000000, 0x02000000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x08000000, 0x08000000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x10000000, 0x10000000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x40000000, 0x40000000)
++
++
++/*
++pctl.PUB_SMCTL
++*/
++WHILE_NE32(0xfd360484, 0x80000000, 0x80000000)
++
++
++/*
++pctl.PHYPVTCFG
++*/
++POKE32(0xfd360300, 0x000045d0)
++
++
++/*
++pctl.PHYTUPDWAIT
++*/
++POKE32(0xfd360320, 0x00000003)
++
++
++/*
++pctl.PVTTUPDWAIT
++*/
++POKE32(0xfd360324, 0x00000003)
++
++
++/*
++pctl.SCTL
++*/
++POKE32(0xfd360004, 0x00000002)
+diff --git a/board/st/fldb/init-fldb.S b/board/st/fldb/init-fldb.S
+new file mode 100644
+index 0000000..88b35d1
+--- /dev/null
++++ b/board/st/fldb/init-fldb.S
+@@ -0,0 +1,59 @@
++#include "asm/fli7510reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++/*
++ * The poke table is a series of long words, in the format
++ *
++ *	opcode, address, operand, ...
++ *
++ * An opcode of 0 marks the table end
++ */
++
++/*
++ * For compatibility with old poke table code, we define some of the
++ * new names, to map onto the old names. Ultimately, the old poke table
++ * code will be updated to the "new order", and we can just delete
++ * the following mappings.
++ */
++#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
++#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
++#define POKE32(A, VAL)				POKE_LONG(A, VAL)
++#define OR32(A, VAL)				OR_LONG(A, VAL)
++#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
++#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
++#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
++#define DELAY(VAL)				/* do nothing */
++
++
++	.section .data.init, "a"
++
++	.balign 32
++
++__memory_setup_table:
++
++
++	/*
++	 * include the appropriate set of "GDB pokes", (usually) generated
++	 * using the "romgen" utility, from a known good target-pack.
++	 *
++	 * This file may be regenerated by connecting your specific board
++	 * to an STMC2 (note: currently it must be version 2) and then
++	 * executing the following command (redirecting the output):
++	 *
++	 * host% romgen --target-connect --show-comment <stmc2>:fldb_gpd201:st40host,boot_companions=0
++	 *
++	 * Where "<stmc2>" should be replaced with the IP address
++	 * (or the DNS name) of the STMC2 box.  Also the "fldb_gpd201" should
++	 * substituted if you have a custom target-pack connect command.
++	 *
++	 * Note: The connect command used with "romgen", should connect
++	 * only in 29-bit mode - even though U-Boot will be built for 32-bit mode.
++	 * That is, do not use the "seuc=1" (or similar) option with "romgen".
++	 */
++#include "fli7510.romgen"
++
++	END_MARKER
++
++__memory_setup_table_end:
++
++	.end
+diff --git a/board/st/fldb/nand.c b/board/st/fldb/nand.c
+new file mode 100644
+index 0000000..01f0a85
+--- /dev/null
++++ b/board/st/fldb/nand.c
+@@ -0,0 +1,120 @@
++/*
++ * (C) Copyright 2006 DENX Software Engineering
++ * (C) Copyright 2008-2009 STMicroelectronics, Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <nand.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++#include <asm/fli7510reg.h>
++#include <asm/stm-nand.h>
++
++/*
++ * hardware specific access to control-lines for "bit-banging".
++ *	CL -> Emi_Addr(17)
++ *	AL -> Emi_Addr(18)
++ *	nCE is handled by EMI (not s/w controlable)
++ */
++#ifndef CFG_NAND_FLEX_MODE	/* for "bit-banging" (c.f. STM "flex-mode")  */
++static void fldb_hwcontrol(struct mtd_info *mtdinfo, int cmd)
++{
++	struct nand_chip* this = (struct nand_chip *)(mtdinfo->priv);
++
++	switch(cmd) {
++
++	case NAND_CTL_SETCLE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W | (1u << 17));
++		break;
++
++	case NAND_CTL_CLRCLE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W & ~(1u << 17));
++		break;
++
++	case NAND_CTL_SETALE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W | (1u << 18));
++		break;
++
++	case NAND_CTL_CLRALE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W & ~(1u << 18));
++		break;
++	}
++}
++#endif /* CFG_NAND_FLEX_MODE */
++
++
++/*
++ * hardware specific access to the Ready/not_Busy signal.
++ * Signal is routed through the EMI NAND Controller block.
++ */
++#ifndef CFG_NAND_FLEX_MODE	/* for "bit-banging" (c.f. STM "flex-mode")  */
++static int fldb_device_ready(struct mtd_info *mtd)
++{
++	/* extract bit 1: status of RBn pin on boot bank */
++	return ((*ST40_EMI_NAND_RBN_STA) & (1ul<<1)) ? 1 : 0;
++}
++#endif /* CFG_NAND_FLEX_MODE */
++
++
++/*
++ * Board-specific NAND initialization. The following members of the
++ * argument are board-specific (per include/linux/mtd/nand.h):
++ * - IO_ADDR_R?: address to read the 8 I/O lines of the flash device
++ * - IO_ADDR_W?: address to write the 8 I/O lines of the flash device
++ * - hwcontrol: hardwarespecific function for accesing control-lines
++ * - dev_ready: hardwarespecific function for  accesing device ready/busy line
++ * - enable_hwecc?: function to enable (reset)  hardware ecc generator. Must
++ *   only be provided if a hardware ECC is available
++ * - eccmode: mode of ecc, see defines
++ * - chip_delay: chip dependent delay for transfering data from array to
++ *   read regs (tR)
++ * - options: various chip options. They can partly be set to inform
++ *   nand_scan about special functionality. See the defines for further
++ *   explanation
++ * Members with a "?" were not set in the merged testing-NAND branch,
++ * so they are not set here either.
++ */
++extern int board_nand_init(struct nand_chip *nand)
++{
++	nand->eccmode       = NAND_ECC_SOFT;
++	nand->options       = NAND_NO_AUTOINCR;
++
++#ifdef CFG_NAND_FLEX_MODE	/* for STM "flex-mode" (c.f. "bit-banging") */
++	nand->select_chip   = stm_flex_select_chip;
++	nand->dev_ready     = stm_flex_device_ready;
++	nand->hwcontrol     = stm_flex_hwcontrol;
++	nand->read_byte     = stm_flex_read_byte;
++	nand->write_byte    = stm_flex_write_byte;
++	nand->read_buf      = stm_flex_read_buf;
++	nand->write_buf     = stm_flex_write_buf;
++#else				/* for "bit-banging" (c.f. STM "flex-mode")  */
++	nand->dev_ready     = fldb_device_ready;
++	nand->hwcontrol     = fldb_hwcontrol;
++#endif /* CFG_NAND_FLEX_MODE */
++
++#if 1
++	/* Enable the following to use a Bad Block Table (BBT) */
++	nand->options      |= NAND_USE_FLASH_BBT;
++	nand->scan_bbt      = stm_nand_default_bbt;
++#endif
++
++	return 0;
++}
+diff --git a/board/st/pdk7105/pdk7105.c b/board/st/pdk7105/pdk7105.c
+index c489b83..00f8014 100644
+--- a/board/st/pdk7105/pdk7105.c
++++ b/board/st/pdk7105/pdk7105.c
+@@ -28,6 +28,7 @@
+ #include <asm/stx7105reg.h>
+ #include <asm/io.h>
+ #include <asm/pio.h>
++#include <i2c.h>
+ 
+ 
+ void flashWriteEnable(void)
+@@ -120,42 +121,155 @@ static void configEthernet(void)
+ #if defined(CONFIG_SPI)
+ static void configSpi(void)
+ {
+-#if defined(CONFIG_SOFT_SPI)
+-	/* Configure SPI Serial Flash for PIO "bit-banging" */
++#if !defined(CONFIG_SOFT_SPI)
++	unsigned long sysconf;
++#endif	/* CONFIG_SOFT_SPI */
+ 
+-#if 1
+ 	/*
+ 	 * On the PDK-7105 board, the following 4 pairs of PIO
+-	 * pins are connected together with a 3K3 resistor.
++	 * pins are each connected together with a 3K3 resistor.
+ 	 *
+-	 *	SPI_CLK  PIO15[0] <-> PIO2[5] COM_CLK
+-	 *	SPI_DOUT PIO15[1] <-> PIO2[6] COM_DOUT
+-	 *	SPI_NOCS PIO15[2] <-> PIO2[4] COM_NOTCS
+-	 *	SPI_DIN  PIO15[3] <-> PIO2[7] COM_DIN
++	 *	SPI_NOTCS PIO15[2] <-> PIO2[4] COM_NOTCS
++	 *	SPI_CLK   PIO15[0] <-> PIO2[5] COM_CLK
++	 *	SPI_DOUT  PIO15[1] <-> PIO2[6] COM_DOUT
++	 *	SPI_DIN   PIO15[3] <-> PIO2[7] COM_DIN
+ 	 *
+-	 * To minimise drive "contention", we may set
+-	 * associated pins on PIO2 to be simple inputs.
++	 * To minimise drive "contention", we may set associated
++	 * pins on the "other" PIO bank to be simple inputs.
+ 	 */
+-	SET_PIO_PIN(PIO_PORT(2),4,STPIO_IN);	/* COM_NOTCS */
++#if defined(CONFIG_SOFT_SPI)
+ 	SET_PIO_PIN(PIO_PORT(2),5,STPIO_IN);	/* COM_CLK */
+ 	SET_PIO_PIN(PIO_PORT(2),6,STPIO_IN);	/* COM_DOUT */
+ 	SET_PIO_PIN(PIO_PORT(2),7,STPIO_IN);	/* COM_DIN */
++#else
++	SET_PIO_PIN(PIO_PORT(15),0,STPIO_IN);	/* SPI_CLK */
++	SET_PIO_PIN(PIO_PORT(15),1,STPIO_IN);	/* SPI_DOUT */
++	SET_PIO_PIN(PIO_PORT(15),3,STPIO_IN);	/* SPI_DIN */
++#endif	/* CONFIG_SOFT_SPI */
++
++	/*
++	 * Because of the above resistors, we can control
++	 * the CSn line, *either* through PIO15[2] or PIO2[4].
++	 * This decision is orthogonal to whither we are
++	 * using the H/W SSC, or the S/W PIO bit-banging.
++	 * So, for simplicity, we will use exclusively
++	 * use PIO15[2] for both choices.
++	 */
++#if 1	/* Use PIO15[2] for SPI CSn */
++	SET_PIO_PIN(PIO_PORT(2),4,STPIO_IN);	/* COM_NOTCS */
++	SET_PIO_PIN(PIO_PORT(15),2,STPIO_OUT);	/* SPI_NOTCS */
++	STPIO_SET_PIN(PIO_PORT(15), 2, 1);	/* deassert SPI_NOTCS */
++#else	/* Use PIO2[4] for SPI CSn */
++	SET_PIO_PIN(PIO_PORT(15),2,STPIO_IN);	/* SPI_NOTCS */
++	SET_PIO_PIN(PIO_PORT(2),4,STPIO_OUT);	/* COM_NOTCS */
++	STPIO_SET_PIN(PIO_PORT(2), 4, 1);	/* deassert COM_NOTCS */
+ #endif
+ 
+-	/* SPI is on PIO15:[3:0] */
++#if defined(CONFIG_SOFT_SPI)	/* Configure SPI Serial Flash for PIO "bit-banging" */
++	/* SPI is on PIO15[3:0] */
+ 	SET_PIO_PIN(PIO_PORT(15),3,STPIO_IN);	/* SPI_DIN */
+ 	SET_PIO_PIN(PIO_PORT(15),0,STPIO_OUT);	/* SPI_CLK */
+ 	SET_PIO_PIN(PIO_PORT(15),1,STPIO_OUT);	/* SPI_DOUT */
+-	SET_PIO_PIN(PIO_PORT(15),2,STPIO_OUT);	/* SPI_NOCS */
+ 
+ 	/* drive outputs with sensible initial values */
+-	STPIO_SET_PIN(PIO_PORT(15), 2, 1);	/* deassert SPI_NOCS */
+ 	STPIO_SET_PIN(PIO_PORT(15), 0, 1);	/* assert SPI_CLK */
+ 	STPIO_SET_PIN(PIO_PORT(15), 1, 0);	/* deassert SPI_DOUT */
++#else	/* Configure SPI Serial Flash for the H/W SSC */
++	/* Set PIO2_ALTFOP to AltFunction #3 (SSC) */
++	sysconf = *STX7105_SYSCONF_SYS_CFG21;
++	/* PIO2[5] CFG21[13,5]  AltFunction = 3 */
++	/* PIO2[6] CFG21[14,6]  AltFunction = 3 */
++	/* PIO2[7] CFG21[15,7]  AltFunction = 3 */
++	sysconf &= ~0xe0e0ul;	/* 3,3,3,0,0,0,0,0 */
++	sysconf |=  0xe000ul;	/* 2,2,2,0,0,0,0,0 */
++	*STX7105_SYSCONF_SYS_CFG21 = sysconf;
++
++	/* SPI is on PIO2[7:5] */
++	SET_PIO_PIN(PIO_PORT(2),7,STPIO_IN);		/* COM_DIN */
++	SET_PIO_PIN(PIO_PORT(2),5,STPIO_ALT_OUT);	/* COM_CLK */
++	SET_PIO_PIN(PIO_PORT(2),6,STPIO_ALT_OUT);	/* COM_DOUT */
++
++	/* route MRST to PIO2[7], for SSC #1 */
++	sysconf = *STX7105_SYSCONF_SYS_CFG16;
++	sysconf |= (1u<<3);	/* CFG16[3] = SSC1_MRST_IN_SEL = 1 */
++	*STX7105_SYSCONF_SYS_CFG16 = sysconf;
+ #endif	/* CONFIG_SOFT_SPI */
+ }
+ #endif	/* CONFIG_SPI */
+ 
++
++#if defined(CONFIG_SOFT_I2C)
++static void configI2c(void)
++{
++	/*
++	 * The I2C busses are routed as follows:
++	 *
++	 *	Bus	  SCL		  SDA
++	 *	---	  ---		  ---
++	 *	 A	PIO2[2]		PIO2[3]
++	 *	 B	PIO2[5]		PIO2[6]		Used only for SPI
++	 *	 C	PIO3[4]		PIO3[5]
++	 *	 D	PIO3[6]		PIO3[7]
++	 */
++#if defined(CONFIG_I2C_BUS_A)			/* Use I2C Bus "A" */
++	SET_PIO_PIN(PIO_PORT(2),2,STPIO_BIDIR);	/* I2C_SCLA */
++	SET_PIO_PIN(PIO_PORT(2),3,STPIO_BIDIR);	/* I2C_SDAA */
++#elif defined(CONFIG_I2C_BUS_C)			/* Use I2C Bus "C" */
++	SET_PIO_PIN(PIO_PORT(3),4,STPIO_BIDIR);	/* I2C_SCLC */
++	SET_PIO_PIN(PIO_PORT(3),5,STPIO_BIDIR);	/* I2C_SDAC */
++#elif defined(CONFIG_I2C_BUS_D)			/* Use I2C Bus "D" */
++	SET_PIO_PIN(PIO_PORT(3),6,STPIO_BIDIR);	/* I2C_SCLD */
++	SET_PIO_PIN(PIO_PORT(3),7,STPIO_BIDIR);	/* I2C_SDAD */
++#else
++#error Unknown I2C Bus!
++#endif
++}
++
++extern void stx7105_i2c_scl(const int val)
++{
++#if defined(CONFIG_I2C_BUS_A)			/* Use I2C Bus "A" */
++	STPIO_SET_PIN(PIO_PORT(2), 2, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_C)			/* Use I2C Bus "C" */
++	STPIO_SET_PIN(PIO_PORT(3), 4, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_D)			/* Use I2C Bus "D" */
++	STPIO_SET_PIN(PIO_PORT(3), 6, (val) ? 1 : 0);
++#endif
++}
++
++extern void stx7105_i2c_sda(const int val)
++{
++#if defined(CONFIG_I2C_BUS_A)			/* Use I2C Bus "A" */
++	STPIO_SET_PIN(PIO_PORT(2), 3, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_C)			/* Use I2C Bus "C" */
++	STPIO_SET_PIN(PIO_PORT(3), 5, (val) ? 1 : 0);
++#elif defined(CONFIG_I2C_BUS_D)			/* Use I2C Bus "D" */
++	STPIO_SET_PIN(PIO_PORT(3), 7, (val) ? 1 : 0);
++#endif
++}
++
++extern int stx7105_i2c_read(void)
++{
++#if defined(CONFIG_I2C_BUS_A)			/* Use I2C Bus "A" */
++	return STPIO_GET_PIN(PIO_PORT(2), 3);
++#elif defined(CONFIG_I2C_BUS_C)			/* Use I2C Bus "C" */
++	return STPIO_GET_PIN(PIO_PORT(3), 5);
++#elif defined(CONFIG_I2C_BUS_D)			/* Use I2C Bus "D" */
++	return STPIO_GET_PIN(PIO_PORT(3), 7);
++#endif
++}
++#endif	/* CONFIG_SOFT_I2C */
++
++#if defined(CONFIG_I2C_CMD_TREE)
++extern unsigned int i2c_get_bus_speed(void)
++{
++	return CFG_I2C_SPEED;
++}
++extern int i2c_set_bus_speed(unsigned int speed)
++{
++	return -1;
++}
++#endif	/* CONFIG_I2C_CMD_TREE */
++
+ static void configPIO(void)
+ {
+ 	unsigned long sysconf;
+@@ -221,6 +335,11 @@ static void configPIO(void)
+ 	/* Configure for SPI Serial Flash */
+ 	configSpi();
+ #endif	/* CONFIG_SPI */
++
++#if defined(CONFIG_SOFT_I2C)
++	/* Configuration for the I2C bus */
++	configI2c();
++#endif	/* CONFIG_SOFT_I2C */
+ }
+ 
+ extern int board_init(void)
+diff --git a/common/cmd_bdinfo.c b/common/cmd_bdinfo.c
+index 3bc8c62..01ebdfc 100644
+--- a/common/cmd_bdinfo.c
++++ b/common/cmd_bdinfo.c
+@@ -335,6 +335,9 @@ int do_bdinfo ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ #elif defined(CONFIG_SH_STX7200)
+ 	if (STX7200_DEVICEID_7200(bd->bi_devid))
+ 		printf ("\nSTx7200 version %ld.x", STX7200_DEVICEID_CUT(bd->bi_devid));
++#elif defined(CONFIG_SH_FLI7510)
++	if (FLI7510_DEVICEID_7510(bd->bi_devid))
++		printf ("\nFLI7510 version %ld.x", FLI7510_DEVICEID_CUT(bd->bi_devid));
+ #else
+ #error Missing Device Definitions!
+ #endif
+diff --git a/common/soft_i2c.c b/common/soft_i2c.c
+index c5d7e20..dd480e4 100644
+--- a/common/soft_i2c.c
++++ b/common/soft_i2c.c
+@@ -39,6 +39,12 @@
+ #ifdef CONFIG_LPC2292
+ #include <asm/arch/hardware.h>
+ #endif
++#ifdef CONFIG_SH4
++#include <asm/io.h>
++#include <asm/pio.h>
++#include <asm/socregs.h>
++#include <asm/soc.h>
++#endif
+ #include <i2c.h>
+ 
+ #if defined(CONFIG_SOFT_I2C)
+diff --git a/cpu/sh/Makefile b/cpu/sh/Makefile
+index 2835bc9..f859b76 100644
+--- a/cpu/sh/Makefile
++++ b/cpu/sh/Makefile
+@@ -38,6 +38,9 @@ START	:= $(addprefix $(obj),$(START))
+ 
+ all:	$(obj).depend $(START) $(LIB)
+ 
++$(obj)stm-nand.o: stm-nand.c
++	$(CC) $(CFLAGS) -m4 -c -o $@ $<
++
+ $(LIB):	$(OBJS)
+ 	$(AR) $(ARFLAGS) $@ $(OBJS)
+ 
+@@ -49,3 +52,4 @@ include $(SRCTREE)/rules.mk
+ sinclude $(obj).depend
+ 
+ #########################################################################
++
+diff --git a/cpu/sh/env_eeprom.c b/cpu/sh/env_eeprom.c
+index eda86ba..888510f 100644
+--- a/cpu/sh/env_eeprom.c
++++ b/cpu/sh/env_eeprom.c
+@@ -243,16 +243,11 @@ extern uchar env_get_char_spec (int index)
+ 
+ extern void env_relocate_spec (void)
+ {
+-#if defined(CFG_BOOT_FROM_SPI)
+-	const uchar * const from = (uchar*)(CFG_EMI_SPI_BASE + CFG_ENV_OFFSET);
+-	memcpy( (uchar*)env_ptr, from, CFG_ENV_SIZE);
+-#else
+ 	eeprom_read (
+ 		CFG_DEF_EEPROM_ADDR,
+ 		CFG_ENV_OFFSET,
+ 		(uchar *)env_ptr,
+ 		CFG_ENV_SIZE);
+-#endif	/* CFG_BOOT_FROM_SPI */
+ }
+ 
+ 
+diff --git a/cpu/sh/fli7510/Makefile b/cpu/sh/fli7510/Makefile
+new file mode 100644
+index 0000000..fefbbfe
+--- /dev/null
++++ b/cpu/sh/fli7510/Makefile
+@@ -0,0 +1,47 @@
++#
++# (C) Copyright 2009 STMicroelectronics.
++# Sean McGoogan <Sean.McGoogan@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(SOC).a
++
++COBJS	= fli7510.o
++SOBJS	=
++
++SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS) $(SOBJS))
++START	:= $(addprefix $(obj),$(START))
++
++all:	$(obj).depend $(LIB)
++
++$(LIB):	$(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS)
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/cpu/sh/fli7510/fli7510.c b/cpu/sh/fli7510/fli7510.c
+new file mode 100644
+index 0000000..5bd7bbf
+--- /dev/null
++++ b/cpu/sh/fli7510/fli7510.c
+@@ -0,0 +1,445 @@
++/*
++ * (C) Copyright 2008-2009 STMicroelectronics.
++ *
++ * Stuart Menefy <stuart.menefy@st.com>
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <command.h>
++#include <asm/soc.h>
++#include <asm/fli7510reg.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++#include <asm/stbus.h>
++#include <ata.h>
++#include <spi.h>
++
++
++#define ARRAY_SIZE(x)		(sizeof(x) / sizeof((x)[0]))
++
++#define SET_SYSCONF_BIT(reg,flag,bit)			\
++	do {						\
++		if (flag)				\
++		{	/* set bit 'bit' */		\
++			reg |= (1ul<<(bit));		\
++		}					\
++		else					\
++		{	/* clear bit 'bit' */		\
++			reg &= ~(1ul<<(bit));		\
++		}					\
++	} while (0)
++
++#define SET_SYSCONF_BITS(reg,flag,first,last,yes,no)	\
++	do {						\
++		const unsigned long _mask = 		\
++			(1ul<<((last)-(first)+1))-1ul;	\
++		/* clear all bits in 'first':'last' */	\
++		reg &= ~(_mask<<(first));		\
++		if (flag)				\
++		{	/* set 'yes' in first:last */	\
++			reg |= ((yes)<<(first));	\
++		}					\
++		else					\
++		{	/* set 'no' in first:last */	\
++			reg |= ((no)<<(first));		\
++		}					\
++	} while (0)
++
++
++#define USB_POWERDOWN_REQ	8	/* CFG_COMMS_CONFIG_1[8 ]    = usb_powerdown_req */
++#define USBA_OVRCUR_POLARITY	11	/* CFG_COMMS_CONFIG_1[11]    = usba_ovrcur_polarity */
++#define USBA_ENABLE_PAD_OVERRIDE 12	/* CFG_COMMS_CONFIG_1[12]    = usba_enable_pad_override */
++#define USBA_OVRCUR		13	/* CFG_COMMS_CONFIG_1[13]    = usba_ovrcur */
++#define CONF_PIO24_ALTERNATE	17	/* CFG_COMMS_CONFIG_1[18:17] = conf_pio24_alternate */
++
++#define GMAC_MII_ENABLE		8	/* CFG_COMMS_CONFIG_2[8]     = gmac_mii_enable */
++#define GMAC_PHY_CLOCK_SEL	9	/* CFG_COMMS_CONFIG_2[9]     = gmac_phy_clock_sel */
++#define GMAC_ENABLE		24	/* CFG_COMMS_CONFIG_2[24]    = gmac_enable */
++#define GMAC_MAC_SPEED		25	/* CFG_COMMS_CONFIG_2[25]    = gmac_mac_speed */
++#define PHY_INTF_SEL		26	/* CFG_COMMS_CONFIG_2[28:26] = phy_intf_sel */
++
++
++static void fli7105_clocks(void)
++{
++	DECLARE_GLOBAL_DATA_PTR;
++	bd_t *bd = gd->bd;
++
++	/*
++	 * FIXME
++	 * Gross hack to get the serial port working.
++	 * See the defintion of PCLK in drivers/stm-asc.c
++	 * for where this is used.
++	 */
++	bd->bi_emifrq = 100;	/* comms_clk = 100 MHz */
++}
++
++
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++
++struct fli7510_gmac_pin {
++	unsigned char port, pin, dir;
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_mii_pins[] = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_ALT_OUT },	/* MDC */
++	{ 18, 1, STPIO_IN },		/* COL */
++	{ 18, 2, STPIO_IN },		/* CRS */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 2, STPIO_ALT_OUT },	/* TXD[2] */
++	{ 20, 3, STPIO_ALT_OUT },	/* TXD[3] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 20, 6, STPIO_IN },		/* TXCLK */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 2, STPIO_IN },		/* RXD[2] */
++	{ 21, 3, STPIO_IN },		/* RXD[3] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++	{ 21, 6, STPIO_IN },		/* RXCLK */
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_gmii_pins[] = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_ALT_OUT },	/* MDC */
++	{ 18, 1, STPIO_IN },		/* COL */
++	{ 18, 2, STPIO_IN },		/* CRS */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 2, STPIO_ALT_OUT },	/* TXD[2] */
++	{ 20, 3, STPIO_ALT_OUT },	/* TXD[3] */
++	{ 24, 4, STPIO_ALT_OUT },	/* TXD[4] */
++	{ 24, 5, STPIO_ALT_OUT },	/* TXD[5] */
++	{ 24, 6, STPIO_ALT_OUT },	/* TXD[6] */
++	{ 24, 7, STPIO_ALT_OUT },	/* TXD[7] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 20, 6, STPIO_IN },		/* TXCLK */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 2, STPIO_IN },		/* RXD[2] */
++	{ 21, 3, STPIO_IN },		/* RXD[3] */
++	{ 24, 0, STPIO_IN },		/* RXD[4] */
++	{ 24, 1, STPIO_IN },		/* RXD[5] */
++	{ 24, 2, STPIO_IN },		/* RXD[6] */
++	{ 24, 3, STPIO_IN },		/* RXD[7] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++	{ 21, 6, STPIO_IN },		/* RXCLK */
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_rmii_pins[] = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_ALT_OUT },	/* MDC */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_reverse_mii_pins[] = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_IN },		/* MDC */
++	{ 18, 1, STPIO_ALT_OUT },	/* COL */
++	{ 18, 2, STPIO_ALT_OUT },	/* CRS */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 2, STPIO_ALT_OUT },	/* TXD[2] */
++	{ 20, 3, STPIO_ALT_OUT },	/* TXD[3] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 20, 6, STPIO_IN },		/* TXCLK */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 2, STPIO_IN },		/* RXD[2] */
++	{ 21, 3, STPIO_IN },		/* RXD[3] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++	{ 21, 6, STPIO_IN },		/* RXCLK */
++};
++
++extern int stmac_default_pbl(void)
++{
++	return 32;
++}
++
++extern void stmac_set_mac_speed(const int speed)
++{
++	unsigned long sysconf;
++
++	/* CFG_COMMS_CONFIG_2[25] = gmac_mac_speed */
++	/* gmac_mac_speed = speed==100 ? 1 : 0 */
++	sysconf = readl(CFG_COMMS_CONFIG_2);
++	SET_SYSCONF_BIT(sysconf, speed==100, GMAC_MAC_SPEED);
++	writel(sysconf, CFG_COMMS_CONFIG_2);
++}
++
++
++	/*
++	 * ETH GMAC PIO configuration
++	 */
++extern void fli7510_configure_ethernet(
++	const enum fli7510_ethernet_mode mode,
++	const int ext_clk,
++	const int phy_bus)
++{
++	struct fli7510_gmac_pin *pins;
++	int pins_num;
++	unsigned char phy_sel, enmii;
++	int i;
++	unsigned long sysconf;
++
++	/* Ethernet interface on */
++	/* CFG_COMMS_CONFIG_2[24] = gmac_enable */
++	sysconf = readl(CFG_COMMS_CONFIG_2);
++	SET_SYSCONF_BIT(sysconf, 1, GMAC_ENABLE);
++	writel(sysconf, CFG_COMMS_CONFIG_2);
++
++	switch (mode) {
++	case fli7510_ethernet_mii:
++		phy_sel = 0;
++		enmii = 1;
++		pins = fli7510_gmac_mii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_mii_pins);
++		break;
++	case fli7510_ethernet_rmii:
++		phy_sel = 4;
++		enmii = 1;
++		pins = fli7510_gmac_rmii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_rmii_pins);
++		break;
++	case fli7510_ethernet_gmii:
++		phy_sel = 0;
++		enmii = 1;
++		pins = fli7510_gmac_gmii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_gmii_pins);
++		/* CFG_COMMS_CONFIG_1[18:17] = conf_pio24_alternate */
++		sysconf = readl(CFG_COMMS_CONFIG_1);
++		sysconf &= ~(0x3ul<<CONF_PIO24_ALTERNATE);
++		sysconf |= (0x2ul<<CONF_PIO24_ALTERNATE);
++		writel(sysconf, CFG_COMMS_CONFIG_1);
++		break;
++	case fli7510_ethernet_reverse_mii:
++		phy_sel = 0;
++		enmii = 0;
++		pins = fli7510_gmac_reverse_mii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_reverse_mii_pins);
++		break;
++	default:
++		BUG();
++		return;
++	}
++
++	/* CFG_COMMS_CONFIG_2[28:26] = phy_intf_sel */
++	sysconf = readl(CFG_COMMS_CONFIG_2);
++	sysconf &= ~(0x7ul<<PHY_INTF_SEL);
++	sysconf |= (phy_sel<<PHY_INTF_SEL);
++//	writel(sysconf, CFG_COMMS_CONFIG_2);
++
++	/* CFG_COMMS_CONFIG_2[8]     = gmac_mii_enable */
++//	sysconf = readl(CFG_COMMS_CONFIG_2);
++	SET_SYSCONF_BIT(sysconf, enmii, GMAC_MII_ENABLE);
++//	writel(sysconf, CFG_COMMS_CONFIG_2);
++
++	/* CFG_COMMS_CONFIG_2[9]     = gmac_phy_clock_sel */
++//	sysconf = readl(CFG_COMMS_CONFIG_2);
++	SET_SYSCONF_BIT(sysconf, ext_clk, GMAC_PHY_CLOCK_SEL);
++	writel(sysconf, CFG_COMMS_CONFIG_2);
++
++	/* choose the correct direction for PHYCLK */
++	pins[0].dir = (ext_clk) ? STPIO_IN : STPIO_ALT_OUT;
++
++	/* set all the PIOs correctly */
++	for (i = 0; i < pins_num; i++)
++	{
++		SET_PIO_PIN(ST40_PIO_BASE(pins[i].port), pins[i].pin, pins[i].dir);
++	}
++}
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++
++#if defined(CONFIG_USB_OHCI_NEW) && 0	/* QQQ: still to debug this! */
++extern void fli7105_usb_init(const enum fli7510_usb_ovrcur_mode ovrcur_mode)
++{
++	unsigned long sysconf;
++
++	printf("QQQ: entered %s(ovrcur_mode=%u)\n", __FUNCTION__, ovrcur_mode);	/* QQQ - DELETE */
++	printf("QQQ: on entry: CFG_COMMS_CONFIG_1 = 0x%08x\n", readl(CFG_COMMS_CONFIG_1));
++
++#if 0
++	/* CFG_COMMS_CONFIG_1[8 ] = usb_powerdown_req */
++	sysconf = readl(CFG_COMMS_CONFIG_1);
++	SET_SYSCONF_BIT(sysconf, 0, USB_POWERDOWN_REQ);
++	writel(sysconf, CFG_COMMS_CONFIG_1);
++#endif
++
++switch (ovrcur_mode) {
++	case fli7510_usb_ovrcur_disabled:
++	//	sc = sysconf_claim(CFG_COMMS_CONFIG_1, 12, 12, "usba_enable_pad_override");
++	//	sysconf_write(sc, 1);
++		/* CFG_COMMS_CONFIG_1[12] = usba_enable_pad_override */
++		sysconf = readl(CFG_COMMS_CONFIG_1);
++		SET_SYSCONF_BIT(sysconf, 1, USBA_ENABLE_PAD_OVERRIDE);
++		writel(sysconf, CFG_COMMS_CONFIG_1);
++
++	//	sc = sysconf_claim(CFG_COMMS_CONFIG_1, 13, 13, "usba_ovrcur");
++	//	sysconf_write(sc, 1);
++		/* CFG_COMMS_CONFIG_1[13] = usba_ovrcur */
++		sysconf = readl(CFG_COMMS_CONFIG_1);
++		SET_SYSCONF_BIT(sysconf, 1, USBA_OVRCUR);
++		writel(sysconf, CFG_COMMS_CONFIG_1);
++		break;
++	default:
++	//	sc = sysconf_claim(CFG_COMMS_CONFIG_1, 12, 12, "usba_enable_pad_override");
++	//	sysconf_write(sc, 0);
++		/* CFG_COMMS_CONFIG_1[12] = usba_enable_pad_override */
++		sysconf = readl(CFG_COMMS_CONFIG_1);
++		SET_SYSCONF_BIT(sysconf, 0, USBA_ENABLE_PAD_OVERRIDE);
++		writel(sysconf, CFG_COMMS_CONFIG_1);
++
++		/* CFG_COMMS_CONFIG_1[11] = usba_ovrcur_polarity */
++		switch (ovrcur_mode) {
++		case fli7510_usb_ovrcur_active_high:
++	//		sc = sysconf_claim(CFG_COMMS_CONFIG_1, 11, 11, "usba_ovrcur_polarity");
++	//		sysconf_write(sc, 0);
++			sysconf = readl(CFG_COMMS_CONFIG_1);
++			SET_SYSCONF_BIT(sysconf, 0, USBA_OVRCUR_POLARITY);
++			writel(sysconf, CFG_COMMS_CONFIG_1);
++			break;
++		case fli7510_usb_ovrcur_active_low:
++	//		sc = sysconf_claim(CFG_COMMS_CONFIG_1, 11, 11, "usba_ovrcur_polarity");
++	//		sysconf_write(sc, 1);
++			sysconf = readl(CFG_COMMS_CONFIG_1);
++			SET_SYSCONF_BIT(sysconf, 1, USBA_OVRCUR_POLARITY);
++			writel(sysconf, CFG_COMMS_CONFIG_1);
++			break;
++		default:
++			BUG();
++			break;
++		}
++		break;
++	}
++
++//	stpio_request_pin(27, 1, "USB_A_OVRCUR", STPIO_IN);
++//	stpio_request_pin(27, 2, "USB_A_PWREN", STPIO_ALT_OUT);
++	SET_PIO_PIN(ST40_PIO_BASE(27), 1, STPIO_IN);		/* USB_A_OVRCUR */
++	SET_PIO_PIN(ST40_PIO_BASE(27), 2, STPIO_ALT_OUT);	/* USB_A_PWREN */
++
++	/* start the USB Wrapper Host Controller */
++	ST40_start_host_control(
++		USB_FLAGS_STRAP_16BIT		|
++		USB_FLAGS_STRAP_PLL		|
++		USB_FLAGS_STBUS_CONFIG_THRESHOLD256);
++	printf("QQQ: on exit : CFG_COMMS_CONFIG_1 = 0x%08x\n", readl(CFG_COMMS_CONFIG_1));
++}
++#endif /* defined(CONFIG_USB_OHCI_NEW) */
++
++
++/**********************************************************************/
++
++
++#if defined(CONFIG_SPI)
++
++#if defined(CONFIG_SOFT_SPI)			/* Use "bit-banging" for SPI */
++extern void fli7510_spi_scl(const int val)
++{
++	const int pin = 2;	/* PIO17[2] = SPI_CLK */
++	STPIO_SET_PIN(PIO_PORT(17), pin, val ? 1 : 0);
++}
++
++extern void fli7510_spi_sda(const int val)
++{
++	const int pin = 3;	/* PIO17[3] = SPI_MOSI */
++	STPIO_SET_PIN(PIO_PORT(17), pin, val ? 1 : 0);
++}
++
++extern unsigned char fli7510_spi_read(void)
++{
++	const int pin = 5;	/* PIO17[5] = SPI_MISO */
++	return STPIO_GET_PIN(PIO_PORT(17), pin);
++}
++#endif	/* CONFIG_SOFT_SPI */
++
++/*
++ * assert or de-assert the SPI Chip Select line.
++ *
++ *	input: cs == true, assert CS, else deassert CS
++ */
++static void spi_chip_select(const int cs)
++{
++	const int pin = 4;	/* PIO17[4] = SPI_CSN */
++
++	if (cs)
++	{	/* assert SPI CSn */
++		STPIO_SET_PIN(PIO_PORT(17), pin, 0);
++	}
++	else
++	{	/* DE-assert SPI CSn */
++		STPIO_SET_PIN(PIO_PORT(17), pin, 1);
++	}
++
++	if (cs)
++	{	/* wait 250ns for CSn assert to propagate  */
++		udelay(1);	/* QQQ: can we make this shorter ? */
++	}
++}
++
++/*
++ * The SPI command uses this table of functions for controlling the SPI
++ * chip selects: it calls the appropriate function to control the SPI
++ * chip selects.
++ */
++spi_chipsel_type spi_chipsel[] =
++{
++	spi_chip_select
++};
++int spi_chipsel_cnt = sizeof(spi_chipsel) / sizeof(spi_chipsel[0]);
++
++#endif	/* CONFIG_SPI */
++
++
++/**********************************************************************/
++
++
++extern int soc_init(void)
++{
++	DECLARE_GLOBAL_DATA_PTR;
++	bd_t *bd = gd->bd;
++
++	fli7105_clocks();
++
++	/* obtain the chip cut + device id */
++	bd->bi_devid = readl(CFG_DEVICE_ID);
++
++	return 0;
++}
++
+diff --git a/cpu/sh/spi.c b/cpu/sh/spi.c
+index d7acf33..a537b39 100644
+--- a/cpu/sh/spi.c
++++ b/cpu/sh/spi.c
+@@ -101,7 +101,9 @@
+ #if defined(CONFIG_SPI_FLASH_ATMEL)
+ /* For Atmel AT45DB321D Serial Flash */
+ #define CFG_STM_SPI_MODE	SPI_MODE_3
+-#define CFG_STM_SPI_FREQUENCY	(10*1000*1000)	/* 10 MHz */
++#if !defined(CFG_STM_SPI_FREQUENCY)
++#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
++#endif	/* CFG_STM_SPI_FREQUENCY */
+ #define CFG_STM_SPI_DEVICE_MASK	0x3cu		/* Mask Bits [5:2] */
+ #define CFG_STM_SPI_DEVICE_VAL	0x34u		/* Binary xx1101xx */
+ 
+@@ -121,7 +123,9 @@
+ 
+ /* For ST M25Pxx Serial Flash */
+ #define CFG_STM_SPI_MODE	SPI_MODE_3
+-#define CFG_STM_SPI_FREQUENCY	(10*1000*1000)	/* 10 MHz */
++#if !defined(CFG_STM_SPI_FREQUENCY)
++#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
++#endif	/* CFG_STM_SPI_FREQUENCY */
+ #define CFG_STM_SPI_DEVICE_MASK	0x60u		/* Mask Bits [6:5] */
+ #define CFG_STM_SPI_DEVICE_VAL	0x00u		/* Binary x00xxxxx */
+ 
+@@ -131,6 +135,7 @@
+ #define OP_READ_ARRAY		0x03u		/* Read Data Bytes */
+ #define OP_WREN			0x06u		/* Write Enable */
+ #define OP_SE			0xD8u		/* Sector Erase */
++#define OP_SSE			0x20u		/* Sub-Sector Erase, for M25PXxx */
+ #define OP_PP			0x02u		/* Page Program */
+ 
+ #define SR_WIP			(1u<<0)		/* Status Register Write In Progress bit */
+@@ -140,7 +145,9 @@
+ 
+ /* For Macronix MX25Lxxx Serial Flash */
+ #define CFG_STM_SPI_MODE	SPI_MODE_3
+-#define CFG_STM_SPI_FREQUENCY	(10*1000*1000)	/* 10 MHz */
++#if !defined(CFG_STM_SPI_FREQUENCY)
++#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
++#endif	/* CFG_STM_SPI_FREQUENCY */
+ #define CFG_STM_SPI_DEVICE_MASK	0x00u		/* Mask Bits */
+ #define CFG_STM_SPI_DEVICE_VAL	0x00u		/* Binary xxxxxxxx */
+ 
+@@ -165,12 +172,19 @@
+ /**********************************************************************/
+ 
+ 
+-#define CFG_STM_SPI_SSC_BASE	ST40_SSC0_REGS_BASE	/* SSC #0 */
++#if !defined(CONFIG_SOFT_SPI)		/* Use the H/W SSC */
++
++#if !defined(CFG_STM_SPI_SSC_BASE)
++#error Please define CFG_STM_SPI_SSC_BASE (e.g. ST40_SSC0_REGS_BASE)
++#endif
++
+ static const unsigned long ssc = CFG_STM_SPI_SSC_BASE;	/* SSC base */
+ 
+ #define ssc_write(offset, value)	writel((value), (ssc)+(offset))
+ #define ssc_read(offset)		readl((ssc)+(offset))
+ 
++#endif	/* CONFIG_SOFT_SPI */
++
+ 
+ /**********************************************************************/
+ 
+@@ -180,6 +194,9 @@ static unsigned eraseSize;	/* smallest supported erase size */
+ static unsigned deviceSize;	/* Size of the device in Bytes */
+ static const char * deviceName;	/* Name of the device */
+ 
++#if defined(CONFIG_SPI_FLASH_ST) || defined(CONFIG_SPI_FLASH_MXIC)
++static unsigned char op_erase = OP_SE;	/* erase command opcode to use */
++#endif
+ 
+ /**********************************************************************/
+ 
+@@ -451,44 +468,79 @@ static int spi_probe_serial_flash(
+ #elif defined(CONFIG_SPI_FLASH_ST)
+ 
+ 	if (
+-		(devid[1] != 0x20u)	||	/* Manufacturer ID */
+-		(devid[2] != 0x20u)	||	/* Memory Type */
++		(devid[1] == 0x20u)	&&	/* Manufacturer ID */
++		(devid[2] == 0x20u)	&&	/* Memory Type */
+ 		(				/* Memory Capacity */
+-			(devid[3] != 0x14u) &&	/* M25P80 */
+-			(devid[3] != 0x15u) &&	/* M25P16 */
+-			(devid[3] != 0x16u) &&	/* M25P32 */
+-			(devid[3] != 0x17u) &&	/* M25P64 */
+-			(devid[3] != 0x18u)	/* M25P128 */
++			(devid[3] == 0x14u) ||	/* M25P80 */
++			(devid[3] == 0x15u) ||	/* M25P16 */
++			(devid[3] == 0x16u) ||	/* M25P32 */
++			(devid[3] == 0x17u) ||	/* M25P64 */
++			(devid[3] == 0x18u)	/* M25P128 */
+ 		)
+ 	   )
+ 	{
+-		printf("ERROR: Unknown SPI Device detected, devid = 0x%02x, 0x%02x, 0x%02x\n",
+-			devid[1], devid[2], devid[3]);
+-		return -1;
+-	}
+-	pageSize   = 256u;
+-	eraseSize  = 64u<<10;			/* 64 KiB, 256 pages/sector */
+-	deviceSize = 1u<<devid[3];		/* Memory Capacity */
+-	if (devid[3] == 0x14u)
+-	{
+-		deviceName = "ST M25P80";	/* 8 Mbit == 1 MiB */
+-	}
+-	else if (devid[3] == 0x15u)
+-	{
+-		deviceName = "ST M25P16";	/* 16 Mbit == 2 MiB */
+-	}
+-	else if (devid[3] == 0x16u)
+-	{
+-		deviceName = "ST M25P32";	/* 32 Mbit == 4 MiB */
++		pageSize   = 256u;
++		eraseSize  = 64u<<10;			/* 64 KiB, 256 pages/sector */
++		deviceSize = 1u<<devid[3];		/* Memory Capacity */
++		if (devid[3] == 0x14u)
++		{
++			deviceName = "ST M25P80";	/* 8 Mbit == 1 MiB */
++		}
++		else if (devid[3] == 0x15u)
++		{
++			deviceName = "ST M25P16";	/* 16 Mbit == 2 MiB */
++		}
++		else if (devid[3] == 0x16u)
++		{
++			deviceName = "ST M25P32";	/* 32 Mbit == 4 MiB */
++		}
++		else if (devid[3] == 0x17u)
++		{
++			deviceName = "ST M25P64";	/* 64 Mbit == 8 MiB */
++		}
++		else if (devid[3] == 0x18u)
++		{
++			deviceName = "ST M25P128";	/* 128 Mbit == 16 MiB */
++			eraseSize = 256u<<10;		/* 256 KiB, 1024 pages/sector */
++		}
+ 	}
+-	else if (devid[3] == 0x17u)
++	else if (
++		(devid[1] == 0x20u)	&&	/* Manufacturer ID */
++		(devid[2] == 0x71u)	&&	/* Memory Type */
++		(				/* Memory Capacity */
++			(devid[3] == 0x14u) ||	/* M25PX80 */
++			(devid[3] == 0x15u) ||	/* M25PX16 */
++			(devid[3] == 0x16u) ||	/* M25PX32 */
++			(devid[3] == 0x17u)	/* M25PX64 */
++		)
++	   )
+ 	{
+-		deviceName = "ST M25P64";	/* 64 Mbit == 8 MiB */
++		pageSize   = 256u;
++		eraseSize  = 4u<<10;			/* 4 KiB, 16 pages/sub-sector */
++		op_erase   = OP_SSE;			/* use SSE (4KiB) for erase */
++		deviceSize = 1u<<devid[3];		/* Memory Capacity */
++		if (devid[3] == 0x14u)
++		{
++			deviceName = "ST M25PX80";	/* 8 Mbit == 1 MiB */
++		}
++		else if (devid[3] == 0x15u)
++		{
++			deviceName = "ST M25PX16";	/* 16 Mbit == 2 MiB */
++		}
++		else if (devid[3] == 0x16u)
++		{
++			deviceName = "ST M25PX32";	/* 32 Mbit == 4 MiB */
++		}
++		else if (devid[3] == 0x17u)
++		{
++			deviceName = "ST M25PX64";	/* 64 Mbit == 8 MiB */
++		}
+ 	}
+-	else if (devid[3] == 0x18u)
++	else
+ 	{
+-		deviceName = "ST M25P128";	/* 128 Mbit == 16 MiB */
+-		eraseSize = 256u<<10;		/* 256 KiB, 1024 pages/sector */
++		printf("ERROR: Unknown SPI Device detected, devid = 0x%02x, 0x%02x, 0x%02x\n",
++			devid[1], devid[2], devid[3]);
++		return -1;
+ 	}
+ 
+ #elif defined(CONFIG_SPI_FLASH_MXIC)
+@@ -858,7 +910,7 @@ static void my_spi_write(
+ #endif
+ 	unsigned char enable[1] = { OP_WREN };
+ 	unsigned char erase[4] = {
+-		OP_SE,
++		op_erase,
+ 		(sector>>16) & 0xffu,
+ 		(sector>>8)  & 0xffu,
+ 		(sector>>0)  & 0xffu,
+diff --git a/cpu/sh/start.S b/cpu/sh/start.S
+index 7d1b13c..fdb04eb 100644
+--- a/cpu/sh/start.S
++++ b/cpu/sh/start.S
+@@ -73,7 +73,7 @@ skip_signature:
+ 	 */
+ 	.balign 0x80, 0x00		/* starts 128 bytes into "Block Zero" */
+ preamble_signature_pattern:
+-	bytes 0x00 0x3f			/* 64-bytes: 0x00, 0x01, ..., 0x3f */
++	BYTES 0x00 0x3f			/* 64-bytes: 0x00, 0x01, ..., 0x3f */
+ 
+ #if defined(CFG_NAND_SKIP_BAD_BLOCKS_ON_RELOCATING)
+ 	/*
+@@ -270,6 +270,7 @@ set_pmb:
+ 	SH4_SET_PMB 1 0x88 0x48 128 0 0 1	/* LMI0 (second-half) UN-cached */
+ 	SH4_SET_PMB 3 0x98 0x48 128 0 0 1	/* LMI0 (second-half) UN-cached */
+ 	#endif
++	SH4_SET_PMB 4 0xa0 0x00  64 0 0 1	/* FLASH UN-cached */
+ #elif defined(CONFIG_SH_STX7111) && defined(CONFIG_SH_MB618)
+ 	SH4_SET_PMB 0 0x80 0x40 128 0 0 1	/* LMI UN-cached */
+ 	SH4_SET_PMB 2 0x90 0x40 128 0 0 1	/* LMI UN-cached */
+@@ -353,6 +354,14 @@ set_pmb:
+ 	SH4_SET_PMB 5 0xa1 0x01  16 0 0 1	/* NOR FLASH UN-cached */
+ 	SH4_SET_PMB 6 0xa8 0x00  16		/* NOR FLASH CACHED */
+ 	SH4_SET_PMB 7 0xa9 0x01  16		/* NOR FLASH CACHED */
++#elif defined(CONFIG_SH_FLI7510) && defined(CONFIG_SH_FLDB)
++	SH4_SET_PMB 0 0x80 0x40 128 0 0 1	/* LMI0 UN-cached */
++	SH4_SET_PMB 2 0x90 0x40 128 0 0 1	/* LMI0 UN-cached */
++	#if CFG_SH_LMI_NEEDS_2_PMB_ENTRIES
++	#error Need to configure PMBs properly when more than 128MiB.
++	#endif
++	SH4_SET_PMB 4 0xa0 0x00  64 0 0 1	/* NOR/NAND FLASH UN-cached */
++	SH4_SET_PMB 5 0xa8 0x00  64		/* NOR/NAND FLASH CACHED */
+ #else
+ 	#error Do not know which board/chip we are using for PMB setup.
+ #endif	/* defined(CONFIG_SH_STB7100) */
+diff --git a/cpu/sh/stm-nand.c b/cpu/sh/stm-nand.c
+index 4d3efbf..f47ea1c 100644
+--- a/cpu/sh/stm-nand.c
++++ b/cpu/sh/stm-nand.c
+@@ -33,6 +33,7 @@
+ #include <asm/st40reg.h>
+ #include <asm/io.h>
+ #include <asm/socregs.h>
++#include <asm/cache.h>
+ 
+ 
+ #define isprint(x)	( ((x)>=0x20u) && ((x)<0x7fu) )
+@@ -220,6 +221,58 @@ static struct stm_nand_flex_controller {
+ } flex;
+ 
+ 
++/*
++ * In FLEX-mode, we can either read from the Flex-mode data
++ * register (ST40_EMI_NAND_FLEX_DATA), over the STBus with either
++ * a 4-byte read (LD4) or a 32-byte read (LD32) bus opcode.
++ * Using the LD32 bus opcode amortises the cost of the bus
++ * latency over 32-bytes, instead of only 4 bytes, so one can
++ * achieve a higher throughput, using the LD32 bus opcode.
++ *
++ * However, in order to realize this potential improvement, one
++ * needs to access the ST40_EMI_NAND_FLEX_DATA via the CPU's operand
++ * (data) caches. This in turn requires a TLB (or PMB) address
++ * translation to be configured and enabled.
++ *
++ * The following macros are used to configure the TLB to map
++ * the ST40_EMI_NAND_FLEX_DATA into a P3 (cachable + translatable)
++ * virtual address, so we can utilize the LD32 opcode.
++ *
++ * The implementation will create a single (read-only) 1KiB TLB
++ * mapping, including ST40_EMI_NAND_FLEX_DATA to 0xC0000000.
++ */
++#if defined(CONFIG_SH_NAND_USES_CACHED_READS)
++#define ST40_MMU_PTEH	0xFF000000	/* Page Table Entry High register */
++#define ST40_MMU_PTEL	0xFF000004	/* Page Table Entry Low register */
++#define ST40_MMU_MMUCR	0xFF000010	/* MMU Control Register */
++
++#define PTEH_ASID	0		/* ASID to use (any 8-bit number) */
++
++#define PTEL_WT		(1ul<<0)	/* Write-through bit */
++#define PTEL_SH		(1ul<<1)	/* Private page or Shared page */
++#define PTEL_D		(1ul<<2)	/* Dirty bit */
++#define PTEL_C		(1ul<<3)	/* Cacheability bit */
++#define PTEL_SZ_1K	(0ul<<4)	/* Page size of 1 KiB */
++#define PTEL_SZ_4K	(1ul<<4)	/* Page size of 4 KiB */
++#define PTEL_SZ_64K	(8ul<<4)	/* Page size of 64 KiB */
++#define PTEL_SZ_1M	(9ul<<4)	/* Page size of 1 MiB */
++#define PTEL_PR_READ	(0ul<<5)	/* Privileged-mode can READ */
++#define PTEL_PR_WRITE	(1ul<<5)	/* Privileged-mode can READ+WRITE */
++#define PTEL_V		(1ul<<8)	/* Validity Bit */
++#define PTEL_UB		(1ul<<9)	/* Unbuffered write control bit */
++
++#define MMUCR_AT	(1ul<<0)	/* Address Translation bit */
++#define MMUCR_TI	(1ul<<2)	/* TLB Invalidate bit */
++
++#define PAGE_MASK	(~0x3fful)	/* 1 KiB Page */
++#define ASID_MASK	(0xfful)	/* 8 bit ASID */
++
++static volatile u32 * const mmucr_p = (u32*)ST40_MMU_MMUCR;
++
++static volatile u32 * const cache =
++	(u32*)(0xC0000000ul | ((u32)ST40_EMI_NAND_FLEX_DATA & ~PAGE_MASK));
++#endif	/* CONFIG_SH_NAND_USES_CACHED_READS */
++
+ #endif /* CFG_NAND_FLEX_MODE */
+ 
+ 
+@@ -727,6 +780,22 @@ extern void stm_flex_select_chip(
+ {
+ 	struct nand_chip * const chip = mtd->priv;
+ 	struct stm_nand_flex_device * data = chip->priv;
++#if defined(CONFIG_SH_NAND_USES_CACHED_READS)
++	volatile u32 * const pteh_p  = (u32*)ST40_MMU_PTEH;
++	volatile u32 * const ptel_p  = (u32*)ST40_MMU_PTEL;
++	const u32 pteh =
++		((u32)cache & PAGE_MASK)			|
++		(PTEH_ASID & ASID_MASK);
++	const u32 ptel =
++		((u32)ST40_EMI_NAND_FLEX_DATA & PAGE_MASK)	|
++		PTEL_V						|
++#if 0
++		PTEL_PR_WRITE | PTEL_D	/* if we use OCBI */	|
++#endif
++		PTEL_SZ_1K					|
++		PTEL_C						|
++		PTEL_SH;
++#endif	/* CONFIG_SH_NAND_USES_CACHED_READS */
+ 
+ #if DEBUG_FLEX
+ 	printf("\t\t\t\t---- SELECT = %2d ----\n", chipnr);
+@@ -747,6 +816,13 @@ extern void stm_flex_select_chip(
+ 			printf("ERROR: Unable to allocate memory for a bounce buffer\n");
+ 			BUG();
+ 		}
++		/* initialize the TLB mapping if configured */
++#if defined(CONFIG_SH_NAND_USES_CACHED_READS)
++		*mmucr_p |= MMUCR_TI;	/* invalidate the TLBs */
++		*pteh_p = pteh;
++		*ptel_p = ptel;
++		asm volatile ("ldtlb");	/* define 1 TLB mapping */
++#endif	/* CONFIG_SH_NAND_USES_CACHED_READS */
+ 		flex.initialized   = 1;			/* initialization done */
+ 	}
+ 
+@@ -965,11 +1041,120 @@ extern void stm_flex_read_buf(
+ #endif
+ 	*ST40_EMI_NAND_FLEX_DATA_RD_CFG = reg;
+ 
++#if defined(CONFIG_SH_NAND_USES_CACHED_READS)
++	/*
++	 * Note, we only use the optimized cached TLB mapping,
++	 * if the amount of data to be copied is an exact
++	 * multiple of the length of a cache line.
++	 */
++	if ((len % DCACHE_LINESZ) == 0)	/* whole multiples of cache lines ? */
++	{
++		*mmucr_p |= MMUCR_AT;	/* enable Address Translation */
++		asm volatile ("nop");	/* wait a few cycles after enabling AT */
++		asm volatile ("nop");
++		asm volatile ("nop");
++		asm volatile ("nop");
++
++#if 0	/* QQQ - DELETE */
++		/* copy the data (from NAND), one CACHE-LINE at a time ... */
++		if (((u32)p) % DCACHE_LINESZ == 0ul)	/* cache aligned ? */
++		{
++			register u32 src32;
++			register u32 dst32 = (u32)p;
++			register double temp0 asm("dr0");
++			register double temp1 asm("dr2");
++			register double temp2 asm("dr4");
++			register double temp3 asm("dr6");
++
++#define PUT_FPSCR(F)	asm volatile ("lds %0, fpscr"	: : "r"(F))
++#define OCBP(LINE)	asm volatile ("ocbp @%0"	: : "r"(LINE))
++#define PREF(LINE)	asm volatile ("pref @%0"	: : "r"(LINE))
++#define ALLOC(LINE)	asm volatile ("movca.l r0, @%0"	: : "r"(LINE))
++
++			OCBP(cache);
++			PREF(cache);
++			PUT_FPSCR(1<<20);	/* FPSCR.SZ=1 */
++
++			for(i=0; i<len; )
++			{
++				src32 = (u32)cache;
++				asm volatile ("fmov @%0+,%1"	: "+r"(src32),"=d"(temp0));
++				asm volatile ("fmov @%0+,%1"	: "+r"(src32),"=d"(temp1));
++				asm volatile ("fmov @%0+,%1"	: "+r"(src32),"=d"(temp2));
++				asm volatile ("fmov @%0+,%1"	: "+r"(src32),"=d"(temp3));
++
++				OCBP(cache);
++
++				i += DCACHE_LINESZ;
++
++				if (i<len)
++				{
++//QQQ					PREF(cache);
++				}
++
++				ALLOC(dst32);
++				asm volatile ("fmov %1,@%0"	: : "r"(dst32),"d"(temp0) : "memory" );
++				dst32+=8;
++				asm volatile ("fmov %1,@%0"	: : "r"(dst32),"d"(temp1) : "memory" );
++				dst32+=8;
++				asm volatile ("fmov %1,@%0"	: : "r"(dst32),"d"(temp2) : "memory" );
++				dst32+=8;
++				asm volatile ("fmov %1,@%0"	: : "r"(dst32),"d"(temp3) : "memory" );
++				dst32+=8;
++			}
++		}
++		else	/* destination is *not* cache-aligned */
++#endif	/* QQQ - DELETE */
++		{
++			for(i=0; i<len/4; i+=DCACHE_LINESZ/4)
++			{
++				asm volatile ("ocbp @%0" : : "r"(cache));
++				p[i+0] = cache[0];
++				p[i+1] = cache[1];
++				p[i+2] = cache[2];
++				p[i+3] = cache[3];
++				p[i+4] = cache[4];
++				p[i+5] = cache[5];
++				p[i+6] = cache[6];
++				p[i+7] = cache[7];
++			}
++		}
++#if 0					/* QQQ - DELETE */
++		if (++done_init < 8)
++		{
++			int j;
++			printf("READ BUF\tlen=%u,\tpass=%u\n",len, done_init);
++			for (i=0; i<len; i+=16)
++			{
++				for (j=0; j<16; j++)
++					printf("%02x ", buf[i+j]);
++				printf("\n");
++			}
++			printf("\n");
++		}
++#endif					/* QQQ - DELETE */
++		/* finally, disable Address Translation */
++		*mmucr_p &= ~MMUCR_AT;
++	}
++	else
++	{
++		/* let the user know we are *not* using the TLB */
++		printf("warning: Not using cached copy in %s() for len=%u\n",
++			__FUNCTION__,
++			len);
++		/* copy the data (from NAND) as 4-byte words ... */
++		for(i=0; i<len/4; i++)
++		{
++			p[i] = *ST40_EMI_NAND_FLEX_DATA;
++		}
++	}
++#else	/* CONFIG_SH_NAND_USES_CACHED_READS */
+ 	/* copy the data (from NAND) as 4-byte words ... */
+ 	for(i=0; i<len/4; i++)
+ 	{
+ 		p[i] = *ST40_EMI_NAND_FLEX_DATA;
+ 	}
++#endif	/* CONFIG_SH_NAND_USES_CACHED_READS */
+ 
+ 	/* copy back into user-supplied buffer, if it was unaligned */
+ 	if ((void*)p != (void*)buf)
+diff --git a/cpu/sh/stx7105/stx7105.c b/cpu/sh/stx7105/stx7105.c
+index d2b3b4f..0429a76 100644
+--- a/cpu/sh/stx7105/stx7105.c
++++ b/cpu/sh/stx7105/stx7105.c
+@@ -300,6 +300,8 @@ extern void stx7105_configure_sata(void)
+ #endif	/* CONFIG_SH_STM_SATA */
+ 
+ 
++#if defined(CONFIG_SPI)
++
+ #if defined(CONFIG_SOFT_SPI)			/* Use "bit-banging" for SPI */
+ extern void stx7105_spi_scl(const int val)
+ {
+@@ -318,6 +320,7 @@ extern unsigned char stx7105_spi_read(void)
+ 	const int pin = 3;	/* PIO15[3] = SPI_DIN */
+ 	return STPIO_GET_PIN(PIO_PORT(15), pin);
+ }
++#endif	/* CONFIG_SOFT_SPI */
+ 
+ /*
+  * assert or de-assert the SPI Chip Select line.
+@@ -353,6 +356,6 @@ spi_chipsel_type spi_chipsel[] =
+ 	spi_chip_select
+ };
+ int spi_chipsel_cnt = sizeof(spi_chipsel) / sizeof(spi_chipsel[0]);
+-#endif	/* CONFIG_SOFT_SPI */
+ 
++#endif	/* CONFIG_SPI */
+ 
+diff --git a/cpu/sh/usb.c b/cpu/sh/usb.c
+index 1f9bcc6..d22743a 100644
+--- a/cpu/sh/usb.c
++++ b/cpu/sh/usb.c
+@@ -26,27 +26,12 @@
+ #include <command.h>
+ #include <asm/stbus.h>
+ #include <asm/io.h>
++#include <asm/soc.h>
+ 
+ 
+ #define mdelay(n) ({unsigned long msec=(n); while (msec--) udelay(1000);})
+ 
+ 
+-#if defined(CONFIG_SH_STB7100)
+-extern void stb7100_usb_init(void);
+-#elif defined(CONFIG_SH_STX5197)
+-extern void stx5197_usb_init(void);
+-#elif defined(CONFIG_SH_STX7105)
+-extern int stx7105_usb_init(int port, int over_current, int power_ctrl);
+-#elif defined(CONFIG_SH_STX7111)
+-extern void stx7111_usb_init(void);
+-#elif defined(CONFIG_SH_STX7141)
+-extern void stx7141_usb_init(void);
+-#elif defined(CONFIG_SH_STX7200)
+-extern void stx7200_usb_init(void);
+-#else
+-#error Missing Device Definitions!
+-#endif
+-
+ #if defined(CONFIG_USB_OHCI_NEW) && defined(CFG_USB_OHCI_CPU_INIT)
+ 
+ extern int usb_cpu_init(void)
+@@ -72,6 +57,10 @@ extern int usb_cpu_init(void)
+ 	stx7141_usb_init();
+ #elif defined(CONFIG_SH_STX7200)
+ 	stx7200_usb_init();
++#elif defined(CONFIG_SH_FLI7510)
++	fli7105_usb_init (fli7510_usb_ovrcur_active_low);
++#else
++#error Missing Device Definitions!
+ #endif
+ 	return 0;
+ }
+diff --git a/drivers/net/stm-stmac.c b/drivers/net/stm-stmac.c
+index 9b9ee10..8b914d2 100644
+--- a/drivers/net/stm-stmac.c
++++ b/drivers/net/stm-stmac.c
+@@ -159,11 +159,11 @@ static void *rx_packets[CONFIG_DMA_RX_SIZE];
+ #define PHY_ADDR_MSK		0x001f	/* PHY Address Mask */
+ #define PHY_ADDR_SHIFT		0	/* PHY Address Mask */
+ 
+-#elif defined(CONFIG_STMAC_KSZ8041FTL)	/* Micrel KSZ8041FTL */
++#elif defined(CONFIG_STMAC_KSZ8041)	/* Micrel KSZ8041 */
+ 
+-/* Micrel KSZ8041FTL phy identifier values */
+-#define KSZ8041FTL_PHY_ID	0x00221512u
+-#define KSZ8041FTL_PHY_ID_MASK	0x01ffffffu
++/* Micrel KSZ8041 phy identifier values */
++#define KSZ8041_PHY_ID		0x00221512u /* 1512 = A3, 1513 = A4 */
++#define KSZ8041_PHY_ID_MASK	0xfffffffeu
+ 
+ #elif defined(CONFIG_STMAC_IP1001)	/* IC+ IP1001 */
+ 
+@@ -295,9 +295,9 @@ static unsigned int stmac_phy_get_addr (void)
+ 			printf (STMAC "NS DP83865 found\n");
+ 			return phyaddr;
+ 		}
+-#elif defined(CONFIG_STMAC_KSZ8041FTL)
+-		if ((id & KSZ8041FTL_PHY_ID_MASK) == KSZ8041FTL_PHY_ID) {
+-			printf (STMAC "KSZ8041FTL found\n");
++#elif defined(CONFIG_STMAC_KSZ8041)
++		if ((id & KSZ8041_PHY_ID_MASK) == KSZ8041_PHY_ID) {
++			printf (STMAC "Micrel KSZ8041 found\n");
+ 			return phyaddr;
+ 		}
+ #elif defined(CONFIG_STMAC_IP1001)
+@@ -341,8 +341,8 @@ static int stmac_phy_init (void)
+ 	value = stmac_mii_read (eth_phy_addr, SPECIAL_MODE_REG);
+ #elif defined(CONFIG_STMAC_DP83865)
+ 	value = stmac_mii_read (eth_phy_addr, PHY_SUP_REG);
+-#elif defined(CONFIG_STMAC_KSZ8041FTL)
+-	/* The Micrel KSZ8041FTL does not appear to support
++#elif defined(CONFIG_STMAC_KSZ8041)
++	/* The Micrel KSZ8041 does not appear to support
+ 	 * reading the H/W PHY address from any register.  */
+ #	define CONFIG_STMAC_BYPASS_ADDR_MISMATCH
+ #elif defined(CONFIG_STMAC_IP1001)
+diff --git a/fs/jffs2/jffs2_1pass.c b/fs/jffs2/jffs2_1pass.c
+index 5316668..c4ef2aa 100644
+--- a/fs/jffs2/jffs2_1pass.c
++++ b/fs/jffs2/jffs2_1pass.c
+@@ -220,9 +220,25 @@ static int read_nand_cached(u32 off, u32 size, u_char *buf)
+ 			if (nand_read(&nand_info[id->num], nand_cache_off,
+ 						&retlen, nand_cache) != 0 ||
+ 					retlen != NAND_CACHE_SIZE) {
++				/*
++				 * If the NAND read failed, then that was probably
++				 * because we were trying to read from a bad block.
++				 * By default, this code would issue a diagnostic
++				 * and carry on regardless. This can result in
++				 * the code subsequently de-referencing a NULL
++				 * pointer, where madness and insanity lives ...
++				 * The following alternative solution it to make
++				 * the bad block "look" like a normal erased page,
++				 * by filling the buffer with 0xFF bytes instead.
++				 *	Sean McGoogan <Sean.McGoogan@st.com>
++				 */
++#if 1	/* fix up bad blocks */
++				memset(nand_cache, 0xffu, NAND_CACHE_SIZE);
++#else	/* fix up bad blocks */
+ 				printf("read_nand_cached: error reading nand off %#x size %d bytes\n",
+ 						nand_cache_off, NAND_CACHE_SIZE);
+ 				return -1;
++#endif	/* fix up bad blocks */
+ 			}
+ #endif
+ 		}
+diff --git a/include/asm-sh/fli7510reg.h b/include/asm-sh/fli7510reg.h
+new file mode 100644
+index 0000000..3217756
+--- /dev/null
++++ b/include/asm-sh/fli7510reg.h
+@@ -0,0 +1,177 @@
++/*
++ * Copyright (C) STMicroelectronics Ltd. 2009.
++ *
++ * All rights reserved.
++ */
++
++#ifndef __FLI7510REG_H
++#define __FLI7510REG_H
++
++#include "sh4regtype.h"
++
++/*----------------------------------------------------------------------------*/
++
++	/*
++	 *	PIO_BK_0 ... PIO_BK_27
++	 */
++#define ST40_PIO0_REGS_BASE	0xfd5c0000
++#define ST40_PIO1_REGS_BASE	0xfd5c4000
++#define ST40_PIO2_REGS_BASE	0xfd5c8000
++#define ST40_PIO3_REGS_BASE	0xfd5cc000
++#define ST40_PIO4_REGS_BASE	0xfd5d0000
++#define ST40_PIO5_REGS_BASE	0xfd5d4000
++#define ST40_PIO6_REGS_BASE	0xfd5d8000
++#define ST40_PIO7_REGS_BASE	0xfd5dc000
++#define ST40_PIO8_REGS_BASE	0xfd5e0000
++#define ST40_PIO9_REGS_BASE	0xfd5e4000
++#define ST40_PIO10_REGS_BASE	0xfd984000
++#define ST40_PIO11_REGS_BASE	0xfd988000
++#define ST40_PIO12_REGS_BASE	0xfd98c000
++#define ST40_PIO13_REGS_BASE	0xfd990000
++#define ST40_PIO14_REGS_BASE	0xfd994000
++#define ST40_PIO15_REGS_BASE	0xfd998000
++#define ST40_PIO16_REGS_BASE	0xfd99c000
++#define ST40_PIO17_REGS_BASE	0xfd9a0000
++#define ST40_PIO18_REGS_BASE	0xfd9a4000
++#define ST40_PIO19_REGS_BASE	0xfd9a8000
++#define ST40_PIO20_REGS_BASE	0xfd9ac000
++#define ST40_PIO21_REGS_BASE	0xfd9b0000
++#define ST40_PIO22_REGS_BASE	0xfd9b4000
++#define ST40_PIO23_REGS_BASE	0xfd9b8000
++#define ST40_PIO24_REGS_BASE	0xfd9bc000
++#define ST40_PIO25_REGS_BASE	0xfd9c0000
++#define ST40_PIO26_REGS_BASE	0xfd9c4000
++#define ST40_PIO27_REGS_BASE	0xfd9c8000
++
++#define ST40_PIO_BASE(x)					\
++	(((x) < 10)						\
++		? (ST40_PIO0_REGS_BASE +(0x4000*(x)))		\
++		: (ST40_PIO10_REGS_BASE+(0x4000*((x)-10))))
++
++/*----------------------------------------------------------------------------*/
++
++
++	/*
++	 * Comms block
++	 */
++#ifndef FLI7510_COMMS_BASE
++#define FLI7510_COMMS_BASE	0xfdb00000
++#endif
++
++#ifndef ST40_ASC0_REGS_BASE	/* UART #1 */
++#define ST40_ASC0_REGS_BASE	(FLI7510_COMMS_BASE + 0x00030000)
++#endif
++#ifndef ST40_ASC1_REGS_BASE	/* UART #2 */
++#define ST40_ASC1_REGS_BASE	(FLI7510_COMMS_BASE + 0x00031000)
++#endif
++#ifndef ST40_ASC2_REGS_BASE	/* UART #3 */
++#define ST40_ASC2_REGS_BASE	(FLI7510_COMMS_BASE + 0x00032000)
++#endif
++
++
++/*----------------------------------------------------------------------------*/
++
++
++	/*
++	 * System Configuration Registers
++	 */
++#define PRB_PU_CFG_1			0xfd220000
++#define PRB_PU_CFG_2			0xfd228000
++#define TRS_PU_CFG_0			0xfd9ec000
++#define TRS_PU_CFG_1			0xfd9f4000
++#define VDEC_PU_CFG_0			0xfd7a0000
++#define VDEC_PU_CFG_1			0xfd7c0000
++#define VOUT_PU_CFG_1			0xfd5e8000
++
++#define CFG_RESET_CTL			(PRB_PU_CFG_1 + 0x00)
++#define CFG_BOOT_CTL			(PRB_PU_CFG_1 + 0x04)
++#define CFG_SYS1			(PRB_PU_CFG_1 + 0x08)
++#define CFG_MPX_CTL			(PRB_PU_CFG_1 + 0x0c)
++#define CFG_PWR_DWN_CTL			(PRB_PU_CFG_1 + 0x10)
++#define CFG_SYS2			(PRB_PU_CFG_1 + 0x14)
++#define CFG_MODE_PIN_STATUS		(PRB_PU_CFG_1 + 0x18)
++#define CFG_PCI_ROPC_STATUS		(PRB_PU_CFG_1 + 0x1c)
++
++#define CFG_ST40_HOST_BOOT_ADDR		(PRB_PU_CFG_2 + 0x00)
++#define CFG_ST40_CTL_BOOT_ADDR		(PRB_PU_CFG_2 + 0x04)
++#define CFG_SYS10			(PRB_PU_CFG_2 + 0x08)
++#define CFG_RNG_BIST_CTL		(PRB_PU_CFG_2 + 0x0c)
++#define CFG_SYS12			(PRB_PU_CFG_2 + 0x10)
++#define CFG_SYS13			(PRB_PU_CFG_2 + 0x14)
++#define CFG_SYS14			(PRB_PU_CFG_2 + 0x18)
++#define CFG_EMI_ROPC_STATUS		(PRB_PU_CFG_2 + 0x1c)
++
++#define CFG_COMMS_CONFIG_1		(TRS_PU_CFG_0 + 0x00)
++#define CFG_TRS_CONFIG			(TRS_PU_CFG_0 + 0x04)
++#define CFG_COMMS_CONFIG_2		(TRS_PU_CFG_0 + 0x08)
++#define CFG_USB_SOFT_JTAG		(TRS_PU_CFG_0 + 0x0c)
++#define CFG_NOTUSED_1			(TRS_PU_CFG_0 + 0x10)
++#define CFG_NOTUSED_2			(TRS_PU_CFG_0 + 0x14)
++#define CFG_COMMS_TRS_STATUS		(TRS_PU_CFG_0 + 0x18)
++#define CFG_EXTRA_ID1_LSB		(TRS_PU_CFG_0 + 0x1c)
++
++#define CFG_SPARE_1			(TRS_PU_CFG_1 + 0x00)
++#define CFG_SPARE_2			(TRS_PU_CFG_1 + 0x04)
++#define CFG_SPARE_3			(TRS_PU_CFG_1 + 0x08)
++#define CFG_NOTUSED_3			(TRS_PU_CFG_1 + 0x0c)
++#define CFG_NOTUSED_4			(TRS_PU_CFG_1 + 0x10)
++#define CFG_NOTUSED_5			(TRS_PU_CFG_1 + 0x14)
++#define CFG_DEVICE_ID			(TRS_PU_CFG_1 + 0x18)
++#define CFG_EXTRA_ID1_MSB		(TRS_PU_CFG_1 + 0x1c)
++
++#define CFG_TOP_SPARE_REG1		(VDEC_PU_CFG_0 + 0x00)
++#define CFG_TOP_SPARE_REG2		(VDEC_PU_CFG_0 + 0x04)
++#define CFG_TOP_SPARE_REG3		(VDEC_PU_CFG_0 + 0x08)
++#define CFG_ST231_DRA2_DEBUG		(VDEC_PU_CFG_0 + 0x0c)
++#define CFG_ST231_AUD1_DEBUG		(VDEC_PU_CFG_0 + 0x10)
++#define CFG_ST231_AUD2_DEBUG		(VDEC_PU_CFG_0 + 0x14)
++
++#define CFG_ST231_DRA2_PERIPH_REG1	(VDEC_PU_CFG_1 + 0x00)
++#define CFG_ST231_DRA2_BOOT_REG2	(VDEC_PU_CFG_1 + 0x04)
++#define CFG_ST231_AUD1_PERIPH_REG3	(VDEC_PU_CFG_1 + 0x08)
++#define CFG_ST231_AUD1_BOOT_REG4	(VDEC_PU_CFG_1 + 0x0c)
++#define CFG_ST231_AUD2_PERIPH_REG5	(VDEC_PU_CFG_1 + 0x10)
++#define CFG_ST231_AUD2_BOOT_REG6	(VDEC_PU_CFG_1 + 0x14)
++
++#define CFG_REG1_PIO_ALT_DATA_SEL	(VOUT_PU_CFG_1 + 0x00)
++#define CFG_REG2_PIO_ALT_DATA_SEL	(VOUT_PU_CFG_1 + 0x04)
++#define CFG_REG3_DEBUG_DATA_SEL		(VOUT_PU_CFG_1 + 0x08)
++#define CFG_REG4_DAC_CTRL		(VOUT_PU_CFG_1 + 0x0c)
++#define CFG_REG5_VOUT_DEBUG_CTL		(VOUT_PU_CFG_1 + 0x10)
++#define CFG_REG6_TVOUT_DEBUG_CTL	(VOUT_PU_CFG_1 + 0x14)
++
++/*----------------------------------------------------------------------------*/
++
++/*
++ * Base addresses for control register banks.
++ */
++
++#ifndef SH4_TMU_REGS_BASE
++#define SH4_TMU_REGS_BASE 0xffd80000
++#endif
++
++#ifndef ST40_CPG_REGS_BASE
++#define ST40_CPG_REGS_BASE 0xffc00000	/* QQQ - need this, check it is correct ? */
++#endif
++
++#ifndef ST40_EMI_REGS_BASE
++#define ST40_EMI_REGS_BASE 0xfd100000
++#endif
++
++
++#include "st40reg.h"
++
++
++/*----------------------------------------------------------------------------*/
++
++/* Device ID values, masks & predicates */
++#define FLI7510_DEVID_7510_VAL		0x23c
++#define FLI7510_DEVID_ID_SHIFT		12
++#define FLI7510_DEVID_ID_MASK		0x3ff
++#define FLI7510_DEVID_CUT_SHIFT		28
++#define FLI7510_DEVID_CUT_MASK		0xf
++
++#define FLI7510_DEVICEID_7510(ID) ((((ID) >> FLI7510_DEVID_ID_SHIFT) & FLI7510_DEVID_ID_MASK) == FLI7510_DEVID_7510_VAL)
++#define FLI7510_DEVICEID_CUT(ID)  ((((ID) >> FLI7510_DEVID_CUT_SHIFT) & FLI7510_DEVID_CUT_MASK) + 1)
++
++#endif /* __FLI7510REG_H */
+diff --git a/include/asm-sh/io.h b/include/asm-sh/io.h
+index 76821ea..a7753f2 100644
+--- a/include/asm-sh/io.h
++++ b/include/asm-sh/io.h
+@@ -65,7 +65,8 @@
+        defined(CONFIG_SH_MB704)		|| \
+        defined(CONFIG_SH_5197CAB)	|| \
+        defined(CONFIG_SH_CB101)		|| \
+-       defined(CONFIG_SH_CB102)
++       defined(CONFIG_SH_CB102)		|| \
++       defined(CONFIG_SH_FLI7510)
+ #  include "asm/io_stb1eval.h"
+ #else
+ #  error "What system is this?"
+diff --git a/include/asm-sh/pio.h b/include/asm-sh/pio.h
+index f92d4f7..530b3da 100644
+--- a/include/asm-sh/pio.h
++++ b/include/asm-sh/pio.h
+@@ -46,6 +46,8 @@
+ #define STPIO_SET_OFFSET	0x4
+ #define STPIO_CLEAR_OFFSET	0x8
+ 
++#define STPIO_NO_PIN		0xff	/* No pin specified */
++
+ #if defined(CONFIG_SH_STB7100)
+ #define PIO_PORT_SIZE		0x1000					/* QQQ - DELETE */
+ #define PIO_PORT(n)		( ((n)*PIO_PORT_SIZE) + PIO_BASE)	/* QQQ - DELETE */
+@@ -53,9 +55,10 @@
+ #define PIO_PORT(n)		( ST40_PIO ## n ## _REGS_BASE )
+ #endif	/* CONFIG_SH_STB7100 */
+ 
+-#define PIN_C0(PIN, DIR)	((((DIR) & 0x1)!=0) << (PIN))
+-#define PIN_C1(PIN, DIR)	((((DIR) & 0x2)!=0) << (PIN))
+-#define PIN_C2(PIN, DIR)	((((DIR) & 0x4)!=0) << (PIN))
++#define PIN_CX(PIN, DIR, X)	(((PIN)==STPIO_NO_PIN) ? 0 : (((DIR) & (X))!=0) << (PIN))
++#define PIN_C0(PIN, DIR)	PIN_CX((PIN), (DIR), 0x01)
++#define PIN_C1(PIN, DIR)	PIN_CX((PIN), (DIR), 0x02)
++#define PIN_C2(PIN, DIR)	PIN_CX((PIN), (DIR), 0x04)
+ 
+ #define CLEAR_PIN_C0(PIN, DIR)	((((DIR) & 0x1)==0) << (PIN))
+ #define CLEAR_PIN_C1(PIN, DIR)	((((DIR) & 0x2)==0) << (PIN))
+diff --git a/include/asm-sh/soc.h b/include/asm-sh/soc.h
+index ea25be4..823d738 100644
+--- a/include/asm-sh/soc.h
++++ b/include/asm-sh/soc.h
+@@ -28,17 +28,33 @@
+ 
+ 
+ /*
+- *	common call-back functions for STMAC.
++ * STMAC data types
++ */
++enum fli7510_ethernet_mode
++{
++	fli7510_ethernet_mii,
++	fli7510_ethernet_gmii,
++	fli7510_ethernet_rmii,
++	fli7510_ethernet_reverse_mii
++};
++
++
++/*
++ * common call-back functions for STMAC.
+  */
+ extern int  stmac_default_pbl (void);
+ extern void stmac_set_mac_speed (int speed);
+ 
+ 
+ /*
+- *	functions for the STx7200 SoC device.
++ * STMAC initialization functions.
+  */
+ extern void stx7200_configure_ethernet (
+ 	int mac, int rmii, int ext_clk, int phy_bus);
++extern void fli7510_configure_ethernet(
++	const enum fli7510_ethernet_mode mode,
++	const int ext_clk,
++	const int phy_bus);
+ 
+ 
+ /*
+@@ -54,6 +70,28 @@ extern void stx7200_configure_sata(void);
+ 
+ 
+ /*
++ * USB data types
++ */
++enum fli7510_usb_ovrcur_mode {
++	fli7510_usb_ovrcur_disabled,
++	fli7510_usb_ovrcur_active_high,
++	fli7510_usb_ovrcur_active_low,
++};
++
++
++/*
++ * USB initialization functions.
++ */
++extern void stb7100_usb_init(void);
++extern void stx5197_usb_init(void);
++extern int  stx7105_usb_init(int port, int over_current, int power_ctrl);
++extern void stx7111_usb_init(void);
++extern void stx7141_usb_init(void);
++extern void stx7200_usb_init(void);
++extern void fli7105_usb_init(const enum fli7510_usb_ovrcur_mode ovrcur_mode);
++
++
++/*
+  * Software "bit-banging" functions for SPI accesses.
+  */
+ extern void		stx7105_spi_scl(const int val);
+@@ -64,5 +102,22 @@ extern void		stx7111_spi_scl(const int val);
+ extern void		stx7111_spi_sda(const int val);
+ extern unsigned char	stx7111_spi_read(void);
+ 
++extern void		fli7510_spi_scl(const int val);
++extern void		fli7510_spi_sda(const int val);
++extern unsigned char	fli7510_spi_read(void);
++
++
++/*
++ * Software "bit-banging" functions for I2C accesses.
++ */
++extern void		stx7105_i2c_scl(const int val);
++extern void		stx7105_i2c_sda(const int val);
++extern int		stx7105_i2c_read(void);
++
++extern void		fli7510_i2c_scl(const int val);
++extern void		fli7510_i2c_sda(const int val);
++extern int		fli7510_i2c_read(void);
++
++
+ #endif	/* _SOC_H_ */
+ 
+diff --git a/include/asm-sh/socregs.h b/include/asm-sh/socregs.h
+index 793ad90..fd714a3 100644
+--- a/include/asm-sh/socregs.h
++++ b/include/asm-sh/socregs.h
+@@ -39,6 +39,8 @@
+ #	include <asm/stx7141reg.h>
+ #elif defined(CONFIG_SH_STX7200)
+ #	include <asm/stx7200reg.h>
++#elif defined(CONFIG_SH_FLI7510)
++#	include <asm/fli7510reg.h>
+ #else
+ #	error Missing Device Definitions!
+ #endif
+diff --git a/include/asm-sh/u-boot.h b/include/asm-sh/u-boot.h
+index 0106515..ff8c6ab 100644
+--- a/include/asm-sh/u-boot.h
++++ b/include/asm-sh/u-boot.h
+@@ -57,7 +57,8 @@ typedef struct bd_info
+ 	defined(CONFIG_SH_STX7105) ||	\
+ 	defined(CONFIG_SH_STX7111) ||	\
+ 	defined(CONFIG_SH_STX7141) ||	\
+-	defined(CONFIG_SH_STX7200)
++	defined(CONFIG_SH_STX7200) ||	\
++	defined(CONFIG_SH_FLI7510)
+ 	unsigned long bi_devid;
+ 	unsigned long bi_emifrq;
+ #endif
+diff --git a/include/configs/5197cab.h b/include/configs/5197cab.h
+index 93c5573..523b5cb 100644
+--- a/include/configs/5197cab.h
++++ b/include/configs/5197cab.h
+@@ -231,6 +231,7 @@
+ #define CONFIG_CMD_EEPROM		/* enable the "eeprom" command set */
+ #define CFG_I2C_FRAM			/* to minimize performance degradation */
+ #undef  CFG_EEPROM_PAGE_WRITE_DELAY_MS	/* to minimize performance degradation */
++#define CFG_STM_SPI_SSC_BASE	ST40_SSC0_REGS_BASE	/* SPI is on SSC #0 */
+ 
+ /*
+  *	NOTE: To use the Atmel AT45DB321D serial flash for booting,
+diff --git a/include/configs/fldb.h b/include/configs/fldb.h
+new file mode 100644
+index 0000000..63ac311
+--- /dev/null
++++ b/include/configs/fldb.h
+@@ -0,0 +1,505 @@
++/*
++ * (C) Copyright 2008-2009 STMicroelectronics.
++ *
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++
++#define CONFIG_SH4	1		/* This is an SH4 CPU		*/
++#define CONFIG_CPU_SUBTYPE_SH4_3XX	/* it is an SH4-300		*/
++
++
++/*
++ *	The MODE switches (SWB1) need to be set appropriately,
++ *	depending where we are booting from:
++ *
++ * 	SWB1-x	MODE		NOR	NAND	SPI
++ * 	------	----		---	----	---
++ *	SW-6	MODE_5		off	off	ON
++ *	SW-5	MODE_4		off	ON	off
++ *	SW-4	MODE_3		off	off	ON
++ *	SW-3	MODE_2		off	ON	off
++ *
++ *		MODE[5:2]	0000	0101	1010
++ */
++
++/*-----------------------------------------------------------------------
++ * Are we booting directly from a NAND Flash device ?
++ * If so, then define the "CFG_BOOT_FROM_NAND" macro,
++ * otherwise (e.g. NOR/SPI Flash booting), do not define it.
++ */
++#undef CFG_BOOT_FROM_NAND		/* define to build a NAND-bootable image */
++
++
++/*-----------------------------------------------------------------------
++ * Are we booting directly from a SPI Serial Flash device ?
++ * If so, then define the "CFG_BOOT_FROM_SPI" macro,
++ * otherwise (e.g. for NAND Flash booting), do not define it.
++ */
++#undef CFG_BOOT_FROM_SPI		/* define to build a SPI-bootable image */
++
++/*-----------------------------------------------------------------------
++ * Start addresses for the final memory configuration
++ * Assume we run out of uncached memory for the moment
++ */
++
++#if defined(CFG_BOOT_FROM_SPI)		/* we are booting from SPI serial flash */
++#define CFG_EMI_SPI_BASE	0xA0000000	/* CSA: SPI Flash,  Physical 0x00000000 (32MiB) */
++#define CFG_EMI_NAND_BASE	0xA0000000	/* CSA: NAND Flash, Physical 0x00000000 (32MiB) */
++#define CFG_EMI_NOR_BASE	0xA2000000	/* CSB: NOR Flash,  Physical 0x02000000 (32MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 0 }		/* NAND is on Chip Select CSA */
++#elif defined(CFG_BOOT_FROM_NAND)	/* we are booting from NAND */
++#define CFG_EMI_NAND_BASE	0xA0000000	/* CSA: NAND Flash, Physical 0x00000000 (32MiB) */
++#define CFG_EMI_NOR_BASE	0xA2000000	/* CSB: NOR Flash,  Physical 0x02000000 (32MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 0 }		/* NAND is on Chip Select CSA */
++#else
++#define CFG_EMI_NOR_BASE	0xA0000000	/* CSA: NOR Flash,  Physical 0x00000000 (32MiB) */
++#define CFG_EMI_NAND_BASE	0xA2000000	/* CSB: NAND Flash, Physical 0x02000000 (32MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 1 }		/* NAND is on Chip Select CSB */
++#endif /* CFG_BOOT_FROM_NAND */
++
++#ifdef CONFIG_SH_SE_MODE
++#define CFG_FLASH_BASE		CFG_EMI_NOR_BASE/* NOR FLASH (uncached) via PMB */
++#define CFG_SE_PHYSICAL_BASE	0x40000000	/* LMI Physical Address */
++#define CFG_SDRAM_BASE		0x80000000      /* LMI    Cached addr via PMB */
++#define CFG_SE_UNACHED_BASE	0x90000000	/* LMI UN-cached addr via PMB */
++#define CFG_SE_SDRAM_WINDOW	(CFG_SDRAM_SIZE-1)
++#else
++#define CFG_FLASH_BASE		CFG_EMI_NOR_BASE/* NOR FLASH in P2 region */
++#define CFG_SDRAM_BASE		0x8C000000      /* SDRAM in P1 region */
++#endif
++
++#define CFG_SDRAM_SIZE		0x08000000	/* 128 MiB of LMI SDRAM */
++
++#define CFG_MONITOR_LEN		0x00040000	/* Reserve 256 KiB for Monitor */
++#define CFG_MONITOR_BASE        CFG_FLASH_BASE
++#define CFG_MALLOC_LEN		(1 << 20)	/* Reserve 1 MiB for malloc */
++#define CFG_BOOTPARAMS_LEN	(128 << 10)	/* 128 KiB */
++#define CFG_GBL_DATA_SIZE	1024		/* Global data structures */
++
++#define CFG_MEMTEST_START	CFG_SDRAM_BASE
++#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (3 << 20))
++
++#define CONFIG_BAUDRATE		115200
++#define CFG_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++#define XSTR(s) STR(s)
++#define STR(s) #s
++
++#define BOARD fldb
++
++#if CFG_MONITOR_LEN == 0x00008000		/* 32 KiB */
++#	define MONITOR_SECTORS	"1:0"		/* 1 sector */
++#elif CFG_MONITOR_LEN == 0x00010000		/* 64 KiB */
++#	define MONITOR_SECTORS	"1:0-1"		/* 2 sectors */
++#elif CFG_MONITOR_LEN == 0x00018000		/* 96 KiB */
++#	define MONITOR_SECTORS	"1:0-2"		/* 3 sectors */
++#elif CFG_MONITOR_LEN == 0x00020000		/* 128 KiB */
++#	define MONITOR_SECTORS	"1:0-3"		/* 4 sectors */
++#elif CFG_MONITOR_LEN == 0x00040000		/* 256 KiB */
++#	define MONITOR_SECTORS	"1:0-4"		/* 5 sectors */
++#else						/* unknown */
++#	error "Unable to determine sectors for monitor"
++#endif
++
++#define CONFIG_EXTRA_ENV_SETTINGS \
++		"board=" XSTR(BOARD) "\0" \
++		"monitor_base=" XSTR(CFG_MONITOR_BASE) "\0" \
++		"monitor_len=" XSTR(CFG_MONITOR_LEN) "\0" \
++		"monitor_sec=" MONITOR_SECTORS "\0" \
++		"load_addr=" XSTR(CFG_LOAD_ADDR) "\0" \
++		"unprot=" \
++		  "protect off $monitor_sec\0" \
++		"update=" \
++		  "erase $monitor_sec;" \
++		  "cp.b $load_addr $monitor_base $monitor_len;" \
++		  "protect on $monitor_sec\0"
++
++/*--------------------------------------------------------------
++ * Command line configuration.
++ */
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_ASKENV
++#define CONFIG_CMD_NFS
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++
++/*--------------------------------------------------------------
++ * Serial console info
++ */
++
++/*
++ * We can use one of two methods for the "serial" console.
++ * We can either use the (normal hardware) internal ST ASC UART;
++ * OR we can use STMicroelectronics' DTF (Data Transfer Format)
++ * mechanism over a JTAG link to a remote GDB debugger.
++ */
++#if 1
++#	define CONFIG_STM_ASC_SERIAL	/* use a ST ASC UART */
++#else
++#	define CONFIG_STM_DTF_SERIAL	/* use DTF over JTAG */
++#endif
++
++/* choose which ST ASC UART to use */
++#if 0
++	/* 9-pin D-type connector - On Extension Connector */
++#	define CFG_STM_ASC_BASE		ST40_ASC0_REGS_BASE	/* UART #1 */
++#elif 1
++	/* 9-pin D-type connector - CNB1 (next to RJ-45) */
++#	define CFG_STM_ASC_BASE		ST40_ASC1_REGS_BASE	/* UART #2 */
++#else
++	/* 9-pin D-type connector - CNB4 (nearer to FLI7510) */
++#	define CFG_STM_ASC_BASE		ST40_ASC2_REGS_BASE	/* UART #3 */
++#endif
++
++/*---------------------------------------------------------------
++ * Ethernet driver config
++ */
++
++/*
++ * There is 1 option for ethernet, using the on-chip ST-GMAC,
++ * with the on-board Micrel KSZ8041NL PHY.
++ */
++
++/* are we using the internal ST GMAC device ? */
++#define CONFIG_DRIVER_NET_STM_GMAC
++
++/*
++ * Select the appropriate base address for the GMAC.
++ * Also, choose which PHY to use.
++ */
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++#	define CFG_STM_STMAC_BASE	0xfd920000ul	/* MAC = STM GMAC0 */
++#	define CONFIG_STMAC_KSZ8041			/* PHY = Micrel KSZ8041NL */
++#else
++#	undef CONFIG_CMD_NET		/* undefine if no networking at all */
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++/*  If this board does not have eeprom for ethernet address so allow the user
++ *  to set it in the environment
++ */
++#define CONFIG_ENV_OVERWRITE
++
++
++/*---------------------------------------------------------------
++ * USB driver config
++ */
++
++/* Choose if we want USB Mass-Storage Support */
++//#define CONFIG_SH_STB7100_USB
++
++#ifdef CONFIG_SH_STB7100_USB
++#	define CONFIG_CMD_USB
++#	define CONFIG_CMD_FAT
++#	define CONFIG_USB_OHCI_NEW
++#	define CONFIG_USB_STORAGE
++#	define CFG_USB_OHCI_CPU_INIT
++#	define CFG_USB_BASE			0xfda00000
++#	define CFG_USB_OHCI_REGS_BASE		(CFG_USB_BASE+0xffc00)
++#	define CFG_USB_OHCI_SLOT_NAME		"ohci"
++#	define CFG_USB_OHCI_MAX_ROOT_PORTS	1
++#	define LITTLEENDIAN
++#endif	/* ifdef CONFIG_SH_STB7100_USB */
++
++#if defined(CONFIG_SH_STM_SATA) ||	\
++    defined(CONFIG_SH_STB7100_USB)
++#	define CFG_64BIT_LBA
++#	define CONFIG_LBA48
++#	define CONFIG_DOS_PARTITION
++#	define CONFIG_CMD_EXT2
++#endif
++
++/*-----------------------------------------------------------------------
++ * Miscellaneous configurable options
++ */
++
++#define CFG_HUSH_PARSER		1
++#define CONFIG_AUTO_COMPLETE	1
++#define CFG_LONGHELP		1		/* undef to save memory		*/
++#define CFG_PROMPT		"FLDB> "	/* Monitor Command Prompt	*/
++#define CFG_PROMPT_HUSH_PS2	"> "
++#define CFG_CBSIZE		1024
++#define CFG_PBSIZE (CFG_CBSIZE+sizeof(CFG_PROMPT)+16) /* Print Buffer Size	*/
++#define CFG_MAXARGS		16		/* max number of command args	*/
++#define CFG_HZ			1000		/* HZ for timer ticks	*/
++#define CFG_LOAD_ADDR		CFG_SDRAM_BASE	/* default load address		*/
++#define CFG_BOOTMAPSZ		(16 << 20)	/* initial linux memory size	*/
++#define CONFIG_BOOTDELAY	10		/* default delay before executing bootcmd */
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++
++#define CONFIG_CMDLINE_EDITING
++
++/*-----------------------------------------------------------------------
++ * FLASH organization
++ */
++
++/* Choose if we want FLASH Support (SPI, NAND &/or NOR devices)
++ *
++ * Note: by default CONFIG_CMD_FLASH is defined in config_cmd_default.h
++ */
++#undef CONFIG_CMD_FLASH		/* undefine it, define only if needed */
++#define CONFIG_CMD_FLASH	/* define for NOR flash */
++#define CONFIG_CMD_NAND		/* define for NAND flash */
++#define CONFIG_SPI_FLASH	/* define for SPI serial flash */
++
++/*-----------------------------------------------------------------------
++ * NOR FLASH organization
++ */
++
++/* Numonyx PC28F256P33BF: 32 MiB NOR FLASH, 259 sectors */
++#ifdef CONFIG_CMD_FLASH				/* NOR flash present ? */
++#	define CFG_FLASH_CFI_DRIVER
++#	define CFG_FLASH_CFI
++#	define CONFIG_FLASH_PROTECT_SINGLE_CELL
++#	define CFG_FLASH_PROTECTION	1	/* use hardware flash protection	*/
++#	define CFG_MAX_FLASH_BANKS	1	/* max number of memory banks		*/
++#	define CFG_MAX_FLASH_SECT	259	/* max number of sectors on one chip	*/
++#	define CFG_FLASH_EMPTY_INFO		/* test if each sector is empty		*/
++#	define MTDPARTS_NOR						\
++	"physmap-flash:"	/* First NOR flash device */		\
++		"256k(U-Boot)"		/* first partition */		\
++		",128k(Environment)"					\
++		",4M(Kernel)"						\
++		",-(RestOfNor0)"	/* last partition */
++#	define MTDIDS_NOR						\
++	"nor0=physmap-flash"	/* First NOR flash device */
++#else
++#	undef CONFIG_CMD_IMLS			/* NOR-flash specific */
++#	define CFG_NO_FLASH			/* NOR-flash specific */
++#endif	/* CONFIG_CMD_FLASH */
++
++/*-----------------------------------------------------------------------
++ * NAND FLASH organization
++ */
++
++#ifdef CONFIG_CMD_NAND				/* NAND flash present ? */
++#	define CFG_MAX_NAND_DEVICE	1
++#	define NAND_MAX_CHIPS		CFG_MAX_NAND_DEVICE
++#	define CFG_NAND0_BASE		CFG_EMI_NAND_BASE
++#	define CFG_NAND_BASE_LIST	{ CFG_NAND0_BASE }
++#	define MTDPARTS_NAND						\
++	"gen_nand.1:"		/* First NAND flash device */		\
++		"128k(env-nand0)"	/* first partition */		\
++		",4M(kernel-nand0)"					\
++		",32M(root-nand0)"					\
++		",-(RestOfNand0)"	/* last partition */
++#	define MTDIDS_NAND						\
++	"nand0=gen_nand.1"	/* First NAND flash device */
++
++	/*
++	 * Currently, there are 2 main modes to read/write from/to
++	 * NAND devices on STM SoCs:
++	 *	a) "bit-banging" (can NOT be used in boot-from-NAND)
++	 *	b) FLEX-mode (only supported means for boot-from-NAND)
++	 * If CFG_NAND_FLEX_MODE is defined, then FLEX-mode will be
++	 * used, otherwise, "bit-banging" will be used.
++	 */
++#	define CFG_NAND_FLEX_MODE	/* define to use NAND FLEX-MODE */
++
++	/*
++	 * Do we want to read/write NAND Flash compatible with the ST40's
++	 * NAND Controller H/W IP block for "boot-mode"? If we want
++	 * to read/write NAND flash that is meant to support booting
++	 * from NAND, then we need to use 3 bytes of ECC per 128 byte
++	 * record.  If so, then define the "CFG_NAND_ECC_HW3_128" macro.
++	 */
++#	define CFG_NAND_ECC_HW3_128	/* define for "boot-from-NAND" compatibility */
++
++	/*
++	 * If using CFG_NAND_ECC_HW3_128, then we must also define
++	 * where the (high watermark) boundary is. That is, the
++	 * NAND offset, below which we are in "boot-mode", and
++	 * must use 3 bytes of ECC for each 128 byte record.
++	 * For this offset (and above) we can use any supported
++	 * ECC configuration (e.g 3/256 S/W, or 3/512 H/W).
++	 */
++#	define CFG_NAND_STM_BOOT_MODE_BOUNDARY (1ul << 20)	/* 1 MiB */
++
++	/*
++	 * If we want to store the U-boot environment variables in
++	 * the NAND device, then we also need to specify *where* the
++	 * environment variables will be stored. Typically this
++	 * would be immediately after the U-boot monitor itself.
++	 * However, that *may* be a bad block. Define the following
++	 * to place the environment in an appropriate good block.
++	 */
++#	define CFG_NAND_ENV_OFFSET (CFG_MONITOR_LEN + 0x0)	/* immediately after u-boot.bin */
++#endif	/* CONFIG_CMD_NAND */
++
++/*-----------------------------------------------------------------------
++ * SPI SERIAL FLASH organization
++ */
++
++/*
++ *	Name		Manuf	Device
++ *	-----		-----	------
++ *	UD9/UD13	Numonyx	M25PX64
++ */
++#if defined(CONFIG_SPI_FLASH)			/* SPI serial flash present ? */
++#	define CONFIG_SPI_FLASH_ST		/* ST M25PXxx */
++#	define CONFIG_SPI			/* enable the SPI driver */
++#	define CONFIG_CMD_SPI			/* SPI serial bus command support */
++#	define CONFIG_CMD_EEPROM		/* enable the "eeprom" command set */
++#	define CFG_I2C_FRAM			/* to minimize performance degradation */
++#	undef  CFG_EEPROM_PAGE_WRITE_DELAY_MS	/* to minimize performance degradation */
++
++	/* choose either the H/W SSC, or S/W "bit-banging" */
++#if 1
++#	define CONFIG_SOFT_SPI			/* Use S/W "bit-banging" PIO (not the SSC) */
++#else
++#	undef CONFIG_SOFT_SPI			/* Use H/W SSC (not S/W "bit-banging" PIO) */
++#endif
++
++#if defined(CONFIG_SOFT_SPI)			/* Use "bit-banging" for SPI */
++#	define SPI_SCL(val)	do { fli7510_spi_scl((val)); } while (0)
++#	define SPI_SDA(val)	do { fli7510_spi_sda((val)); } while (0)
++#	define SPI_DELAY	do { udelay(1); } while (0)	/* QQQ: only 500 kHz ??? */
++#	define SPI_READ		fli7510_spi_read()
++#else
++#	define CFG_STM_SPI_SSC_BASE	0xfdb44000		/* SSC #4 */
++#	define CFG_STM_SPI_FREQUENCY	(7*1000*1000)		/* 7.14 MHz */
++#endif	/* CONFIG_SOFT_SPI */
++
++#endif	/* CONFIG_SPI_FLASH */
++
++
++/*-----------------------------------------------------------------------
++ * Address, size, & location of U-boot's Environment Sector
++ */
++
++#define CFG_ENV_SIZE			0x4000	/* 16 KiB of environment data */
++
++#if 1 && defined(CONFIG_CMD_FLASH)		/* NOR flash present ? */
++#	define CFG_ENV_IS_IN_FLASH		/* environment in NOR flash */
++#	define CFG_ENV_OFFSET	CFG_MONITOR_LEN	/* immediately after u-boot.bin */
++#	define CFG_ENV_SECT_SIZE	0x20000	/* 128 KiB Sector size */
++#elif 1 && defined(CONFIG_CMD_NAND)		/* NAND flash present ? */
++#	define CFG_ENV_IS_IN_NAND		/* environment in NAND flash */
++#	define CFG_ENV_OFFSET	CFG_NAND_ENV_OFFSET
++#	if CFG_ENV_SIZE < 0x20000		/* needs to be a multiple of block-size */
++#		undef CFG_ENV_SIZE		/* give it just one large-page block */
++#		define CFG_ENV_SIZE	0x20000	/* 128 KiB of environment data */
++#	endif /* if CFG_ENV_SIZE < 0x20000 */
++#elif 1 && defined(CONFIG_SPI_FLASH)		/* SPI serial flash present ? */
++#	define CFG_ENV_IS_IN_EEPROM		/* ENV is stored in SPI Serial Flash */
++#	define CFG_ENV_OFFSET	CFG_MONITOR_LEN	/* immediately after u-boot.bin */
++#else
++#	define CFG_ENV_IS_NOWHERE		/* ENV is stored in volatile RAM */
++#endif	/* CONFIG_CMD_NAND */
++
++/*----------------------------------------------------------------------
++ * JFFS2 + MTD Partition support
++ */
++
++#if 1 && (defined(CONFIG_CMD_FLASH) || defined(CONFIG_CMD_NAND))
++#	define CONFIG_CMD_JFFS2			/* enable JFFS2 support */
++#endif
++
++#if defined(CONFIG_CMD_JFFS2)
++#	define CONFIG_JFFS2_CMDLINE		/* mtdparts command line support */
++#	define CONFIG_JFFS2_NAND		/* JFFS2 support on NAND Flash */
++#	if defined(CONFIG_CMD_FLASH) && defined(CONFIG_CMD_NAND) /* Both NOR + NAND */
++#		define MTDPARTS_DEFAULT						\
++		"mtdparts="							\
++			MTDPARTS_NOR	/* NOR flash devices */			\
++			";"		/* delimiter */				\
++			MTDPARTS_NAND	/* NAND flash devices */
++#		define MTDIDS_DEFAULT						\
++			MTDIDS_NOR	/* NOR flash devices */			\
++			","		/* delimiter */				\
++			MTDIDS_NAND	/* NAND flash devices */
++#	elif defined(CONFIG_CMD_FLASH)		/* Only NOR flash devices */
++#		define MTDPARTS_DEFAULT	"mtdparts=" MTDPARTS_NOR
++#		define MTDIDS_DEFAULT	MTDIDS_NOR
++#	elif defined(CONFIG_CMD_NAND)		/* Only NAND flash devices */
++#		define MTDPARTS_DEFAULT	"mtdparts=" MTDPARTS_NAND
++#		define MTDIDS_DEFAULT	MTDIDS_NAND
++#	endif	/* defined(CONFIG_CMD_FLASH) && defined(CONFIG_CMD_NAND) */
++#endif	/* CONFIG_CMD_JFFS2 */
++
++
++/*----------------------------------------------------------------------
++ * I2C configuration
++ */
++
++#define CONFIG_CMD_I2C				/* do we want I2C support ? */
++
++#if defined(CONFIG_CMD_I2C)
++#	define CONFIG_I2C_BUS_2			/* Use I2C Bus "2" */
++#	define CONFIG_I2C_CMD_TREE		/* use a "i2c" root command */
++#	define CFG_I2C_SLAVE		0x7F	/* I2C slave address	*/	/* QQQ - TO CHECK */
++#	define CONFIG_SOFT_I2C			/* I2C with S/W bit-banging	*/
++#	undef  CONFIG_HARD_I2C			/* I2C withOUT hardware support	*/
++#	define I2C_ACTIVE			/* open-drain, nothing to do */
++#	define I2C_TRISTATE			/* open-drain, nothing to do */
++#	define I2C_SCL(val)		do { fli7510_i2c_scl((val)); } while (0)
++#	define I2C_SDA(val)		do { fli7510_i2c_sda((val)); } while (0)
++#	define I2C_READ			fli7510_i2c_read()
++
++	/*
++	 * The "BOGOS" for NDELAY() may be calibrated using the
++	 * following code fragment, and measuring (using an oscilloscope)
++	 * the frequency of the I2C SCL pin, and adjusting
++	 * NDELAY_BOGOS, until the SCL is approximately 100 kHz.
++	 * (100kHz has a period of 5us + 5us).
++	 *
++	 *	printf("just toggling I2C SCL (100kHz frequency) ...\n");
++	 *	while (1)
++	 *	{
++	 *		I2C_SCL(1); NDELAY(5000);
++	 *		I2C_SCL(0); NDELAY(5000);
++	 *	}
++	 */
++#	define NDELAY_BOGOS		22	/* Empirical measurement for 1ns */
++#	define NDELAY(ns)						\
++		do {							\
++			const unsigned n_bogo = NDELAY_BOGOS;		\
++			const unsigned n_ticks = 			\
++				((ns)<n_bogo) ? 1u : (ns)/n_bogo;	\
++			volatile unsigned n_count;			\
++			for(n_count=0; n_count<n_ticks; n_count++)	\
++				;	/* do nothing */		\
++		} while(0)
++
++	/*
++	 * Note there are 4 * I2C_DELAY per I2C clock cycle
++	 * So, 400 kHz requires an I2C delay of 625 ns.
++	 * However, this calculation only works if the S/W
++	 * overhead in I2C bit-banging is negligible - which it is not!
++	 * So, in practice, either I2C_DELAY or CFG_I2C_SPEED will be lower.
++	 * The higher the clock frequency, the greater the difference.
++	 * Empirical measurement/adjustment is recommended.
++	 */
++#	define CFG_I2C_SPEED	400000				/* I2C speed (Hz) */
++#	define I2C_DELAY	do { NDELAY(625); } while (0)	/* 625 ns */
++#endif	/* CONFIG_CMD_I2C */
++
++#endif	/* __CONFIG_H */
+diff --git a/include/configs/ipidtv7105.h b/include/configs/ipidtv7105.h
+index 8f85dc0..311e817 100644
+--- a/include/configs/ipidtv7105.h
++++ b/include/configs/ipidtv7105.h
+@@ -40,7 +40,6 @@
+  * otherwise (e.g. NOR/SPI Flash booting), do not define it.
+  */
+ #undef CFG_BOOT_FROM_NAND		/* define to build a NAND-bootable image */
+-#define CFG_BOOT_FROM_NAND	/* QQQ: define until boot-from-SPI is working */
+ 
+ 
+ /*-----------------------------------------------------------------------
+@@ -57,14 +56,15 @@
+  */
+ 
+ #if defined(CFG_BOOT_FROM_SPI)		/* we are booting from SPI serial flash */
+-/* QQQ: Note, need access to a modified board to verify the SPI configuration */
+-#error QQQ: to add boot-from-SPI configuration!
++#define CFG_EMI_SPI_BASE	0xA0000000	/* CSA: SPI Flash,  Physical 0x00000000 (64MiB) */
++#define CFG_EMI_NAND_BASE	0xA0000000	/* CSA: NAND Flash, Physical 0x00000000 (64MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 0 }		/* NAND is on Chip Select CSA */
+ #elif defined(CFG_BOOT_FROM_NAND)	/* we are booting from NAND */
+ #define CFG_EMI_NAND_BASE	0xA0000000	/* CSA: NAND Flash, Physical 0x00000000 (64MiB) */
+ #define CFG_NAND_FLEX_CSn_MAP	{ 0 }		/* NAND is on Chip Select CSA */
+ #else
+-#define CFG_EMI_NAND_BASE	0xA6000000	/* CSC: NAND Flash, Physical 0x06000000 (8MiB) */
+-#define CFG_NAND_FLEX_CSn_MAP	{ 2 }		/* NAND is on Chip Select CSC */
++#define CFG_EMI_NAND_BASE	0xA0000000	/* CSA: NAND Flash, Physical 0x00000000 (64MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 0 }		/* NAND is on Chip Select CSA */
+ #endif /* CFG_BOOT_FROM_NAND */
+ 
+ #ifdef CONFIG_SH_SE_MODE
+@@ -156,7 +156,7 @@
+  */
+ #ifdef CONFIG_DRIVER_NET_STM_GMAC
+ #	define CFG_STM_STMAC_BASE	0xfd110000ul	/* MAC = STM GMAC0 */
+-#	define CONFIG_STMAC_KSZ8041FTL			/* PHY = Micrel KSZ8041FTL */
++#	define CONFIG_STMAC_KSZ8041			/* PHY = Micrel KSZ8041FTL */
+ #else
+ #	undef CONFIG_CMD_NET		/* undefine if no networking at all */
+ #endif	/* CONFIG_DRIVER_NET_STM_GMAC */
+diff --git a/include/configs/mb704.h b/include/configs/mb704.h
+index 3bdd870..73d407f 100644
+--- a/include/configs/mb704.h
++++ b/include/configs/mb704.h
+@@ -249,6 +249,7 @@
+ #define CONFIG_CMD_EEPROM		/* enable the "eeprom" command set */
+ #define CFG_I2C_FRAM			/* to minimize performance degradation */
+ #undef  CFG_EEPROM_PAGE_WRITE_DELAY_MS	/* to minimize performance degradation */
++#define CFG_STM_SPI_SSC_BASE	ST40_SSC0_REGS_BASE	/* SPI is on SSC #0 */
+ 
+ /*
+  *	NOTE: To use the Atmel AT45DB321D serial flash for booting,
+diff --git a/include/configs/pdk7105.h b/include/configs/pdk7105.h
+index bac7f0b..646c5fd 100644
+--- a/include/configs/pdk7105.h
++++ b/include/configs/pdk7105.h
+@@ -195,7 +195,7 @@
+  */
+ #ifdef CONFIG_DRIVER_NET_STM_GMAC
+ #	define CFG_STM_STMAC_BASE	0xfd110000ul	/* MAC = STM GMAC0 */
+-#	define CONFIG_STMAC_KSZ8041FTL			/* PHY = Micrel KSZ8041FTL */
++#	define CONFIG_STMAC_KSZ8041			/* PHY = Micrel KSZ8041FTL */
+ #else
+ #	undef CONFIG_CMD_NET		/* undefine if no networking at all */
+ #endif	/* CONFIG_DRIVER_NET_STM_GMAC */
+@@ -394,16 +394,26 @@
+ #	define CONFIG_CMD_EEPROM		/* enable the "eeprom" command set */
+ #	define CFG_I2C_FRAM			/* to minimize performance degradation */
+ #	undef  CFG_EEPROM_PAGE_WRITE_DELAY_MS	/* to minimize performance degradation */
+-#	define CONFIG_SOFT_SPI			/* Use "bit-banging" PIO (not the SSC) */
+-#endif	/* CONFIG_SPI_FLASH */
++
++	/* choose either the H/W SSC, or S/W "bit-banging" */
++#if 1
++#	define CONFIG_SOFT_SPI			/* Use S/W "bit-banging" PIO (not the SSC) */
++#else
++#	undef CONFIG_SOFT_SPI			/* Use H/W SSC (not S/W "bit-banging" PIO) */
++#endif
+ 
+ #if defined(CONFIG_SOFT_SPI)			/* Use "bit-banging" for SPI */
+ #	define SPI_SCL(val)	do { stx7105_spi_scl((val)); } while (0)
+ #	define SPI_SDA(val)	do { stx7105_spi_sda((val)); } while (0)
+ #	define SPI_DELAY	do { udelay(1); } while (0)	/* QQQ: only 500 kHz ??? */
+ #	define SPI_READ		stx7105_spi_read()
++#else
++#	define CFG_STM_SPI_SSC_BASE	ST40_SSC1_REGS_BASE	/* SSC #1 */
++#	define CFG_STM_SPI_FREQUENCY	(5*1000*1000)		/* 5 MHz */
+ #endif	/* CONFIG_SOFT_SPI */
+ 
++#endif	/* CONFIG_SPI_FLASH */
++
+ 
+ /*-----------------------------------------------------------------------
+  * Address, size, & location of U-boot's Environment Sector
+@@ -459,4 +469,62 @@
+ #	endif	/* defined(CONFIG_CMD_FLASH) && defined(CONFIG_CMD_NAND) */
+ #endif	/* CONFIG_CMD_JFFS2 */
+ 
++
++/*----------------------------------------------------------------------
++ * I2C configuration
++ */
++
++#define CONFIG_CMD_I2C				/* do we want I2C support ? */
++
++#if defined(CONFIG_CMD_I2C)
++#	define CONFIG_I2C_BUS_C			/* Use I2C Bus "C" */
++#	define CONFIG_I2C_CMD_TREE		/* use a "i2c" root command */
++#	define CFG_I2C_SLAVE		0x7F	/* I2C slave address	*/	/* QQQ - TO CHECK */
++#	define CONFIG_SOFT_I2C			/* I2C with S/W bit-banging	*/
++#	undef  CONFIG_HARD_I2C			/* I2C withOUT hardware support	*/
++#	define I2C_ACTIVE			/* open-drain, nothing to do */
++#	define I2C_TRISTATE			/* open-drain, nothing to do */
++#	define I2C_SCL(val)		do { stx7105_i2c_scl((val)); } while (0)
++#	define I2C_SDA(val)		do { stx7105_i2c_sda((val)); } while (0)
++#	define I2C_READ			stx7105_i2c_read()
++
++	/*
++	 * The "BOGOS" for NDELAY() may be calibrated using the
++	 * following code fragment, and measuring (using an oscilloscope)
++	 * the frequency of the I2C SCL pin, and adjusting
++	 * NDELAY_BOGOS, until the SCL is approximately 100 kHz.
++	 * (100kHz has a period of 5us + 5us).
++	 *
++	 *	printf("just toggling I2C SCL (100kHz frequency) ...\n");
++	 *	while (1)
++	 *	{
++	 *		I2C_SCL(1); NDELAY(5000);
++	 *		I2C_SCL(0); NDELAY(5000);
++	 *	}
++	 */
++#	define NDELAY_BOGOS		22	/* Empirical measurement for 1ns */
++#	define NDELAY(ns)						\
++		do {							\
++			const unsigned n_bogo = NDELAY_BOGOS;		\
++			const unsigned n_ticks = 			\
++				((ns)<n_bogo) ? 1u : (ns)/n_bogo;	\
++			volatile unsigned n_count;			\
++			for(n_count=0; n_count<n_ticks; n_count++)	\
++				;	/* do nothing */		\
++		} while(0)
++
++	/*
++	 * Note there are 4 * I2C_DELAY per I2C clock cycle
++	 * So, 400 kHz requires an I2C delay of 625 ns.
++	 * However, this calculation only works if the S/W
++	 * overhead in I2C bit-banging is negligible - which it is not!
++	 * So, in practice, either I2C_DELAY or CFG_I2C_SPEED will be lower.
++	 * The higher the clock frequency, the greater the difference.
++	 * Empirical measurement/adjustment is recommended.
++	 */
++#	define CFG_I2C_SPEED	400000				/* I2C speed (Hz) */
++#	define I2C_DELAY	do { NDELAY(625); } while (0)	/* 625 ns */
++#endif	/* CONFIG_CMD_I2C */
++
++
+ #endif	/* __CONFIG_H */
+diff --git a/sh_config.mk b/sh_config.mk
+index 52a0c9b..a4526e6 100644
+--- a/sh_config.mk
++++ b/sh_config.mk
+@@ -27,7 +27,7 @@
+ # for actual build number, in the following identifier.
+ # Regular Expression for string is:
+ # 	"stm[2-9][0-9]-[2-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]"
+-SH_IDENT_STRING="\"stm23-2009-09-21\""
++SH_IDENT_STRING="\"stm23-2009-12-07\""
+ 
+ PLATFORM_CPPFLAGS += -DCONFIG_SH4 -D__SH4__ -DCONFIG_IDENT_STRING=$(SH_IDENT_STRING)
+ PLATFORM_LDFLAGS  += -n

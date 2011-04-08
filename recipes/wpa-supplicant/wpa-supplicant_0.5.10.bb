@@ -26,6 +26,30 @@ SRC_URI_append_opencuberevo = " \
 DEPENDS_dm8000_append = "madwifi-ng"
 TARGET_CFLAGS_dm8000_append = " -I${STAGING_INCDIR}/madwifi-ng"
 
+DEPENDS_cuberevo_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
+DEPENDS_cuberevo-mini_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo-mini_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
+DEPENDS_cuberevo-mini2_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo-mini2_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
+DEPENDS_cuberevo-250hd_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo-250hd_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
+DEPENDS_cuberevo-mini-fta_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo-mini-fta_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
+DEPENDS_cuberevo-100hd_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo-100hd_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
+DEPENDS_cuberevo-2000hd_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo-2000hd_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
+DEPENDS_cuberevo-9500hd_append = "madwifi-ng"
+TARGET_CFLAGS_cuberevo-9500hd_append = " -I${STAGING_INCDIR}/madwifi-ng"
+
 S = "${WORKDIR}/wpa_supplicant-${PV}"
 
 PACKAGES_prepend = "wpa-supplicant-passphrase "

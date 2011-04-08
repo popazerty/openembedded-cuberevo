@@ -1,0 +1,5377 @@
+diff --git a/MAKEALL b/MAKEALL
+index a351f53..49e7b7e 100755
+--- a/MAKEALL
++++ b/MAKEALL
+@@ -695,6 +695,10 @@ LIST_sh="		\
+ 	cb102		\
+ 	cb102se		\
+ 	fldbse		\
++	mb628		\
++	mb628se		\
++	eud7141		\
++	eud7141se	\
+ "
+ 
+ #########################################################################
+diff --git a/Makefile b/Makefile
+index bac3df1..37194a7 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2759,6 +2759,17 @@ mb628se_config :		unconfig
+ 	@echo "TEXT_BASE = 0x83900000" >$(obj)board/st/mb628/config.tmp)
+ 	@$(MKCONFIG) -a mb628 sh sh mb628 st stx7141
+ 
++eud7141_config \
++eud7141se_config :		unconfig
++	@mkdir -p $(obj)include $(obj)board/st/eud7141
++	@echo "#define CONFIG_SH_STX7141   1" >>$(obj)include/config.h
++	@echo "#define CONFIG_SH_EUD7141   1" >>$(obj)include/config.h
++	$(if $(findstring se,$@), \
++	@echo "#define CONFIG_SH_SE_MODE   1" >>$(obj)include/config.h)
++	$(if $(findstring se,$@), \
++	@echo "TEXT_BASE = 0x87F00000" >$(obj)board/st/eud7141/config.tmp)
++	@$(MKCONFIG) -a eud7141 sh sh eud7141 st stx7141
++
+ mb671_config \
+ mb671se_config :		unconfig
+ 	@mkdir -p $(obj)include $(obj)board/st/mb671
+diff --git a/board/st/5197cab/init-5197cab.S b/board/st/5197cab/init-5197cab.S
+index 07eb584..6728549 100644
+--- a/board/st/5197cab/init-5197cab.S
++++ b/board/st/5197cab/init-5197cab.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx5197reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb704.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx5197reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/cb101/init-cb101.S b/board/st/cb101/init-cb101.S
+index 2898a40..03375cb 100644
+--- a/board/st/cb101/init-cb101.S
++++ b/board/st/cb101/init-cb101.S
+@@ -1,12 +1,3 @@
+-
+-#include "asm/stx7200reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb519.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -16,6 +7,20 @@
+  */
+ 
+ 
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7200reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
+ 	.section .data.init, "a"
+ 
+ 	.balign 32
+diff --git a/board/st/cb102/init-cb102.S b/board/st/cb102/init-cb102.S
+index 70a7a05..20b12df 100644
+--- a/board/st/cb102/init-cb102.S
++++ b/board/st/cb102/init-cb102.S
+@@ -1,12 +1,3 @@
+-
+-#include "asm/stx7200reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb671.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -15,22 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
+-#ifndef CONFIG_STM_NEW_POKE_TABLE_PARADIGM
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
+-#endif /* CONFIG_STM_NEW_POKE_TABLE_PARADIGM */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7200reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+@@ -128,14 +116,14 @@ __memory_setup_table:
+ 	UPDATE32(STX7200_SYSCONF_SYS_CFG11, 0xffffefff, 0)
+ 
+ 	/* Wait for CLOCKGENA PLL1 to lock... */
+-#ifdef CONFIG_STM_NEW_POKE_TABLE_PARADIGM
++#if !defined(CONFIG_SH_OLD_POKE_LOOP_PARADIGM)
+ 	IF_EQ32(1, STX7200_SYSCONF_DEVICEID_0, 0x0fffffff, 0x0d437041)
+ 	  WHILE_NE32(STX7200_SYSCONF_SYS_STA03, 0x00000001, 1)
+ 	ELSE(1)
+ 	  /* On cut 1 polarity inverted on lock bit */
+ 	  WHILE_NE32(STX7200_SYSCONF_SYS_STA03, 0x00000001, 0)
+ 	ENDIF(1)
+-#else /* CONFIG_STM_NEW_POKE_TABLE_PARADIGM */
++#else /* CONFIG_SH_OLD_POKE_LOOP_PARADIGM */
+ 	IF_DEVID(STX7200_CUT1)
+ 	  /* On cut 1 polarity inverted on lock bit */
+ 	  WHILE_NE32(STX7200_SYSCONF_SYS_STA03, 0x00000001, 0)
+@@ -143,7 +131,7 @@ __memory_setup_table:
+ 	IF_DEVID(STX7200_CUT2)
+ 	  WHILE_NE32(STX7200_SYSCONF_SYS_STA03, 0x00000001, 1)
+ 	ENDIF
+-#endif /* CONFIG_STM_NEW_POKE_TABLE_PARADIGM */
++#endif /* CONFIG_SH_OLD_POKE_LOOP_PARADIGM */
+ 
+ 	/* ----- STx7200 Sysconf ----- */
+ 
+diff --git a/board/st/cb103/init-cb103.S b/board/st/cb103/init-cb103.S
+index 5c979f2..5506db0 100644
+--- a/board/st/cb103/init-cb103.S
++++ b/board/st/cb103/init-cb103.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx7200reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb671.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7200reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/eud7141/Makefile b/board/st/eud7141/Makefile
+new file mode 100644
+index 0000000..e71bce4
+--- /dev/null
++++ b/board/st/eud7141/Makefile
+@@ -0,0 +1,54 @@
++#
++# (C) Copyright 2007 STMicroelectronics.
++# Stuart Menefy <stuart.menefy@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++SOBJS-y	= init-$(BOARD).o
++
++COBJS-y	+= $(BOARD).o
++COBJS-$(CONFIG_CMD_NAND) += nand.o
++
++
++SRCS	:= $(SOBJS-y:.o=.S) $(COBJS-y:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS-y))
++SOBJS	:= $(addprefix $(obj),$(SOBJS-y))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/st/eud7141/config.mk b/board/st/eud7141/config.mk
+new file mode 100644
+index 0000000..bc95721
+--- /dev/null
++++ b/board/st/eud7141/config.mk
+@@ -0,0 +1,43 @@
++#
++# (C) Copyright 2008-2010 STMicroelectronics.
++# Sean McGoogan <Sean.McGoogan@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++#
++# EUD7141 board:
++#
++#	Valid values for TEXT_BASE are:
++#
++#	0x93F00000	29-bit mode (Traditional Mode)
++#	0x87F00000	32-bit mode (Space-Enhancement Mode)
++#
++# Note:	Alternative definitions of TEXT_BASE are put into
++#	'config.tmp' from the top-level 'Makefile'.
++#
++
++sinclude $(OBJTREE)/board/$(BOARDDIR)/config.tmp
++
++ifndef TEXT_BASE
++# Installs at eSTB BASE + 127 MiB in P1 (cachable)
++TEXT_BASE = 0x93f00000
++endif
++
++PLATFORM_LDFLAGS +=
+diff --git a/board/st/eud7141/eud7141.c b/board/st/eud7141/eud7141.c
+new file mode 100644
+index 0000000..7f17641
+--- /dev/null
++++ b/board/st/eud7141/eud7141.c
+@@ -0,0 +1,88 @@
++/*
++ * (C) Copyright 2008-2010 STMicroelectronics.
++ *
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <command.h>
++#include <asm/soc.h>
++#include <asm/stx7141reg.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++
++
++extern void flashWriteEnable(void)
++{
++	/* Enable Vpp for writing to flash */
++	/* Nothing to do! */
++}
++
++extern void flashWriteDisable(void)
++{
++	/* Disable Vpp for writing to flash */
++	/* Nothing to do! */
++}
++
++static void configPIO(void)
++{
++	unsigned long sysconf;
++
++	/* Setup PIO of ASC device */
++	SET_PIO_ASC(PIO_PORT(1), 0, 1, STPIO_NO_PIN, STPIO_NO_PIN);  /* ASC2 */
++
++	/* Enable ASC UART */
++	sysconf = *STX7141_SYSCONF_SYS_CFG36;
++	/* CFG36[31] = 0 = UART2_RXD_SEL = PIO1[1] */
++	sysconf &= ~(1ul << 31);
++	*STX7141_SYSCONF_SYS_CFG36 = sysconf;
++
++	/* Route ASC2 via PIO[1] for TX & RX */
++	sysconf = *STX7141_SYSCONF_SYS_CFG19;
++	/* PIO1[0] Selector: CFG19[1:0] = 3 TX */
++	/* PIO1[1] Selector: CFG19[3:2] = 3 RX */
++	sysconf |= 3ul << 0 | 3ul << 2;
++	*STX7141_SYSCONF_SYS_CFG19 = sysconf;
++}
++
++extern int board_init(void)
++{
++	configPIO();
++
++#if defined(CONFIG_SH_STM_SATA)
++	stx7141_configure_sata ();
++#endif	/* CONFIG_SH_STM_SATA */
++
++	return 0;
++}
++
++extern int checkboard (void)
++{
++	printf ("\n\nBoard: STx7141-EUD"
++#ifdef CONFIG_SH_SE_MODE
++		"  [32-bit mode]"
++#else
++		"  [29-bit mode]"
++#endif
++		"\n");
++
++	return 0;
++}
+diff --git a/board/st/eud7141/eud7141.romgen b/board/st/eud7141/eud7141.romgen
+new file mode 100644
+index 0000000..7b0f914
+--- /dev/null
++++ b/board/st/eud7141/eud7141.romgen
+@@ -0,0 +1,2380 @@
++/*
++This file was automatically generated on Fri 05 Mar 10 at 17:48:38 by user mcgoogans, host hoiho.bri.st.com using romgen R1.4.0 with the ST TargetPack eud7141 using the option --target-connect with the ST Micro Connect hesiod-hti
++
++TargetPack files used:
++/opt/STM/STLinux-2.3/host/stmc/targetpack/boards/eud7141/eud7141.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/boards/eud7141/eud7141.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/boards/eud7141/eud7141_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st231.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st231.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_ccn_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_addr_array_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_data_array_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_regs.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/debug/tapmux.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_emi_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_lmigp_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_pio.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/tapmux.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141_audio_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141_clockgena_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141_clockgenb_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141_fdma_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx7141/stx7141_sysconf_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/__init__.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/jtag.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/utilities.py
++*/
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_DEVICEID0
++*/
++/* PEEK(0xfe001000) (used target peek value 0x1d43c041) */
++/* PEEK(0xfe00d05c) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++POKE32(0xfe213014, 0x00000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++POKE32(0xfe213024, 0x00000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_ENABLE_FB
++*/
++/* PEEK(0xfe21301c) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_ENABLE_FB
++*/
++WHILE_NE32(0xfe21301c, 0xffffffff, 0x00000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_ENABLE_FB
++*/
++/* PEEK(0xfe213020) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_ENABLE_FB
++*/
++WHILE_NE32(0xfe213020, 0xffffffff, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_DEVICEID0
++*/
++/* PEEK(0xfe001000) (used target peek value 0x1d43c041) */
++/* PEEK(0xfe00d05c) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80001402) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++OR32(0xfe213000, 0x00100000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++/* PEEK(0xfe213010) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++OR32(0xfe213010, 0x00000001)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x00181402) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++UPDATE32(0xfe213000, 0xfff80000, 0x00000f01)
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++/* PEEK(0xfe213010) (used target peek value 0x00000001) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++UPDATE32(0xfe213010, 0xfffffffe, 0x00000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80100f01) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++WHILE_NE32(0xfe213000, 0x80000000, 0x80000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80100f01) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++UPDATE32(0xfe213000, 0xffefffff, 0x00000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++OR32(0xfe213004, 0x00100000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++/* PEEK(0xfe213010) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++OR32(0xfe213010, 0x00000002)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x00182803) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++UPDATE32(0xfe213004, 0xfff80000, 0x00002803)
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++/* PEEK(0xfe213010) (used target peek value 0x00000002) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_POWER_CFG
++*/
++UPDATE32(0xfe213010, 0xfffffffd, 0x00000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80102803) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++WHILE_NE32(0xfe213004, 0x80000000, 0x80000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80102803) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++UPDATE32(0xfe213004, 0xffefffff, 0x00000000)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0HS_DIV0_CFG
++*/
++POKE32(0xfe213900, 0x00000102)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV1_CFG
++*/
++POKE32(0xfe213b04, 0x00000001)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV2_CFG
++*/
++POKE32(0xfe213b08, 0x00000001)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV3_CFG
++*/
++POKE32(0xfe213b0c, 0x00000001)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0LS_DIV4_CFG
++*/
++POKE32(0xfe213a10, 0x00010100)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0LS_DIV5_CFG
++*/
++POKE32(0xfe213a14, 0x00010100)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0LS_DIV6_CFG
++*/
++POKE32(0xfe213a18, 0x00010100)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0LS_DIV7_CFG
++*/
++POKE32(0xfe213a1c, 0x00010100)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV8_CFG
++*/
++POKE32(0xfe213b20, 0x00000103)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV9_CFG
++*/
++POKE32(0xfe213b24, 0x00000103)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV10_CFG
++*/
++POKE32(0xfe213b28, 0x00000307)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV11_CFG
++*/
++POKE32(0xfe213b2c, 0x00000103)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV12_CFG
++*/
++POKE32(0xfe213b30, 0x00000102)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0LS_DIV13_CFG
++*/
++POKE32(0xfe213a34, 0x00000811)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV14_CFG
++*/
++POKE32(0xfe213b38, 0x0000050b)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV15_CFG
++*/
++POKE32(0xfe213b3c, 0x00000307)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV16_CFG
++*/
++POKE32(0xfe213b40, 0x00000103)
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_DIV17_CFG
++*/
++POKE32(0xfe213b44, 0x00000204)
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++POKE32(0xfe213014, 0xa6aa55a9)
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++POKE32(0xfe213024, 0x0000000a)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++/* PEEK(0xfe00112c) (used target peek value 0x00000d28) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++OR32(0xfe00112c, 0x00001000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++/* PEEK(0xfe00112c) (used target peek value 0x00001d28) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++UPDATE32(0xfe00112c, 0xfffff001, 0x000006a0)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++/* PEEK(0xfe00112c) (used target peek value 0x000016a0) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++UPDATE32(0xfe00112c, 0xffffefff, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA3
++*/
++/* PEEK(0xfe001014) (used target peek value 0x10000000) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA3
++*/
++WHILE_NE32(0xfe001014, 0x00000001, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213a10) (used target peek value 0x00010100) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213a14) (used target peek value 0x00010100) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213a18) (used target peek value 0x00010100) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213a1c) (used target peek value 0x00010100) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b04) (used target peek value 0x00000001) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b08) (used target peek value 0x00000001) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b0c) (used target peek value 0x00000001) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213900) (used target peek value 0x00000102) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b20) (used target peek value 0x00000103) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b24) (used target peek value 0x00000103) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_DEVICEID0
++*/
++/* PEEK(0xfe001000) (used target peek value 0x1d43c041) */
++/* PEEK(0xfe00d05c) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++/* PEEK(0xfe213024) (used target peek value 0x0000000a) */
++/* PEEK(0xfe213b40) (used target peek value 0x00000103) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++/* PEEK(0xfe213024) (used target peek value 0x0000000a) */
++/* PEEK(0xfe213b44) (used target peek value 0x00000204) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b28) (used target peek value 0x00000307) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b2c) (used target peek value 0x00000103) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b30) (used target peek value 0x00000102) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213a34) (used target peek value 0x00000811) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b38) (used target peek value 0x0000050b) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL0_CFG
++*/
++/* PEEK(0xfe213000) (used target peek value 0x80000f01) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_PLL1_CFG
++*/
++/* PEEK(0xfe213004) (used target peek value 0x80002803) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++/* PEEK(0xfe213014) (used target peek value 0xa6aa55a9) */
++/* PEEK(0xfe213b3c) (used target peek value 0x00000307) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++/* PEEK(0xfe00112c) (used target peek value 0x000006a0) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG04
++*/
++/* PEEK(0xfe001110) (used target peek value 0x00000006) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG04
++*/
++POKE32(0xfe001110, 0x00000002)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++/* PEEK(0xfe00112c) (used target peek value 0x000006a0) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG11
++*/
++POKE32(0xfe00112c, 0x080206a1)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG15
++*/
++POKE32(0xfe00113c, 0x08020001)
++DELAY(200)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG04
++*/
++/* PEEK(0xfe001110) (used target peek value 0x00000002) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG04
++*/
++POKE32(0xfe001110, 0x00000006)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG12
++*/
++POKE32(0xfe001130, 0xa2006aaf)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG16
++*/
++POKE32(0xfe001140, 0xa2006aaf)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG38
++*/
++POKE32(0xfe001198, 0x000ffe0c)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG39
++*/
++POKE32(0xfe00119c, 0x000ffe1c)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG13
++*/
++POKE32(0xfe001134, 0x00200000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG14
++*/
++POKE32(0xfe001138, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG17
++*/
++POKE32(0xfe001144, 0x00200000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG18
++*/
++POKE32(0xfe001148, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG42
++*/
++POKE32(0xfe0011a8, 0x7800b058)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG44
++*/
++POKE32(0xfe0011b0, 0x7800b058)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG43
++*/
++POKE32(0xfe0011ac, 0x18000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG45
++*/
++POKE32(0xfe0011b4, 0x18000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG55
++*/
++POKE32(0xfe0011dc, 0x08fc2284)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG37
++*/
++POKE32(0xfe001194, 0x08fc2284)
++
++
++/*
++st40_emi_regs.EMI_BANK_ENABLE
++*/
++POKE32(0xfe700860, 0x00000005)
++
++
++/*
++st40_emi_regs.EMI_BANK0_BASEADDRESS
++*/
++POKE32(0xfe700800, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_BASEADDRESS
++*/
++POKE32(0xfe700810, 0x00000010)
++
++
++/*
++st40_emi_regs.EMI_BANK2_BASEADDRESS
++*/
++POKE32(0xfe700820, 0x00000012)
++
++
++/*
++st40_emi_regs.EMI_BANK3_BASEADDRESS
++*/
++POKE32(0xfe700830, 0x00000014)
++
++
++/*
++st40_emi_regs.EMI_BANK4_BASEADDRESS
++*/
++POKE32(0xfe700840, 0x0000001c)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA0
++*/
++POKE32(0xfe700100, 0x001016d1)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA1
++*/
++POKE32(0xfe700108, 0x9d200000)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA2
++*/
++POKE32(0xfe700110, 0x9d220000)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA3
++*/
++POKE32(0xfe700118, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA0
++*/
++POKE32(0xfe700140, 0x002016d1)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA1
++*/
++POKE32(0xfe700148, 0x9d222200)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA2
++*/
++POKE32(0xfe700150, 0x9d220044)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA3
++*/
++POKE32(0xfe700158, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA0
++*/
++POKE32(0xfe700180, 0x002046f9)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA1
++*/
++POKE32(0xfe700188, 0xa5a00000)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA2
++*/
++POKE32(0xfe700190, 0xa5a20000)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA3
++*/
++POKE32(0xfe700198, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA0
++*/
++POKE32(0xfe7001c0, 0x002016d1)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA1
++*/
++POKE32(0xfe7001c8, 0x9d222200)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA2
++*/
++POKE32(0xfe7001d0, 0x9d220044)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA3
++*/
++POKE32(0xfe7001d8, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK4_EMICONFIGDATA0
++*/
++POKE32(0xfe700200, 0x002016d1)
++
++
++/*
++st40_emi_regs.EMI_BANK4_EMICONFIGDATA1
++*/
++POKE32(0xfe700208, 0x9d222200)
++
++
++/*
++st40_emi_regs.EMI_BANK4_EMICONFIGDATA2
++*/
++POKE32(0xfe700210, 0x9d220044)
++
++
++/*
++st40_emi_regs.EMI_BANK4_EMICONFIGDATA3
++*/
++POKE32(0xfe700218, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_GENCFG
++*/
++POKE32(0xfe700028, 0x00000000)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_0
++*/
++POKE32(0xfe901008, 0x0b2f013b)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_1
++*/
++POKE32(0xfe90100c, 0xffff0500)
++
++
++/*
++st40_lmigp_regs.LMI_STR_0
++*/
++POKE32(0xfe901018, 0xddadb41b)
++
++
++/*
++st40_lmigp_regs.LMI_STR_1
++*/
++POKE32(0xfe90101c, 0x00222ed6)
++
++
++/*
++st40_lmigp_regs.LMI_SDRA0_0
++*/
++POKE32(0xfe901030, 0x1c001e20)
++
++
++/*
++st40_lmigp_regs.LMI_SDRA1_0
++*/
++POKE32(0xfe901038, 0x1c001e20)
++DELAY(200000)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020023)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020022)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00010000)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00018000)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00008040)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00000b53)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020022)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020024)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020024)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00000a53)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x000083c0)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00008040)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_0
++*/
++POKE32(0xfe901008, 0x0b2f033b)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_GCC_0
++*/
++POKE32(0xfe901028, 0x00000000)
++
++
++/*
++st40_lmigp_regs.LMI_VCR_0
++*/
++/* PEEK(0xfe901000) (used target peek value 0x0d120000) */
++
++
++/*
++st40_lmigp_regs.LMI_MIM_0
++*/
++POKE32(0xfe902008, 0x0b2f013b)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_1
++*/
++POKE32(0xfe90200c, 0xffff0500)
++
++
++/*
++st40_lmigp_regs.LMI_STR_0
++*/
++POKE32(0xfe902018, 0xddadb41b)
++
++
++/*
++st40_lmigp_regs.LMI_STR_1
++*/
++POKE32(0xfe90201c, 0x00222ed6)
++
++
++/*
++st40_lmigp_regs.LMI_SDRA0_0
++*/
++POKE32(0xfe902030, 0x2c001e20)
++
++
++/*
++st40_lmigp_regs.LMI_SDRA1_0
++*/
++POKE32(0xfe902038, 0x2c001e20)
++DELAY(200000)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020023)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020022)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe902048, 0x00010000)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe902048, 0x00018000)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe902048, 0x00008040)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe902048, 0x00000b53)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020022)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020024)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020024)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe902048, 0x00000a53)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe902048, 0x000083c0)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe902048, 0x00008040)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_0
++*/
++POKE32(0xfe902008, 0x0b2f033b)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe902010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_GCC_0
++*/
++POKE32(0xfe902028, 0x00000000)
++
++
++/*
++st40_lmigp_regs.LMI_VCR_0
++*/
++/* PEEK(0xfe902000) (used target peek value 0x0d120000) */
++POKE32(0xfe2410fc, 0x00000001)
++POKE32(0xfe20a0ec, 0x00000002)
++POKE32(0xfe20a0f0, 0x00000005)
++POKE32(0xfe20a0f4, 0x00000003)
++POKE32(0xfe20a0f8, 0x00000003)
++POKE32(0xfe20a1ec, 0x00000002)
++POKE32(0xfe20a1f0, 0x00000005)
++POKE32(0xfe20a1f4, 0x00000003)
++POKE32(0xfe20a1f8, 0x00000003)
++POKE32(0xfe20a2ec, 0x00000002)
++POKE32(0xfe20a2f0, 0x00000005)
++POKE32(0xfe20a2f4, 0x00000003)
++POKE32(0xfe20a2f8, 0x00000003)
++POKE32(0xfe20a3ec, 0x00000002)
++POKE32(0xfe20a3f0, 0x00000005)
++POKE32(0xfe20a3f4, 0x00000003)
++POKE32(0xfe20a3f8, 0x00000003)
++POKE32(0xfe20aefc, 0x00000005)
++POKE32(0xfe540034, 0x00000003)
++POKE32(0xfe540038, 0x00000000)
++POKE32(0xfe540110, 0x00010303)
++POKE32(0xfe540114, 0x00000000)
++POKE32(0xfe20bb04, 0x00000005)
++POKE32(0xfe20bb08, 0x00000003)
++POKE32(0xfe20bb0c, 0x00000000)
++POKE32(0xfe20bb10, 0x00000002)
++POKE32(0xfe20bb24, 0x00000005)
++POKE32(0xfe20bb28, 0x00000003)
++POKE32(0xfe20bb2c, 0x00000000)
++POKE32(0xfe20bb30, 0x00000002)
++POKE32(0xfe20bb44, 0x00000005)
++POKE32(0xfe20bb48, 0x00000003)
++POKE32(0xfe20bb4c, 0x00000000)
++POKE32(0xfe20bb50, 0x00000002)
++POKE32(0xfe20bb84, 0x00000005)
++POKE32(0xfe20bb88, 0x00000003)
++POKE32(0xfe20bb8c, 0x00000000)
++POKE32(0xfe20bb90, 0x00000002)
++POKE32(0xfe231010, 0x00000008)
++POKE32(0xfe231080, 0x00000221)
++POKE32(0xfd101024, 0x0003c000)
++POKE32(0xfd101824, 0x0003c000)
++POKE32(0xfd104d24, 0x0003c000)
++POKE32(0xfd102024, 0x0003c000)
++POKE32(0xfd103024, 0x0003c000)
++/* PEEK(0xfe001180) (used target peek value 0x00000015) */
++UPDATE32(0xfe001180, 0xfffffe7f, 0x00000000)
++POKE32(0xfe1fff04, 0x00254608)
++/* PEEK(0xfe00111c) (used target peek value 0x08081000) */
++OR32(0xfe00111c, 0x00030000)
++POKE32(0xfd117000, 0x0025c608)
++POKE32(0xfd111000, 0x00201004)
++POKE32(0xfd11f000, 0x0025c608)
++POKE32(0xfd119000, 0x00201004)
++/* PEEK(0xfe001180) (used target peek value 0x00000015) */
++UPDATE32(0xfe001180, 0xfffffffb, 0x00000000)
++POKE32(0xfe401744, 0x0025c005)
++
++
++/*
++st40_ccn_regs.CCN_CCR
++*/
++POKE32(0xff00001c, 0x8000090d)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG40
++*/
++/* PEEK(0xfe0011a0) (used target peek value 0x00000004) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG40
++*/
++POKE32(0xfe0011a0, 0x00000000)
++POKE32(0xfe000010, 0x0000c0de)
++POKE32(0xfe0000b8, 0x00000000)
++POKE32(0xfe000010, 0x0000c1a0)
++/* PEEK(0xfe210000) (used target peek value 0x00000000) */
++POKE32(0xfe210000, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG40
++*/
++/* PEEK(0xfe0011a0) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG40
++*/
++POKE32(0xfe0011a0, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG36
++*/
++/* PEEK(0xfe001190) (used target peek value 0x00000000) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG36
++*/
++POKE32(0xfe001190, 0x00000600)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x00000001) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_STA1
++*/
++/* PEEK(0xfe00100c) (used target peek value 0x000028ac) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x00000001) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++POKE32(0xfe001120, 0x00008001)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x00008001) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x00008001) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++OR32(0xfe001120, 0x00000010)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x00008011) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++OR32(0xfe001120, 0x00002000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x0000a011) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++OR32(0xfe001120, 0x00000080)
++DELAY(360000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x0000a091) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++OR32(0xfe001120, 0x00000800)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x0000a891) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++UPDATE32(0xfe001120, 0xffffff7f, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x0000a811) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++UPDATE32(0xfe001120, 0xfffff7ff, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x0000a011) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++UPDATE32(0xfe001120, 0xffffdfff, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++/* PEEK(0xfe001120) (used target peek value 0x00008011) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG08
++*/
++OR32(0xfe001120, 0x00000002)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG09
++*/
++/* PEEK(0xfe001124) (used target peek value 0x10000a8c) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG09
++*/
++OR32(0xfe001124, 0x08000000)
++/* PEEK(0xfe001174) (used target peek value 0x00001fcc) */
++POKE_UPDATE32(0xfe001170, 0xfe001174, 0x00001ffe, 19, 0x00004001)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG29
++*/
++/* PEEK(0xfe001174) (used target peek value 0x00001fcc) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG29
++*/
++OR32(0xfe001174, 0x00000001)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG29
++*/
++/* PEEK(0xfe001174) (used target peek value 0x00001fcd) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG29
++*/
++UPDATE32(0xfe001174, 0xfffffffe, 0x00000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG09
++*/
++/* PEEK(0xfe001124) (used target peek value 0x18000a8c) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG09
++*/
++OR32(0xfe001124, 0x08000000)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG05
++*/
++/* PEEK(0xfe001114) (used target peek value 0x3f800000) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG05
++*/
++UPDATE32(0xfe001114, 0xfffffff9, 0x00000000)
++/* PEEK(0xfe00116c) (used target peek value 0x00001fd0) */
++POKE_UPDATE32(0xfe001168, 0xfe00116c, 0x00001ffe, 19, 0x00004001)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG27
++*/
++/* PEEK(0xfe00116c) (used target peek value 0x00001fd0) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG27
++*/
++OR32(0xfe00116c, 0x00000001)
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG27
++*/
++/* PEEK(0xfe00116c) (used target peek value 0x00001fd1) */
++
++
++/*
++stx7141_sysconf_regs.SYSCONF_CFG27
++*/
++UPDATE32(0xfe00116c, 0xfffffffe, 0x00000000)
+diff --git a/board/st/eud7141/init-eud7141.S b/board/st/eud7141/init-eud7141.S
+new file mode 100644
+index 0000000..82faa60
+--- /dev/null
++++ b/board/st/eud7141/init-eud7141.S
+@@ -0,0 +1,68 @@
++/*
++ * The poke table is a series of long words, in the format
++ *
++ *	opcode, address, operand, ...
++ *
++ * An opcode of 0 marks the table end
++ */
++
++
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7141reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
++	.section .data.init, "a"
++
++	.balign 32
++
++__memory_setup_table:
++
++	/*
++	 * include the appropriate set of "GDB pokes", (usually) generated
++	 * using the "romgen" utility, from a known good target-pack.
++	 *
++	 * This file may be regenerated by connecting your specific board
++	 * to an STMC2 (note: currently it must be version 2) and then
++	 * executing the following command (redirecting the output):
++	 *
++	 * host% romgen --target-connect --show-comment <stmc2>:eud7141:estb
++	 *
++	 * Where "<stmc2>" should be replaced with the IP address
++	 * (or the DNS name) of the STMC2 box.  Also the "eud7141" should
++	 * substituted if you have a custom target-pack connect command.
++	 *
++	 * Note: The connect command used with "romgen", should connect
++	 * only in 29-bit mode - even if U-Boot will be built for 32-bit mode.
++	 * That is, do not use the "seuc=1" (or similar) option with "romgen".
++	 */
++#include "eud7141.romgen"
++
++#ifdef CONFIG_SH_SE_MODE
++	/*
++	 * Note that we also manually need to move the LMI0 and LMI1 base addresses to
++	 * their 32-bit SE mode locations as defined in the datasheet and change the
++	 * 'upper bound addresses' (in row attribute registers) for the LMIs.
++	 */
++	UPDATE32(STX7141_SYSCONF_SYS_CFG38, 0xFFFFFF00, 0x00000040)
++	UPDATE32(STX7141_SYSCONF_SYS_CFG39, 0xFFFFFF00, 0x00000080)
++	UPDATE32(ST40_LMI_SDRA0_0(0), 0x001FFFFF, 0x48000000)
++	UPDATE32(ST40_LMI_SDRA1_0(0), 0x001FFFFF, 0x48000000)
++	UPDATE32(ST40_LMI_SDRA0_0(1), 0x001FFFFF, 0x88000000)
++	UPDATE32(ST40_LMI_SDRA1_0(1), 0x001FFFFF, 0x88000000)
++#endif	/* CONFIG_SH_SE_MODE */
++
++	END_MARKER
++
++__memory_setup_table_end:
++
++	.end
+diff --git a/board/st/eud7141/nand.c b/board/st/eud7141/nand.c
+new file mode 100644
+index 0000000..7cdc735
+--- /dev/null
++++ b/board/st/eud7141/nand.c
+@@ -0,0 +1,120 @@
++/*
++ * (C) Copyright 2006 DENX Software Engineering
++ * (C) Copyright 2008-2010 STMicroelectronics, Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <nand.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++#include <asm/stx7141reg.h>
++#include <asm/stm-nand.h>
++
++/*
++ * hardware specific access to control-lines for "bit-banging".
++ *	CL -> Emi_Addr(17)
++ *	AL -> Emi_Addr(18)
++ *	nCE is handled by EMI (not s/w controlable)
++ */
++#ifndef CFG_NAND_FLEX_MODE	/* for "bit-banging" (c.f. STM "flex-mode")  */
++static void eud7141_hwcontrol(struct mtd_info *mtdinfo, int cmd)
++{
++	struct nand_chip* this = (struct nand_chip *)(mtdinfo->priv);
++
++	switch(cmd) {
++
++	case NAND_CTL_SETCLE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W | (1u << 17));
++		break;
++
++	case NAND_CTL_CLRCLE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W & ~(1u << 17));
++		break;
++
++	case NAND_CTL_SETALE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W | (1u << 18));
++		break;
++
++	case NAND_CTL_CLRALE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W & ~(1u << 18));
++		break;
++	}
++}
++#endif /* CFG_NAND_FLEX_MODE */
++
++
++/*
++ * hardware specific access to the Ready/not_Busy signal.
++ * Signal is routed through the EMI NAND Controller block.
++ */
++#ifndef CFG_NAND_FLEX_MODE	/* for "bit-banging" (c.f. STM "flex-mode")  */
++static int eud7141_device_ready(struct mtd_info *mtd)
++{
++	/* extract bit 1: status of RBn pin on boot bank */
++	return ((*ST40_EMI_NAND_RBN_STA) & (1ul<<1)) ? 1 : 0;
++}
++#endif /* CFG_NAND_FLEX_MODE */
++
++
++/*
++ * Board-specific NAND initialization. The following members of the
++ * argument are board-specific (per include/linux/mtd/nand.h):
++ * - IO_ADDR_R?: address to read the 8 I/O lines of the flash device
++ * - IO_ADDR_W?: address to write the 8 I/O lines of the flash device
++ * - hwcontrol: hardwarespecific function for accesing control-lines
++ * - dev_ready: hardwarespecific function for  accesing device ready/busy line
++ * - enable_hwecc?: function to enable (reset)  hardware ecc generator. Must
++ *   only be provided if a hardware ECC is available
++ * - eccmode: mode of ecc, see defines
++ * - chip_delay: chip dependent delay for transfering data from array to
++ *   read regs (tR)
++ * - options: various chip options. They can partly be set to inform
++ *   nand_scan about special functionality. See the defines for further
++ *   explanation
++ * Members with a "?" were not set in the merged testing-NAND branch,
++ * so they are not set here either.
++ */
++extern int board_nand_init(struct nand_chip *nand)
++{
++	nand->eccmode       = NAND_ECC_SOFT;
++	nand->options       = NAND_NO_AUTOINCR;
++
++#ifdef CFG_NAND_FLEX_MODE	/* for STM "flex-mode" (c.f. "bit-banging") */
++	nand->select_chip   = stm_flex_select_chip;
++	nand->dev_ready     = stm_flex_device_ready;
++	nand->hwcontrol     = stm_flex_hwcontrol;
++	nand->read_byte     = stm_flex_read_byte;
++	nand->write_byte    = stm_flex_write_byte;
++	nand->read_buf      = stm_flex_read_buf;
++	nand->write_buf     = stm_flex_write_buf;
++#else				/* for "bit-banging" (c.f. STM "flex-mode")  */
++	nand->dev_ready     = eud7141_device_ready;
++	nand->hwcontrol     = eud7141_hwcontrol;
++#endif /* CFG_NAND_FLEX_MODE */
++
++#if 1
++	/* Enable the following to use a Bad Block Table (BBT) */
++	nand->options      |= NAND_USE_FLASH_BBT;
++	nand->scan_bbt      = stm_nand_default_bbt;
++#endif
++
++	return 0;
++}
+diff --git a/board/st/fldb/fldb.c b/board/st/fldb/fldb.c
+index 15ffaf8..032b1b8 100644
+--- a/board/st/fldb/fldb.c
++++ b/board/st/fldb/fldb.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2009 STMicroelectronics.
++ * (C) Copyright 2009-2010 STMicroelectronics.
+  *
+  * Sean McGoogan <Sean.McGoogan@st.com>
+  *
+@@ -182,11 +182,6 @@ extern int board_init (void)
+ 	fli7510_configure_ethernet (fli7510_ethernet_mii, 0, 0);
+ #endif	/* CONFIG_DRIVER_NET_STM_GMAC */
+ 
+-#if defined(CONFIG_SPI)
+-	/* Configure for SPI Serial Flash */
+-	configSpi();
+-#endif	/* CONFIG_SPI */
+-
+ #if defined(CONFIG_SOFT_I2C)
+ 	/* Configuration for the I2C bus */
+ 	configI2c();
+@@ -206,5 +201,15 @@ extern int checkboard (void)
+ #endif
+ 		"\n");
+ 
++#if defined(CONFIG_SPI)
++	/*
++	 * Configure for the SPI Serial Flash.
++	 * Note: for CFG_BOOT_FROM_SPI + CFG_ENV_IS_IN_EEPROM, this
++	 * needs to be done after env_init(), hence it is done
++	 * here, and not in board_init().
++	 */
++	configSpi();
++#endif	/* CONFIG_SPI */
++
+ 	return 0;
+ }
+diff --git a/board/st/fldb/init-fldb.S b/board/st/fldb/init-fldb.S
+index 88b35d1..2a519d1 100644
+--- a/board/st/fldb/init-fldb.S
++++ b/board/st/fldb/init-fldb.S
+@@ -1,6 +1,3 @@
+-#include "asm/fli7510reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -9,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/fli7510reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/hdk7111/init-hdk7111.S b/board/st/hdk7111/init-hdk7111.S
+index 5f47655..3af3481 100644
+--- a/board/st/hdk7111/init-hdk7111.S
++++ b/board/st/hdk7111/init-hdk7111.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx7111reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb680.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7111reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/hms1/init-hms1.S b/board/st/hms1/init-hms1.S
+index ee5a59d..f6799be 100644
+--- a/board/st/hms1/init-hms1.S
++++ b/board/st/hms1/init-hms1.S
+@@ -1,7 +1,3 @@
+-
+-#include "asm/stb7100reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -11,6 +7,20 @@
+  */
+ 
+ 
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stb7100reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
+ 	.section .data.init, "a"
+ 
+ 	.balign 32
+diff --git a/board/st/mb411/init-mb411.S b/board/st/mb411/init-mb411.S
+index 52def4d..ca61016 100644
+--- a/board/st/mb411/init-mb411.S
++++ b/board/st/mb411/init-mb411.S
+@@ -1,7 +1,3 @@
+-
+-#include "asm/stb7100reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -11,6 +7,20 @@
+  */
+ 
+ 
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stb7100reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
+ 	.section .data.init, "a"
+ 
+ 	.balign 32
+diff --git a/board/st/mb442/init-mb442.S b/board/st/mb442/init-mb442.S
+index d8403ae..b4cae18 100644
+--- a/board/st/mb442/init-mb442.S
++++ b/board/st/mb442/init-mb442.S
+@@ -1,7 +1,3 @@
+-
+-#include "asm/stb7100reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -11,6 +7,20 @@
+  */
+ 
+ 
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stb7100reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
+ 	.section .data.init, "a"
+ 
+ 	.balign 32
+diff --git a/board/st/mb448/init-mb448.S b/board/st/mb448/init-mb448.S
+index 3b56fde..b86d51e 100644
+--- a/board/st/mb448/init-mb448.S
++++ b/board/st/mb448/init-mb448.S
+@@ -1,7 +1,3 @@
+-
+-#include "asm/stb7100reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -11,6 +7,20 @@
+  */
+ 
+ 
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stb7100reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
+ 	.section .data.init, "a"
+ 
+ 	.balign 32
+diff --git a/board/st/mb519/init-mb519.S b/board/st/mb519/init-mb519.S
+index 5ca2c28..9c30f68 100644
+--- a/board/st/mb519/init-mb519.S
++++ b/board/st/mb519/init-mb519.S
+@@ -1,12 +1,3 @@
+-
+-#include "asm/stx7200reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb519.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -16,6 +7,20 @@
+  */
+ 
+ 
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7200reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
+ 	.section .data.init, "a"
+ 
+ 	.balign 32
+diff --git a/board/st/mb618/init-mb618.S b/board/st/mb618/init-mb618.S
+index 5dd0fbf..e92b6c7 100644
+--- a/board/st/mb618/init-mb618.S
++++ b/board/st/mb618/init-mb618.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx7111reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb618.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7111reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/mb628/init-mb628.S b/board/st/mb628/init-mb628.S
+index 490cb3a..3e8d16f 100644
+--- a/board/st/mb628/init-mb628.S
++++ b/board/st/mb628/init-mb628.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx7141reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb628.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7141reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/mb671/init-mb671.S b/board/st/mb671/init-mb671.S
+index 9e2f9fd..46d6259 100644
+--- a/board/st/mb671/init-mb671.S
++++ b/board/st/mb671/init-mb671.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx7200reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb671.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx7200reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/mb680/init-mb680.S b/board/st/mb680/init-mb680.S
+index dd070ee..c713a66 100644
+--- a/board/st/mb680/init-mb680.S
++++ b/board/st/mb680/init-mb680.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx7105reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb680.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#undef CONFIG_SH_OLD_POKE_LOOP_PARADIGM
++
++
++#include "asm/stx7105reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/mb680/mb680.c b/board/st/mb680/mb680.c
+index 4d2da9f..41938ba 100644
+--- a/board/st/mb680/mb680.c
++++ b/board/st/mb680/mb680.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2009 STMicroelectronics.
++ * (C) Copyright 2008-2010 STMicroelectronics.
+  *
+  * Sean McGoogan <Sean.McGoogan@st.com>
+  *
+@@ -33,55 +33,43 @@
+ #define PIO_BASE  0xfd020000	/* Base of PIO block in COMMs block */
+ 
+ 
+-/* following are the offsets in the EMI functions EPLD (IC21),
+- * in the STB Peripheral board (MB705)*/
++#if defined(CONFIG_SH_MB705)
++	/*
++	 * More recent EPLD versions have the EPLD in EMI space,
++	 * using CSCn (EMI Bank #2), nominally at physical 0x04800000.
++	 */
++#if !defined(CFG_EPLD_PHYSICAL_BASE)
++#	define CFG_EPLD_PHYSICAL_BASE	0x04800000	/* CSCn (EMI Bank #2) */
++#endif /* CFG_EPLD_PHYSICAL_BASE */
++	/* map the physical address to UN-cached virtual address */
++#if !defined(CFG_EPLD_BASE)
++#	define CFG_EPLD_BASE		( 0xa0000000 | (CFG_EPLD_PHYSICAL_BASE) )
++#endif /* CFG_EPLD_BASE */
++	/*
++	 * following are the offsets within the EMI EPLD (IC21),
++	 * for the MB705 Peripheral board.
++	 */
+ #define EPLD_IDENT		0x00	/* EPLD Identifier Register */
+ #define EPLD_TEST		0x02	/* EPLD Test Register */
+ #define EPLD_SWITCH		0x04	/* EPLD Switch Register */
+ #define EPLD_MISC		0x0a	/* Miscellaneous Control Register */
+-
+-#ifdef CONFIG_SH_SE_MODE
+-#define EPLD_BASE		0xb7000000	/* Phys 0x07000000 */
+-#else
+-#define EPLD_BASE		0xa7000000	/* EMI Bank E */
+-#endif	/* CONFIG_SH_SE_MODE */
++#endif	/* CONFIG_SH_MB705 */
+ 
+ 
++#if defined(CONFIG_SH_MB705)
+ static inline void epld_write(unsigned long value, unsigned long offset)
+ {
+ 	/* 16-bit write to EPLD registers */
+-	writew(value, EPLD_BASE + offset);
++	writew(value, CFG_EPLD_BASE + offset);
+ }
+ 
+ static inline unsigned long epld_read(unsigned long offset)
+ {
+ 	/* 16-bit read from EPLD registers */
+-	return readw(EPLD_BASE + offset);
+-}
+-
+-void flashWriteEnable(void)
+-{
+-	unsigned short epld_reg;
+-
+-	/* Enable Vpp for writing to flash */
+-	epld_reg = epld_read(EPLD_MISC);
+-	epld_reg |= 1u << 3;	/* NandFlashWP = MISC[3] = 1 */
+-	epld_reg |= 1u << 2;	/* NorFlashVpp = MISC[2] = 1 */
+-	epld_write(epld_reg, EPLD_MISC);
++	return readw(CFG_EPLD_BASE + offset);
+ }
+ 
+-void flashWriteDisable(void)
+-{
+-	unsigned short epld_reg;
+-
+-	/* Disable Vpp for writing to flash */
+-	epld_reg = epld_read(EPLD_MISC);
+-	epld_reg &= ~(1u << 3);	/* NandFlashWP = MISC[3] = 0 */
+-	epld_reg &= ~(1u << 2);	/* NorFlashVpp = MISC[2] = 0 */
+-	epld_write(epld_reg, EPLD_MISC);
+-}
+-
+-static int mb680_init_epld(void)
++static int mb705_init_epld(void)
+ {
+ 	const unsigned short test_value = 0x1234u;
+ 	unsigned short epld_reg;
+@@ -110,6 +98,33 @@ static int mb680_init_epld(void)
+ 	/* return a "success" result */
+ 	return 0;
+ }
++#endif	/* CONFIG_SH_MB705 */
++
++void flashWriteEnable(void)
++{
++#if defined(CONFIG_SH_MB705)
++	unsigned short epld_reg;
++
++	/* Enable Vpp for writing to flash */
++	epld_reg = epld_read(EPLD_MISC);
++	epld_reg |= 1u << 3;	/* NandFlashWP = MISC[3] = 1 */
++	epld_reg |= 1u << 2;	/* NorFlashVpp = MISC[2] = 1 */
++	epld_write(epld_reg, EPLD_MISC);
++#endif	/* CONFIG_SH_MB705 */
++}
++
++void flashWriteDisable(void)
++{
++#if defined(CONFIG_SH_MB705)
++	unsigned short epld_reg;
++
++	/* Disable Vpp for writing to flash */
++	epld_reg = epld_read(EPLD_MISC);
++	epld_reg &= ~(1u << 3);	/* NandFlashWP = MISC[3] = 0 */
++	epld_reg &= ~(1u << 2);	/* NorFlashVpp = MISC[2] = 0 */
++	epld_write(epld_reg, EPLD_MISC);
++#endif	/* CONFIG_SH_MB705 */
++}
+ 
+ #ifdef CONFIG_STMAC_LAN8700
+ static void phy_reset(void)
+@@ -194,10 +209,12 @@ int checkboard (void)
+ #endif
+ 		"\n");
+ 
++#if defined(CONFIG_SH_MB705)
+ 	/*
+-	 * initialize the EPLD.
++	 * initialize the EPLD on the MB705.
+ 	 */
+-	mb680_init_epld();
++	mb705_init_epld();
++#endif	/* CONFIG_SH_MB705 */
+ 
+ #if 0	/* QQQ - DELETE */
+ {
+diff --git a/board/st/mb704/init-mb704.S b/board/st/mb704/init-mb704.S
+index a837882..6dbcabb 100644
+--- a/board/st/mb704/init-mb704.S
++++ b/board/st/mb704/init-mb704.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx5197reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb704.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM	/* QQQ - DELETE */
++
++
++#include "asm/stx5197reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+diff --git a/board/st/pdk7105/init-pdk7105.S b/board/st/pdk7105/init-pdk7105.S
+index 19b3c32..31795d8 100644
+--- a/board/st/pdk7105/init-pdk7105.S
++++ b/board/st/pdk7105/init-pdk7105.S
+@@ -1,11 +1,3 @@
+-#include "asm/stx7105reg.h"
+-#include "../../../cpu/sh/init_ram.S"
+-
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *   sh-superh-elf/examples/os21/romdynamic/memory_mb680.S
+- */
+-
+ /*
+  * The poke table is a series of long words, in the format
+  *
+@@ -14,20 +6,19 @@
+  * An opcode of 0 marks the table end
+  */
+ 
++
+ /*
+- * For compatibility with old poke table code, we define some of the
+- * new names, to map onto the old names. Ultimately, the old poke table
+- * code will be updated to the "new order", and we can just delete
+- * the following mappings.
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  */
+-#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
+-#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
+-#define POKE32(A, VAL)				POKE_LONG(A, VAL)
+-#define OR32(A, VAL)				OR_LONG(A, VAL)
+-#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
+-#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
+-#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
+-#define DELAY(VAL)				/* do nothing */
++#undef CONFIG_SH_OLD_POKE_LOOP_PARADIGM
++
++
++#include "asm/stx7105reg.h"
++#include "../../../cpu/sh/init_ram.S"
+ 
+ 
+ 	.section .data.init, "a"
+@@ -37,6 +28,18 @@
+ __memory_setup_table:
+ 
+ 	/*
++	 * Magic sequence to configure the ClockGenA switch control to
++	 * reset values.  These do not appear to be correctly reset on
++	 * a WDT reset, so we explicitly do it here.
++	 * For further details, please see:
++	 *	https://bugzilla.stlinux.com/show_bug.cgi?id=5536#c38
++	 */
++		/* CLOCKGEN A CKGA_CLKOPSRC_SWITCH_CFG  reset=0 */
++	POKE32(0xfe213014, 0x00000000)
++		/* CLOCKGEN A CKGA_CLKOPSRC_SWITCH_CFG2 reset=0 */
++	POKE32(0xfe213024, 0x00000000)
++
++	/*
+ 	 * include the appropriate set of "GDB pokes", (usually) generated
+ 	 * using the "romgen" utility, from a known good target-pack.
+ 	 *
+diff --git a/common/cmd_i2c.c b/common/cmd_i2c.c
+index 10cab46..8e9fcae 100644
+--- a/common/cmd_i2c.c
++++ b/common/cmd_i2c.c
+@@ -954,7 +954,7 @@ U_BOOT_CMD(
+ #if defined(CONFIG_I2C_MULTI_BUS)
+ 	"dev [dev] - show or set current I2C bus\n"
+ #endif  /* CONFIG_I2C_MULTI_BUS */
+-	"i2c speed [speed] - show or set I2C bus speed\n"
++	"speed [speed] - show or set I2C bus speed\n"
+ 	"i2c md chip address[.0, .1, .2] [# of objects] - read from I2C device\n"
+ 	"i2c mm chip address[.0, .1, .2] - write to I2C device (auto-incrementing)\n"
+ 	"i2c mw chip address[.0, .1, .2] value [count] - write to I2C device (fill)\n"
+diff --git a/common/cmd_ide.c b/common/cmd_ide.c
+index 9e150b0..eec8d3e 100644
+--- a/common/cmd_ide.c
++++ b/common/cmd_ide.c
+@@ -2,6 +2,9 @@
+  * (C) Copyright 2000-2005
+  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
+  *
++ * (C) Copyright 2010 STMicroelectronics.
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+  *
+@@ -1084,6 +1087,7 @@ static void ide_ident (block_dev_desc_t *dev_desc)
+ 	int mode, cycle_time;
+ #endif
+ 	int device;
++retry:
+ 	device=dev_desc->dev;
+ 	printf ("  Device %d: ", device);
+ 
+@@ -1174,6 +1178,35 @@ static void ide_ident (block_dev_desc_t *dev_desc)
+ 
+ 	input_swap_data (device, iobuf, ATA_SECTORWORDS);
+ 
++	debug ("info: IDENTIFY DEVICE has word[0] = 0x%04x\n", iop->config);
++	debug ("info: IDENTIFY DEVICE has word[2] = 0x%04x\n", iop->reserved2);
++	if (iop->config & 1<<2)	/* word[0],bit[2] == "Response Incomplete" */
++	{
++		printf ("\nwarning: IDENTIFY DEVICE command was INcomplete!\n");
++	}
++
++	switch (iop->reserved2)	/* check word[2] */
++	{
++		case 0x37c8:	/* IDENTIFY DEVICE command is INcomplete */
++		case 0x738c:	/* IDENTIFY DEVICE command is complete */
++			printf ("warning: device is spun-down!\n");
++				/* device is spun down, so spin it up */
++			printf ("info: trying to spin up the device ...\n");
++				/* enable Power-Up in Standby Feature */
++			ide_outb (device, ATA_DEV_HD, ATA_LBA | ATA_DEVICE(device));
++			ide_outb (device, ATA_FEATURES, 0x07);
++			ide_outb (device, ATA_COMMAND, ATA_CMD_SETF);
++			ide_wait (device, IDE_SPIN_UP_TIME_OUT);	/* may take up to 5 sec */
++			goto retry;
++			break;
++		case 0x8c73:	/* IDENTIFY DEVICE command is INcomplete */
++		case 0xc837:	/* IDENTIFY DEVICE command is complete */
++			debug ("info: device is already spun-up\n");
++			break;
++		default:
++			printf ("error: word[2] has a 'reserved' value!\n");
++	}
++
+ 	ident_cpy ((unsigned char*)dev_desc->revision, iop->fw_rev, sizeof(dev_desc->revision));
+ 	ident_cpy ((unsigned char*)dev_desc->vendor, iop->model, sizeof(dev_desc->vendor));
+ 	ident_cpy ((unsigned char*)dev_desc->product, iop->serial_no, sizeof(dev_desc->product));
+diff --git a/cpu/sh/init_ram.S b/cpu/sh/init_ram.S
+index ccd6d50..0dc9a19 100644
+--- a/cpu/sh/init_ram.S
++++ b/cpu/sh/init_ram.S
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2004-2009 STMicroelectronics.
++ * (C) Copyright 2004-2010 STMicroelectronics.
+  *
+  * Andy Sturges <andy.sturges@st.com>
+  * Start Menefy <stuart.menefy@st.com>
+@@ -28,6 +28,7 @@
+ #include "asm/regdef.h"
+ #include "asm/asmdefs.h"
+ #include "asm/linkage.h"
++#include "asm/cache.h"
+ 
+ /*
+  *	NOTE:	 ALL THIS CODE MUST BE PIC !!!!
+@@ -41,13 +42,19 @@ ENTRY(init_ram)
+ 	/* Stash the pr somewhere safe */
+ 	sts	pr, r14
+ 
++	/* read the DEVICE_ID, and stash in a register */
++#if defined(CONFIG_SH_OLD_POKE_LOOP_PARADIGM)
++	GETDEVID r7	/* use R7 for the OLD interpreter */
++#else
++	GETDEVID r5	/* use R5 for the NEW interpreter */
++#endif	/* CONFIG_SH_OLD_POKE_LOOP_PARADIGM */
++
+ 	/*
+ 	 * We need to get the poke loop & associated data
+ 	 * into caches. The poke loop is structured so that it is
+ 	 * all pulled into cache on it 1st iteration.
+ 	 * To get the poke table into D-cache, we simply read it all.
+ 	 */
+-	GETDEVID r7
+ 	mova	poke_loop_address, r0	/* R6: &poke_loop() */
+ 	mov.l	@r0, r6
+ 	add	r0, r6
+@@ -59,20 +66,28 @@ ENTRY(init_ram)
+ 	add	r0, r2
+ 	and	r3, r1			/* convert to a P1 addresses */
+ 	and	r3, r2
+-	mov	r1, r5			/* R5 = scratch data ptr */
+ 
+-1:	mov.l	@r5+, r4		/* Load poke table in D$ */
+-	cmp/eq	r5, r2
++	/*
++	 * Load the entire poke table into the operand cache.
++	 * We just need to load one word per cache line.
++	 */
++	mov	r1, r0			/* R0 = scratch data ptr */
++1:	mov.l	@r0, r4			/* read one word per cache line */
++	add	#DCACHE_LINESZ, r0	/* next cache line */
++	cmp/hi	r2, r0			/* done ? */
+ 	bf	1b
+ 
+ 	/*
+ 	 * Its now safe to call the poke loop with real data, since it
+-	 * and its associated data table are in onchip caches. Setting
++	 * and its associated data table are in on-chip caches. Setting
+ 	 * up the memory interfaces may cause the EMI (where this FLASH
+ 	 * image resides) to briefly hang - but the CPU will be safely
+ 	 * executing from cache should this happen.
+ 	 */
+ do_pokes:
++#if !defined(CONFIG_SH_OLD_POKE_LOOP_PARADIGM)
++	mov	r1, r4		/* __memory_setup_table */
++#endif	/* CONFIG_SH_OLD_POKE_LOOP_PARADIGM */
+ 	jsr	@r6		/* R6 still points poke_loop() */
+ 	  nop
+ 
+@@ -89,162 +104,23 @@ data_end_address:	.long __memory_setup_table_end - poke_loop_address
+ p2_to_p1_mask:		.long ~0x20000000
+ 
+ 
+-/*
+- * This is derived from STMicroelectronics gnu toolchain example:
+- *	sh-superh-elf/examples/os21/romdynamic/bootstrap.S
+- * but it is not identical, because concurrently U-Boot added the
+- * IF_DEVID, IF_NOT_DEVID, ELSE and ENDIF commands, while the toolset
+- * added IF. This merged version supports both.
+- */
+ 
+ /*
+- * The poke table is a series of long words, in the format
+- *
+- *	opcode, address, operand, ...
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
+  *
+- * An opcode of 0 marks the table end
++ *	#define CONFIG_SH_OLD_POKE_LOOP_PARADIGM
+  */
+ 
+-#define POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)	.long 8, A1, A2, AND, SHIFT, OR
+-#define WHILE_NE(A, AND, VAL)				.long 7, A, AND, VAL
+-#define UPDATE_LONG(A, AND, OR)				.long 6, A, AND, OR
+-#define OR_LONG(A, V)					.long 5, A, V
+-#define POKE_LONG(A, V)					.long 4, A, V
+-#define POKE_SHORT(A, V)				.long 2, A, V
+-#define POKE_CHAR(A, V)					.long 1, A, V
+-#define IF_DEVID(V)					.long 9,  (1f - .) -8, V
+-#define IF_NOT_DEVID(V)					.long 10, (1f - .) -8, V
+-#define ELSE						.long 11, (2f - .) - 4 ; 1:
+-#define ENDIF						2: ; 1:
+-#define IF(A, AND, VAL, COMMAND)			.long 12, A, AND, VAL; COMMAND
+-#define END_MARKER					.long 0, 0, 0
+-
+-
+-#define STB7100_CUT1 (STB7100_DEVID_7100_VAL << STB7100_DEVID_ID_SHIFT)
+-#define STB7100_CUT2 (STB7100_DEVID_7100_VAL << STB7100_DEVID_ID_SHIFT) | (1 << STB7100_DEVID_CUT_SHIFT)
+-#define STB7100_CUT3 (STB7100_DEVID_7100_VAL << STB7100_DEVID_ID_SHIFT) | (2 << STB7100_DEVID_CUT_SHIFT)
+-#define STB7109_CUT1 (STB7100_DEVID_7109_VAL << STB7100_DEVID_ID_SHIFT)
+-#define STB7109_CUT2 (STB7100_DEVID_7109_VAL << STB7100_DEVID_ID_SHIFT) | (1 << STB7100_DEVID_CUT_SHIFT)
+-#define STB7109_CUT3 (STB7100_DEVID_7109_VAL << STB7100_DEVID_ID_SHIFT) | (2 << STB7100_DEVID_CUT_SHIFT)
+-#define STX7200_CUT1 (STX7200_DEVID_7200c1_VAL << STX7200_DEVID_ID_SHIFT)
+-#define STX7200_CUT2 (STX7200_DEVID_7200c2_VAL << STX7200_DEVID_ID_SHIFT) | (1 << STX7200_DEVID_CUT_SHIFT)
+-
+-/*
+- * Routine to setup peripheral registers.
+- * It is executed from within the I-cache,
+- * with all its data in the D-cache
+- */
+-poke_loop:
+-	mov.l	@r1+, r0	/* opcode */
+-	mov.l	@r1+, r2	/* address */
+-	mov.l	@r1+, r3	/* value */
+-
+-	cmp/eq	#0, r0		/* End marker ? */
+-	bf	1f
+-
+-	rts			/* Return point */
+-	  nop
+-
+-1:	cmp/eq	#4, r0		/* 4 byte write... */
+-	bf	1f
+-	mov.l	r3, @r2
+-
+-1:	cmp/eq	#2, r0		/* 2 byte write... */
+-	bf	1f
+-	mov.w	r3, @r2
+-
+-1:	cmp/eq	#1, r0		/* 1 byte write... */
+-	bf	1f
+-	mov.b	r3, @r2
+-
+-1:	cmp/eq	#5, r0		/* 4 byte OR... */
+-	bf	1f
+-	mov.l	@r2,r4
+-	or	r3,r4
+-	mov.l	r4,@r2
+-
+-1:	cmp/eq	#6, r0		/* 4 byte UPDATE... */
+-	bf	1f
+-	mov.l	@r2,r4
+-	and	r3,r4
+-	mov.l	@r1+,r3
+-	or	r3,r4
+-	mov.l	r4,@r2
+-
+-1:	cmp/eq	#8, r0		/* 4 byte write UPDATE... */
+-	bf	1f
+-	mov.l	@r3,r4
+-	mov.l	@r1+,r3
+-	and	r3,r4
+-	mov.l	@r1+,r3
+-	shld	r3,r4
+-	mov.l	@r1+,r3
+-	or	r3,r4
+-	mov.l	r4,@r2
+-
+-1:	cmp/eq	#7, r0		/* WHILE != ... */
+-	bf	1f
+-	mov.l	@r1+,r5
+-2:	mov.l	@r2,r4
+-	and	r3,r4
+-	cmp/eq	r4,r5
+-	bf	2b
+-
+-1:	cmp/eq	#9, r0		/* IF_DEVID */
+-	bf	1f		/* r2 skip offset, r3 condition, r7 holds out cut value */
+-	cmp/eq	r3, r7
+-	bt	poke_loop	/* go ahead with these pokes */
+-	add	r2, r1
+-	bra	poke_loop
+-	  nop
++#if defined(CONFIG_SH_OLD_POKE_LOOP_PARADIGM)
++#	include "asm/old-pokeloop.h"
++#	include "old-pokeloop.S"
++#else
++#	include "asm/pokeloop.h"
++#	include "pokeloop.S"
++#endif	/* CONFIG_SH_OLD_POKE_LOOP_PARADIGM */
+ 
+-1:	cmp/eq	#10, r0		/* IF_NOT_DEVID */
+-	bf	1f		/* r2 skip offset, r3 condition, r7 holds out cut value */
+-	cmp/eq	r3, r7
+-	bf	poke_loop	/* go ahead with these pokes */
+-	add	r2, r1
+-	bra	poke_loop
+-	  nop
+-
+-1:	cmp/eq	#11, r0		/* ELSE */
+-	bf	1f		/* r2 skip offset, r3 condition, r7 holds out cut value */
+-	add	r2, r1
+-	bra	poke_loop
+-	  nop
+-
+-1:	cmp/eq	#12,r0		/* IF == ... next op */
+-	bf	delay
+-	mov.l	@r1+,r5
+-	mov.l	@r2,r4
+-	and	r3,r4
+-	cmp/eq	r4,r5
+-	bt	poke_loop	/* Compare succeeded - perform next op */
+-2:				/* Skip the next operation (read past it) */
+-	mov.l	@r1+,r0		/* R0 = opcode */
+-	mov.l	@r1+,r2		/* skip address */
+-	mov.l	@r1+,r2		/* skip value */
+-				/* How many further reads do we need to skip? */
+-	cmp/eq	#12,r0		/* If it's another IF, skip 1 and go back to start of skip loop */
+-	bf	3f
+-	mov.l	@r1+,r2
+-	bra	2b
+-	  nop
+-
+-3:	mov	#5,r2
+-	cmp/gt	r2,r0
+-	bf	5f		/* 0 further reads */
+-
+-	cmp/eq	#8,r0		/* Is it number 8 (3 reads, otherwise 1 read) */
+-	bf	4f
+-	mov.l	@r1+,r2		/* Skip 1 read */
+-	mov.l	@r1+,r2		/* Skip 1 read */
+-4:	mov.l	@r1+,r2		/* Skip 1 read and continue */
+-5:	bra	poke_loop
+-	  nop
+ 
+-delay:	mov	#1,r0		/* small delay after EACH opcode */
+-	swap.w	r0, r0		/* 0x10000 iterations (~65k) */
+-2:	add	#-1,r0
+-	cmp/eq	#0, r0
+-	bf	2b
+-	bt	poke_loop
+diff --git a/cpu/sh/old-pokeloop.S b/cpu/sh/old-pokeloop.S
+new file mode 100644
+index 0000000..cd507c3
+--- /dev/null
++++ b/cpu/sh/old-pokeloop.S
+@@ -0,0 +1,169 @@
++/*
++ * (C) Copyright 2004-2010 STMicroelectronics.
++ *
++ * Andy Sturges <andy.sturges@st.com>
++ * Start Menefy <stuart.menefy@st.com>
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++/*
++ *	NOTE:	 ALL THIS CODE MUST BE PIC !!!!
++ *
++ *	This code expects to be run with the caches enabled.
++ */
++
++
++/*
++ * This is derived from STMicroelectronics gnu toolchain example:
++ *	sh-superh-elf/examples/os21/romdynamic/bootstrap.S
++ * but it is not identical, because concurrently U-Boot added the
++ * IF_DEVID, IF_NOT_DEVID, ELSE and ENDIF commands, while the toolset
++ * added IF. This merged version supports both.
++ */
++
++/*
++ * The poke table is a series of long words, in the format
++ *
++ *	opcode, address, operand, ...
++ *
++ * An opcode of 0 marks the table end
++ */
++
++/*
++ * Routine to setup peripheral registers.
++ * It is executed from within the I-cache,
++ * with all its data in the D-cache
++ */
++poke_loop:
++	mov.l	@r1+, r0	/* opcode */
++	mov.l	@r1+, r2	/* address */
++	mov.l	@r1+, r3	/* value */
++
++	cmp/eq	#0, r0		/* End marker ? */
++	bf	1f
++
++	rts			/* Return point */
++	  nop
++
++1:	cmp/eq	#4, r0		/* 4 byte write... */
++	bf	1f
++	mov.l	r3, @r2
++
++1:	cmp/eq	#2, r0		/* 2 byte write... */
++	bf	1f
++	mov.w	r3, @r2
++
++1:	cmp/eq	#1, r0		/* 1 byte write... */
++	bf	1f
++	mov.b	r3, @r2
++
++1:	cmp/eq	#5, r0		/* 4 byte OR... */
++	bf	1f
++	mov.l	@r2,r4
++	or	r3,r4
++	mov.l	r4,@r2
++
++1:	cmp/eq	#6, r0		/* 4 byte UPDATE... */
++	bf	1f
++	mov.l	@r2,r4
++	and	r3,r4
++	mov.l	@r1+,r3
++	or	r3,r4
++	mov.l	r4,@r2
++
++1:	cmp/eq	#8, r0		/* 4 byte write UPDATE... */
++	bf	1f
++	mov.l	@r3,r4
++	mov.l	@r1+,r3
++	and	r3,r4
++	mov.l	@r1+,r3
++	shld	r3,r4
++	mov.l	@r1+,r3
++	or	r3,r4
++	mov.l	r4,@r2
++
++1:	cmp/eq	#7, r0		/* WHILE != ... */
++	bf	1f
++	mov.l	@r1+,r5
++2:	mov.l	@r2,r4
++	and	r3,r4
++	cmp/eq	r4,r5
++	bf	2b
++
++1:	cmp/eq	#9, r0		/* IF_DEVID */
++	bf	1f		/* r2 skip offset, r3 condition, r7 holds out cut value */
++	cmp/eq	r3, r7
++	bt	poke_loop	/* go ahead with these pokes */
++	add	r2, r1
++	bra	poke_loop
++	  nop
++
++1:	cmp/eq	#10, r0		/* IF_NOT_DEVID */
++	bf	1f		/* r2 skip offset, r3 condition, r7 holds out cut value */
++	cmp/eq	r3, r7
++	bf	poke_loop	/* go ahead with these pokes */
++	add	r2, r1
++	bra	poke_loop
++	  nop
++
++1:	cmp/eq	#11, r0		/* ELSE */
++	bf	1f		/* r2 skip offset, r3 condition, r7 holds out cut value */
++	add	r2, r1
++	bra	poke_loop
++	  nop
++
++1:	cmp/eq	#12,r0		/* IF == ... next op */
++	bf	delay
++	mov.l	@r1+,r5
++	mov.l	@r2,r4
++	and	r3,r4
++	cmp/eq	r4,r5
++	bt	poke_loop	/* Compare succeeded - perform next op */
++2:				/* Skip the next operation (read past it) */
++	mov.l	@r1+,r0		/* R0 = opcode */
++	mov.l	@r1+,r2		/* skip address */
++	mov.l	@r1+,r2		/* skip value */
++				/* How many further reads do we need to skip? */
++	cmp/eq	#12,r0		/* If it's another IF, skip 1 and go back to start of skip loop */
++	bf	3f
++	mov.l	@r1+,r2
++	bra	2b
++	  nop
++
++3:	mov	#5,r2
++	cmp/gt	r2,r0
++	bf	5f		/* 0 further reads */
++
++	cmp/eq	#8,r0		/* Is it number 8 (3 reads, otherwise 1 read) */
++	bf	4f
++	mov.l	@r1+,r2		/* Skip 1 read */
++	mov.l	@r1+,r2		/* Skip 1 read */
++4:	mov.l	@r1+,r2		/* Skip 1 read and continue */
++5:	bra	poke_loop
++	  nop
++
++delay:	mov	#1,r0		/* small delay after EACH opcode */
++	swap.w	r0, r0		/* 0x10000 iterations (~65k) */
++2:	add	#-1,r0
++	cmp/eq	#0, r0
++	bf	2b
++	bt	poke_loop
+diff --git a/cpu/sh/pokeloop.S b/cpu/sh/pokeloop.S
+new file mode 100644
+index 0000000..1f4424d
+--- /dev/null
++++ b/cpu/sh/pokeloop.S
+@@ -0,0 +1,318 @@
++/*
++ * File     : pokeloop.S
++ * Synopsis : ST40 poke loop code.
++ *
++ * Copyright (c) 2004-2010 STMicroelectronics Limited.  All rights reserved.
++ *
++ */
++
++
++/*
++ * The poke table is a series of long words, in the format:
++ *
++ *	opcode, operand, operand (, operand)*
++ *
++ * An opcode of 0 marks the table end.
++ *
++ * MUST_RUN_FROM_ICACHE must be defined to a non-zero value if this code is to
++ * be run from a 32 bytes per line instruction cache (it will jump through
++ * itself once before starting to ensure all lines are cached).  If it is not
++ * defined at all, it will be defined to 1.
++ */
++#ifndef MUST_RUN_FROM_ICACHE
++#define MUST_RUN_FROM_ICACHE 1
++#endif /* !MUST_RUN_FROM_ICACHE */
++
++/*
++ * Routine to setup peripheral registers.
++ * It is executed from within the I-cache (if MUST_RUN_FROM_ICACHE is defined),
++ * with all its data in the D-cache.  It is the caller's responsibility to
++ * ensure the data is all in the D-cache.
++ *
++ * This code and the poke table should be put in the same unique section to
++ * ensure they are contiguous in memory.  This will ensure that, as long as the
++ * data cache is large enough, the SwitchJumpTable and the poke table will not
++ * be on the same cache line (guaranteeing functionality on a direct-mapped
++ * cache.
++ *
++ * The poke loop code honours the architecture ABI for parameter passing, with
++ * the address of the poke table to process as the first argument, and a device
++ * ID to use in the IF_DEVID operations as the second argument.
++ * That is:
++ *		extern void poke_loop(const long table[], int device_id);
++ *
++ *	with R4 being the address of the poke table,
++ *	and R5 containing the DEVICE_ID.
++ */
++
++
++	.balign	32
++poke_loop:
++	/* Ensure the jump table is in the data cache */
++	mova	SwitchJumpTable, r0	/* Keep this in r0 for use in DoPoking */
++	mov	r0, r6
++	pref	@r6			/* 2 prefetches as could cover 2 cache lines */
++	add	#32, r6
++	pref	@r6
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++	/* Do a single code jump-through to pull the code into the instruction
++	 * cache - we have put a jump point in every cache line.  One way to do
++         * this is to use "sh4objdump -d" on an executable containing this code,
++         * and visually inspect that each jump-through point is in a separate
++         * 0x20 range.
++	 * We set the T bit so we can use 1 instruction jumps for the
++	 * jump-through.
++	 */
++	sett
++	bt	8f
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++DoPoking:
++	mov.l	@r4+, r7	/* opcode */
++	mov.l	@r4+, r1	/* operand 1 */
++	mov.l	@r4+, r2	/* operand 2 */
++
++	mov.b	@(r0, r7), r7
++	extu.b	r7, r7
++	braf	r7
++	  nop
++SwitchJumpFrom:
++
++/* The SwitchJumpTable must be in increasing numeric order of opcode (with
++ * padding for any missing entries).  Distance between SwitchJumpTable and any
++ * of the operations must be less than 255 bytes (the assembler should point it
++ * out if we ever break that condition and have to switch to 16 bit values).
++ */
++	.balign 4
++SwitchJumpTable:
++	.byte	DoRet - SwitchJumpFrom
++	.byte	DoPoke8 - SwitchJumpFrom
++	.byte	DoPoke16 - SwitchJumpFrom
++	.byte	DoPoke32 - SwitchJumpFrom
++	.byte	DoOr8 - SwitchJumpFrom
++	.byte	DoOr16 - SwitchJumpFrom
++	.byte	DoOr32 - SwitchJumpFrom
++	.byte	DoUpdate8 - SwitchJumpFrom
++	.byte	DoUpdate16 - SwitchJumpFrom
++	.byte	DoUpdate32 - SwitchJumpFrom
++	.byte	DoPokeUpdate32 - SwitchJumpFrom
++	.byte	DoWhileNe8 - SwitchJumpFrom
++	.byte	DoWhileNe16 - SwitchJumpFrom
++	.byte	DoWhileNe32 - SwitchJumpFrom
++	.byte	DoIfEq32 - SwitchJumpFrom
++	.byte	DoIfGT32 - SwitchJumpFrom
++	.byte	DoElse - SwitchJumpFrom
++	.byte	DoDelay - SwitchJumpFrom
++	.byte	DoIfDevIDGE - SwitchJumpFrom
++	.byte	DoIfDevIDLE - SwitchJumpFrom
++
++	.balign	2
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	bt	8f 
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++/* END_MARKER */
++DoRet:
++	rts			/* Return point */
++	  nop
++
++/* POKE8(A, VAL) */
++DoPoke8:
++	bra	DoPoking
++	  mov.b	r2, @r1		/* *A = VAL */
++
++/* POKE16(A, VAL) */
++DoPoke16:
++	bra	DoPoking
++	  mov.w	r2, @r1		/* *A = VAL */
++
++/* POKE32(A, VAL) */
++DoPoke32:
++	bra	DoPoking
++	  mov.l	r2, @r1		/* *A = VAL */
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	bt	8f
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++/* OR8(A, VAL) */
++DoOr8:
++	mov.b	@r1, r3		/* *A */
++	or	r2, r3		/* *A | OR */
++	bra	DoPoking
++	  mov.b	r3, @r1		/* *A |= OR */
++
++/* OR16(A, VAL) */
++DoOr16:
++	mov.w	@r1, r3		/* *A */
++	or	r2, r3		/* *A | OR */
++	bra	DoPoking
++	  mov.w	r3, @r1		/* *A |= OR */
++
++/* OR32(A, VAL) */
++DoOr32:
++	mov.l	@r1, r3		/* *A */
++	or	r2, r3		/* *A | OR */
++	bra	DoPoking
++	  mov.l	r3, @r1		/* *A |= OR */
++
++/* UPDATE8(A, AND, OR) */
++DoUpdate8:
++	mov.b	@r1, r3		/* *A */
++	and	r2, r3		/* *A & AND */
++	mov.l	@r4+, r2	/* read OR */
++	or	r2, r3		/* (*A & AND) | OR */
++	bra	DoPoking
++	  mov.b	r3, @r1		/* *A = ((*A & AND) | OR) */
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	bt	8f 
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++/* UPDATE16(A, AND, OR) */
++DoUpdate16:
++	mov.w	@r1, r3		/* *A */
++	and	r2, r3		/* *A & AND */
++	mov.l	@r4+, r2	/* read OR */
++	or	r2, r3		/* (*A & AND) | OR */
++	bra	DoPoking
++	  mov.w	r3, @r1		/* *A = ((*A & AND) | OR) */
++
++/* UPDATE32(A, AND, OR) */
++DoUpdate32:
++	mov.l	@r1, r3		/* *A */
++	and	r2, r3		/* *A & AND */
++	mov.l	@r4+, r2	/* read OR */
++	or	r2, r3		/* (*A & AND) | OR */
++	bra	DoPoking
++	  mov.l	r3, @r1		/* *A = ((*A & AND) | OR) */
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	bt	8f
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++/* POKE_UPDATE32(A1, A2, AND, SHIFT, OR) */
++DoPokeUpdate32:
++	mov.l	@r2, r3		/* *A2 */
++	mov.l	@r4+, r2	/* read AND */
++	and	r2, r3		/* *A2 & AND */
++	mov.l	@r4+, r2	/* read SHIFT */
++	shld	r2, r3		/* (*A2 & AND) << SHIFT */
++	mov.l	@r4+, r2	/* read OR */
++	or	r2, r3		/* ((*A2 & AND) << SHIFT) | OR */
++	bra	DoPoking
++	  mov.l	r3, @r1		/* *A1 = (((*A2 & AND) << SHIFT) | OR) */
++
++/* WHILE_NE8(A, AND, VAL) */
++DoWhileNe8:
++	mov.l	@r4+, r7	/* read VAL */
++1:	mov.b	@r1, r3		/* *A */
++	extu.b	r3, r3		/* 32bit(*A) */ 
++	and	r2, r3		/* *A & AND */    
++	cmp/eq	r3, r7		/* if ((*A & AND) == VAL) */
++	bf	1b		/* loop if false */
++	bt	DoPoking
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	bt	8f
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++/* WHILE_NE16(A, AND, VAL) */
++DoWhileNe16:
++	mov.l	@r4+, r7	/* read VAL */
++1:	mov.w	@r1, r3		/* *A */
++	extu.w	r3, r3		/* 32bit(*A) */ 
++	and	r2, r3		/* *A & AND */    
++	cmp/eq	r3, r7		/* if ((*A & AND) == VAL) */
++	bf	1b		/* loop if false */
++	bt	DoPoking
++
++/* WHILE_NE32(A, AND, VAL) */
++DoWhileNe32:
++	mov.l	@r4+, r7	/* read VAL */
++1:	mov.l	@r1, r3		/* *A */
++	and	r2, r3		/* *A & AND */
++	cmp/eq	r3, r7		/* if ((*A & AND) == VAL) */
++	bf	1b		/* loop if false */
++	bt	DoPoking
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	bt	8f
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++/* IF_EQ32(NESTLEVEL, A, AND, VAL)
++   Note that NESTLEVEL is not in the actual table, but there is a distance
++   field following VAL.
++ */
++DoIfEq32:
++	mov.l	@r1, r1		/* *A */
++	and	r2, r1		/* *A & AND */
++	mov.l	@r4+, r2	/* read VAL */
++	mov.l	@r4+, r3	/* read distance to ELSE/ENDIF */
++	cmp/eq	r2, r1		/* if ((*A & AND) == VAL) */
++	bt	DoPoking	/* go ahead with these pokes */
++	add	r3, r4		/* skip forward through pokes to ELSE or ENDIF */
++	bf	DoPoking
++
++/* IF_GT32(NESTLEVEL, A, AND, VAL)
++   Note that NESTLEVEL is not in the actual table, but there is a distance
++   field following VAL.
++ */
++DoIfGT32:
++	mov.l	@r1, r1		/* *A */
++	and	r2, r1		/* *A & AND */
++	mov.l	@r4+, r2	/* read VAL */
++	mov.l	@r4+, r3	/* read distance to ELSE/ENDIF */
++	cmp/hi	r2, r1		/* if ((*A & AND) > VAL) */
++	bt	DoPoking	/* go ahead with these pokes if true*/
++	add	r3, r4		/* skip forward through pokes to ELSE or ENDIF */
++	bf	DoPoking
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	bt	8f
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
++/* ELSE(NESTLEVEL)
++   Note that NESTLEVEL is not in the actual table, but there is a distance
++   field following the opcode.
++ */
++DoElse:
++	add	#-4, r4		/* We took 1 arg too many from r4 for an else */
++	bra	DoPoking
++	  add	r1, r4		/* skip through to ENDIF */
++
++/* DELAY(ITERATIONS) */
++DoDelay:
++1:	dt	r1		/* if (--OPERATIONS == 0) */
++	bf	1b
++	add	#-4, r4		/* We took 1 arg too many from r4 for a delay */
++	bt	DoPoking
++
++/* IF_DEVID_GE(NESTLEVEL, VAL)
++   Note that NESTLEVEL is not in the actual table, but there is a distance
++   field following VAL.
++ */
++DoIfDevIDGE:
++	cmp/hs	r1, r5		/* if (device ID >= VAL) */
++	bt	DoPoking	/* go ahead with these pokes if true */
++	bra	DoPoking
++	  add	r2, r4
++
++/* IF_DEVID_LE(NESTLEVEL, VAL)
++   Note that NESTLEVEL is not in the actual table, but there is a distance
++   field following VAL.
++ */
++DoIfDevIDLE:
++	cmp/hi	r5, r1		/* if (device ID <= VAL) */
++	bt	1f		/* go ahead with these pokes if true */
++	add	r2, r4
++1:	bra	DoPoking
++	  nop
++
++#if (MUST_RUN_FROM_ICACHE != 0)
++8:	/* The final jump back to where we start performing the pokes */
++	bra	DoPoking
++	  nop
++#endif /* MUST_RUN_FROM_ICACHE != 0 */
++
+diff --git a/cpu/sh/start.S b/cpu/sh/start.S
+index fdb04eb..df2cebb 100644
+--- a/cpu/sh/start.S
++++ b/cpu/sh/start.S
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2004-2009 STMicroelectronics.
++ * (C) Copyright 2004-2010 STMicroelectronics.
+  *
+  * Andy Sturges <andy.sturges@st.com>
+  * Sean McGoogan <Sean.McGoogan@st.com>
+@@ -142,7 +142,12 @@ config_spiboot_controller:
+ 	mov.l	r0, @(ST40_EMI_SPI_MODESELECT-ST40_EMI_SPI_REGS_BASE,r1)
+ 
+ 	/* Slow (divide) the SPI clock down to improve reliability. */
++	/* Note: for the Freeman FLDB, diving by 4 fails to boot! */
++#if defined(CONFIG_SH_FLI7510)
++	mov	#6, r0			/* *ST40_EMI_SPI_CLOCKDIV = 6 */
++#else
+ 	mov	#4, r0			/* *ST40_EMI_SPI_CLOCKDIV = 4 */
++#endif
+ 	mov.l	r0, @(ST40_EMI_SPI_CLOCKDIV-ST40_EMI_SPI_REGS_BASE,r1)
+ 
+ #endif	/* CFG_BOOT_FROM_SPI */
+@@ -308,6 +313,15 @@ set_pmb:
+ 	SH4_SET_PMB 6 0xa8 0x00  16		/* NOR/NAND FLASH CACHED */
+ 	SH4_SET_PMB 7 0xa9 0x01  16		/* NOR/NAND FLASH CACHED */
+ 	SH4_SET_PMB 8 0xb5 0x05  16 0 0 1	/* EPLD UN-cached */
++#elif defined(CONFIG_SH_STX7141) && defined(CONFIG_SH_EUD7141)
++	SH4_SET_PMB 0 0x80 0x40 128 0 0 1	/* LMI UN-cached */
++	SH4_SET_PMB 2 0x90 0x40 128 0 0 1	/* LMI UN-cached */
++	#if CFG_SH_LMI_NEEDS_2_PMB_ENTRIES
++	#error Need to configure PMBs properly when more than 128MiB.
++	#endif
++	SH4_SET_PMB 4 0xa0 0x00  64 0 0 1	/* NOR FLASH UN-cached */
++	SH4_SET_PMB 5 0xa8 0x00  64		/* NOR FLASH CACHED */
++	SH4_SET_PMB 6 0xa4 0x04  16 0 0 1	/* NAND FLASH UN-cached */
+ #elif defined(CONFIG_SH_STX7200) && defined(CONFIG_SH_MB519)
+ 	SH4_SET_PMB 0 0x80 0x40 128 0 0 1	/* LMI0 UN-cached */
+ 	SH4_SET_PMB 2 0x90 0x40 128 0 0 1	/* LMI0 UN-cached */
+diff --git a/include/asm-sh/cache.h b/include/asm-sh/cache.h
+index dd26994..4578483 100644
+--- a/include/asm-sh/cache.h
++++ b/include/asm-sh/cache.h
+@@ -33,6 +33,9 @@
+ #	error Unknown CPU
+ #endif
+ 
++
++#ifndef __ASSEMBLER__
++
+ extern void sh_cache_set_op(unsigned long);
+ extern void sh_cache_clear_op(unsigned long);
+ 
+@@ -43,4 +46,6 @@ extern void sh_enable_data_caches(void);
+ /* following stores if the data caches currently on */
+ extern int sh_data_caches_on;
+ 
++#endif	/* __ASSEMBLER__ */
++
+ #endif /* __ASM_SH_CACHE_H */
+diff --git a/include/asm-sh/clk.h b/include/asm-sh/clk.h
+index 0fbf721..62d0cc6 100644
+--- a/include/asm-sh/clk.h
++++ b/include/asm-sh/clk.h
+@@ -1,5 +1,7 @@
+ /*
+  * Copyright (C) 2009 Jean-Christophe PLAGNIOL-VILLARD <plagnioj@jcrosoft.com>
++ * Copyright (C) 2010 STMicroelectronics.
++ *	Sean McGoogan STMicroelectronics, <Sean.McGoogan@st.com>
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -22,6 +24,31 @@
+ #ifndef __ASM_SH_CLK_H__
+ #define __ASM_SH_CLK_H__
+ 
++/*
++ * Note that there are two distinct clocks we need to deal with:
++ * The "comms" clock and the "peripheral" clock.
++ *
++ *	The "comms" clock is used by: ASC, SSC
++ *	The "peripheral" clock is used by: TMU, SCIF, Watchdog
++ *
++ * Unfortunately, due to various historical circumstances and SoC
++ * evolution, the U-boot code is now a bit "confused" about which one
++ * to use!  Originally, the peripheral clock was used for both the TMU
++ * and the SCIF (UART). However, today (March 2010), the ASC has
++ * largely replaced the SCIF, and instead uses the "comms" clock.
++ *
++ * The ASC driver was based on the SCIF one, and unfortunately the
++ * clocking nomenclature was unchanged - hence the U-boot code for
++ * the SCIF and the ASC both claim to use the "peripheral" clock,
++ * which is correct for the former, and incorrect for the latter.
++ *
++ * In summary, the clocking infrastructure needs to be overhauled and
++ * brought up to date, as the peripheral clock often runs at a
++ * different frequency to the comms clock.
++ *
++ *				Sean McGoogan March 2010.
++ */
++
+ static inline unsigned long get_peripheral_clk_rate(void)
+ {
+ 	DECLARE_GLOBAL_DATA_PTR;
+@@ -33,9 +60,23 @@ static inline unsigned long get_peripheral_clk_rate(void)
+ 
+ static inline unsigned long get_tmu0_clk_rate(void)
+ {
+-
+-	/* Return Clock in Hz. */
++	/* Return the TMU's Clock Frequency (in Hz). */
++#if defined(CONFIG_SH_STX5197)
++	return 200ul * 1000000ul;	/* BODGE: Peripheral Clock = 200 MHz */
++#else
+ 	return get_peripheral_clk_rate();
++#endif
++}
++
++#if 0	/* QQQ - TO DO */
++static inline unsigned long get_comms_clk_rate(void)
++{
++	DECLARE_GLOBAL_DATA_PTR;
++	const bd_t * const bd = gd->bd;
++
++	/* Return Comms Clock Frequency (in Hz). */
++	return bd->bi_commsfrq * 1000000ul;
+ }
++#endif	/* QQQ - TO DO */
+ 
+ #endif /* __ASM_SH_CLK_H__ */
+diff --git a/include/asm-sh/io.h b/include/asm-sh/io.h
+index a7753f2..71c71d7 100644
+--- a/include/asm-sh/io.h
++++ b/include/asm-sh/io.h
+@@ -58,6 +58,7 @@
+        defined(CONFIG_SH_MB618)		|| \
+        defined(CONFIG_SH_HDK7111)	|| \
+        defined(CONFIG_SH_MB628)		|| \
++       defined(CONFIG_SH_EUD7141)	|| \
+        defined(CONFIG_SH_MB671)		|| \
+        defined(CONFIG_SH_MB680)		|| \
+        defined(CONFIG_SH_PDK7105)	|| \
+diff --git a/include/asm-sh/old-pokeloop.h b/include/asm-sh/old-pokeloop.h
+new file mode 100644
+index 0000000..23f649b
+--- /dev/null
++++ b/include/asm-sh/old-pokeloop.h
+@@ -0,0 +1,94 @@
++/*
++ * (C) Copyright 2004-2010 STMicroelectronics.
++ *
++ * Andy Sturges <andy.sturges@st.com>
++ * Start Menefy <stuart.menefy@st.com>
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++#ifndef __OLD_POKE_LOOP_H__
++#define __OLD_POKE_LOOP_H__
++
++#ifdef __ASSEMBLER__
++
++/*
++ * This is derived from STMicroelectronics gnu toolchain example:
++ *	sh-superh-elf/examples/os21/romdynamic/bootstrap.S
++ * but it is not identical, because concurrently U-Boot added the
++ * IF_DEVID, IF_NOT_DEVID, ELSE and ENDIF commands, while the toolset
++ * added IF. This merged version supports both.
++ */
++
++
++/*
++ * Old poke table commands
++ */
++#define POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)	.long 8, A1, A2, AND, SHIFT, OR
++#define WHILE_NE(A, AND, VAL)				.long 7, A, AND, VAL
++#define UPDATE_LONG(A, AND, OR)				.long 6, A, AND, OR
++#define OR_LONG(A, V)					.long 5, A, V
++#define POKE_LONG(A, V)					.long 4, A, V
++#define POKE_SHORT(A, V)				.long 2, A, V
++#define POKE_CHAR(A, V)					.long 1, A, V
++#define IF_DEVID(V)					.long 9,  (1f - .) -8, V
++#define IF_NOT_DEVID(V)					.long 10, (1f - .) -8, V
++#define ELSE						.long 11, (2f - .) - 4 ; 1:
++#define ENDIF						2: ; 1:
++#define IF(A, AND, VAL, COMMAND)			.long 12, A, AND, VAL; COMMAND
++#define END_MARKER					.long 0, 0, 0
++
++
++/*
++ * For compatibility with old poke table code, we define some of the
++ * new names, to map onto the old names.  Note, it is ill-advised
++ * to rely on these mappings, as they are a strict sub-set of
++ * the commands, and the latest romgen+targetpacks may start
++ * to utilize some of the un-mapped ones!
++ */
++#define POKE8(A, VAL)				POKE_CHAR(A, VAL)
++#define POKE16(A, VAL)				POKE_SHORT(A, VAL)
++#define POKE32(A, VAL)				POKE_LONG(A, VAL)
++#define OR32(A, VAL)				OR_LONG(A, VAL)
++#define UPDATE32(A, AND, OR)			UPDATE_LONG(A, AND, OR)
++#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)	POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR)
++#define WHILE_NE32(A, AND, VAL)			WHILE_NE(A, AND, VAL)
++#define DELAY(VAL)				/* do nothing */
++
++
++/*
++ * QQQ: should we move these to somewhere more sensible ?
++ */
++#define STB7100_CUT1 (STB7100_DEVID_7100_VAL << STB7100_DEVID_ID_SHIFT)
++#define STB7100_CUT2 (STB7100_DEVID_7100_VAL << STB7100_DEVID_ID_SHIFT) | (1 << STB7100_DEVID_CUT_SHIFT)
++#define STB7100_CUT3 (STB7100_DEVID_7100_VAL << STB7100_DEVID_ID_SHIFT) | (2 << STB7100_DEVID_CUT_SHIFT)
++#define STB7109_CUT1 (STB7100_DEVID_7109_VAL << STB7100_DEVID_ID_SHIFT)
++#define STB7109_CUT2 (STB7100_DEVID_7109_VAL << STB7100_DEVID_ID_SHIFT) | (1 << STB7100_DEVID_CUT_SHIFT)
++#define STB7109_CUT3 (STB7100_DEVID_7109_VAL << STB7100_DEVID_ID_SHIFT) | (2 << STB7100_DEVID_CUT_SHIFT)
++#define STX7200_CUT1 (STX7200_DEVID_7200c1_VAL << STX7200_DEVID_ID_SHIFT)
++#define STX7200_CUT2 (STX7200_DEVID_7200c2_VAL << STX7200_DEVID_ID_SHIFT) | (1 << STX7200_DEVID_CUT_SHIFT)
++
++
++#endif	/* __ASSEMBLER__ */
++
++#endif	/* __OLD_POKE_LOOP_H__ */
++
++
+diff --git a/include/asm-sh/pokeloop.h b/include/asm-sh/pokeloop.h
+new file mode 100644
+index 0000000..f8d7e39
+--- /dev/null
++++ b/include/asm-sh/pokeloop.h
+@@ -0,0 +1,105 @@
++/*
++ * File     : pokeloop.h
++ * Synopsis : Header containing macro definitions needed for poke tables and the
++ *            poke loop code which uses them.
++ *
++ * Copyright (c) 2004-2010 STMicroelectronics Limited.  All rights reserved.
++ */
++
++#ifndef __POKE_LOOP_H_
++#define __POKE_LOOP_H_
++
++/* Opcode values */
++#define OP_END_POKES					0
++#define OP_POKE8					1
++#define OP_POKE16					2
++#define OP_POKE32					3
++#define OP_OR8						4
++#define OP_OR16						5
++#define OP_OR32						6
++#define OP_UPDATE8					7
++#define OP_UPDATE16					8
++#define OP_UPDATE32					9
++#define OP_POKE_UPDATE32				10
++#define OP_WHILE_NE8					11
++#define OP_WHILE_NE16					12
++#define OP_WHILE_NE32					13
++#define OP_IF_EQ32					14
++#define OP_IF_GT32					15
++#define OP_ELSE						16
++#define OP_DELAY					17
++#define OP_IF_DEVID_GE					18
++#define OP_IF_DEVID_LE					19
++
++#ifdef __ASSEMBLER__
++
++#ifdef __st200__
++/* The ST200 Toolset has a version of GNU as which does not support the .warning
++   or .error directives, so we switch in the .print directive instead to do the
++   best we can.
++ */
++#define ASM_WARNING(STR)	.print "Warning:"; .print STR
++#define ASM_ERROR(STR)		.print STR; .err
++#else
++#define ASM_WARNING(STR)	.warning STR
++#define ASM_ERROR(STR)		.error STR
++#endif /* __st200__ */
++
++/* Poke table commands */
++#define POKE8(A, VAL)					.long OP_POKE8, A, VAL
++#define POKE16(A, VAL)					.long OP_POKE16, A, VAL
++#define POKE32(A, VAL)					.long OP_POKE32, A, VAL
++#define OR8(A, VAL)					.long OP_OR8, A, VAL
++#define OR16(A, VAL)					.long OP_OR16, A, VAL
++#define OR32(A, VAL)					.long OP_OR32, A, VAL
++#define UPDATE8(A, AND, OR)				.long OP_UPDATE8, A, AND, OR
++#define UPDATE16(A, AND, OR)				.long OP_UPDATE16, A, AND, OR
++#define UPDATE32(A, AND, OR)				.long OP_UPDATE32, A, AND, OR
++#define POKE_UPDATE32(A1, A2, AND, SHIFT, OR)		.long OP_POKE_UPDATE32, A1, A2, AND, SHIFT, OR
++#define WHILE_NE8(A, AND, VAL)				.long OP_WHILE_NE8, A, AND, VAL; .if (VAL > 0xFF); ASM_ERROR("Value VAL in WHILE_NE8 should fit in 8 bits"); .endif
++#define WHILE_NE16(A, AND, VAL)				.long OP_WHILE_NE16, A, AND, VAL; .if (VAL > 0xFFFF); ASM_ERROR("Value VAL in WHILE_NE16 should fit in 16 bits"); .endif
++#define WHILE_NE32(A, AND, VAL)				.long OP_WHILE_NE32, A, AND, VAL
++#define IF_EQ32(NESTLEVEL, A, AND, VAL)			.long OP_IF_EQ32, A, AND, VAL, (NESTLEVEL ## f - .)
++#define IF_GT32(NESTLEVEL, A, AND, VAL)			.long OP_IF_GT32, A, AND, VAL, (NESTLEVEL ## f - .)
++/* An explicit ELSE will skip the OP_ELSE embedded in the ENDIF to make things faster */
++#define ELSE(NESTLEVEL)					.long OP_ELSE; NESTLEVEL: ; .long (NESTLEVEL ## f - .)
++ /* ENDIF includes an OP_ELSE so that we end up at the correct position regardless of whether there is an explicit ELSE in the IF construct */
++#define ENDIF(NESTLEVEL)				.long OP_ELSE; NESTLEVEL: ; .long 0
++#define DELAY(ITERATIONS)				.long OP_DELAY, (ITERATIONS + 1)
++/* The 2nd argument to the poke loop code (in R5 for ST40, or $r0.17 for ST200)
++ * must be the device ID to compare against for these operations to work - the
++ * poke loop code does not try to retrieve the device ID itself.
++ */
++#define IF_DEVID_GE(NESTLEVEL, VAL)			.long OP_IF_DEVID_GE, VAL, (NESTLEVEL ## f - .)
++#define IF_DEVID_LE(NESTLEVEL, VAL)			.long OP_IF_DEVID_LE, VAL, (NESTLEVEL ## f - .)
++/* The end marker needs two extra entries which get read by the code, but are 
++   never used.
++ */
++#define END_MARKER					.long OP_END_POKES, 0, 0
++
++/* 
++ * For compatibility with old poke tables we define some of the old names.
++ * Normally we warn about using the old names, but the warnings can be turned
++ * off by defining the macro POKETABLE_NO_WARNINGS.
++ */
++#ifdef POKETABLE_NO_WARNINGS
++	#define POKE_CHAR(A, VAL)	POKE8(A, VAL)
++	#define POKE_SHORT(A, VAL)	POKE16(A, VAL)
++	#define POKE_LONG(A, VAL)	POKE32(A, VAL)
++	#define OR_LONG(A, VAL)		OR32(A, VAL)
++	#define UPDATE_LONG(A, AND, OR)	UPDATE32(A, AND, OR)
++	#define POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR) POKE_UPDATE32(A1, A2, AND, SHIFT, OR)
++	#define WHILE_NE(A, AND, VAL)	WHILE_NE32(A, AND, VAL)
++#else
++	#define POKE_CHAR(A, VAL)	POKE8(A, VAL); ASM_WARNING("POKE_CHAR() is deprecated; use POKE8()")
++	#define POKE_SHORT(A, VAL)	POKE16(A, VAL); ASM_WARNING("POKE_SHORT() is deprecated; use POKE16()")
++	#define POKE_LONG(A, VAL)	POKE32(A, VAL); ASM_WARNING("POKE_LONG() is deprecated; use POKE32()")
++	#define OR_LONG(A, VAL)		OR32(A, VAL); ASM_WARNING("OR_LONG() is deprecated; use OR32()")
++	#define UPDATE_LONG(A, AND, OR)	UPDATE32(A, AND, OR); ASM_WARNING("UPDATE_LONG() is deprecated; use UPDATE32()")
++	#define POKE_UPDATE_LONG(A1, A2, AND, SHIFT, OR) POKE_UPDATE32(A1, A2, AND, SHIFT, OR); ASM_WARNING("POKE_UPDATE_LONG() is deprecated; use POKE_UPDATE32()")
++	#define WHILE_NE(A, AND, VAL)	WHILE_NE32(A, AND, VAL); ASM_WARNING("WHILE_NE() is deprecated; use WHILE_NE32()")
++#endif /* !POKETABLE_NO_WARNINGS */
++
++#endif /* __ASSEMBLER__ */
++
++#endif /* !__POKE_LOOP_H_ */
+diff --git a/include/ata.h b/include/ata.h
+index aa6e90d..8c4aa87 100644
+--- a/include/ata.h
++++ b/include/ata.h
+@@ -59,6 +59,7 @@
+ #define ATA_DATA_EVEN	ATA_IO_REG(8)
+ #define ATA_DATA_ODD	ATA_IO_REG(9)
+ #define ATA_STATUS	ATA_COMMAND
++#define ATA_FEATURES	ATA_ERROR_REG
+ #define ATA_DEV_CTL	ATA_IO_ALT(6)
+ #define ATA_LBA_LOW	ATA_SECT_NUM
+ #define ATA_LBA_MID	ATA_CYL_LOW
+diff --git a/include/configs/eud7141.h b/include/configs/eud7141.h
+new file mode 100644
+index 0000000..1712a84
+--- /dev/null
++++ b/include/configs/eud7141.h
+@@ -0,0 +1,366 @@
++/*
++ * (C) Copyright 2008-2010 STMicroelectronics.
++ *
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++
++#define CONFIG_SH4	1		/* This is an SH4 CPU		*/
++#define CONFIG_CPU_SUBTYPE_SH4_3XX	/* it is an SH4-300		*/
++
++
++/*-----------------------------------------------------------------------
++ * Start addresses for the final memory configuration
++ * Assume we run out of uncached memory for the moment
++ *
++ * See board/mb628/config.mk for details of the memory map.
++ */
++
++/* QQQ: The following assumes boot-from-NOR */
++#define CFG_EMI_NOR_BASE	0xA0000000	/* CSA: NOR Flash,  Physical 0x00000000 (64MiB) */
++#define CFG_EMI_NAND_BASE	0xA4800000	/* CSC: NAND Flash, Physical 0x04400000 (8MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 2 }		/* NAND is on Chip Select CSC */
++
++#ifdef CONFIG_SH_SE_MODE
++#define CFG_FLASH_BASE		CFG_EMI_NOR_BASE/* FLASH (uncached) via PMB */
++#define CFG_SE_PHYSICAL_BASE	0x40000000	/* LMI Physical Address */
++#define CFG_SDRAM_BASE		0x80000000      /* LMI    Cached addr via PMB */
++#define CFG_SE_UNACHED_BASE	0x90000000	/* LMI UN-cached addr via PMB */
++#define CFG_SE_SDRAM_WINDOW	(CFG_SDRAM_SIZE-1)
++#else
++#define CFG_FLASH_BASE		CFG_EMI_NOR_BASE/* FLASH in P2 region */
++#define CFG_SDRAM_BASE		0x8C000000      /* SDRAM in P1 region */
++#endif
++
++#define CFG_SDRAM_SIZE		0x08000000	/* 128 MiB of LMI SDRAM */
++
++#define CFG_MONITOR_LEN		0x00040000	/* Reserve 256 KiB for Monitor */
++#define CFG_MONITOR_BASE        CFG_FLASH_BASE
++#define CFG_MALLOC_LEN		(1 << 20)	/* Reserve 1 MiB for malloc */
++#define CFG_BOOTPARAMS_LEN	(128 << 10)	/* 128 KiB */
++#define CFG_GBL_DATA_SIZE	1024		/* Global data structures */
++
++#define CFG_MEMTEST_START	CFG_SDRAM_BASE
++#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (3 << 20))
++
++#define CONFIG_BAUDRATE		115200
++#define CFG_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++#define XSTR(s) STR(s)
++#define STR(s) #s
++
++#define BOARD eud7141
++
++#if CFG_MONITOR_LEN == 0x00020000		/* 128 KiB */
++#	define MONITOR_SECTORS	"1:0"		/* 1 sector */
++#elif CFG_MONITOR_LEN == 0x00040000		/* 256 KiB */
++#	define MONITOR_SECTORS	"1:0-1"		/* 2 sectors */
++#else						/* unknown */
++#	error "Unable to determine sectors for monitor"
++#endif
++
++#define CONFIG_EXTRA_ENV_SETTINGS \
++		"board=" XSTR(BOARD) "\0" \
++		"monitor_base=" XSTR(CFG_MONITOR_BASE) "\0" \
++		"monitor_len=" XSTR(CFG_MONITOR_LEN) "\0" \
++		"monitor_sec=" MONITOR_SECTORS "\0" \
++		"load_addr=" XSTR(CFG_LOAD_ADDR) "\0" \
++		"unprot=" \
++		  "protect off $monitor_sec\0" \
++		"update=" \
++		  "erase $monitor_sec;" \
++		  "cp.b $load_addr $monitor_base $monitor_len;" \
++		  "protect on $monitor_sec\0"
++
++/*--------------------------------------------------------------
++ * Command line configuration.
++ */
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_ASKENV
++#define CONFIG_CMD_NFS
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++
++/*--------------------------------------------------------------
++ * Serial console info
++ */
++
++/*
++ * We can use one of two methods for the "serial" console.
++ * We can either use the (normal hardware) internal ST ASC UART;
++ * OR we can use STMicroelectronics' DTF (Data Transfer Format)
++ * mechanism over a JTAG link to a remote GDB debugger.
++ */
++#if 1
++#	define CONFIG_STM_ASC_SERIAL	/* use a ST ASC UART */
++#else
++#	define CONFIG_STM_DTF_SERIAL	/* use DTF over JTAG */
++#endif
++
++/* choose which ST ASC UART to use - there is only one! */
++#define CFG_STM_ASC_BASE		0xfd032000	/* ASC2 */
++
++/*---------------------------------------------------------------
++ * Ethernet driver config
++ */
++
++/*
++ * There are 2 options for ethernet, both use the on-chip ST-GMAC.
++ * The choice in PHYs are:
++ *    The on-board SMSC LAN8700
++ *    External PHY connected via the MII off-board connector.
++ */
++
++/* are we using the internal ST GMAC device ? */
++#define CONFIG_DRIVER_NET_STM_GMAC
++
++/*
++ * Select the appropriate base address for the GMAC.
++ * Also, choose which PHY to use.
++ */
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++#	define CFG_STM_STMAC_BASE	 0xfd110000ul	/* MAC = STM GMAC0 */
++#	define CONFIG_STMAC_LAN8700			/* PHY = SMSC LAN8700 */
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++/*  If this board does not have eeprom for ethernet address so allow the user
++ *  to set it in the environment
++ */
++#define CONFIG_ENV_OVERWRITE
++
++
++/*---------------------------------------------------------------
++ * USB driver config
++ */
++
++/* Choose if we want USB Mass-Storage Support */
++//QQQ	#define CONFIG_SH_STB7100_USB
++
++#ifdef CONFIG_SH_STB7100_USB
++#	define CONFIG_CMD_USB
++#	define CONFIG_CMD_FAT
++#	define CONFIG_USB_OHCI_NEW
++#	define CONFIG_USB_STORAGE
++#	define CFG_USB_OHCI_CPU_INIT
++#	define CFG_USB_BASE			0xfe100000
++#	define CFG_USB_OHCI_REGS_BASE		(CFG_USB_BASE+0xffc00)
++#	define CFG_USB_OHCI_SLOT_NAME		"ohci"
++#	define CFG_USB_OHCI_MAX_ROOT_PORTS	1
++#	define LITTLEENDIAN
++#endif	/* ifdef CONFIG_SH_STB7100_USB */
++
++/*---------------------------------------------------------------
++ * SATA driver config
++ */
++
++/* SATA works on cut 2.x of the STx7141 (just one port) */
++/* Choose if we want to use a SATA HDD */
++//#define CONFIG_SH_STM_SATA
++
++#ifdef CONFIG_SH_STM_SATA
++#	define CONFIG_CMD_IDE				/* enable "ide" command set */
++#	define CFG_ATA_BASE_ADDR	0xfe209000	/* E-SATA panel connector */
++#	define CFG_ATA_IDE0_OFFSET	0x800		/* Host Controller */
++#	define CFG_ATA_REG_OFFSET	0x0
++#	define CFG_ATA_DATA_OFFSET	0x0
++#	define CFG_ATA_STRIDE		0x4
++#	define CFG_IDE_MAXBUS		1
++#	define CFG_IDE_MAXDEVICE	1
++#endif	/* CONFIG_SH_STM_SATA */
++
++#if defined(CONFIG_SH_STM_SATA) ||	\
++    defined(CONFIG_SH_STB7100_USB)
++#	define CFG_64BIT_LBA
++#	define CONFIG_LBA48
++#	define CONFIG_DOS_PARTITION
++#	define CONFIG_CMD_EXT2
++#endif
++
++/*-----------------------------------------------------------------------
++ * Miscellaneous configurable options
++ */
++
++#define CFG_HUSH_PARSER		1
++#define CONFIG_AUTO_COMPLETE	1
++#define CFG_LONGHELP		1		/* undef to save memory		*/
++#define CFG_PROMPT		"EUD7141> "	/* Monitor Command Prompt	*/
++#define CFG_PROMPT_HUSH_PS2	"> "
++#define CFG_CBSIZE		1024
++#define CFG_PBSIZE (CFG_CBSIZE+sizeof(CFG_PROMPT)+16) /* Print Buffer Size	*/
++#define CFG_MAXARGS		16		/* max number of command args	*/
++#define CFG_HZ			1000		/* HZ for timer ticks	*/
++#define CFG_LOAD_ADDR		CFG_SDRAM_BASE	/* default load address		*/
++#define CFG_BOOTMAPSZ		(16 << 20)	/* initial linux memory size	*/
++#define CONFIG_BOOTDELAY	10		/* default delay before executing bootcmd */
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++
++#define CONFIG_CMDLINE_EDITING
++
++/*-----------------------------------------------------------------------
++ * FLASH organization
++ */
++
++/* Choose if we want FLASH Support (NAND &/or NOR devices)
++ * We may use *both* NOR and NAND flash, at the same time, if we want.
++ *
++ * Note: by default CONFIG_CMD_FLASH is defined in config_cmd_default.h
++ */
++#undef CONFIG_CMD_FLASH		/* undefine it, define only if needed */
++
++#define CONFIG_CMD_FLASH	/* define for NOR flash */
++#define CONFIG_CMD_NAND		/* define for NAND flash */
++
++/*-----------------------------------------------------------------------
++ * NOR FLASH organization
++ */
++
++/* 29GL01GP: 128MiB 1024 blocks, 128 KiB block size */
++#ifdef CONFIG_CMD_FLASH				/* NOR flash present ? */
++#	define CFG_FLASH_CFI_DRIVER
++#	define CFG_FLASH_CFI
++#	define CONFIG_FLASH_PROTECT_SINGLE_CELL
++#	define CFG_FLASH_PROTECTION	1	/* use hardware flash protection	*/
++#	define CFG_MAX_FLASH_BANKS	1	/* max number of memory banks		*/
++#	define CFG_MAX_FLASH_SECT	1024	/* max number of sectors on one chip	*/
++#	define CFG_FLASH_EMPTY_INFO		/* test if each sector is empty		*/
++#	define MTDPARTS_NOR						\
++	"physmap-flash:"	/* First NOR flash device */		\
++		"256k(U-Boot)"		/* first partition */		\
++		",128k(Environment)"					\
++		",4M(Kernel)"						\
++		",-(RestOfNor0)"	/* last partition */
++#	define MTDIDS_NOR						\
++	"nor0=physmap-flash"	/* First NOR flash device */
++#else
++#	undef CONFIG_CMD_IMLS			/* NOR-flash specific */
++#	define CFG_NO_FLASH			/* NOR-flash specific */
++#endif	/* CONFIG_CMD_FLASH */
++
++
++
++/*-----------------------------------------------------------------------
++ * NAND FLASH organization
++ */
++
++#ifdef CONFIG_CMD_NAND				/* NAND flash present ? */
++#	define CFG_MAX_NAND_DEVICE	1
++#	define NAND_MAX_CHIPS		CFG_MAX_NAND_DEVICE
++#	define CFG_NAND0_BASE		CFG_EMI_NAND_BASE
++#	define CFG_NAND_BASE_LIST	{ CFG_NAND0_BASE }
++#define MTDPARTS_DEFAULT						\
++	"mtdparts="							\
++	"gen_nand.1:"		/* First NAND flash device */		\
++		"128k(Environment)"	/* first partition */		\
++		",4M(Kernel)"						\
++		",32M(rootfs)"						\
++		",-(RestOfNand)"	/* last partition */
++#define MTDIDS_DEFAULT							\
++	"nand0=gen_nand.1"	/* First NAND flash device */
++
++	/*
++	 * Currently, there are 2 main modes to read/write from/to
++	 * NAND devices on STM SoCs:
++	 *	a) "bit-banging" (can NOT be used in boot-from-NAND)
++	 *	b) FLEX-mode (only supported means for boot-from-NAND)
++	 * If CFG_NAND_FLEX_MODE is defined, then FLEX-mode will be
++	 * used, otherwise, "bit-banging" will be used.
++	 */
++#	define CFG_NAND_FLEX_MODE	/* define to use NAND FLEX-MODE */
++
++	/*
++	 * Do we want to read/write NAND Flash compatible with the ST40's
++	 * NAND Controller H/W IP block for "boot-mode"? If we want
++	 * to read/write NAND flash that is meant to support booting
++	 * from NAND, then we need to use 3 bytes of ECC per 128 byte
++	 * record.  If so, then define the "CFG_NAND_ECC_HW3_128" macro.
++	 */
++#	define CFG_NAND_ECC_HW3_128	/* define for "boot-from-NAND" compatibility */
++
++	/*
++	 * If using CFG_NAND_ECC_HW3_128, then we must also define
++	 * where the (high watermark) boundary is. That is, the
++	 * NAND offset, below which we are in "boot-mode", and
++	 * must use 3 bytes of ECC for each 128 byte record.
++	 * For this offset (and above) we can use any supported
++	 * ECC configuration (e.g 3/256 S/W, or 3/512 H/W).
++	 */
++#	define CFG_NAND_STM_BOOT_MODE_BOUNDARY (1ul << 20)	/* 1 MiB */
++
++	/*
++	 * If we want to store the U-boot environment variables in
++	 * the NAND device, then we also need to specify *where* the
++	 * environment variables will be stored. Typically this
++	 * would be immediately after the U-boot monitor itself.
++	 * However, that *may* be a bad block. Define the following
++	 * to place the environment in an appropriate good block.
++	 */
++#	define CFG_NAND_ENV_OFFSET (CFG_MONITOR_LEN + 0x0)	/* immediately after u-boot.bin */
++#endif	/* CONFIG_CMD_NAND */
++
++
++/*-----------------------------------------------------------------------
++ * Address, size, & location of U-boot's Environment Sector
++ */
++
++#define CFG_ENV_SIZE			0x4000	/* 16 KiB of environment data */
++
++#if 1 && defined(CONFIG_CMD_FLASH)		/* NOR flash present ? */
++#	define CFG_ENV_IS_IN_FLASH		/* environment in NOR flash */
++#	define CFG_ENV_OFFSET	CFG_MONITOR_LEN	/* immediately after u-boot.bin */
++#	define CFG_ENV_SECT_SIZE	0x20000	/* 128 KiB Sector size */
++#elif 1 && defined(CONFIG_CMD_NAND)		/* NAND flash present ? */
++#	define CFG_ENV_IS_IN_NAND		/* environment in NAND flash */
++#	define CFG_ENV_OFFSET	CFG_NAND_ENV_OFFSET
++#	if CFG_ENV_SIZE < 0x20000		/* needs to be a multiple of block-size */
++#		undef CFG_ENV_SIZE		/* give it just one large-page block */
++#		define CFG_ENV_SIZE	0x20000	/* 128 KiB of environment data */
++#	endif /* if CFG_ENV_SIZE < 0x20000 */
++#else
++#	define CFG_ENV_IS_NOWHERE		/* ENV is stored in volatile RAM */
++#endif	/* CONFIG_CMD_NAND */
++
++/*----------------------------------------------------------------------
++ * JFFS2 support
++ */
++
++#if 1 && (defined(CONFIG_CMD_FLASH) || defined(CONFIG_CMD_NAND))
++#	define CONFIG_CMD_JFFS2			/* enable JFFS2 support */
++#endif
++
++#if defined(CONFIG_CMD_JFFS2)
++#	ifdef CONFIG_CMD_NAND			/* NAND flash present ? */
++#		define CONFIG_JFFS2_NAND	/* JFFS2 support on NAND Flash */
++#	endif	/* CONFIG_CMD_NAND */
++#	define CONFIG_JFFS2_CMDLINE		/* mtdparts command line support */
++#endif	/* CONFIG_CMD_JFFS2 */
++
++
++#endif	/* __CONFIG_H */
+diff --git a/include/configs/mb680.h b/include/configs/mb680.h
+index f27e9cf..0dcc702 100644
+--- a/include/configs/mb680.h
++++ b/include/configs/mb680.h
+@@ -35,6 +35,14 @@
+ 
+ 
+ /*-----------------------------------------------------------------------
++ * Define the following macro only if the MB680 CPU board
++ * will be mated with a MB705 peripheral board.
++ */
++#undef  CONFIG_SH_MB705		/* MB680 withOUT a MB705 */
++#define CONFIG_SH_MB705		/* MB680 + MB705 */
++
++
++/*-----------------------------------------------------------------------
+  * Are we booting directly from a NAND Flash device ?
+  * If so, then define the "CFG_BOOT_FROM_NAND" macro,
+  * otherwise (e.g. NOR/SPI Flash booting), do not define it.
+diff --git a/sh_config.mk b/sh_config.mk
+index a4526e6..f208535 100644
+--- a/sh_config.mk
++++ b/sh_config.mk
+@@ -1,5 +1,5 @@
+ #
+-# (C) Copyright 2004-2009
++# (C) Copyright 2004-2010
+ # Andy Sturges, STMicroelectronics, andy.sturges@st.com
+ # Sean McGoogan STMicroelectronics, <Sean.McGoogan@st.com>
+ #
+@@ -27,7 +27,7 @@
+ # for actual build number, in the following identifier.
+ # Regular Expression for string is:
+ # 	"stm[2-9][0-9]-[2-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]"
+-SH_IDENT_STRING="\"stm23-2009-12-07\""
++SH_IDENT_STRING="\"stm23-2010-04-15\""
+ 
+ PLATFORM_CPPFLAGS += -DCONFIG_SH4 -D__SH4__ -DCONFIG_IDENT_STRING=$(SH_IDENT_STRING)
+ PLATFORM_LDFLAGS  += -n

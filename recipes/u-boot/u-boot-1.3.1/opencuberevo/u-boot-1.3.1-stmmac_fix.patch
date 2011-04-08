@@ -1,0 +1,19 @@
+Fix ST MAC MDIO bus write function.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: u-boot-1.3.1/drivers/net/stm-stmac.c
+===================================================================
+--- u-boot-1.3.1.orig/drivers/net/stm-stmac.c	2008-04-07 10:20:02.000000000 +0100
++++ u-boot-1.3.1/drivers/net/stm-stmac.c	2008-04-07 10:20:55.000000000 +0100
+@@ -368,8 +368,8 @@
+ 	stmac_mii_poll_busy ();
+ 
+ 	/* Set the MII address register to write */
+-	STMAC_WRITE (mii_addr, MAC_MII_DATA);
+-	STMAC_WRITE (value, MAC_MII_ADDR);
++	STMAC_WRITE (value, MAC_MII_DATA);
++	STMAC_WRITE (mii_addr, MAC_MII_ADDR);
+ 
+ 	stmac_mii_poll_busy ();
+ 

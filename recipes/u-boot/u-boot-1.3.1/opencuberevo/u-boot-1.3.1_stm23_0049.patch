@@ -1,0 +1,4994 @@
+diff --git a/MAKEALL b/MAKEALL
+index 49e7b7e..928cf58 100755
+--- a/MAKEALL
++++ b/MAKEALL
+@@ -682,6 +682,8 @@ LIST_sh="		\
+ 	mb671se		\
+ 	mb680		\
+ 	mb680se		\
++	mb796		\
++	mb796se		\
+ 	pdk7105		\
+ 	pdk7105se	\
+ 	ipidtv7105	\
+diff --git a/Makefile b/Makefile
+index 37194a7..5672fe4 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2708,11 +2708,13 @@ mb448_config :		unconfig
+ 
+ hms1_config \
+ hms1_128_config :		unconfig
+-	@mkdir -p $(obj)include
++	@mkdir -p $(obj)include $(obj)board/st/hms1
+ 	@echo "#define CONFIG_SH_STB7100   1" >>$(obj)include/config.h
+ 	@echo "#define CONFIG_SH_HMS1      1" >>$(obj)include/config.h
+ 	$(if $(findstring 128,$@), \
+ 	@echo "#define CONFIG_SH_HMS1_128  1" >>$(obj)include/config.h)
++	$(if $(findstring 128,$@), \
++	@echo "TEXT_BASE = 0x8BF00000" >$(obj)board/st/hms1/config.tmp)
+ 	@$(MKCONFIG) -a hms1 sh sh hms1 st stb7100
+ 
+ mb519_config \
+@@ -2865,6 +2867,21 @@ fldbse_config :		unconfig
+ 	@echo "#define CONFIG_SH_SE_MODE   1" >>$(obj)include/config.h
+ 	@$(MKCONFIG) -a fldb sh sh fldb st fli7510
+ 
++# QQQ following should have "TEXT_BASE = 0x8FF00000" for SE mode.
++# QQQ However, the current TargetPacks only define the PMB
++# QQQ for the first 128MiB region of RAM.
++# QQQ Hence, we need the targetpacks to be updated first!
++mb796_config \
++mb796se_config :		unconfig
++	@mkdir -p $(obj)include $(obj)board/st/mb796
++	@echo "#define CONFIG_SH_STX5206   1" >>$(obj)include/config.h
++	@echo "#define CONFIG_SH_MB796     1" >>$(obj)include/config.h
++	$(if $(findstring se,$@), \
++	@echo "#define CONFIG_SH_SE_MODE   1" >>$(obj)include/config.h)
++	$(if $(findstring se,$@), \
++	@echo "TEXT_BASE = 0x87F00000" >$(obj)board/st/mb796/config.tmp)
++	@$(MKCONFIG) -a mb796 sh sh mb796 st stx5206
++
+ 
+ #========================================================================
+ # STMicroelectronics ST200
+diff --git a/board/st/eud7141/eud7141.c b/board/st/eud7141/eud7141.c
+index 7f17641..845780c 100644
+--- a/board/st/eud7141/eud7141.c
++++ b/board/st/eud7141/eud7141.c
+@@ -42,6 +42,25 @@ extern void flashWriteDisable(void)
+ 	/* Nothing to do! */
+ }
+ 
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++static void phy_reset(void)
++{
++#if CFG_STM_STMAC_BASE == CFG_STM_STMAC1_BASE	/* MAC = STM GMAC#1 */
++	/* Reset the on-board IC+ IP1001 PHY (U51) */
++	SET_PIO_PIN(PIO_PORT(5), 3, STPIO_OUT);
++
++	STPIO_SET_PIN(PIO_PORT(5), 3, 1);
++	udelay(10);
++
++	STPIO_SET_PIN(PIO_PORT(5), 3, 0);
++	udelay(50);
++
++	STPIO_SET_PIN(PIO_PORT(5), 3, 1);
++	udelay(10);
++#endif
++}
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
+ static void configPIO(void)
+ {
+ 	unsigned long sysconf;
+@@ -67,6 +86,18 @@ extern int board_init(void)
+ {
+ 	configPIO();
+ 
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++	phy_reset();	/* Reset the PHY */
++#if CFG_STM_STMAC_BASE == CFG_STM_STMAC0_BASE	/* MAC = STM GMAC#0 */
++	/* QQQ TODO: No H/W provided to test this! */
++	stx7141_configure_ethernet(0, 0, 0, 0);
++#elif CFG_STM_STMAC_BASE == CFG_STM_STMAC1_BASE	/* MAC = STM GMAC#1 */
++	stx7141_configure_ethernet(1, 0, 0, 1);
++#else
++#error Unknown GMAC Base address encountered!
++#endif
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
+ #if defined(CONFIG_SH_STM_SATA)
+ 	stx7141_configure_sata ();
+ #endif	/* CONFIG_SH_STM_SATA */
+diff --git a/board/st/fldb/fldb.c b/board/st/fldb/fldb.c
+index 032b1b8..4ee1b83 100644
+--- a/board/st/fldb/fldb.c
++++ b/board/st/fldb/fldb.c
+@@ -85,7 +85,7 @@ static void configSpi(void)
+ #if defined(CONFIG_SOFT_SPI)	/* Configure SPI Serial Flash for PIO "bit-banging" */
+ 	SET_PIO_PIN(PIO_PORT(17),2,STPIO_OUT);	/* SPI_CLK */
+ 	SET_PIO_PIN(PIO_PORT(17),3,STPIO_OUT);	/* SPI_MOSI */
+-#else	/* Configure SPI Serial Flash for the H/W SSC */
++#elif defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ 	SET_PIO_PIN(PIO_PORT(17),2,STPIO_ALT_OUT);/* SPI_CLK */
+ 	SET_PIO_PIN(PIO_PORT(17),3,STPIO_ALT_OUT);/* SPI_MOSI */
+ #endif	/* CONFIG_SOFT_SPI */
+diff --git a/board/st/hdk7111/hdk7111.c b/board/st/hdk7111/hdk7111.c
+index 35b00c2..5084594 100644
+--- a/board/st/hdk7111/hdk7111.c
++++ b/board/st/hdk7111/hdk7111.c
+@@ -69,7 +69,7 @@ static void configSpi(void)
+ 	STPIO_SET_PIN(PIO_PORT(6), 7, 1);	/* deassert SPI_NOCS */
+ 	STPIO_SET_PIN(PIO_PORT(2), 0, 1);	/* assert SPI_CLK */
+ 	STPIO_SET_PIN(PIO_PORT(2), 1, 0);	/* deassert SPI_DOUT */
+-#else
++#elif defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ #error Still to impliment SPI via SSC for the STx7111.
+ #endif	/* CONFIG_SOFT_SPI */
+ }
+diff --git a/board/st/hms1/config.mk b/board/st/hms1/config.mk
+index aff8d30..19c1a49 100644
+--- a/board/st/hms1/config.mk
++++ b/board/st/hms1/config.mk
+@@ -1,6 +1,7 @@
+ #
+-# (C) Copyright 2005
++# (C) Copyright 2005, 2010
+ # Andy Sturges (andy.sturges@st.com)
++# Sean McGoogan <Sean.McGoogan@st.com>
+ #
+ # See file CREDITS for list of people who contributed to this
+ # project.
+@@ -24,7 +25,20 @@
+ #
+ # HMS1 board
+ #
++#	Valid values for TEXT_BASE are:
++#
++#	0x87F00000	29-bit mode +  64 MiB of SDRAM
++#	0x8BF00000	29-bit mode + 128 MiB of SDRAM
++#
++# Note:	Alternative definitions of TEXT_BASE are put into
++#	'config.tmp' from the top-level 'Makefile'.
++#
++
++sinclude $(OBJTREE)/board/$(BOARDDIR)/config.tmp
++
++ifndef TEXT_BASE
++# Installs at SDRAM BASE  + 63M in P1 (cachable)
++TEXT_BASE = 0x87F00000
++endif
+ 
+-# Installs at SDRAM BASE  + 31M in cache region
+-TEXT_BASE = 0x86F00000
+ PLATFORM_LDFLAGS +=
+diff --git a/board/st/mb796/Makefile b/board/st/mb796/Makefile
+new file mode 100644
+index 0000000..e71bce4
+--- /dev/null
++++ b/board/st/mb796/Makefile
+@@ -0,0 +1,54 @@
++#
++# (C) Copyright 2007 STMicroelectronics.
++# Stuart Menefy <stuart.menefy@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++SOBJS-y	= init-$(BOARD).o
++
++COBJS-y	+= $(BOARD).o
++COBJS-$(CONFIG_CMD_NAND) += nand.o
++
++
++SRCS	:= $(SOBJS-y:.o=.S) $(COBJS-y:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS-y))
++SOBJS	:= $(addprefix $(obj),$(SOBJS-y))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak .depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/st/mb796/config.mk b/board/st/mb796/config.mk
+new file mode 100644
+index 0000000..98c6f93
+--- /dev/null
++++ b/board/st/mb796/config.mk
+@@ -0,0 +1,43 @@
++#
++# (C) Copyright 2010 STMicroelectronics.
++# Sean McGoogan <Sean.McGoogan@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++#
++# MB796 board:
++#
++#	Valid values for TEXT_BASE are:
++#
++#	0x9BF00000	29-bit mode (Traditional Mode)
++#	0x8FF00000	32-bit mode (Space-Enhancement Mode)
++#
++# Note:	Alternative definitions of TEXT_BASE are put into
++#	'config.tmp' from the top-level 'Makefile'.
++#
++
++sinclude $(OBJTREE)/board/$(BOARDDIR)/config.tmp
++
++ifndef TEXT_BASE
++# Installs at LMI0 BASE + 255MB in P1 (cachable)
++TEXT_BASE = 0x9BF00000
++endif
++
++PLATFORM_LDFLAGS +=
+diff --git a/board/st/mb796/init-mb796.S b/board/st/mb796/init-mb796.S
+new file mode 100644
+index 0000000..bd19e94
+--- /dev/null
++++ b/board/st/mb796/init-mb796.S
+@@ -0,0 +1,68 @@
++/*
++ * The poke table is a series of long words, in the format
++ *
++ *	opcode, address, operand, ...
++ *
++ * An opcode of 0 marks the table end
++ */
++
++
++/*
++ * Only define the following if you want to use the "old"
++ * poke loop table interpreter. This should *not* be
++ * defined if you are now using the "romgen" tool to
++ * generate contemporary poke tables. The latest generation
++ * targetpacks may be incompatible with the old interpreter.
++ */
++#undef CONFIG_SH_OLD_POKE_LOOP_PARADIGM
++
++
++#include "asm/stx5206reg.h"
++#include "../../../cpu/sh/init_ram.S"
++
++
++	.section .data.init, "a"
++
++	.balign 32
++
++__memory_setup_table:
++
++	/*
++	 * include the appropriate set of "GDB pokes", (usually) generated
++	 * using the "romgen" utility, from a known good target-pack.
++	 *
++	 * This file may be regenerated by connecting your specific board
++	 * to an STMC2 (note: currently it must be version 2) and then
++	 * executing the following command (redirecting the output):
++	 *
++	 * host% romgen --show-comment <stmc2>:mb796stx5206:st40,boot_companions=0
++	 *
++	 * Where "<stmc2>" should be replaced with the IP address
++	 * (or the DNS name) of the STMC2 box.  Also the "mb796stx5206" should
++	 * substituted if you have a custom target-pack connect command.
++	 *
++	 * Note: The connect command used with "romgen", should connect
++	 * only in 29-bit mode - even if U-Boot will be built for 32-bit mode.
++	 * That is, do not use the "seuc=1" (or similar) option with "romgen".
++	 */
++#include "mb796-stx5206.romgen"
++
++#ifdef CONFIG_SH_SE_MODE
++	/*
++	 * Note that we also manually need to move the LMI base addresses to
++	 * their 32-bit SE mode locations as defined in the datasheet and change the
++	 * 'upper bound addresses' (in row attribute registers) for the LMIs.
++	 */
++	UPDATE32(STX5206_SYSCONF_SYS_CFG38, 0xFFFFFF00, 0x00000040)
++	/* Change LMI upper bound addresses
++	 * Upper LMI addr=0x40000000 + 256MiB=0x50000000
++	 */
++	UPDATE32(ST40_LMI_SDRA0_0(), 0x001FFFFF, 0x50000000)
++	UPDATE32(ST40_LMI_SDRA1_0(), 0x001FFFFF, 0x50000000)
++#endif	/* CONFIG_SH_SE_MODE */
++
++	END_MARKER
++
++__memory_setup_table_end:
++
++	.end
+diff --git a/board/st/mb796/mb796-stx5206.romgen b/board/st/mb796/mb796-stx5206.romgen
+new file mode 100644
+index 0000000..32d5458
+--- /dev/null
++++ b/board/st/mb796/mb796-stx5206.romgen
+@@ -0,0 +1,1047 @@
++/*
++This file was automatically generated on Fri 30 Apr 10 at 15:18:41 by user mcgoogan, host hoiho.bri.st.com using romgen R1.4.0 with the ST TargetPack mb796stx5206
++
++TargetPack files used:
++/opt/STM/STLinux-2.3/host/stmc/targetpack/boards/mb796stx5206/mb796stx5206.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/boards/mb796stx5206/mb796stx5206.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/boards/mb796stx5206/mb796stx5206_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st231.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st231.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_300_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_ccn_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_addr_array_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_data_array_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/cores/st40_pmb_regs.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/debug/tapmux.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_emi_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_lmigp_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/st40_pio.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/peripherals/tapmux.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx5206/stx5206.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx5206/stx5206.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx5206/stx5206_audio_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx5206/stx5206_clockgena_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx5206/stx5206_clockgenb_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx5206/stx5206_design.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/stx5206/stx5206_sysconf_regs.xml
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/__init__.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/socs/tap/jtag.py
++/opt/STM/STLinux-2.3/host/stmc/targetpack/utilities/utilities.py
++*/
++
++
++/*
++stx5206_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++POKE32(0xfe213014, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++POKE32(0xfe213024, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0_ENABLE_FB
++*/
++WHILE_NE32(0xfe21301c, 0xffffffff, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_ENABLE_FB
++*/
++WHILE_NE32(0xfe213020, 0xffffffff, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0_CFG
++*/
++OR32(0xfe213000, 0x00100000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_POWER_CFG
++*/
++OR32(0xfe213010, 0x00000001)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0_CFG
++*/
++UPDATE32(0xfe213000, 0xfff80000, 0x00000f01)
++
++
++/*
++stx5206_clockgena_regs.CKGA_POWER_CFG
++*/
++UPDATE32(0xfe213010, 0xfffffffe, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0_CFG
++*/
++WHILE_NE32(0xfe213000, 0x80000000, 0x80000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0_CFG
++*/
++UPDATE32(0xfe213000, 0xffefffff, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_CFG
++*/
++OR32(0xfe213004, 0x00100000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_POWER_CFG
++*/
++OR32(0xfe213010, 0x00000002)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_CFG
++*/
++UPDATE32(0xfe213004, 0xfff80000, 0x00002803)
++
++
++/*
++stx5206_clockgena_regs.CKGA_POWER_CFG
++*/
++UPDATE32(0xfe213010, 0xfffffffd, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_CFG
++*/
++WHILE_NE32(0xfe213004, 0x80000000, 0x80000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_CFG
++*/
++UPDATE32(0xfe213004, 0xffefffff, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV0_CFG
++*/
++POKE32(0xfe213b00, 0x00000001)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV0_CFG
++*/
++WHILE_NE32(0xfe213b00, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV1_CFG
++*/
++POKE32(0xfe213b04, 0x00000001)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV1_CFG
++*/
++WHILE_NE32(0xfe213b04, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV2_CFG
++*/
++POKE32(0xfe213b08, 0x00000001)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV2_CFG
++*/
++WHILE_NE32(0xfe213b08, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV3_CFG
++*/
++POKE32(0xfe213b0c, 0x00000004)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV3_CFG
++*/
++WHILE_NE32(0xfe213b0c, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV4_CFG
++*/
++POKE32(0xfe213a10, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV4_CFG
++*/
++WHILE_NE32(0xfe213a10, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV5_CFG
++*/
++POKE32(0xfe213b14, 0x00000007)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV5_CFG
++*/
++WHILE_NE32(0xfe213b14, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV6_CFG
++*/
++POKE32(0xfe213a18, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV6_CFG
++*/
++WHILE_NE32(0xfe213a18, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV7_CFG
++*/
++POKE32(0xfe213a1c, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV7_CFG
++*/
++WHILE_NE32(0xfe213a1c, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV8_CFG
++*/
++POKE32(0xfe213b20, 0x00000003)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV8_CFG
++*/
++WHILE_NE32(0xfe213b20, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV9_CFG
++*/
++POKE32(0xfe213b24, 0x00000003)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV9_CFG
++*/
++WHILE_NE32(0xfe213b24, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV10_CFG
++*/
++POKE32(0xfe213b28, 0x00000003)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV10_CFG
++*/
++WHILE_NE32(0xfe213b28, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV11_CFG
++*/
++POKE32(0xfe213b2c, 0x00000003)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV11_CFG
++*/
++WHILE_NE32(0xfe213b2c, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV12_CFG
++*/
++POKE32(0xfe213b30, 0x00000002)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV12_CFG
++*/
++WHILE_NE32(0xfe213b30, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV13_CFG
++*/
++POKE32(0xfe213a34, 0x00000008)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL0LS_DIV13_CFG
++*/
++WHILE_NE32(0xfe213a34, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV14_CFG
++*/
++POKE32(0xfe213b38, 0x0000000b)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV14_CFG
++*/
++WHILE_NE32(0xfe213b38, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV15_CFG
++*/
++POKE32(0xfe213b3c, 0x00000007)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV15_CFG
++*/
++WHILE_NE32(0xfe213b3c, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV16_CFG
++*/
++POKE32(0xfe213b40, 0x00000003)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV16_CFG
++*/
++WHILE_NE32(0xfe213b40, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV17_CFG
++*/
++POKE32(0xfe213b44, 0x00000003)
++
++
++/*
++stx5206_clockgena_regs.CKGA_PLL1_DIV17_CFG
++*/
++WHILE_NE32(0xfe213b44, 0x80000000, 0x00000000)
++
++
++/*
++stx5206_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG
++*/
++POKE32(0xfe213014, 0xa6aa59aa)
++
++
++/*
++stx5206_clockgena_regs.CKGA_CLKOPSRC_SWITCH_CFG2
++*/
++POKE32(0xfe213024, 0x0000000a)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG40
++*/
++UPDATE32(0xfe0011a0, 0xfffffffc, 0x00000000)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG11
++*/
++OR32(0xfe00112c, 0x00001000)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG11
++*/
++UPDATE32(0xfe00112c, 0xfffff001, 0x000006a0)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG11
++*/
++UPDATE32(0xfe00112c, 0xffffefff, 0x00000000)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_STA3
++*/
++WHILE_NE32(0xfe001014, 0x00000001, 0x00000000)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_LOCK
++*/
++POKE32(0xfe000010, 0x0000c0de)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS0_CTRL .NPDA [offset 4, size 1]
++*/
++UPDATE32(0xfe000014, 0xffffffef, 0x00000000)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS0_CTRL .NRST [offset 3, size 1]
++*/
++UPDATE32(0xfe000014, 0xfffffff7, 0x00000000)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS0_CTRL .NRST [offset 3, size 1]
++*/
++UPDATE32(0xfe000014, 0xfffffff7, 0x00000008)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS0_CTRL .NPDA [offset 4, size 1]
++*/
++UPDATE32(0xfe000014, 0xffffffef, 0x00000010)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS1_CTRL .NPDA [offset 4, size 1]
++*/
++UPDATE32(0xfe00005c, 0xffffffef, 0x00000000)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS1_CTRL .NRST [offset 3, size 1]
++*/
++UPDATE32(0xfe00005c, 0xfffffff7, 0x00000000)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS1_CTRL .NRST [offset 3, size 1]
++*/
++UPDATE32(0xfe00005c, 0xfffffff7, 0x00000008)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_FS1_CTRL .NPDA [offset 4, size 1]
++*/
++UPDATE32(0xfe00005c, 0xffffffef, 0x00000010)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_CRISTAL_SEL
++*/
++POKE32(0xfe0000b8, 0x00000000)
++
++
++/*
++stx5206_clockgenb_regs.CLOCKGENB_LOCK
++*/
++POKE32(0xfe000010, 0x00000000)
++
++
++/*
++stx5206_audio_regs.AUDCFG_FSYNA_CFG
++*/
++UPDATE32(0xfe210000, 0xfe7fffff, 0x00000000)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG40
++*/
++UPDATE32(0xfe0011a0, 0xfffffff3, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK_ENABLE
++*/
++POKE32(0xfe700860, 0x00000005)
++
++
++/*
++st40_emi_regs.EMI_BANK0_BASEADDRESS
++*/
++POKE32(0xfe700800, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_BASEADDRESS
++*/
++POKE32(0xfe700810, 0x00000010)
++
++
++/*
++st40_emi_regs.EMI_BANK2_BASEADDRESS
++*/
++POKE32(0xfe700820, 0x00000012)
++
++
++/*
++st40_emi_regs.EMI_BANK3_BASEADDRESS
++*/
++POKE32(0xfe700830, 0x0000001c)
++
++
++/*
++st40_emi_regs.EMI_BANK4_BASEADDRESS
++*/
++POKE32(0xfe700840, 0x00000020)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA0
++*/
++POKE32(0xfe700100, 0x001016d1)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA1
++*/
++POKE32(0xfe700108, 0x9d200000)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA2
++*/
++POKE32(0xfe700110, 0x9d220000)
++
++
++/*
++st40_emi_regs.EMI_BANK0_EMICONFIGDATA3
++*/
++POKE32(0xfe700118, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA0
++*/
++POKE32(0xfe700140, 0x001016d1)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA1
++*/
++POKE32(0xfe700148, 0x9d200000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA2
++*/
++POKE32(0xfe700150, 0x9d220000)
++
++
++/*
++st40_emi_regs.EMI_BANK1_EMICONFIGDATA3
++*/
++POKE32(0xfe700158, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA0
++*/
++POKE32(0xfe700180, 0x002016d1)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA1
++*/
++POKE32(0xfe700188, 0x9d222200)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA2
++*/
++POKE32(0xfe700190, 0x9d220044)
++
++
++/*
++st40_emi_regs.EMI_BANK2_EMICONFIGDATA3
++*/
++POKE32(0xfe700198, 0x00000000)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA0
++*/
++POKE32(0xfe7001c0, 0x00c447f9)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA1
++*/
++POKE32(0xfe7001c8, 0xff86a8a8)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA2
++*/
++POKE32(0xfe7001d0, 0xff86a8a8)
++
++
++/*
++st40_emi_regs.EMI_BANK3_EMICONFIGDATA3
++*/
++POKE32(0xfe7001d8, 0x0000000a)
++
++
++/*
++st40_emi_regs.EMI_GENCFG
++*/
++POKE32(0xfe700028, 0x00000010)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG04
++*/
++UPDATE32(0xfe001110, 0xfffffffb, 0x00000000)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG11
++*/
++UPDATE32(0xfe00112c, 0x00000ffe, 0x08010001)
++DELAY(200)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG04
++*/
++OR32(0xfe001110, 0x00000004)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG12
++*/
++POKE32(0xfe001130, 0xa000787f)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG38
++*/
++POKE32(0xfe001198, 0x000f000c)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG13
++*/
++POKE32(0xfe001134, 0x0042000a)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG14
++*/
++POKE32(0xfe001138, 0x00000000)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG55
++*/
++POKE32(0xfe0011dc, 0x0800239e)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG42
++*/
++POKE32(0xfe0011a8, 0x0000fa8e)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG43
++*/
++POKE32(0xfe0011ac, 0x00000000)
++
++
++/*
++stx5206_sysconf_regs.SYSCONF_CFG51
++*/
++POKE32(0xfe0011cc, 0x00000000)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_0
++*/
++POKE32(0xfe901008, 0x0b30013b)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_1
++*/
++POKE32(0xfe90100c, 0xffff0500)
++
++
++/*
++st40_lmigp_regs.LMI_STR_0
++*/
++POKE32(0xfe901018, 0xcf35b424)
++
++
++/*
++st40_lmigp_regs.LMI_STR_1
++*/
++POKE32(0xfe90101c, 0x00242ed8)
++
++
++/*
++st40_lmigp_regs.LMI_SDRA0_0
++*/
++POKE32(0xfe901030, 0x1c001e20)
++
++
++/*
++st40_lmigp_regs.LMI_SDRA0_1
++*/
++POKE32(0xfe901034, 0x1c001e20)
++DELAY(200000)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020023)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020022)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00010000)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00018000)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00008006)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00000b63)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020022)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020024)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020024)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00000a63)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00008386)
++
++
++/*
++st40_lmigp_regs.LMI_SDMR0_0
++*/
++POKE32(0xfe901048, 0x00008006)
++
++
++/*
++st40_lmigp_regs.LMI_MIM_0
++*/
++OR32(0xfe901008, 0x00000200)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_SCR_0
++*/
++POKE32(0xfe901010, 0x00020021)
++
++
++/*
++st40_lmigp_regs.LMI_GCC_0
++*/
++POKE32(0xfe901028, 0x00000000)
++POKE32(0xfe2410fc, 0x00000001)
++POKE32(0xfe20a0ec, 0x00000002)
++POKE32(0xfe20a0f0, 0x00000005)
++POKE32(0xfe20a0f4, 0x00000003)
++POKE32(0xfe20a0f8, 0x00000003)
++POKE32(0xfe20a1ec, 0x00000002)
++POKE32(0xfe20a1f0, 0x00000005)
++POKE32(0xfe20a1f4, 0x00000003)
++POKE32(0xfe20a1f8, 0x00000003)
++POKE32(0xfe20a2ec, 0x00000002)
++POKE32(0xfe20a2f0, 0x00000005)
++POKE32(0xfe20a2f4, 0x00000003)
++POKE32(0xfe20a2f8, 0x00000003)
++POKE32(0xfe20a3ec, 0x00000002)
++POKE32(0xfe20a3f0, 0x00000005)
++POKE32(0xfe20a3f4, 0x00000003)
++POKE32(0xfe20a3f8, 0x00000003)
++POKE32(0xfe20aefc, 0x00000005)
++POKE32(0xfe540034, 0x00000003)
++POKE32(0xfe540038, 0x00000000)
++POKE32(0xfe540110, 0x00010303)
++POKE32(0xfe540114, 0x00000000)
++POKE32(0xfe20bb04, 0x00000005)
++POKE32(0xfe20bb08, 0x00000003)
++POKE32(0xfe20bb10, 0x00000002)
++POKE32(0xfe20bb24, 0x00000005)
++POKE32(0xfe20bb28, 0x00000003)
++POKE32(0xfe20bb2c, 0x00000003)
++POKE32(0xfe20bb30, 0x00000002)
++POKE32(0xfe20bb44, 0x00000005)
++POKE32(0xfe20bb48, 0x00000003)
++POKE32(0xfe20bb4c, 0x00000004)
++POKE32(0xfe20bb50, 0x00000002)
++POKE32(0xfe20bb84, 0x00000005)
++POKE32(0xfe20bb88, 0x00000003)
++POKE32(0xfe20bb8c, 0x00000003)
++POKE32(0xfe20bb90, 0x00000002)
++POKE32(0xfe231010, 0x00000008)
++POKE32(0xfe231080, 0x00000221)
++POKE32(0xfd101824, 0x0003c000)
++POKE32(0xfd102024, 0x0003c000)
++UPDATE32(0xfe001180, 0xffffffef, 0x00000000)
++POKE32(0xfe1fff04, 0x00254608)
++POKE32(0xfe00111c, 0x00010000)
++POKE32(0xfd117000, 0x0025c608)
++UPDATE32(0xfe001180, 0xfffffffb, 0x00000000)
++POKE32(0xfe401744, 0x0025c005)
++
++
++/*
++st40_ccn_regs.CCN_CCR
++*/
++POKE32(0xff00001c, 0x8000090d)
+diff --git a/board/st/mb796/mb796.c b/board/st/mb796/mb796.c
+new file mode 100644
+index 0000000..7896488
+--- /dev/null
++++ b/board/st/mb796/mb796.c
+@@ -0,0 +1,233 @@
++/*
++ * (C) Copyright 2008-2010 STMicroelectronics.
++ *
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <command.h>
++#include <asm/soc.h>
++#include <asm/stx5206reg.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++
++
++#if defined(CONFIG_SH_MB705)
++	/*
++	 * More recent EPLD versions have the EPLD in EMI space,
++	 * using CSCn (EMI Bank #2), nominally at physical 0x04800000.
++	 */
++#if !defined(CFG_EPLD_PHYSICAL_BASE)
++#	define CFG_EPLD_PHYSICAL_BASE	0x04800000	/* CSCn (EMI Bank #2) */
++#endif /* CFG_EPLD_PHYSICAL_BASE */
++	/* map the physical address to UN-cached virtual address */
++#if !defined(CFG_EPLD_BASE)
++#	define CFG_EPLD_BASE		( 0xa0000000 | (CFG_EPLD_PHYSICAL_BASE) )
++#endif /* CFG_EPLD_BASE */
++	/*
++	 * following are the offsets within the EMI EPLD (IC21),
++	 * for the MB705 Peripheral board.
++	 */
++#define EPLD_IDENT		0x00	/* EPLD Identifier Register */
++#define EPLD_TEST		0x02	/* EPLD Test Register */
++#define EPLD_SWITCH		0x04	/* EPLD Switch Register */
++#define EPLD_MISC		0x0a	/* Miscellaneous Control Register */
++#endif	/* CONFIG_SH_MB705 */
++
++
++#if defined(CONFIG_SH_MB705)
++static inline void epld_write(unsigned long value, unsigned long offset)
++{
++	/* 16-bit write to EPLD registers */
++	writew(value, CFG_EPLD_BASE + offset);
++}
++
++static inline unsigned long epld_read(unsigned long offset)
++{
++	/* 16-bit read from EPLD registers */
++	return readw(CFG_EPLD_BASE + offset);
++}
++
++static int mb705_init_epld(void)
++{
++	const unsigned short test_value = 0x1234u;
++	unsigned short epld_reg;
++	unsigned short epld_version, board_version;
++
++	/* write (anything) to the test register */
++	epld_write(test_value, EPLD_TEST);
++	/* verify we got back an inverted result */
++	epld_reg = epld_read(EPLD_TEST);
++	if (epld_reg != (test_value ^ 0xffffu)) {
++		printf("Failed EPLD test (offset=%02x, result=%04x)\n",
++			EPLD_TEST, epld_reg);
++		return 1;
++		}
++
++	/* Assume we can trust the version register */
++	epld_reg = epld_read(EPLD_IDENT);
++	board_version = epld_reg >> 4 & 0xfu;
++	epld_version = epld_reg & 0xfu;
++
++	/* display the board revision, and EPLD version */
++	printf("MB705: revision %c, EPLD version %02d\n",
++		board_version + 'A' - 1,
++		epld_version);
++
++	/* return a "success" result */
++	return 0;
++}
++#endif	/* CONFIG_SH_MB705 */
++
++void flashWriteEnable(void)
++{
++#if defined(CONFIG_SH_MB705)
++	unsigned short epld_reg;
++
++	/* Enable Vpp for writing to flash */
++	epld_reg = epld_read(EPLD_MISC);
++	epld_reg |= 1u << 3;	/* NandFlashWP = MISC[3] = 1 */
++	epld_reg |= 1u << 2;	/* NorFlashVpp = MISC[2] = 1 */
++	epld_write(epld_reg, EPLD_MISC);
++#endif	/* CONFIG_SH_MB705 */
++}
++
++void flashWriteDisable(void)
++{
++#if defined(CONFIG_SH_MB705)
++	unsigned short epld_reg;
++
++	/* Disable Vpp for writing to flash */
++	epld_reg = epld_read(EPLD_MISC);
++	epld_reg &= ~(1u << 3);	/* NandFlashWP = MISC[3] = 0 */
++	epld_reg &= ~(1u << 2);	/* NorFlashVpp = MISC[2] = 0 */
++	epld_write(epld_reg, EPLD_MISC);
++#endif	/* CONFIG_SH_MB705 */
++}
++
++
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++static void phy_reset(void)
++{
++	/*
++	 * Reset the Ethernet PHY.
++	 *
++	 *	PIO0[6] = notPioResetMii
++	 *
++	 * The following works, with the jumpers connected as:
++	 * 	J18-G:1-2, J22-B:1-2
++	 */
++	STPIO_SET_PIN(PIO_PORT(0), 6, 0);
++	udelay(15000);				/* 15 ms */
++	STPIO_SET_PIN(PIO_PORT(0), 6, 1);
++}
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++static void configPIO(void)
++{
++	unsigned long sysconf;
++
++	/* Route the GPIO block to the PIOx pads, as by
++	 * default the SATFE owns them... (why, oh why???) */
++	sysconf = *STX5206_SYSCONF_SYS_CFG10;
++	sysconf |= 1ul << 13;
++	*STX5206_SYSCONF_SYS_CFG10 = sysconf;
++
++#if CFG_STM_ASC_BASE == ST40_ASC2_REGS_BASE	/* UART2 = AS0 */
++
++	/* Setup PIO of ASC device */
++	SET_PIO_ASC(PIO_PORT(1), 2, 1, 4, 3);  /* UART2 - AS0 */
++
++	/* Route UART2 via PIO1 for TX, RX, CTS & RTS */
++	sysconf = *STX5206_SYSCONF_SYS_CFG16;
++	/* PIO1[1] CFG16[9,1]   AltFunction = 1 */
++	/* PIO1[2] CFG16[10,2]  AltFunction = 1 */
++	/* PIO1[3] CFG16[11,3]  AltFunction = 1 */
++	/* PIO1[4] CFG16[12,4]  AltFunction = 1 */
++	sysconf &= ~(0x0f0ful<<1);	/* 3,3,3,3 */
++	sysconf |=  (0x0000ul<<1);	/* 0,0,0,0 */
++	*STX5206_SYSCONF_SYS_CFG16 = sysconf;
++
++#elif CFG_STM_ASC_BASE == ST40_ASC3_REGS_BASE	/* UART3 = AS1 */
++
++	/* Setup PIO of ASC device */
++	SET_PIO_ASC(PIO_PORT(2), 4, 3, 5, 6);  /* UART3 - AS1 */
++
++	/* Route UART3 via PIO2 for TX, RX, CTS & RTS */
++	sysconf = *STX5206_SYSCONF_SYS_CFG16;
++	/* PIO2[3] CFG16[16+11,16+3]  AltFunction = 1 */
++	/* PIO2[4] CFG16[16+12,16+4]  AltFunction = 1 */
++	/* PIO2[5] CFG16[16+13,16+5]  AltFunction = 1 */
++	/* PIO2[6] CFG16[16+14,16+6]  AltFunction = 1 */
++	sysconf &= ~(0x0f0ful<<(16+3));	/* 3,3,3,3 */
++	sysconf |=  (0x0000ul<<(16+3));	/* 0,0,0,0 */
++	*STX5206_SYSCONF_SYS_CFG16 = sysconf;
++
++#else
++#error Unknown ASC port selected!
++#endif	/* CFG_STM_ASC_BASE */
++
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++	/*
++	 * Configure the Ethernet PHY Reset signal
++	 *	PIO0[6] = notPioResetMii
++	 */
++	SET_PIO_PIN(PIO_PORT(0), 6, STPIO_OUT);
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++}
++
++extern int board_init(void)
++{
++	configPIO();
++
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++	/* Reset the PHY */
++	phy_reset();
++
++	/*
++	 * The following works, with the jumpers connected as:
++	 * 	J38:2-3, J39-A:remove, J39-B:2-3
++	 */
++	stx5206_configure_ethernet(stx5206_ethernet_rmii, 0, 0);
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++	return 0;
++}
++
++int checkboard (void)
++{
++	printf ("\n\nBoard: STx5289-Mboard (MB796)"
++#ifdef CONFIG_SH_SE_MODE
++		"  [32-bit mode]"
++#else
++		"  [29-bit mode]"
++#endif
++		"\n");
++
++#if defined(CONFIG_SH_MB705)
++	/*
++	 * initialize the EPLD on the MB705.
++	 */
++	mb705_init_epld();
++#endif	/* CONFIG_SH_MB705 */
++
++	return 0;
++}
+diff --git a/board/st/mb796/nand.c b/board/st/mb796/nand.c
+new file mode 100644
+index 0000000..d9eb94f
+--- /dev/null
++++ b/board/st/mb796/nand.c
+@@ -0,0 +1,121 @@
++/*
++ * (C) Copyright 2006 DENX Software Engineering
++ * (C) Copyright 2008-2010 STMicroelectronics, Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <nand.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++#include <asm/stx5206reg.h>
++#include <asm/stm-nand.h>
++
++
++/*
++ * hardware specific access to control-lines for "bit-banging".
++ *	CL -> Emi_Addr(17)
++ *	AL -> Emi_Addr(18)
++ *	nCE is handled by EMI (not s/w controlable)
++ */
++#ifndef CFG_NAND_FLEX_MODE	/* for "bit-banging" (c.f. STM "flex-mode")  */
++static void mb796_hwcontrol(struct mtd_info *mtdinfo, int cmd)
++{
++	struct nand_chip* this = (struct nand_chip *)(mtdinfo->priv);
++
++	switch(cmd) {
++
++	case NAND_CTL_SETCLE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W | (1u << 17));
++		break;
++
++	case NAND_CTL_CLRCLE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W & ~(1u << 17));
++		break;
++
++	case NAND_CTL_SETALE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W | (1u << 18));
++		break;
++
++	case NAND_CTL_CLRALE:
++		this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W & ~(1u << 18));
++		break;
++	}
++}
++#endif /* CFG_NAND_FLEX_MODE */
++
++
++/*
++ * hardware specific access to the Ready/not_Busy signal.
++ * Signal is routed through the EMI NAND Controller block.
++ */
++#ifndef CFG_NAND_FLEX_MODE	/* for "bit-banging" (c.f. STM "flex-mode")  */
++static int mb796_device_ready(struct mtd_info *mtd)
++{
++	/* extract bit 1: status of RBn pin on boot bank */
++	return ((*ST40_EMI_NAND_RBN_STA) & (1ul<<1)) ? 1 : 0;
++}
++#endif /* CFG_NAND_FLEX_MODE */
++
++
++/*
++ * Board-specific NAND initialization. The following members of the
++ * argument are board-specific (per include/linux/mtd/nand.h):
++ * - IO_ADDR_R?: address to read the 8 I/O lines of the flash device
++ * - IO_ADDR_W?: address to write the 8 I/O lines of the flash device
++ * - hwcontrol: hardwarespecific function for accesing control-lines
++ * - dev_ready: hardwarespecific function for  accesing device ready/busy line
++ * - enable_hwecc?: function to enable (reset)  hardware ecc generator. Must
++ *   only be provided if a hardware ECC is available
++ * - eccmode: mode of ecc, see defines
++ * - chip_delay: chip dependent delay for transfering data from array to
++ *   read regs (tR)
++ * - options: various chip options. They can partly be set to inform
++ *   nand_scan about special functionality. See the defines for further
++ *   explanation
++ * Members with a "?" were not set in the merged testing-NAND branch,
++ * so they are not set here either.
++ */
++extern int board_nand_init(struct nand_chip *nand)
++{
++	nand->eccmode       = NAND_ECC_SOFT;
++	nand->options       = NAND_NO_AUTOINCR;
++
++#ifdef CFG_NAND_FLEX_MODE	/* for STM "flex-mode" (c.f. "bit-banging") */
++	nand->select_chip   = stm_flex_select_chip;
++	nand->dev_ready     = stm_flex_device_ready;
++	nand->hwcontrol     = stm_flex_hwcontrol;
++	nand->read_byte     = stm_flex_read_byte;
++	nand->write_byte    = stm_flex_write_byte;
++	nand->read_buf      = stm_flex_read_buf;
++	nand->write_buf     = stm_flex_write_buf;
++#else				/* for "bit-banging" (c.f. STM "flex-mode")  */
++	nand->dev_ready     = mb796_device_ready;
++	nand->hwcontrol     = mb796_hwcontrol;
++#endif /* CFG_NAND_FLEX_MODE */
++
++#if 1
++	/* Enable the following to use a Bad Block Table (BBT) */
++	nand->options      |= NAND_USE_FLASH_BBT;
++	nand->scan_bbt      = stm_nand_default_bbt;
++#endif
++
++	return 0;
++}
+diff --git a/board/st/pdk7105/pdk7105.c b/board/st/pdk7105/pdk7105.c
+index 00f8014..560e157 100644
+--- a/board/st/pdk7105/pdk7105.c
++++ b/board/st/pdk7105/pdk7105.c
+@@ -121,9 +121,9 @@ static void configEthernet(void)
+ #if defined(CONFIG_SPI)
+ static void configSpi(void)
+ {
+-#if !defined(CONFIG_SOFT_SPI)
++#if defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ 	unsigned long sysconf;
+-#endif	/* CONFIG_SOFT_SPI */
++#endif	/* CONFIG_STM_SSC_SPI */
+ 
+ 	/*
+ 	 * On the PDK-7105 board, the following 4 pairs of PIO
+@@ -141,7 +141,7 @@ static void configSpi(void)
+ 	SET_PIO_PIN(PIO_PORT(2),5,STPIO_IN);	/* COM_CLK */
+ 	SET_PIO_PIN(PIO_PORT(2),6,STPIO_IN);	/* COM_DOUT */
+ 	SET_PIO_PIN(PIO_PORT(2),7,STPIO_IN);	/* COM_DIN */
+-#else
++#elif defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ 	SET_PIO_PIN(PIO_PORT(15),0,STPIO_IN);	/* SPI_CLK */
+ 	SET_PIO_PIN(PIO_PORT(15),1,STPIO_IN);	/* SPI_DOUT */
+ 	SET_PIO_PIN(PIO_PORT(15),3,STPIO_IN);	/* SPI_DIN */
+@@ -174,7 +174,7 @@ static void configSpi(void)
+ 	/* drive outputs with sensible initial values */
+ 	STPIO_SET_PIN(PIO_PORT(15), 0, 1);	/* assert SPI_CLK */
+ 	STPIO_SET_PIN(PIO_PORT(15), 1, 0);	/* deassert SPI_DOUT */
+-#else	/* Configure SPI Serial Flash for the H/W SSC */
++#elif defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ 	/* Set PIO2_ALTFOP to AltFunction #3 (SSC) */
+ 	sysconf = *STX7105_SYSCONF_SYS_CFG21;
+ 	/* PIO2[5] CFG21[13,5]  AltFunction = 3 */
+diff --git a/common/cmd_bdinfo.c b/common/cmd_bdinfo.c
+index 01ebdfc..22bc131 100644
+--- a/common/cmd_bdinfo.c
++++ b/common/cmd_bdinfo.c
+@@ -323,6 +323,9 @@ int do_bdinfo ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ #elif defined(CONFIG_SH_STX5197)
+ 	if (STX5197_DEVICEID_5197(bd->bi_devid))
+ 		printf ("\nSTx5197 version %ld.x", STX5197_DEVICEID_CUT(bd->bi_devid));
++#elif defined(CONFIG_SH_STX5206)
++	if (STX5206_DEVICEID_5206(bd->bi_devid))
++		printf ("\nSTx5206/STx5289 version %ld.x", STX5206_DEVICEID_CUT(bd->bi_devid));
+ #elif defined(CONFIG_SH_STX7105)
+ 	if (STX7105_DEVICEID_7105(bd->bi_devid))
+ 		printf ("\nSTx7105 version %ld.x", STX7105_DEVICEID_CUT(bd->bi_devid));
+diff --git a/cpu/sh/Makefile b/cpu/sh/Makefile
+index f859b76..8c48811 100644
+--- a/cpu/sh/Makefile
++++ b/cpu/sh/Makefile
+@@ -29,7 +29,7 @@ START	= start.o
+ COBJS	= cpu.o interrupts.o usb.o cmd_pmb.o
+ COBJS	+= ecc.o stm-nand.o cmd_copybbt.o	# NAND
+ COBJS	+= sata-init.o sata-probe.o		# SATA
+-COBJS	+= spi.o env_eeprom.o			# SPI
++COBJS	+= spi.o stm_spi_fsm.o env_eeprom.o	# SPI
+ SOBJS	=
+ 
+ SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
+diff --git a/cpu/sh/spi.c b/cpu/sh/spi.c
+index a537b39..b2fcf20 100644
+--- a/cpu/sh/spi.c
++++ b/cpu/sh/spi.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2007,2009 STMicroelectronics.
++ * (C) Copyright 2007,2009-2010 STMicroelectronics.
+  *
+  * Sean McGoogan <Sean.McGoogan@st.com>
+  *
+@@ -28,6 +28,8 @@
+ #include <asm/io.h>
+ #include <spi.h>
+ #include <asm/clk.h>
++#include <asm/spi-commands.h>
++#include "stm_spi_fsm.h"
+ 
+ 
+ /**********************************************************************/
+@@ -39,7 +41,27 @@
+ /**********************************************************************/
+ 
+ 
+-#if !defined(CONFIG_SOFT_SPI)			/* Use SSC for SPI */
++/*
++ * Ensure that of the following 3 macros *exactly* one is defined:
++ *	CONFIG_SOFT_SPI		- S/W Bit-Banging
++ *	CONFIG_STM_SSC_SPI	- H/W using STM's SSC
++ *	CONFIG_STM_FSM_SPI	- H/W using STM's FSM SPI Controller
++ */
++#if !defined(CONFIG_SOFT_SPI) && !defined(CONFIG_STM_SSC_SPI) && !defined(CONFIG_STM_FSM_SPI)
++#error One of CONFIG_SOFT_SPI, CONFIG_STM_SSC_SPI or CONFIG_STM_FSM_SPI must be defined!
++#endif
++
++#if (	(defined(CONFIG_SOFT_SPI) && defined(CONFIG_STM_SSC_SPI))		||	\
++	(defined(CONFIG_SOFT_SPI) && defined(CONFIG_STM_FSM_SPI))		||	\
++	(defined(CONFIG_STM_FSM_SPI) && defined(CONFIG_STM_SSC_SPI))	)
++#error No more than one of CONFIG_SOFT_SPI, CONFIG_STM_SSC_SPI or CONFIG_STM_FSM_SPI may be defined!
++#endif
++
++
++/**********************************************************************/
++
++
++#if defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ /* SSC Baud Rate Generator Register */
+ #define SSC_BRG			0x0000
+ 
+@@ -76,6 +98,7 @@
+ /* SSC I2C Control Register */
+ #define SSC_I2C			0x0018
+ 
++/* SPI phase/polarity modes */
+ #define SPI_CPHA		0x01		/* clock phase */
+ #define SPI_CPOL		0x02		/* clock polarity */
+ #define SPI_LSB_FIRST		0x08		/* endianness */
+@@ -86,104 +109,23 @@
+ #define SPI_MODE_2		(SPI_CPOL|0)
+ #define SPI_MODE_3		(SPI_CPOL|SPI_CPHA)
+ 
+-#endif	/* CONFIG_SOFT_SPI */
+-
+-
+-/**********************************************************************/
+-
+-
+-#define MIN(a,b)	( (a) < (b) ? (a) : (b) )
+-
+-
+-/**********************************************************************/
+-
+-
+-#if defined(CONFIG_SPI_FLASH_ATMEL)
+-/* For Atmel AT45DB321D Serial Flash */
+-#define CFG_STM_SPI_MODE	SPI_MODE_3
+-#if !defined(CFG_STM_SPI_FREQUENCY)
+-#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
+-#endif	/* CFG_STM_SPI_FREQUENCY */
+-#define CFG_STM_SPI_DEVICE_MASK	0x3cu		/* Mask Bits [5:2] */
+-#define CFG_STM_SPI_DEVICE_VAL	0x34u		/* Binary xx1101xx */
+-
+-#define OP_READ_STATUS		0xd7u		/* Status Register Read */
+-#define OP_READ_DEVID		0x9fu		/* Manufacturer & Device ID Read */
+-//#define OP_READ_ARRAY		0xe8u		/* Continuous Array Read */
+-//#define OP_READ_ARRAY		0x0bu		/* Continuous Array Read */
+-#define OP_READ_ARRAY		0x03u		/* Continuous Array Read */
+-#define OP_WRITE_VIA_BUFFER1	0x82u		/* Main Memory Page Program via Buffer 1 */
+-#define OP_WRITE_VIA_BUFFER2	0x85u		/* Main Memory Page Program via Buffer 2 */
+-#define OP_PAGE_TO_BUFFER1	0x53u		/* Main Memory Page to Buffer 1 Transfer */
+-#define OP_PAGE_TO_BUFFER2	0x55u		/* Main Memory Page to Buffer 2 Transfer */
+-
+-#define SR_READY		(1u<<7)		/* Status Register Read/nBusy bit */
+-
+-#elif defined(CONFIG_SPI_FLASH_ST)	/******************************/
+-
+-/* For ST M25Pxx Serial Flash */
+-#define CFG_STM_SPI_MODE	SPI_MODE_3
+-#if !defined(CFG_STM_SPI_FREQUENCY)
+-#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
+-#endif	/* CFG_STM_SPI_FREQUENCY */
+-#define CFG_STM_SPI_DEVICE_MASK	0x60u		/* Mask Bits [6:5] */
+-#define CFG_STM_SPI_DEVICE_VAL	0x00u		/* Binary x00xxxxx */
+-
+-#define OP_READ_STATUS		0x05u		/* Read Status Register */
+-#define OP_WRITE_STATUS		0x01u		/* Write Status Register */
+-#define OP_READ_DEVID		0x9fu		/* Read ID */
+-#define OP_READ_ARRAY		0x03u		/* Read Data Bytes */
+-#define OP_WREN			0x06u		/* Write Enable */
+-#define OP_SE			0xD8u		/* Sector Erase */
+-#define OP_SSE			0x20u		/* Sub-Sector Erase, for M25PXxx */
+-#define OP_PP			0x02u		/* Page Program */
+-
+-#define SR_WIP			(1u<<0)		/* Status Register Write In Progress bit */
+-#define SR_BP_MASK		0x1c		/* Block Protect Bits (BP[2:0]) */
+-
+-#elif defined(CONFIG_SPI_FLASH_MXIC)	/******************************/
+-
+-/* For Macronix MX25Lxxx Serial Flash */
+-#define CFG_STM_SPI_MODE	SPI_MODE_3
+-#if !defined(CFG_STM_SPI_FREQUENCY)
+-#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
+-#endif	/* CFG_STM_SPI_FREQUENCY */
+-#define CFG_STM_SPI_DEVICE_MASK	0x00u		/* Mask Bits */
+-#define CFG_STM_SPI_DEVICE_VAL	0x00u		/* Binary xxxxxxxx */
+-
+-#define OP_READ_STATUS		0x05u		/* Read Status Register */
+-#define OP_WRITE_STATUS		0x01u		/* Write Status Register */
+-#define OP_READ_DEVID		0x9fu		/* Read ID */
+-#define OP_READ_ARRAY		0x03u		/* Read Data Bytes */
+-#define OP_WREN			0x06u		/* Write Enable */
+-#define OP_SE			0x20u		/* Sector Erase */
+-#define OP_PP			0x02u		/* Page Program */
+-
+-#define SR_WIP			(1u<<0)		/* Status Register Write In Progress bit */
+-#define SR_BP_MASK		0x3c		/* Block Protect Bits (BP[3:0]) */
+-
+-#else					/******************************/
+-
+-#error Please specify which SPI Serial Flash is being used
+-
+-#endif	/* defined(CONFIG_STM_SPI_xxxxxx) */
+-
+-
+-/**********************************************************************/
+-
+-
+-#if !defined(CONFIG_SOFT_SPI)		/* Use the H/W SSC */
+-
++/* SPI Controller's Base Address */
+ #if !defined(CFG_STM_SPI_SSC_BASE)
+ #error Please define CFG_STM_SPI_SSC_BASE (e.g. ST40_SSC0_REGS_BASE)
+ #endif
+-
+ static const unsigned long ssc = CFG_STM_SPI_SSC_BASE;	/* SSC base */
+ 
++/* SPI Controller Register's Accessors */
+ #define ssc_write(offset, value)	writel((value), (ssc)+(offset))
+ #define ssc_read(offset)		readl((ssc)+(offset))
+ 
+-#endif	/* CONFIG_SOFT_SPI */
++#endif	/* CONFIG_STM_SSC_SPI */
++
++
++/**********************************************************************/
++
++
++#define MIN(a,b)	( (a) < (b) ? (a) : (b) )
+ 
+ 
+ /**********************************************************************/
+@@ -254,6 +196,7 @@ static void hexdump(
+  * It is the caller's responsibility to ensure that the
+  * chip select (SPI_NOTCS) is correctly asserted.
+  */
++#if defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI)
+ static unsigned int spi_xfer_one_word(const unsigned int out)
+ {
+ 	unsigned int in = 0;
+@@ -272,7 +215,7 @@ static unsigned int spi_xfer_one_word(const unsigned int out)
+ 		in <<= 1;		/* shift */
+ 		in |= SPI_READ;		/* get next bit from SPI_DIN */
+ 	}
+-#else					/* Use SSC for SPI */
++#elif defined(CONFIG_STM_SSC_SPI)	/* Use the H/W SSC for SPI */
+ 	/* write out data 'out' */
+ 	ssc_write(SSC_TBUF, out);
+ 
+@@ -289,6 +232,7 @@ static unsigned int spi_xfer_one_word(const unsigned int out)
+ 	/* return exchanged data */
+ 	return in;
+ }
++#endif	/* defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI) */
+ 
+ 
+ /**********************************************************************/
+@@ -307,6 +251,7 @@ static unsigned int spi_xfer_one_word(const unsigned int out)
+  *
+  *	Note: 'din' may be NULL if caller does not need to see it.
+  */
++#if defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI)
+ extern int spi_xfer(
+ 	spi_chipsel_type const chipsel,
+ 	const int bitlen,
+@@ -366,6 +311,7 @@ extern int spi_xfer(
+ 
+ 	return 0;	/* success */
+ }
++#endif	/* defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI) */
+ 
+ 
+ /**********************************************************************/
+@@ -380,6 +326,10 @@ extern int spi_xfer(
+ static unsigned int spi_read_status(
+ 	spi_chipsel_type const chipsel)
+ {
++#if defined(CONFIG_STM_FSM_SPI)		/* Use the H/W FSM for SPI */
++	/* return the status byte read */
++	return fsm_read_status();
++#else	/* CONFIG_STM_FSM_SPI */
+ 	unsigned char data[2] = { OP_READ_STATUS, 0x00 };
+ 
+ 	/* issue the Status Register Read command */
+@@ -387,6 +337,7 @@ static unsigned int spi_read_status(
+ 
+ 	/* return the status byte read */
+ 	return data[1];
++#endif	/* CONFIG_STM_FSM_SPI */
+ }
+ 
+ 
+@@ -399,7 +350,7 @@ static unsigned int spi_read_status(
+  * input:   none
+  * returns: none
+  */
+-static void spi_wait_till_ready(
++extern void spi_wait_till_ready(
+ 	spi_chipsel_type const chipsel)
+ {
+ #if defined(CONFIG_SPI_FLASH_ATMEL)
+@@ -445,7 +396,15 @@ static int spi_probe_serial_flash(
+ 	 * if we get here, then we think we may have a SPI
+ 	 * device, so now check it is the correct one!
+ 	 */
++#if defined(CONFIG_STM_FSM_SPI)		/* Use the H/W FSM for SPI */
++	/*
++	 * Note: devid[0] is assumed to the be OP_READ_DEVID.
++	 * Hence, devid[1] needs to be the FIRST JEDEC byte retrieved.
++	 */
++	fsm_read_jedec(sizeof(devid)-1u, &devid[1]);
++#else	/* CONFIG_STM_FSM_SPI */
+ 	spi_xfer(chipsel, sizeof(devid)*8, devid, devid);
++#endif	/* CONFIG_STM_FSM_SPI */
+ 
+ #if defined(CONFIG_SPI_FLASH_ATMEL)
+ 
+@@ -636,14 +595,24 @@ static int spi_probe_serial_flash(
+ 
+ 
+ /*
+- * initialise the SSC to talk to the slave SPI device.
++ * initialise the H/W to talk to the slave SPI device.
+  */
+ extern void spi_init(void)
+ {
+ 	DECLARE_GLOBAL_DATA_PTR;
++#if defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI)
+ 	spi_chipsel_type const chipsel = spi_chipsel[0];	/* SPI Device #0 */
++#elif defined(CONFIG_STM_FSM_SPI)
++	spi_chipsel_type const chipsel = NULL;	/* FSM only support one device */
++#endif	/* defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI) */
+ 
+-#if !defined(CONFIG_SOFT_SPI)			/* Use SSC for SPI */
++#if defined(CONFIG_STM_FSM_SPI)		/* Use the H/W FSM for SPI */
++	/* initialize the H/W FSM SPI Controller. */
++	fsm_init();
++#else	/* CONFIG_STM_FSM_SPI */
++
++#if defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
++	/* initialize the H/W SSC for SPI. */
+ 	unsigned long reg;
+ 	const unsigned long bits_per_word = 8;	/* one word == 8-bits */
+ 	const unsigned long mode = CFG_STM_SPI_MODE /* | SPI_LOOP */;
+@@ -658,12 +627,12 @@ extern void spi_init(void)
+ 	*STX5197_HD_CONF_MON_CONFIG_CONTROL_M = reg;
+ #endif	/* CONFIG_SH_STX5197 */
+ 
+-#endif	/* CONFIG_SOFT_SPI */
++#endif	/* CONFIG_STM_SSC_SPI */
+ 
+ 	/* de-assert SPI CS */
+ 	(*chipsel)(0);
+ 
+-#if !defined(CONFIG_SOFT_SPI)			/* Use SSC for SPI */
++#if defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ 	/* program the SSC's Baud-Rate Generator */
+ 	if ((sscbrg < 0x07u) || (sscbrg > (0x1u << 16)))
+ 	{
+@@ -720,7 +689,8 @@ extern void spi_init(void)
+ 
+ 	/* clear the status register */
+ 	(void)ssc_read(SSC_RBUF);
+-#endif	/* CONFIG_SOFT_SPI */
++#endif	/* CONFIG_STM_SSC_SPI */
++#endif	/* CONFIG_STM_FSM_SPI */
+ 
+ 	/* now probe the serial flash, to ensure it is the correct one */
+ 	spi_probe_serial_flash(chipsel);
+@@ -783,11 +753,13 @@ extern ssize_t spi_read (
+ 	uchar * const buffer,
+ 	const int len)
+ {
+-	int i;
+ 	const unsigned long start = get_binary_offset(addr,alen);
+ 	const unsigned long offset = get_dataflash_offset(start);
+ 	const unsigned long last   = start + len - 1ul;
++#if defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI)
++	int i;
+ 	spi_chipsel_type const chipsel = spi_chipsel[0];	/* SPI Device #0 */
++#endif	/* defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI) */
+ 
+ 	if (len < 1) return len;
+ 	if (last >= deviceSize)	/* Out of range ? */
+@@ -797,6 +769,10 @@ extern ssize_t spi_read (
+ 		return 0;
+ 	}
+ 
++#if defined(CONFIG_STM_FSM_SPI)		/* Use the H/W FSM for SPI */
++	fsm_read(buffer, len, offset);
++#else	/* CONFIG_STM_FSM_SPI */
++
+ 	/* assert SPI CS */
+ 	(*chipsel)(1);
+ 
+@@ -825,6 +801,7 @@ extern ssize_t spi_read (
+ 
+ 	/* de-assert SPI CS */
+ 	(*chipsel)(0);
++#endif	/* CONFIG_STM_FSM_SPI */
+ 
+ 	return len;
+ }
+@@ -840,6 +817,9 @@ static void my_spi_write(
+ 	unsigned long len)
+ #if defined(CONFIG_SPI_FLASH_ATMEL)
+ {
++#if defined(CONFIG_STM_FSM_SPI)		/* Use the H/W FSM for SPI */
++#error ATMEL Serial Flash not yet supported with FSM SPI Controller!
++#else	/* CONFIG_STM_FSM_SPI */
+ 	const unsigned long offset = get_dataflash_offset(address);
+ 	size_t i;
+ 
+@@ -894,6 +874,7 @@ static void my_spi_write(
+ 
+ 	/* now wait until the programming has completed ... */
+ 	spi_wait_till_ready(chipsel);
++#endif	/* CONFIG_STM_FSM_SPI */
+ }
+ #elif defined(CONFIG_SPI_FLASH_ST) || defined(CONFIG_SPI_FLASH_MXIC)
+ {
+@@ -908,6 +889,7 @@ static void my_spi_write(
+ #elif defined(CONFIG_SPI_FLASH_MXIC)
+ 	unsigned char buff[4<<10];	/* maximum of 4 KiB erase size */
+ #endif
++#if defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI)
+ 	unsigned char enable[1] = { OP_WREN };
+ 	unsigned char erase[4] = {
+ 		op_erase,
+@@ -915,6 +897,7 @@ static void my_spi_write(
+ 		(sector>>8)  & 0xffu,
+ 		(sector>>0)  & 0xffu,
+ 	};
++#endif	/* defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI) */
+ 
+ #if 0	/* QQQ - DELETE */
+ 	printf("%s():\t buffer=0x%08x, len=%-5u  0x%06x..0x%06x\n",
+@@ -952,11 +935,16 @@ static void my_spi_write(
+ 		ptr = buffer;	/* use original buffer */
+ 	}
+ 
++#if defined(CONFIG_STM_FSM_SPI)		/* Use the H/W FSM for SPI */
++	/* erase ONE sector (using comand op_erase) */
++	fsm_erase_sector(sector, op_erase);
++#else	/* CONFIG_STM_FSM_SPI */
+ 	/* issue a WRITE ENABLE (WREN) command */
+ 	spi_xfer(chipsel, sizeof(enable)*8, enable, NULL);
+ 
+ 	/* issue a Sector Erase command */
+ 	spi_xfer(chipsel, sizeof(erase)*8, erase, NULL);
++#endif	/* CONFIG_STM_FSM_SPI */
+ 
+ 	/* now wait until the erase has completed ... */
+ 	spi_wait_till_ready(chipsel);
+@@ -964,6 +952,11 @@ static void my_spi_write(
+ 	/* now program each page in turn ... */
+ 	for (page_base=sector,page=0u; page<pages; page++)
+ 	{
++#if defined(CONFIG_STM_FSM_SPI)		/* Use the H/W FSM for SPI */
++	/* program one page */
++	fsm_write(ptr, pageSize, page_base);
++	ptr += pageSize;
++#else	/* CONFIG_STM_FSM_SPI */
+ 		/* issue a WRITE ENABLE (WREN) command */
+ 		spi_xfer(chipsel, sizeof(enable)*8, enable, NULL);
+ 
+@@ -986,6 +979,7 @@ static void my_spi_write(
+ 
+ 		/* de-assert SPI CS */
+ 		(*chipsel)(0);
++#endif	/* CONFIG_STM_FSM_SPI */
+ 
+ 		/* now wait until the programming has completed ... */
+ 		spi_wait_till_ready(chipsel);
+@@ -1015,7 +1009,11 @@ extern ssize_t spi_write (
+ 	const unsigned long byte   = first % eraseSize;
+ 	      unsigned long ptr    = first;
+ 	unsigned written = 0;		/* amount written between two dots */
++#if defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI)
+ 	spi_chipsel_type const chipsel = spi_chipsel[0];	/* SPI Device #0 */
++#elif defined(CONFIG_STM_FSM_SPI)
++	spi_chipsel_type const chipsel = NULL;	/* FSM only support one device */
++#endif	/* defined(CONFIG_SOFT_SPI) || defined(CONFIG_STM_SSC_SPI) */
+ 
+ 	if (len < 1) return len;
+ 	if (last >= deviceSize)	/* Out of range ? */
+diff --git a/cpu/sh/start.S b/cpu/sh/start.S
+index df2cebb..cf81514 100644
+--- a/cpu/sh/start.S
++++ b/cpu/sh/start.S
+@@ -142,8 +142,8 @@ config_spiboot_controller:
+ 	mov.l	r0, @(ST40_EMI_SPI_MODESELECT-ST40_EMI_SPI_REGS_BASE,r1)
+ 
+ 	/* Slow (divide) the SPI clock down to improve reliability. */
+-	/* Note: for the Freeman FLDB, diving by 4 fails to boot! */
+-#if defined(CONFIG_SH_FLI7510)
++	/* Note: for some (?) FSM SPI controllers, diving by 4 fails to boot! */
++#if defined(CONFIG_SH_FLI7510) || defined(CONFIG_SH_STX5206)
+ 	mov	#6, r0			/* *ST40_EMI_SPI_CLOCKDIV = 6 */
+ #else
+ 	mov	#4, r0			/* *ST40_EMI_SPI_CLOCKDIV = 4 */
+@@ -230,6 +230,27 @@ set_pmb:
+ 	SH4_SET_PMB 0 0x80 0x40  64 0 0 1	/* LMI-Sys UN-cached */
+ 	SH4_SET_PMB 2 0x90 0x40  64 0 0 1	/* LMI-Sys UN-cached */
+ 	SH4_SET_PMB 4 0xa0 0x00 128 0 0 1	/* SPI Flash (in SPIBOOT mode) UN-cached */
++#elif defined(CONFIG_SH_STX5206) && defined(CONFIG_SH_MB796)
++	SH4_SET_PMB 0 0x80 0x40 128 0 0 1	/* LMI0 (first-half)  UN-cached */
++	SH4_SET_PMB 2 0x90 0x40 128 0 0 1	/* LMI0 (first-half)  UN-cached */
++	#if CFG_SH_LMI_NEEDS_2_PMB_ENTRIES
++	SH4_SET_PMB 1 0x88 0x48 128 0 0 1	/* LMI0 (second-half) UN-cached */
++	SH4_SET_PMB 3 0x98 0x48 128 0 0 1	/* LMI0 (second-half) UN-cached */
++	#endif
++	#if defined(CFG_BOOT_FROM_NAND) || defined(CFG_BOOT_FROM_SPI)
++		/* booting from NAND or SPI, so CSA and CSB swapped in EPLD */
++	SH4_SET_PMB 4 0xa0 0x00  16 0 0 1	/* NAND FLASH UN-cached */
++	SH4_SET_PMB 5 0xa4 0x04  16 0 0 1	/* NOR FLASH UN-cached */
++	SH4_SET_PMB 6 0xa5 0x05  16 0 0 1	/* NOR FLASH UN-cached */
++	SH4_SET_PMB 7 0xa8 0x04  16		/* NOR FLASH CACHED */
++	SH4_SET_PMB 8 0xa9 0x05  16		/* NOR FLASH CACHED */
++	#else	/* else, CSA and CSB are not swapped in EPLD */
++	SH4_SET_PMB 4 0xa0 0x00  16 0 0 1	/* NOR FLASH UN-cached */
++	SH4_SET_PMB 5 0xa1 0x01  16 0 0 1	/* NOR FLASH UN-cached */
++	SH4_SET_PMB 6 0xa4 0x04  16 0 0 1	/* NAND FLASH UN-cached */
++	SH4_SET_PMB 7 0xa8 0x00  16		/* NOR FLASH CACHED */
++	SH4_SET_PMB 8 0xa9 0x01  16		/* NOR FLASH CACHED */
++	#endif	/* CFG_BOOT_FROM_NAND */
+ #elif defined(CONFIG_SH_STX7105) && defined(CONFIG_SH_MB680)
+ 	SH4_SET_PMB 0 0x80 0x40 128 0 0 1	/* LMI0 (first-half)  UN-cached */
+ 	SH4_SET_PMB 2 0x90 0x40 128 0 0 1	/* LMI0 (first-half)  UN-cached */
+diff --git a/cpu/sh/stm_spi_fsm.c b/cpu/sh/stm_spi_fsm.c
+new file mode 100644
+index 0000000..57b97c3
+--- /dev/null
++++ b/cpu/sh/stm_spi_fsm.c
+@@ -0,0 +1,569 @@
++/*
++ * (C) Copyright 2010 STMicroelectronics.
++ *
++ * Angus Clark   <Angus.Clark@st.com>
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/soc.h>
++#include <asm/socregs.h>
++#include <asm/io.h>
++#include <spi.h>
++#include <asm/clk.h>
++#include <asm/spi-commands.h>
++#include "stm_spi_fsm.h"
++
++
++/**********************************************************************/
++
++
++#if defined(CONFIG_STM_FSM_SPI)
++
++
++/**********************************************************************/
++
++
++#undef DEBUG
++#if 0
++#define DEBUG(args...)					\
++	do {						\
++		printf(args);				\
++	} while (0)
++#else
++#define DEBUG(args...) do {} while (0)
++#endif
++
++
++/**********************************************************************/
++
++
++#define ENABLE_ASSERTS
++
++#if defined(ENABLE_ASSERTS)
++
++static const char assert_message[] =
++	"ERROR: Assertion failed in %s() @ %s:%u\n";
++
++#define assert(x)					\
++	do {						\
++		if (!(x)) {				\
++			printf(				\
++				assert_message,		\
++				__FUNCTION__,		\
++				__FILE__,		\
++				__LINE__);		\
++		}					\
++	} while (0)
++#else	/* ENABLE_ASSERTS */
++
++#define assert(x) do {} while (0)
++
++#endif	/* ENABLE_ASSERTS */
++
++
++/**********************************************************************/
++
++
++static const unsigned long base_addr = CFG_STM_SPI_FSM_BASE;	/* SPI base */
++
++#define fsm_write_reg(reg, val)		writel((val), base_addr + (reg))
++#define fsm_read_reg(reg)		readl(base_addr + (reg))
++
++
++#define mdelay(n) ({unsigned long msec=(n); while (msec--) udelay(1000);})
++
++
++#define FLASH_PAGESIZE		256	/* QQQ - Why not 512 ??? */
++static uint8_t	page_buf[FLASH_PAGESIZE] __attribute__((aligned(4)));
++
++
++/**********************************************************************/
++
++
++struct fsm_seq {
++	      uint32_t data_size;
++	      uint32_t addr1;
++	const uint32_t addr2;
++	const uint32_t addr_cfg;
++	const uint32_t seq_opc[5];
++	const uint32_t mode;
++	const uint32_t dummy;
++	const uint32_t status;
++	const uint8_t  seq[16];
++	const uint32_t seq_cfg;
++} __attribute__((__packed__,aligned(4)));
++
++#define FSM_SEQ_SIZE		sizeof(struct fsm_seq)
++
++
++/**********************************************************************/
++
++
++static const struct fsm_seq seq_read_jedec = {
++	.data_size = TRANSFER_SIZE(8),
++	.seq_opc[0] = SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_READ_DEVID),
++	.seq = {
++		FSM_INST_CMD1,
++		FSM_INST_DATA_READ,
++		FSM_INST_STOP,
++	},
++	.seq_cfg = (SEQ_CFG_PADS_1 |
++		    SEQ_CFG_READNOTWRITE |
++		    SEQ_CFG_CSDEASSERT |
++		    SEQ_CFG_STARTSEQ),
++};
++
++static const struct fsm_seq seq_read_status = {
++	.data_size = TRANSFER_SIZE(4),
++	.seq_opc[0] = SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_READ_STATUS),
++	.seq = {
++		FSM_INST_CMD1,
++		FSM_INST_DATA_READ,
++		FSM_INST_STOP,
++	},
++	.seq_cfg = (SEQ_CFG_PADS_1 |
++		    SEQ_CFG_READNOTWRITE |
++		    SEQ_CFG_CSDEASSERT |
++		    SEQ_CFG_STARTSEQ),
++};
++
++static struct fsm_seq seq_read_data = {
++	.seq_opc[0] = SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_READ_ARRAY),
++	.addr_cfg = ADR_CFG_PADS_1_ADD1 | ADR_CFG_CYCLES_ADD1(24),
++	.seq = {
++		FSM_INST_CMD1,
++		FSM_INST_ADD1,
++		FSM_INST_DATA_READ,
++		FSM_INST_STOP,
++	},
++	.seq_cfg = (SEQ_CFG_PADS_1 |
++		    SEQ_CFG_READNOTWRITE |
++		    SEQ_CFG_CSDEASSERT |
++		    SEQ_CFG_STARTSEQ),
++};
++
++static struct fsm_seq seq_write_data = {
++	.addr_cfg = ADR_CFG_PADS_1_ADD1 | ADR_CFG_CYCLES_ADD1(24),
++	.seq_opc = {
++		(SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_WREN) | SEQ_OPC_CSDEASSERT),
++		(SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_PP)),
++	},
++	.seq = {
++		FSM_INST_CMD1,
++		FSM_INST_CMD2,
++		FSM_INST_ADD1,
++		FSM_INST_DATA_WRITE,
++		FSM_INST_WAIT,
++		FSM_INST_STOP,
++	},
++	.seq_cfg = (SEQ_CFG_PADS_1 |
++		    SEQ_CFG_CSDEASSERT |
++		    SEQ_CFG_STARTSEQ),
++};
++
++static struct fsm_seq seq_erase_sector = {
++	.addr_cfg = ADR_CFG_PADS_1_ADD1 | ADR_CFG_CYCLES_ADD1(24) | ADR_CFG_CSDEASSERT_ADD1,
++	.seq_opc = {
++		(SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_WREN) | SEQ_OPC_CSDEASSERT),
++		(SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_SE)),
++	},
++	.seq = {
++		FSM_INST_CMD1,
++		FSM_INST_CMD2,
++		FSM_INST_ADD1,
++		FSM_INST_WAIT,
++		FSM_INST_STOP,
++	},
++	.seq_cfg = (SEQ_CFG_PADS_1 |
++		    SEQ_CFG_ERASE |
++		    SEQ_CFG_READNOTWRITE |
++		    SEQ_CFG_CSDEASSERT |
++		    0x2 |			/* QQQ - what is this for ??? */
++		    SEQ_CFG_STARTSEQ),
++};
++
++#if 0
++static const struct fsm_seq seq_erase_chip = {
++	.seq_opc = {
++		(SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(OP_WREN) | SEQ_OPC_CSDEASSERT),
++		(SEQ_OPC_PADS_1 | SEQ_OPC_CYCLES(8) | SEQ_OPC_OPCODE(FLASH_CMD_CHIPERASE)),
++	},
++	.seq = {
++		FSM_INST_CMD1,
++		FSM_INST_CMD2,
++		FSM_INST_WAIT,
++		FSM_INST_STOP,
++	},
++	.seq_cfg = (SEQ_CFG_PADS_1 |
++		    SEQ_CFG_ERASE |
++		    SEQ_CFG_READNOTWRITE |
++		    SEQ_CFG_CSDEASSERT |
++		    SEQ_CFG_STARTSEQ),
++};
++#endif
++
++
++/**********************************************************************/
++
++
++static inline int fsm_is_idle(void)
++{
++	return fsm_read_reg(SPI_FAST_SEQ_STA) & 0x10;
++}
++
++static inline int fsm_fifo_available(void)
++{
++	return fsm_read_reg(SPI_FAST_SEQ_STA) >> 5 & 0x7f;
++}
++
++static inline int fsm_set_mode(const uint32_t mode)
++{
++	while ((fsm_read_reg(SPI_STA_MODE_CHANGE) & 0x1) == 0);
++
++	fsm_write_reg(SPI_MODESELECT, mode);
++
++	return 0;
++}
++
++static void fsm_load_seq(const struct fsm_seq * const seq)
++{
++	uint32_t *a = (uint32_t *)((uint32_t)base_addr + SPI_FAST_SEQ_TRANSFER_SIZE);
++	const uint32_t *s = (const uint32_t *)seq;
++	int i = FSM_SEQ_SIZE/4;
++
++		/* ensure the FSM is "idle" (not executing) */
++	assert( fsm_is_idle() );
++
++		/* program the sequence by writing to the FSM registers */
++	while(i--) {
++		writel(*s++, a++);
++	}
++}
++
++static int fsm_wait_seq(void)
++{
++	int i = 0;
++
++	while (!(fsm_is_idle()) && (i < 1000000)) {
++		i++;
++	}
++
++	if (i == 1000000) {
++		DEBUG("warning: in %s(), waited too long, reg=0x%08x\n",
++			__func__,
++			fsm_read_reg(SPI_FAST_SEQ_STA));
++		mdelay(5);
++	}
++
++	return 0;
++}
++
++#if 0
++static void fsm_clear_fifo(void)
++{
++	uint32_t avail;
++
++	while ((avail = fsm_fifo_available()) > 0) {
++		while (avail) {
++			fsm_read_reg(SPI_FAST_SEQ_DATA_REG);
++			avail--;
++		}
++	}
++}
++#endif
++
++static int fsm_read_fifo(uint32_t *buf, const uint32_t size)
++{
++	uint32_t avail;
++	uint32_t remaining = size/4;
++	uint32_t words;
++	uint32_t word;
++
++		/* ensure parameters are 4-byte aligned */
++	assert( (size & 0x3u) == 0u );
++	assert( ((uint32_t)buf & 0x3u) == 0u );
++
++	do {
++		while (!(avail = fsm_fifo_available()))
++			;	/* do nothing */
++
++		words = min(avail, remaining);
++		remaining -= words;
++		avail -= words;
++		while (words--)
++		{
++			word = fsm_read_reg(SPI_FAST_SEQ_DATA_REG);
++			*buf++ = word;
++		}
++	} while (remaining);
++
++	return (size - (remaining*4));
++}
++
++static int fsm_write_fifo(const uint32_t *buf, const uint32_t size)
++{
++	uint32_t remaining = size >> 2;
++
++		/* ensure parameters are 4-byte aligned */
++	assert( (size & 0x3u) == 0u );
++	assert( ((uint32_t)buf & 0x3u) == 0u );
++
++	while (remaining--) {
++		fsm_write_reg(SPI_FAST_SEQ_DATA_REG, *buf);
++		buf++;
++	}
++
++	return (size - (remaining*4));
++}
++
++extern uint8_t fsm_read_status(void)
++{
++	const struct fsm_seq * const seq = &seq_read_status;
++	uint8_t status[4];
++
++	fsm_load_seq(seq);
++	fsm_read_fifo((uint32_t *)status, sizeof(status));
++
++	/* Wait for FSM sequence to finish */
++	fsm_wait_seq();
++
++		/* return the LAST byte retrieved */
++	return status[sizeof(status)-1u];
++}
++
++extern int fsm_read_jedec(const size_t bytes, uint8_t *const jedec)
++{
++	const struct fsm_seq * const seq = &seq_read_jedec;
++	uint8_t tmp[8];		/* multiple of 4 */
++
++	assert( bytes <= sizeof(tmp) );
++
++	fsm_load_seq(seq);
++	fsm_read_fifo((uint32_t *)tmp, sizeof(tmp));
++
++	memcpy(jedec, tmp, bytes);
++
++	return 0;
++}
++
++extern int fsm_erase_sector(const uint32_t offset, const uint8_t op_erase)
++{
++	struct fsm_seq * const seq = &seq_erase_sector;
++
++	DEBUG("debug: in %s( offset=%p, op_erase=0x%02x )\n",
++		__FUNCTION__, offset, op_erase);
++
++	/* over-write the default erase op-code - this is dirty! */
++	*(volatile uint8_t*)&seq->seq_opc[1] = op_erase;
++
++	seq->addr1 = offset;
++	fsm_load_seq(seq);
++
++	/* Wait for FSM sequence to finish */
++	fsm_wait_seq();
++
++	/* Wait for SPI device to complete */
++	spi_wait_till_ready(NULL);
++
++	return 0;
++}
++
++#if 0
++static int fsm_erase_chip(void)
++{
++	const struct fsm_seq * const seq = &seq_erase_chip;
++
++	fsm_load_seq(seq);
++
++	/* Wait for FSM sequence to finish */
++	fsm_wait_seq();
++
++	/* Wait for SPI device to complete */
++	spi_wait_till_ready(NULL);
++
++	return 0;
++}
++#endif
++
++extern int fsm_read(uint8_t * buf, const uint32_t bufsize, uint32_t offset)
++{
++	struct fsm_seq * const seq = &seq_read_data;
++	uint32_t size_ub;
++	uint32_t size_lb;
++	uint32_t size_mop;
++	uint32_t tmp;
++	uint8_t *p;
++	uint32_t size, remaining=bufsize;
++
++	/* Handle non-aligned buf */
++	if ((uint32_t)buf & 0x3) {
++		p = page_buf;	/* use a 4-byte aligned bounce buffer */
++	} else {
++		p = buf;	/* use the provided buffer */
++	}
++
++	do {
++		/* no more than one FIFO at a time */
++		size = min(remaining,sizeof(page_buf));
++
++		DEBUG("debug: in %s() p=%p, size=0x%x, remaining=0x%x, offset=0x%x\n",
++			__FUNCTION__, p, size, remaining, offset);
++
++		/* Handle non-aligned size */
++		size_ub = (size + 0x3) & ~0x3;
++		size_lb = size & ~0x3;
++		size_mop = size & 0x3;
++
++		seq->data_size = TRANSFER_SIZE(size_ub);	/* in bits! */
++		seq->addr1 = offset;
++
++		fsm_load_seq(seq);
++
++		fsm_read_fifo((uint32_t *)p, size_lb);
++
++		if (size_mop) {
++			fsm_read_fifo(&tmp, sizeof(tmp));
++			memcpy(p + size_lb, &tmp, size_mop);
++		}
++
++		/* Handle non-aligned buf */
++		if (page_buf == p) {	/* used bounce buffer ? */
++			memcpy(buf, p, size);
++			buf+=size;
++		} else {		/* used provided buffer */
++			p += size;
++		}
++
++		/* prepare for next iteration */
++		offset += size;
++		remaining -= size;
++
++		/* Wait for FSM sequence to finish */
++		fsm_wait_seq();
++
++	} while (remaining);
++
++	return 0;
++}
++
++extern int fsm_write(const uint8_t * const buf, const uint32_t bufsize, uint32_t offset)
++{
++	struct fsm_seq * const seq = &seq_write_data;
++	uint32_t size_ub;
++	uint32_t size_lb;
++	uint32_t size_mop;
++	int i;
++	const uint8_t *p=buf;
++	uint32_t size, remaining=bufsize;
++	uint32_t tmp;
++	uint8_t *t = (uint8_t *)&tmp;
++
++		/* ensure the FSM is "idle" (not executing) */
++	assert( fsm_is_idle() );
++
++	do {
++		/* no more than one FIFO at a time */
++		size = min(remaining,sizeof(page_buf));
++
++		DEBUG("debug: in %s() p=%p, size=0x%x, remaining=0x%x, offset=0x%x\n",
++			__FUNCTION__, p, size, remaining, offset);
++
++		/* Handle non-aligned buf */
++		if ((uint32_t)buf & 0x3) {
++			p = page_buf;	/* use a 4-byte aligned bounce buffer */
++			memcpy(page_buf, buf, size);
++		} else {
++					/* use the provided buffer */
++		}
++
++		/* Handle non-aligned size */
++		size_ub = (size + 0x3) & ~0x3;
++		size_lb = size & ~0x3;
++		size_mop = size & 0x3;
++
++		seq->data_size = TRANSFER_SIZE(size_ub);	/* in bits! */
++		seq->addr1 = offset;
++
++		/* prepare to write the data to the FIFO in the FSM */
++		/* ensure at least SPI_FAST_SEQ_CFG[0,5,7] are all zero */
++		fsm_write_reg(SPI_FAST_SEQ_CFG, 0x0);
++		/* force the write to complete before proceeding! */
++		(void)fsm_read_reg(SPI_FAST_SEQ_CFG);
++
++		/* now, write the data to the FIFO in the FSM */
++		fsm_write_fifo((uint32_t *)p, size_lb);
++		p += size_lb;
++		/* Handle non-aligned size */
++		if (size_mop) {
++			tmp = ~0ul;	/* fill with 0xFF's */
++			for (i = 0; i < size_mop; i++)
++				t[i] = *p++;
++			fsm_write_fifo(&tmp, sizeof(tmp));
++		}
++
++		/* Start sequence */
++		fsm_load_seq(seq);
++
++		/* prepare for next iteration */
++		offset += size;
++		remaining -= size;
++
++		/* Wait for FSM sequence to finish */
++		fsm_wait_seq();
++
++		/* Wait for SPI device to complete */
++		spi_wait_till_ready(NULL);
++
++	} while (remaining);
++
++	return 0;
++}
++
++extern int fsm_init(void)
++{
++	DEBUG("debug: in %s()\n", __FUNCTION__);
++
++		/* perform a soft reset of the FSM controller */
++	fsm_write_reg(SPI_FAST_SEQ_CFG, SEQ_CFG_SWRESET);
++	udelay(1);	/* QQQ - is this long enough ??? */
++	fsm_write_reg(SPI_FAST_SEQ_CFG, 0);
++
++	fsm_write_reg(SPI_CLOCKDIV, 0x00000002);
++
++	fsm_set_mode(0x8);
++
++	fsm_write_reg(SPI_CONFIGDATA, 0x00a00aa1);
++	fsm_write_reg(SPI_PROGRAM_ERASE_TIME, 0x00000002);
++
++	assert( fsm_fifo_available() == 0 );
++/*	fsm_clear_fifo();	*/
++
++	return 0;
++}
++
++
++/**********************************************************************/
++
++
++#endif	/* defined(CONFIG_STM_FSM_SPI) */
++
++
+diff --git a/cpu/sh/stm_spi_fsm.h b/cpu/sh/stm_spi_fsm.h
+new file mode 100644
+index 0000000..590ebc0
+--- /dev/null
++++ b/cpu/sh/stm_spi_fsm.h
+@@ -0,0 +1,172 @@
++/*
++ * (C) Copyright 2010 STMicroelectronics.
++ *
++ * Angus Clark   <Angus.Clark@st.com>
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++#ifndef STM_SPI_FSM_H
++#define STM_SPI_FSM_H
++
++	/*
++	 * FSM SPI Controller Registers.
++	 */
++#define SPI_CLOCKDIV			0x0010
++#define SPI_MODESELECT			0x0018
++#define SPI_CONFIGDATA			0x0020
++#define SPI_STA_MODE_CHANGE		0x0028
++#define SPI_FAST_SEQ_TRANSFER_SIZE	0x0100
++#define SPI_FAST_SEQ_ADD1		0x0104
++#define SPI_FAST_SEQ_ADD2		0x0108
++#define SPI_FAST_SEQ_ADD_CFG		0x010c
++#define SPI_FAST_SEQ_OPC1		0x0110
++#define SPI_FAST_SEQ_OPC2		0x0114
++#define SPI_FAST_SEQ_OPC3		0x0118
++#define SPI_FAST_SEQ_OPC4		0x011c
++#define SPI_FAST_SEQ_OPC5		0x0120
++#define SPI_MODE_BITS			0x0124
++#define SPI_DUMMY_BITS			0x0128
++#define SPI_FAST_SEQ_FLASH_STA_DATA	0x012c
++#define SPI_FAST_SEQ_1			0x0130
++#define SPI_FAST_SEQ_2			0x0134
++#define SPI_FAST_SEQ_3			0x0138
++#define SPI_FAST_SEQ_4			0x013c
++#define SPI_FAST_SEQ_CFG		0x0140
++#define SPI_FAST_SEQ_STA		0x0144
++#define SPI_QUAD_BOOT_SEQ_INIT_1	0x0148
++#define SPI_QUAD_BOOT_SEQ_INIT_2	0x014c
++#define SPI_QUAD_BOOT_READ_SEQ_1	0x0150
++#define SPI_QUAD_BOOT_READ_SEQ_2	0x0154
++#define SPI_PROGRAM_ERASE_TIME		0x0158
++#define SPI_MULT_PAGE_REPEAT_SEQ_1	0x015c
++#define SPI_MULT_PAGE_REPEAT_SEQ_2	0x0160
++#define SPI_STATUS_WR_TIME_REG		0x0164
++#define SPI_FAST_SEQ_DATA_REG		0x0300
++
++	/*
++	 * Register: SPI_FAST_SEQ_TRANSFER_SIZE
++	 */
++#define TRANSFER_SIZE(x)		( (x) * 8 )	/* Transfer Size in BITS */
++
++	/*
++	 * Register: SPI_FAST_SEQ_ADD_CFG
++	 */
++#define ADR_CFG_CYCLES_ADD1(x)		((x) << 0)	/* number of cycles for address 1 */
++#define ADR_CFG_PADS_1_ADD1		(0x0 << 6)	/* single I/O-mode */
++#define ADR_CFG_PADS_2_ADD1		(0x1 << 6)	/* dual   I/O-mode */
++#define ADR_CFG_PADS_4_ADD1		(0x3 << 6)	/* quad   I/O-mode */
++#define ADR_CFG_CSDEASSERT_ADD1		(1   << 8)	/* de-assert CSn after address 1 */
++#define ADR_CFG_CYCLES_ADD2(x)		((x) << (0+16))	/* number of cycles for address 2 */
++#define ADR_CFG_PADS_1_ADD2		(0x0 << (6+16))	/* single I/O-mode */
++#define ADR_CFG_PADS_2_ADD2		(0x1 << (6+16))	/* dual   I/O-mode */
++#define ADR_CFG_PADS_4_ADD2		(0x3 << (6+16))	/* quad   I/O-mode */
++#define ADR_CFG_CSDEASSERT_ADD2		(1   << (8+16))	/* de-assert CSn after address 2 */
++
++	/*
++	 * Register: SPI_FAST_SEQ_n
++	 */
++#define SEQ_OPC_OPCODE(x)		((x) << 0)	/* Flash Command */
++#define SEQ_OPC_CYCLES(x)		((x) << 8)	/* number of cycles for command */
++#define SEQ_OPC_PADS_1			(0x0 << 14)	/* single I/O-mode */
++#define SEQ_OPC_PADS_2			(0x1 << 14)	/* dual   I/O-mode */
++#define SEQ_OPC_PADS_4			(0x3 << 14)	/* quad   I/O-mode */
++#define SEQ_OPC_CSDEASSERT		(1   << 16)	/* de-assert CSn after command */
++
++	/*
++	 * Register: SPI_FAST_SEQ_CFG
++	 */
++#define SEQ_CFG_STARTSEQ		(1 << 0)
++#define SEQ_CFG_SWRESET			(1 << 5)	/* S/W reset */
++#define SEQ_CFG_CSDEASSERT		(1 << 6)	/* de-assert CSn after QQQ (STOP/DATA) ??? */
++#define SEQ_CFG_READNOTWRITE		(1 << 7)
++#define SEQ_CFG_ERASE			(1 << 8)
++#define SEQ_CFG_PADS_1			(0x0 << 16)	/* single I/O-mode */
++#define SEQ_CFG_PADS_2			(0x1 << 16)	/* dual   I/O-mode */
++#define SEQ_CFG_PADS_4			(0x3 << 16)	/* quad   I/O-mode */
++
++	/*
++	 * FSM SPI Instruction Opcodes.
++	 */
++#define FSM_OPC_CMD			0x1
++#define FSM_OPC_ADD			0x2
++#define FSM_OPC_STATUS_REG_DATA		0x3
++#define FSM_OPC_MODE			0x4
++#define FSM_OPC_DUMMY			0x5
++#define FSM_OPC_DATA			0x6
++#define FSM_OPC_WAIT			0x7
++#define FSM_OPC_JUMP			0x8	/* QQQ - verify this number */
++#define FSM_OPC_GOTO			0x9	/* QQQ - verify this number */
++#define FSM_OPC_STOP			0xF
++
++	/*
++	 * FSM SPI Instructions (= opcode + operand).
++	 */
++#define FSM_INSTR(cmd, op)		((cmd) | ((op) << 4))
++
++#define FSM_INST_CMD1			FSM_INSTR(FSM_OPC_CMD,	1)
++#define FSM_INST_CMD2			FSM_INSTR(FSM_OPC_CMD,	2)
++#define FSM_INST_CMD3			FSM_INSTR(FSM_OPC_CMD,	3)
++#define FSM_INST_CMD4			FSM_INSTR(FSM_OPC_CMD,	4)
++#define FSM_INST_CMD5			FSM_INSTR(FSM_OPC_CMD,	5)
++
++#define FSM_INST_ADD1			FSM_INSTR(FSM_OPC_ADD,	1)
++#define FSM_INST_ADD2			FSM_INSTR(FSM_OPC_ADD,	2)
++
++#define FSM_INST_DATA_WRITE		FSM_INSTR(FSM_OPC_DATA,	1)
++#define FSM_INST_DATA_READ		FSM_INSTR(FSM_OPC_DATA,	2)
++
++#define FSM_INST_MODE			FSM_INSTR(FSM_OPC_MODE,	0)
++
++#define FSM_INST_DUMMY			FSM_INSTR(FSM_OPC_DUMMY,0)
++
++#define FSM_INST_WAIT			FSM_INSTR(FSM_OPC_WAIT,	0)
++
++#define FSM_INST_STOP			FSM_INSTR(FSM_OPC_STOP,	0)
++
++
++	/*
++	 * Exported function declarations.
++	 */
++extern int fsm_init(void);
++extern uint8_t fsm_read_status(void);
++extern int fsm_read_jedec(
++	const size_t bytes,
++	uint8_t *const jedec);
++extern int fsm_read(
++	uint8_t * buf,
++	const uint32_t size,
++	uint32_t offset);
++extern int fsm_erase_sector(
++	const uint32_t offset,
++	const uint8_t op_erase);
++extern int fsm_write(
++	const uint8_t *buf,
++	const uint32_t bufsize,
++	uint32_t offset);
++
++	/* QQQ - move to spi.h ??? */
++extern void spi_wait_till_ready(
++	spi_chipsel_type const chipsel);
++
++#endif	/* STM_SPI_FSM_H */
++
++
+diff --git a/cpu/sh/stx5197/stx5197.c b/cpu/sh/stx5197/stx5197.c
+index d4e2996..02e8c6b 100644
+--- a/cpu/sh/stx5197/stx5197.c
++++ b/cpu/sh/stx5197/stx5197.c
+@@ -158,7 +158,7 @@ extern void stx5197_usb_init(void)
+  *
+  *	input: cs == true, assert CS, else deassert CS
+  */
+-#if defined(CONFIG_SPI) && !defined(CONFIG_SOFT_SPI)
++#if defined(CONFIG_SPI) && defined(CONFIG_STM_SSC_SPI)
+ static void spi_chip_select(const int cs)
+ {
+ 	unsigned long reg;
+@@ -193,7 +193,7 @@ spi_chipsel_type spi_chipsel[] =
+ 	spi_chip_select
+ };
+ int spi_chipsel_cnt = sizeof(spi_chipsel) / sizeof(spi_chipsel[0]);
+-#endif	/* CONFIG_SPI && !defined(CONFIG_SOFT_SPI) */
++#endif	/* CONFIG_SPI && defined(CONFIG_STM_SSC_SPI) */
+ 
+ 
+ /**********************************************************************/
+diff --git a/cpu/sh/stx5206/Makefile b/cpu/sh/stx5206/Makefile
+new file mode 100644
+index 0000000..55633be
+--- /dev/null
++++ b/cpu/sh/stx5206/Makefile
+@@ -0,0 +1,47 @@
++#
++# (C) Copyright 2008,2010 STMicroelectronics.
++# Sean McGoogan <Sean.McGoogan@st.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(SOC).a
++
++COBJS	= stx5206.o
++SOBJS	=
++
++SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS) $(SOBJS))
++START	:= $(addprefix $(obj),$(START))
++
++all:	$(obj).depend $(LIB)
++
++$(LIB):	$(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS)
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/cpu/sh/stx5206/stx5206.c b/cpu/sh/stx5206/stx5206.c
+new file mode 100644
+index 0000000..c467543
+--- /dev/null
++++ b/cpu/sh/stx5206/stx5206.c
+@@ -0,0 +1,223 @@
++/*
++ * (C) Copyright 2008-2010 STMicroelectronics.
++ *
++ * Stuart Menefy <stuart.menefy@st.com>
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <command.h>
++#include <asm/soc.h>
++#include <asm/stx5206reg.h>
++#include <asm/io.h>
++#include <asm/pio.h>
++#include <asm/stbus.h>
++#include <ata.h>
++#include <spi.h>
++
++
++#define SET_SYSCONF_BIT(reg,flag,bit)			\
++	do {						\
++		if (flag)				\
++		{	/* set bit 'bit' */		\
++			reg |= (1ul<<(bit));		\
++		}					\
++		else					\
++		{	/* clear bit 'bit' */		\
++			reg &= ~(1ul<<(bit));		\
++		}					\
++	} while (0)
++
++#define SET_SYSCONF_BITS(reg,flag,first,last,yes,no)	\
++	do {						\
++		const unsigned long _mask = 		\
++			(1ul<<((last)-(first)+1))-1ul;	\
++		/* clear all bits in 'first':'last' */	\
++		reg &= ~(_mask<<(first));		\
++		if (flag)				\
++		{	/* set 'yes' in first:last */	\
++			reg |= ((yes)<<(first));	\
++		}					\
++		else					\
++		{	/* set 'no' in first:last */	\
++			reg |= ((no)<<(first));		\
++		}					\
++	} while (0)
++
++
++static void stx5206_clocks(void)
++{
++	DECLARE_GLOBAL_DATA_PTR;
++	bd_t *bd = gd->bd;
++
++	/*
++	 * FIXME
++	 * Gross hack to get the serial port working.
++	 * See the defintion of PCLK in drivers/stm-asc.c
++	 * for where this is used.
++	 */
++	bd->bi_emifrq = 100;
++}
++
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++
++#define ETHERNET_INTERFACE_ON	16
++#define PHY_CLK_EXT		19
++#define MAC_SPEED_SEL		20
++#define ENMII			27
++
++extern int stmac_default_pbl(void)
++{
++	return 32;
++}
++
++extern void stmac_set_mac_speed(int speed)
++{
++	unsigned long sysconf;
++
++	/* gmac_mac_speed = speed==100 ? 1 : 0 */
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG07);
++	SET_SYSCONF_BIT(sysconf, speed==100, MAC_SPEED_SEL);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG07);
++}
++
++	/*
++	 * ETH GMAC PIO configuration
++	 */
++extern void stx5206_configure_ethernet(
++	const enum stx5206_ethernet_mode mode,
++	const int ext_clk,
++	const int phy_bus)
++{
++	unsigned int phy_sel, enmii;
++	unsigned long sysconf;
++
++	switch (mode) {
++	case stx5206_ethernet_mii:
++		phy_sel = 0x0;
++		enmii = 1;
++		break;
++	case stx5206_ethernet_rmii:
++		phy_sel = 0x4;
++		enmii = 1;
++		break;
++	case stx5206_ethernet_reverse_mii:
++		phy_sel = 0x0;
++		enmii = 0;
++		break;
++	default:
++		BUG();
++		return;
++	}
++
++	/* ethernet_interface_on */
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG07);
++	SET_SYSCONF_BIT(sysconf, 1, ETHERNET_INTERFACE_ON);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG07);
++
++	/* phy_clk_ext: MII_PHYCLK pad function: 1 = phy clock is external,
++	 * 0 = phy clock is provided by STx5289 */
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG07);
++	SET_SYSCONF_BIT(sysconf, ext_clk, PHY_CLK_EXT);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG07);
++
++	/* phy_intf_sel */
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG07);
++	SET_SYSCONF_BITS(sysconf, 1, 24, 26, phy_sel, phy_sel);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG07);
++
++	/* enMii: 1 = MII mode, 0 = Reverse MII mode */
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG07);
++	SET_SYSCONF_BIT(sysconf, enmii, ENMII);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG07);
++
++#if 0	//QQQ: what about setting the PHY clock frequency ???
++	/* Set PHY clock frequency (if used) */
++	if (!ext_clk)
++	{
++		struct clk *phy_clk = clk_get(NULL, "CLKA_ETH_PHY");
++		BUG_ON(!phy_clk);
++		clk_set_rate(phy_clk, phy_clk_rate);
++	}
++#endif
++}
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++
++int soc_init(void)
++{
++	DECLARE_GLOBAL_DATA_PTR;
++	bd_t *bd = gd->bd;
++
++	stx5206_clocks();
++
++	bd->bi_devid = *STX5206_SYSCONF_DEVICEID_0;
++
++	/*
++	 * Make sure the reset period is shorter than WDT time-out,
++	 * and that the reset loop-back chain is *not* bypassed.
++	 *	SYS_CFG09[29]    = long_reset_mode
++	 *	SYS_CFG09[28:27] = cpu_rst_out_bypass(1:0)
++	 *	SYS_CFG09[25:0]  = ResetOut_period
++	 */
++#ifdef QQQ	/* QQQ - DELETE */
++//QQQ	*STX7105_SYSCONF_SYS_CFG09 = (*STX7105_SYSCONF_SYS_CFG09 & 0xF7000000) | 0x000A8C;
++	*STX7105_SYSCONF_SYS_CFG09 = (*STX7105_SYSCONF_SYS_CFG09 & 0xF4000000ul) | 0x000A8Cul;
++
++#endif		/* QQQ - DELETE */
++	return 0;
++}
++
++
++#if defined(CONFIG_USB_OHCI_NEW)
++extern void stx5206_usb_init(void)
++{
++	unsigned long sysconf;
++
++	/* USB_HOST_SOFT_RESET: active low usb host sof reset */
++//	sc = sysconf_claim(SYS_CFG, 4, 1, 1, "USB");
++//	sysconf_write(sc, 1);
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG04);
++	SET_SYSCONF_BIT(sysconf, 1, 1);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG04);
++
++	/* suspend_from_config: Signal to suspend USB PHY */
++//	sc = sysconf_claim(SYS_CFG, 10, 5, 5, "USB");
++//	sysconf_write(sc, 0);
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG10);
++	SET_SYSCONF_BIT(sysconf, 0, 5);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG10);
++
++	/* usb_power_down_req: power down request for USB Host module */
++//	sc = sysconf_claim(SYS_CFG, 32, 4, 4, "USB");
++//	sysconf_write(sc, 0);
++	sysconf = readl(STX5206_SYSCONF_SYS_CFG32);
++	SET_SYSCONF_BIT(sysconf, 0, 4);
++	writel(sysconf, STX5206_SYSCONF_SYS_CFG32);
++
++	/* start the USB Wrapper Host Controller */
++	ST40_start_host_control(
++		USB_FLAGS_STRAP_8BIT |
++		USB_FLAGS_STBUS_CONFIG_THRESHOLD128);
++}
++#endif /* defined(CONFIG_USB_OHCI_NEW) */
++
++
+diff --git a/cpu/sh/stx7111/stx7111.c b/cpu/sh/stx7111/stx7111.c
+index a9f43cf..e68afe7 100644
+--- a/cpu/sh/stx7111/stx7111.c
++++ b/cpu/sh/stx7111/stx7111.c
+@@ -212,7 +212,7 @@ extern unsigned char stx7111_spi_read(void)
+ 	const int pin = 2;	/* PIO2[2] = SPI_DIN */
+ 	return STPIO_GET_PIN(PIO_PORT(2), pin);
+ }
+-#else
++#elif defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ #error Still to impliment SPI via SSC for the STx7111.
+ #endif	/* CONFIG_SOFT_SPI */
+ 
+diff --git a/cpu/sh/stx7141/stx7141.c b/cpu/sh/stx7141/stx7141.c
+index 27bbac6..73f6fd8 100644
+--- a/cpu/sh/stx7141/stx7141.c
++++ b/cpu/sh/stx7141/stx7141.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2009 STMicroelectronics.
++ * (C) Copyright 2008-2010 STMicroelectronics.
+  *
+  * Stuart Menefy <stuart.menefy@st.com>
+  * Sean McGoogan <Sean.McGoogan@st.com>
+@@ -47,15 +47,211 @@ static void stx7141_clocks(void)
+ 	bd->bi_emifrq = 100;
+ }
+ 
++
+ #ifdef CONFIG_DRIVER_NET_STM_GMAC
+ 
+-#define ETHERNET_INTERFACE_ON	(1ul<<16)
+-#define PHY_CLK_EXT		(1ul<<19)
+-#define MAC_SPEED_SEL           (1ul<<20)
+-#define PHY_INTF_SEL_MASK	(0x7ul<<24)
+-#define ENMII			(1ul<<27)
++#if CFG_STM_STMAC_BASE == CFG_STM_STMAC0_BASE	/* MAC = STM GMAC#0 */
++#	define GMII_CLOCK_OUT		(1ul<<13)
++#	define ETHERNET_INTERFACE_ON	(1ul<<16)
++#	define MAC_SPEED_SEL		(1ul<<20)
++#	define ENMII			(1ul<<27)
++#	define PHY_INTF_SEL		24		/* bits [26:24] */
++#elif CFG_STM_STMAC_BASE == CFG_STM_STMAC1_BASE	/* MAC = STM GMAC#1 */
++#	define GMII_CLOCK_OUT		(1ul<<15)
++#	define ETHERNET_INTERFACE_ON	(1ul<<17)
++#	define MAC_SPEED_SEL		(1ul<<21)
++#	define ENMII			(1ul<<31)
++#	define PHY_INTF_SEL		28		/* bits [30:28] */
++#else
++#error Unknown GMAC Base address encountered!
++#endif
++
++#define PHY_INTF_SEL_MASK		(0x7ul<<PHY_INTF_SEL)
++
++#define ARRAY_SIZE(x)			(sizeof(x) / sizeof((x)[0]))
++
++#define AD_CONFIG_OFFSET		0x7000
++#define READ_AHEAD_MASK			0xFFCFFFFF
++
++
++const static struct {
++	unsigned char syscfg;
++	unsigned char lsb, msb;
++} pio_sysconf[17][8] = {
++	{
++		/* PIO0 doesn't exist */
++	}, {
++		{ 19,  0,  1 },	/* PIO1[0] */
++		{ 19,  2,  3 },	/* PIO1[1] */
++		{ 19,  4,  5 },	/* PIO1[2] */
++		{ 19,  5,  7 },	/* PIO1[3] */
++		{ 19,  8,  8 },	/* PIO1[4] */
++		{ 19,  9,  9 },	/* PIO1[5] */
++		{ 19, 10, 10 },	/* PIO1[6] */
++		{ 19, 11, 11 },	/* PIO1[7] */
++	}, {
++		{ 19, 12, 12 },	/* PIO2[0] */
++		{ 19, 13, 13 },	/* PIO2[1] */
++		{ 19, 14, 14 },	/* PIO2[2] */
++		{ 19, 15, 15 },	/* PIO2[3] */
++		{ 19, 16, 16 },	/* PIO2[4] */
++		{ 19, 17, 17 },	/* PIO2[5] */
++		{ 19, 18, 18 },	/* PIO2[6] */
++		{ 19, 19, 19 },	/* PIO2[7] */
++	}, {
++		{ 19, 20, 20 },	/* PIO3[0] */
++		{ 19, 21, 21 },	/* PIO3[1] */
++		{ 19, 22, 23 },	/* PIO3[2] */
++		{ 19, 24, 25 },	/* PIO3[3] */
++		{ 19, 26, 27 },	/* PIO3[4] */
++		{ 19, 28, 29 },	/* PIO3[5] */
++		{ 19, 30, 31 },	/* PIO3[6] */
++		{ 20,  0,  0 },	/* PIO3[7] */
++	}, {
++		{ 20,  1,  2 },	/* PIO4[0] */
++		{ 20,  3,  4 },	/* PIO4[1] */
++		{ 20,  5,  6 },	/* PIO4[2] */
++		{ 20,  7,  8 },	/* PIO4[3] */
++		{ 20,  9, 10 },	/* PIO4[4] */
++		{ 20, 11, 12 },	/* PIO4[5] */
++		{ 20, 13, 13 },	/* PIO4[6] */
++		{ 20, 14, 14 },	/* PIO4[7] */
++	}, {
++		{ 20, 15, 16 },	/* PIO5[0] */
++		{ 20, 17, 18 },	/* PIO5[1] */
++		{ 20, 19, 19 },	/* PIO5[2] */
++		{ 20, 20, 20 },	/* PIO5[3] */
++		{ 20, 21, 21 },	/* PIO5[4] */
++		{ 20, 22, 23 },	/* PIO5[5] */
++		{ 20, 24, 24 },	/* PIO5[6] */
++		{ 20, 25, 26 },	/* PIO5[7] */
++	}, {
++		{ 20, 27, 28 },	/* PIO6[0] */
++		{ 20, 29, 30 },	/* PIO6[1] */
++		{ 25,  0,  1 },	/* PIO6[2] */
++		{ 25,  2,  3 },	/* PIO6[3] */
++		{ 25,  4,  5 },	/* PIO6[4] */
++		{ 25,  6,  7 },	/* PIO6[5] */
++		{ 25,  8,  9 },	/* PIO6[6] */
++		{ 25, 10, 11 },	/* PIO6[7] */
++	}, {
++		{ 25, 12, 13 },	/* PIO7[0] */
++		{ 25, 14, 15 },	/* PIO7[1] */
++		{ 25, 16, 17 },	/* PIO7[2] */
++		{ 25, 18, 19 },	/* PIO7[3] */
++		{ 25, 20, 21 },	/* PIO7[4] */
++		{ 25, 22, 23 },	/* PIO7[5] */
++		{ 25, 24, 25 },	/* PIO7[6] */
++		{ 25, 26, 27 },	/* PIO7[7] */
++	}, {
++		{ 25, 28, 30 },	/* PIO8[0] */
++		{ 35,  0,  2 },	/* PIO8[1] */
++		{ 35,  3,  5 },	/* PIO8[2] */
++		{ 35,  6,  8 },	/* PIO8[3] */
++		{ 35,  9, 11 },	/* PIO8[4] */
++		{ 35, 12, 14 },	/* PIO8[5] */
++		{ 35, 15, 17 },	/* PIO8[6] */
++		{ 35, 18, 20 },	/* PIO8[7] */
++	}, {
++		{ 35, 21, 22 },	/* PIO9[0] */
++		{ 35, 23, 24 },	/* PIO9[1] */
++		{ 35, 25, 26 },	/* PIO9[2] */
++		{ 35, 27, 28 },	/* PIO9[3] */
++		{ 35, 29, 30 },	/* PIO9[4] */
++		{ 46,  0,  1 },	/* PIO9[5] */
++		{ 46,  2,  3 },	/* PIO9[6] */
++		{ 46,  4,  5 },	/* PIO9[7] */
++	}, {
++		{ 46,  6,  7 },	/* PIO10[0] */
++		{ 46,  8,  9 },	/* PIO10[1] */
++		{ 46, 10, 11 },	/* PIO10[2] */
++		{ 46, 12, 13 },	/* PIO10[3] */
++		{ 46, 14, 15 },	/* PIO10[4] */
++		{ 46, 16, 17 },	/* PIO10[5] */
++		{ 46, 18, 19 },	/* PIO10[6] */
++		{ 46, 20, 21 },	/* PIO10[7] */
++	}, {
++		{ 46, 22, 23 },	/* PIO11[0] */
++		{ 46, 24, 26 },	/* PIO11[1] */
++		{ 46, 27, 29 },	/* PIO11[2] */
++		{ 47,  0,  2 },	/* PIO11[3] */
++		{ 47,  3,  5 },	/* PIO11[4] */
++		{ 47,  6,  8 },	/* PIO11[5] */
++		{ 47,  9, 11 },	/* PIO11[6] */
++		{ 47, 12, 14 },	/* PIO11[7] */
++	}, {
++		{ 47, 15, 17 },	/* PIO12[0] */
++		{ 47, 18, 20 },	/* PIO12[1] */
++		{ 47, 21, 23 },	/* PIO12[2] */
++		{ 47, 24, 25 },	/* PIO12[3] */
++		{ 47, 26, 27 },	/* PIO12[4] */
++		{ 47, 28, 29 },	/* PIO12[5] */
++		{ 48,  0,  2 },	/* PIO12[6] */
++		{ 48,  3,  5 },	/* PIO12[7] */
++	}, {
++		{ 48,  6,  8 },	/* PIO13[0] */
++		{ 48,  9, 11 },	/* PIO13[1] */
++		{ 48, 12, 14 },	/* PIO13[2] */
++		{ 48, 15, 17 },	/* PIO13[3] */
++		{ 48, 18, 20 },	/* PIO13[4] */
++		{ 48, 21, 23 },	/* PIO13[5] */
++		{ 48, 24, 25 },	/* PIO13[6] */
++		{ 48, 26, 27 },	/* PIO13[7] */
++	}, {
++		{ 48, 28, 30 },	/* PIO14[0] */
++		{ 49,  0,  2 },	/* PIO14[1] */
++		{ 49,  3,  5 },	/* PIO14[2] */
++		{ 49,  6,  8 },	/* PIO14[3] */
++		{ 49,  9, 11 },	/* PIO14[4] */
++		{ 49, 12, 14 },	/* PIO14[5] */
++		{ 49, 15, 17 },	/* PIO14[6] */
++		{ 49, 18, 19 },	/* PIO14[7] */
++	}, {
++		{ 49, 20, 21 },	/* PIO15[0] */
++		{ 49, 22, 23 },	/* PIO15[1] */
++		{ 49, 24, 25 },	/* PIO15[2] */
++		{ 49, 26, 27 },	/* PIO15[3] */
++		{ 49, 28, 28 },	/* PIO15[4] */
++		{ 49, 29, 29 },	/* PIO15[5] */
++		{ 49, 30, 30 },	/* PIO15[6] */
++		{ 50,  0,  1 },	/* PIO15[7] */
++	}, {
++		{ 50,  2,  3 },	/* PIO16[0] */
++		{ 50,  4,  5 },	/* PIO16[1] */
++		{ 50,  6,  7 },	/* PIO16[2] */
++		{ 50,  8,  8 },	/* PIO16[3] */
++		{ 50,  9,  9 },	/* PIO16[4] */
++		{ 50, 10, 10 },	/* PIO16[5] */
++		{ 50, 11, 11 },	/* PIO16[6] */
++		{ 50, 12, 12 },	/* PIO16[7] */
++	}
++};
++
++static void stx7141_pio_sysconf(const int bank, const int pin, const int alt)
++{
++	const unsigned char syscfg = pio_sysconf[bank][pin].syscfg;
++	const unsigned char msb = pio_sysconf[bank][pin].msb;
++	const unsigned char lsb = pio_sysconf[bank][pin].lsb;
++	const unsigned long mask = (1ul<<((msb)-(lsb)+1))-1ul;
++	const unsigned long addr = (unsigned long)STX7141_SYSCONF_SYS_CFG00 + (syscfg * 4ul);
++	unsigned long sysconf;
++
++	/* set PIO to alternate function 'alt' */
++	sysconf = readl(addr);
++	sysconf &= ~(mask<<lsb);
++	sysconf |= alt<<lsb;
++	writel(sysconf, addr);
++
++#if 0
++	printf("%s(): PIO%02u[%u] --> CFG%02u[%u:%u] = %u\t*0x%08x=0x%08x\n",
++		__FUNCTION__,
++		bank, pin,
++		syscfg, msb, lsb,
++		alt,
++		addr, sysconf);
++#endif
++}
+ 
+-/* Remaining bits define pad functions, default appears to work */
+ 
+ extern int stmac_default_pbl(void)
+ {
+@@ -64,52 +260,104 @@ extern int stmac_default_pbl(void)
+ 
+ extern void stmac_set_mac_speed(int speed)
+ {
+-#ifdef QQQ	/* QQQ - TO DO */
+-	/* QQQ: check this code is actually correct for the 7141 */
+ 	unsigned long sysconf = *STX7141_SYSCONF_SYS_CFG07;
+ 
+-//	printf("QQQ: %s(speed=%u)\n", __FUNCTION__, speed); /* QQQ - DELETE */
+ 	/* MAC_SPEED_SEL = 0|1 */
+ 	if (speed == 100)
+ 		sysconf |= MAC_SPEED_SEL;
+-	else if (speed == 10)
++	else
+ 		sysconf &= ~MAC_SPEED_SEL;
+ 
+ 	*STX7141_SYSCONF_SYS_CFG07 = sysconf;
+-#endif		/* QQQ - TO DO */
+ }
+ 
+ /* ETH MAC pad configuration */
+-static void stmac_eth_hw_setup(void)
++extern void stx7141_configure_ethernet(
++	const int port,
++	const int reverse_mii,
++	const int mode,
++	const int phy_bus)
+ {
+-#ifdef QQQ	/* QQQ - TO DO */
+-	const unsigned long en_mii  = 1;
+-	const unsigned long sel     = 0;
+-	const unsigned long ext_clk = 0;
++	DECLARE_GLOBAL_DATA_PTR;
++	bd_t * const bd = gd->bd;
++	size_t i;
++
++	const struct {
++		struct {
++			unsigned char port, pin, alt;
++		} pio[2];
++		unsigned char dir;
++	} pins[] = {
++		{ { {  8, 0, 1 }, { 11, 4, 1 } }, STPIO_IN  },	/* TXCLK */
++		{ { {  8, 1, 1 }, { 11, 5, 1 } }, STPIO_OUT },	/* TXEN */
++		{ { {  8, 2, 1 }, { 11, 6, 1 } }, STPIO_OUT },	/* TXER */
++		{ { {  8, 3, 1 }, { 11, 7, 1 } }, STPIO_OUT },	/* TXD[0] */
++		{ { {  8, 4, 1 }, { 12, 0, 1 } }, STPIO_OUT },	/* TXD[1] */
++		{ { {  8, 5, 1 }, { 12, 1, 1 } }, STPIO_OUT },	/* TXD[2] */
++		{ { {  8, 6, 1 }, { 12, 2, 1 } }, STPIO_OUT },	/* TXD[3] */
++		{ { {  8, 7, 1 }, { 12, 3, 1 } }, STPIO_OUT },	/* TXD[4] */
++		{ { {  9, 0, 1 }, { 12, 4, 1 } }, STPIO_OUT },	/* TXD[5] */
++		{ { {  9, 1, 1 }, { 12, 5, 1 } }, STPIO_OUT },	/* TXD[6] */
++		{ { {  9, 2, 1 }, { 12, 6, 1 } }, STPIO_OUT },	/* TXD[7] */
++		{ { {  9, 3, 1 }, { 12, 7, 1 } }, STPIO_IN  },	/* RXCLK */
++		{ { {  9, 4, 1 }, { 13, 0, 1 } }, STPIO_IN  },	/* RXDV */
++		{ { {  9, 5, 1 }, { 13, 1, 1 } }, STPIO_IN  },	/* RX_ER */
++		{ { {  9, 6, 1 }, { 13, 2, 1 } }, STPIO_IN  },	/* RXD[0] */
++		{ { {  9, 7, 1 }, { 13, 3, 1 } }, STPIO_IN  },	/* RXD[1] */
++		{ { { 10, 0, 1 }, { 13, 4, 1 } }, STPIO_IN  },	/* RXD[2] */
++		{ { { 10, 1, 1 }, { 13, 5, 1 } }, STPIO_IN  },	/* RXD[3] */
++		{ { { 10, 2, 1 }, { 13, 6, 1 } }, STPIO_IN  },	/* RXD[4] */
++		{ { { 10, 3, 1 }, { 13, 7, 1 } }, STPIO_IN  },	/* RXD[5] */
++		{ { { 10, 4, 1 }, { 14, 0, 1 } }, STPIO_IN  },	/* RXD[6] */
++		{ { { 10, 5, 1 }, { 14, 1, 1 } }, STPIO_IN  },	/* RXD[7] */
++		{ { { 10, 6, 1 }, { 14, 2, 1 } }, STPIO_IN  },	/* CRS */
++		{ { { 10, 7, 1 }, { 14, 3, 1 } }, STPIO_IN  },	/* COL */
++		{ { { 11, 0, 1 }, { 14, 4, 1 } }, STPIO_OUT },	/* MDC */
++		{ { { 11, 1, 1 }, { 14, 5, 1 } }, STPIO_BIDIR },/* MDIO */
++		{ { { 11, 2, 1 }, { 14, 6, 1 } }, STPIO_IN  },	/* MDINT */
++		{ { { 11, 3, 1 }, { 14, 7, 1 } }, STPIO_OUT },	/* PHYCLK */
++	};
+ 
+ 	unsigned long sysconf = *STX7141_SYSCONF_SYS_CFG07;
+ 
+-	/* Ethernet ON */
++	/* Cut 2 of 7141 has AHB wrapper bug for ethernet gmac */
++	/* Need to disable read-ahead - performance impact     */
++	if (STX7141_DEVICEID_CUT(bd->bi_devid) == 2)
++	{
++		const unsigned long addr = CFG_STM_STMAC_BASE + AD_CONFIG_OFFSET;
++		writel(readl(addr) & READ_AHEAD_MASK, addr);
++	}
++
++	/* gmac_en: GMAC Enable */
+ 	sysconf |= ETHERNET_INTERFACE_ON;
+ 
+-	/* PHY EXT CLOCK: 0: provided by STX7141; 1: external */
+-	if (ext_clk)
+-		sysconf |= PHY_CLK_EXT;
++	/* GMII clock configuration */
++	sysconf |= GMII_CLOCK_OUT;
++
++	/* enmii: Interface type (rev MII/MII) */
++	if (reverse_mii)
++		sysconf &= ~ENMII;
+ 	else
+-		sysconf &= ~PHY_CLK_EXT;
++		sysconf |= ENMII;
+ 
+-	/* Default GMII/MII slection */
++	/* phy_intf_sel[2;0] : PHY Interface Selection */
++	/* Note the that MSB implicitly also set mii_mode */
+ 	sysconf &= ~PHY_INTF_SEL_MASK;
+-	sysconf |= ((sel<<24) & PHY_INTF_SEL_MASK);
+-
+-	/* MII mode */
+-	if (en_mii)
+-		sysconf |= ENMII;
+-	else
+-		sysconf &= ~ENMII;
++	sysconf |= ((mode<<PHY_INTF_SEL) & PHY_INTF_SEL_MASK);
+ 
+ 	*STX7141_SYSCONF_SYS_CFG07 = sysconf;
+-#endif		/* QQQ - TO DO */
++
++	/* now configure & route all the MII PIOs */
++	for (i = 0; i < ARRAY_SIZE(pins); i++)
++	{
++		stx7141_pio_sysconf(pins[i].pio[port].port,
++				    pins[i].pio[port].pin,
++				    pins[i].pio[port].alt);
++		SET_PIO_PIN(
++			ST40_PIO_BASE(pins[i].pio[port].port),
++			pins[i].pio[port].pin,
++			pins[i].dir);
++	}
+ }
+ #endif	/* CONFIG_DRIVER_NET_STM_GMAC */
+ 
+@@ -121,10 +369,6 @@ int soc_init(void)
+ 
+ 	stx7141_clocks();
+ 
+-#ifdef CONFIG_DRIVER_NET_STM_GMAC
+-	stmac_eth_hw_setup();
+-#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
+-
+ 	bd->bi_devid = *STX7141_SYSCONF_DEVICEID_0;
+ 
+ 	/*
+diff --git a/cpu/sh/usb.c b/cpu/sh/usb.c
+index d22743a..9cadab4 100644
+--- a/cpu/sh/usb.c
++++ b/cpu/sh/usb.c
+@@ -40,6 +40,8 @@ extern int usb_cpu_init(void)
+ 	stb7100_usb_init();
+ #elif defined(CONFIG_SH_STX5197)
+ 	stx5197_usb_init();
++#elif defined(CONFIG_SH_STX5206)
++	stx5206_usb_init();
+ #elif defined(CONFIG_SH_STX7105)
+ #ifdef CONFIG_SH_STX_STX7105_USB_PORT0
+ 	stx7105_usb_init(0,
+diff --git a/include/asm-sh/io.h b/include/asm-sh/io.h
+index 71c71d7..aae67a4 100644
+--- a/include/asm-sh/io.h
++++ b/include/asm-sh/io.h
+@@ -67,7 +67,8 @@
+        defined(CONFIG_SH_5197CAB)	|| \
+        defined(CONFIG_SH_CB101)		|| \
+        defined(CONFIG_SH_CB102)		|| \
+-       defined(CONFIG_SH_FLI7510)
++       defined(CONFIG_SH_FLI7510)	|| \
++       defined(CONFIG_SH_MB796)
+ #  include "asm/io_stb1eval.h"
+ #else
+ #  error "What system is this?"
+diff --git a/include/asm-sh/soc.h b/include/asm-sh/soc.h
+index 823d738..d210500 100644
+--- a/include/asm-sh/soc.h
++++ b/include/asm-sh/soc.h
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2008-2009 STMicroelectronics.
++ * (C) Copyright 2008-2010 STMicroelectronics.
+  *
+  * Sean McGoogan <Sean.McGoogan@st.com>
+  *
+@@ -37,6 +37,13 @@ enum fli7510_ethernet_mode
+ 	fli7510_ethernet_rmii,
+ 	fli7510_ethernet_reverse_mii
+ };
++enum stx5206_ethernet_mode
++{
++	stx5206_ethernet_mii,
++	stx5206_ethernet_rmii,
++	stx5206_ethernet_reverse_mii
++};
++
+ 
+ 
+ /*
+@@ -49,6 +56,15 @@ extern void stmac_set_mac_speed (int speed);
+ /*
+  * STMAC initialization functions.
+  */
++extern void stx5206_configure_ethernet(
++	const enum stx5206_ethernet_mode mode,
++	const int ext_clk,
++	const int phy_bus);
++extern void stx7141_configure_ethernet(
++	const int port,
++	const int reverse_mii,
++	const int mode,
++	const int phy_bus);
+ extern void stx7200_configure_ethernet (
+ 	int mac, int rmii, int ext_clk, int phy_bus);
+ extern void fli7510_configure_ethernet(
+@@ -84,6 +100,7 @@ enum fli7510_usb_ovrcur_mode {
+  */
+ extern void stb7100_usb_init(void);
+ extern void stx5197_usb_init(void);
++extern void stx5206_usb_init(void);
+ extern int  stx7105_usb_init(int port, int over_current, int power_ctrl);
+ extern void stx7111_usb_init(void);
+ extern void stx7141_usb_init(void);
+diff --git a/include/asm-sh/socregs.h b/include/asm-sh/socregs.h
+index fd714a3..ba4edf4 100644
+--- a/include/asm-sh/socregs.h
++++ b/include/asm-sh/socregs.h
+@@ -31,6 +31,8 @@
+ #	include <asm/stb7100reg.h>
+ #elif defined(CONFIG_SH_STX5197)
+ #	include <asm/stx5197reg.h>
++#elif defined(CONFIG_SH_STX5206)
++#	include <asm/stx5206reg.h>
+ #elif defined(CONFIG_SH_STX7105)
+ #	include <asm/stx7105reg.h>
+ #elif defined(CONFIG_SH_STX7111)
+diff --git a/include/asm-sh/spi-commands.h b/include/asm-sh/spi-commands.h
+new file mode 100644
+index 0000000..4b39b3e
+--- /dev/null
++++ b/include/asm-sh/spi-commands.h
+@@ -0,0 +1,113 @@
++/*
++ * (C) Copyright 2007,2009-2010 STMicroelectronics.
++ *
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++
++#if defined(CONFIG_SPI)
++
++
++/**********************************************************************/
++
++
++#if defined(CONFIG_SPI_FLASH_ATMEL)
++/* For Atmel AT45DB321D Serial Flash */
++#define CFG_STM_SPI_MODE	SPI_MODE_3
++#if !defined(CFG_STM_SPI_FREQUENCY)
++#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
++#endif	/* CFG_STM_SPI_FREQUENCY */
++#define CFG_STM_SPI_DEVICE_MASK	0x3cu		/* Mask Bits [5:2] */
++#define CFG_STM_SPI_DEVICE_VAL	0x34u		/* Binary xx1101xx */
++
++#define OP_READ_STATUS		0xd7u		/* Status Register Read */
++#define OP_READ_DEVID		0x9fu		/* Manufacturer & Device ID Read */
++//#define OP_READ_ARRAY		0xe8u		/* Continuous Array Read */
++//#define OP_READ_ARRAY		0x0bu		/* Continuous Array Read */
++#define OP_READ_ARRAY		0x03u		/* Continuous Array Read */
++#define OP_WRITE_VIA_BUFFER1	0x82u		/* Main Memory Page Program via Buffer 1 */
++#define OP_WRITE_VIA_BUFFER2	0x85u		/* Main Memory Page Program via Buffer 2 */
++#define OP_PAGE_TO_BUFFER1	0x53u		/* Main Memory Page to Buffer 1 Transfer */
++#define OP_PAGE_TO_BUFFER2	0x55u		/* Main Memory Page to Buffer 2 Transfer */
++
++#define SR_READY		(1u<<7)		/* Status Register Read/nBusy bit */
++
++
++#elif defined(CONFIG_SPI_FLASH_ST)	/******************************/
++
++
++/* For ST M25Pxx Serial Flash */
++#define CFG_STM_SPI_MODE	SPI_MODE_3
++#if !defined(CFG_STM_SPI_FREQUENCY)
++#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
++#endif	/* CFG_STM_SPI_FREQUENCY */
++#define CFG_STM_SPI_DEVICE_MASK	0x60u		/* Mask Bits [6:5] */
++#define CFG_STM_SPI_DEVICE_VAL	0x00u		/* Binary x00xxxxx */
++
++#define OP_READ_STATUS		0x05u		/* Read Status Register */
++#define OP_WRITE_STATUS		0x01u		/* Write Status Register */
++#define OP_READ_DEVID		0x9fu		/* Read ID */
++#define OP_READ_ARRAY		0x03u		/* Read Data Bytes */
++#define OP_WREN			0x06u		/* Write Enable */
++#define OP_SE			0xD8u		/* Sector Erase */
++#define OP_SSE			0x20u		/* Sub-Sector Erase, for M25PXxx */
++#define OP_PP			0x02u		/* Page Program */
++
++#define SR_WIP			(1u<<0)		/* Status Register Write In Progress bit */
++#define SR_BP_MASK		0x1c		/* Block Protect Bits (BP[2:0]) */
++
++
++#elif defined(CONFIG_SPI_FLASH_MXIC)	/******************************/
++
++
++/* For Macronix MX25Lxxx Serial Flash */
++#define CFG_STM_SPI_MODE	SPI_MODE_3
++#if !defined(CFG_STM_SPI_FREQUENCY)
++#  define CFG_STM_SPI_FREQUENCY	(5*1000*1000)	/* 5 MHz */
++#endif	/* CFG_STM_SPI_FREQUENCY */
++#define CFG_STM_SPI_DEVICE_MASK	0x00u		/* Mask Bits */
++#define CFG_STM_SPI_DEVICE_VAL	0x00u		/* Binary xxxxxxxx */
++
++#define OP_READ_STATUS		0x05u		/* Read Status Register */
++#define OP_WRITE_STATUS		0x01u		/* Write Status Register */
++#define OP_READ_DEVID		0x9fu		/* Read ID */
++#define OP_READ_ARRAY		0x03u		/* Read Data Bytes */
++#define OP_WREN			0x06u		/* Write Enable */
++#define OP_SE			0x20u		/* Sector Erase */
++#define OP_PP			0x02u		/* Page Program */
++
++#define SR_WIP			(1u<<0)		/* Status Register Write In Progress bit */
++#define SR_BP_MASK		0x3c		/* Block Protect Bits (BP[3:0]) */
++
++
++#else					/******************************/
++
++#error Please specify which SPI Serial Flash is being used
++
++#endif	/* defined(CONFIG_STM_SPI_xxxxxx) */
++
++
++/**********************************************************************/
++
++
++#endif	/* defined(CONFIG_SPI) */
++
++
+diff --git a/include/asm-sh/stx5206reg.h b/include/asm-sh/stx5206reg.h
+new file mode 100644
+index 0000000..3083958
+--- /dev/null
++++ b/include/asm-sh/stx5206reg.h
+@@ -0,0 +1,217 @@
++/*
++ * Copyright (C) STMicroelectronics Ltd. 2008.
++ *
++ * All rights reserved.
++ */
++
++/*
++ * This is derived from STMicroelectronics gnu toolchain example:
++ *   sh-superh-elf/examples/bare/sh4reg/sti7105.h
++ */
++
++
++#ifndef __STX5206REG_H
++#define __STX5206REG_H
++
++#include "sh4regtype.h"
++
++/*----------------------------------------------------------------------------*/
++
++/*
++ * Peripheral versions
++ */
++
++#ifndef ST40_LMIGP_VERSION
++#define ST40_LMIGP_VERSION 1
++#endif
++#ifndef ST40_NAND_CONTROLLER_VERSION
++#define ST40_NAND_CONTROLLER_VERSION 1
++#endif
++
++/*----------------------------------------------------------------------------*/
++
++/*
++ * Base addresses for control register banks.
++ */
++
++/* Generic SH4 control registers */
++#ifndef SH4_TMU_REGS_BASE
++#define SH4_TMU_REGS_BASE 0xffd80000
++#endif
++
++/* Common ST40 control registers */
++#ifndef ST40_CPG_REGS_BASE
++#define ST40_CPG_REGS_BASE 0xffc00000
++#endif
++#ifndef ST40_INTC_REGS_BASE
++#define ST40_INTC_REGS_BASE 0xffd00000
++#endif
++#ifndef ST40_SCIF2_REGS_BASE
++#define ST40_SCIF2_REGS_BASE 0xffe80000
++#endif
++
++#ifndef STX5206_COMMS_BASE
++#define STX5206_COMMS_BASE 0xfd000000
++#endif
++
++#ifndef ST40_ILC_REGS_BASE
++#define ST40_ILC_REGS_BASE STX5206_COMMS_BASE
++#endif
++
++/* STx5206 control registers */
++#ifndef STX5206_SYSCONF_REGS_BASE
++#define STX5206_SYSCONF_REGS_BASE 0xfe001000
++#endif
++
++#ifndef STX5206_CLOCKGENA_REGS_BASE
++#define STX5206_CLOCKGENA_REGS_BASE 0xfe213000
++#endif
++
++#ifndef STX5206_CLOCKGENB_REGS_BASE
++#define STX5206_CLOCKGENB_REGS_BASE 0xfe000000
++#endif
++
++/* System Architecture Volume 2: Bus Interfaces */
++#ifndef ST40_LMI_REGS_BASE
++#define ST40_LMI_REGS_BASE 0xfe901000
++#endif
++#ifndef ST40_EMI_REGS_BASE
++#define ST40_EMI_REGS_BASE 0xfe700000
++#endif
++
++/* System Architecture Volume 4: I/O Devices */
++#ifndef ST40_PIO0_REGS_BASE
++#define ST40_PIO0_REGS_BASE (STX5206_COMMS_BASE + 0x00020000)
++#endif
++#ifndef ST40_PIO1_REGS_BASE
++#define ST40_PIO1_REGS_BASE (STX5206_COMMS_BASE + 0x00021000)
++#endif
++#ifndef ST40_PIO2_REGS_BASE
++#define ST40_PIO2_REGS_BASE (STX5206_COMMS_BASE + 0x00022000)
++#endif
++#ifndef ST40_PIO3_REGS_BASE
++#define ST40_PIO3_REGS_BASE (STX5206_COMMS_BASE + 0x00023000)
++#endif
++#ifndef ST40_ASC0_REGS_BASE
++#define ST40_ASC0_REGS_BASE (STX5206_COMMS_BASE + 0x00030000)
++#endif
++#ifndef ST40_ASC1_REGS_BASE
++#define ST40_ASC1_REGS_BASE (STX5206_COMMS_BASE + 0x00031000)
++#endif
++#ifndef ST40_ASC2_REGS_BASE
++#define ST40_ASC2_REGS_BASE (STX5206_COMMS_BASE + 0x00032000)
++#endif
++#ifndef ST40_ASC3_REGS_BASE
++#define ST40_ASC3_REGS_BASE (STX5206_COMMS_BASE + 0x00033000)
++#endif
++#ifndef ST40_SSC0_REGS_BASE
++#define ST40_SSC0_REGS_BASE (STX5206_COMMS_BASE + 0x00040000)
++#endif
++#ifndef ST40_SSC1_REGS_BASE
++#define ST40_SSC1_REGS_BASE (STX5206_COMMS_BASE + 0x00041000)
++#endif
++#ifndef ST40_SSC2_REGS_BASE
++#define ST40_SSC2_REGS_BASE (STX5206_COMMS_BASE + 0x00042000)
++#endif
++#ifndef ST40_SSC3_REGS_BASE
++#define ST40_SSC3_REGS_BASE (STX5206_COMMS_BASE + 0x00043000)
++#endif
++
++
++/*----------------------------------------------------------------------------*/
++
++#include "st40reg.h"
++
++/*
++ * STx5206 control registers
++ */
++
++
++/* System configuration registers (STx5206 variant) */
++#define STX5206_SYSCONF_DEVICEID_0		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0000)
++#define STX5206_SYSCONF_DEVICEID_1		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0004)
++#define STX5206_SYSCONF_DEVICEID		SH4_GWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0000)
++#define STX5206_SYSCONF_SYS_STA00		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0008)
++#define STX5206_SYSCONF_SYS_STA01		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x000c)
++#define STX5206_SYSCONF_SYS_STA02		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0010)
++#define STX5206_SYSCONF_SYS_STA03		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0014)
++#define STX5206_SYSCONF_SYS_STA04		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0018)
++#define STX5206_SYSCONF_SYS_STA05		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x001c)
++#define STX5206_SYSCONF_SYS_STA06		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0020)
++#define STX5206_SYSCONF_SYS_STA07		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0024)
++#define STX5206_SYSCONF_SYS_STA08		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0028)
++#define STX5206_SYSCONF_SYS_STA09		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x002c)
++#define STX5206_SYSCONF_SYS_STA10		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0030)
++#define STX5206_SYSCONF_SYS_STA11		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0034)
++#define STX5206_SYSCONF_SYS_STA12		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0038)
++#define STX5206_SYSCONF_SYS_STA13		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x003c)
++#define STX5206_SYSCONF_SYS_STA14		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0040)
++#define STX5206_SYSCONF_SYS_STA15		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0044)
++#define STX5206_SYSCONF_SYS_CFG00		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0100)
++#define STX5206_SYSCONF_SYS_CFG01		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0104)
++#define STX5206_SYSCONF_SYS_CFG02		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0108)
++#define STX5206_SYSCONF_SYS_CFG03		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x010c)
++#define STX5206_SYSCONF_SYS_CFG04		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0110)
++#define STX5206_SYSCONF_SYS_CFG05		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0114)
++#define STX5206_SYSCONF_SYS_CFG06		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0118)
++#define STX5206_SYSCONF_SYS_CFG07		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x011c)
++#define STX5206_SYSCONF_SYS_CFG08		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0120)
++#define STX5206_SYSCONF_SYS_CFG09		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0124)
++#define STX5206_SYSCONF_SYS_CFG10		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0128)
++#define STX5206_SYSCONF_SYS_CFG11		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x012c)
++#define STX5206_SYSCONF_SYS_CFG12		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0130)
++#define STX5206_SYSCONF_SYS_CFG13		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0134)
++#define STX5206_SYSCONF_SYS_CFG14		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0138)
++#define STX5206_SYSCONF_SYS_CFG15		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x013c)
++#define STX5206_SYSCONF_SYS_CFG16		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0140)
++#define STX5206_SYSCONF_SYS_CFG17		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0144)
++#define STX5206_SYSCONF_SYS_CFG18		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0148)
++#define STX5206_SYSCONF_SYS_CFG19		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x014c)
++#define STX5206_SYSCONF_SYS_CFG20		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0150)
++#define STX5206_SYSCONF_SYS_CFG21		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0154)
++#define STX5206_SYSCONF_SYS_CFG22		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0158)
++#define STX5206_SYSCONF_SYS_CFG23		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x015c)
++#define STX5206_SYSCONF_SYS_CFG24		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0160)
++#define STX5206_SYSCONF_SYS_CFG25		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0164)
++#define STX5206_SYSCONF_SYS_CFG26		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0168)
++#define STX5206_SYSCONF_SYS_CFG27		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x016c)
++#define STX5206_SYSCONF_SYS_CFG28		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0170)
++#define STX5206_SYSCONF_SYS_CFG29		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0174)
++#define STX5206_SYSCONF_SYS_CFG30		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0178)
++#define STX5206_SYSCONF_SYS_CFG31		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x017c)
++#define STX5206_SYSCONF_SYS_CFG32		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0180)
++#define STX5206_SYSCONF_SYS_CFG33		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0184)
++#define STX5206_SYSCONF_SYS_CFG34		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0188)
++#define STX5206_SYSCONF_SYS_CFG35		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x018c)
++#define STX5206_SYSCONF_SYS_CFG36		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0190)
++#define STX5206_SYSCONF_SYS_CFG37		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0194)
++#define STX5206_SYSCONF_SYS_CFG38		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x0198)
++#define STX5206_SYSCONF_SYS_CFG39		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x019c)
++#define STX5206_SYSCONF_SYS_CFG40		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01a0)
++#define STX5206_SYSCONF_SYS_CFG41		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01a4)
++#define STX5206_SYSCONF_SYS_CFG42		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01a8)
++#define STX5206_SYSCONF_SYS_CFG43		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01ac)
++#define STX5206_SYSCONF_SYS_CFG44		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01b0)
++#define STX5206_SYSCONF_SYS_CFG45		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01b4)
++#define STX5206_SYSCONF_SYS_CFG46		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01b8)
++#define STX5206_SYSCONF_SYS_CFG47		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01bc)
++#define STX5206_SYSCONF_SYS_CFG48		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01c0)
++#define STX5206_SYSCONF_SYS_CFG49		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01c4)
++#define STX5206_SYSCONF_SYS_CFG50		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01c8)
++#define STX5206_SYSCONF_SYS_CFG51		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01cc)
++#define STX5206_SYSCONF_SYS_CFG52		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01d0)
++#define STX5206_SYSCONF_SYS_CFG53		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01d4)
++#define STX5206_SYSCONF_SYS_CFG54		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01d8)
++#define STX5206_SYSCONF_SYS_CFG55		SH4_DWORD_REG(STX5206_SYSCONF_REGS_BASE + 0x01dc)
++
++/* Device ID values, masks & predicates */
++#define STX5206_DEVID_5206_VAL		0x042
++#define STX5206_DEVID_ID_SHIFT		12
++#define STX5206_DEVID_ID_MASK		0x3ff
++#define STX5206_DEVID_CUT_SHIFT		28
++#define STX5206_DEVID_CUT_MASK		0xf
++
++#define STX5206_DEVICEID_5206(ID) ((((ID) >> STX5206_DEVID_ID_SHIFT) & STX5206_DEVID_ID_MASK) == STX5206_DEVID_5206_VAL)
++#define STX5206_DEVICEID_CUT(ID)  ((((ID) >> STX5206_DEVID_CUT_SHIFT) & STX5206_DEVID_CUT_MASK) + 1)
++
++#endif /* __STX5206REG_H */
+diff --git a/include/asm-sh/stx7141reg.h b/include/asm-sh/stx7141reg.h
+index ed5dc1f..637a43e 100644
+--- a/include/asm-sh/stx7141reg.h
++++ b/include/asm-sh/stx7141reg.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) STMicroelectronics Ltd. 2008.
++ * Copyright (C) STMicroelectronics Ltd. 2008-2010
+  *
+  * All rights reserved.
+  */
+@@ -169,6 +169,12 @@
+ #define ST40_PIO16_REGS_BASE (STX7141_T1_PIO_REGS_BASE + 0x00008000)
+ #endif
+ 
++#define ST40_PIO_BASE(x)					\
++	(((x) < 8)						\
++		? (ST40_PIO1_REGS_BASE+(0x1000*((x)-1)))	\
++		: (ST40_PIO8_REGS_BASE+(0x1000*((x)-8))))
++
++
+ #ifndef ST40_ASC0_REGS_BASE
+ #define ST40_ASC0_REGS_BASE (STX7141_COMMS_BASE + 0x00030000)
+ #endif
+diff --git a/include/asm-sh/u-boot.h b/include/asm-sh/u-boot.h
+index ff8c6ab..4988587 100644
+--- a/include/asm-sh/u-boot.h
++++ b/include/asm-sh/u-boot.h
+@@ -54,6 +54,7 @@ typedef struct bd_info
+ 	unsigned long bi_lmifrq;
+ #endif
+ #if	defined(CONFIG_SH_STX5197) ||	\
++	defined(CONFIG_SH_STX5206) ||	\
+ 	defined(CONFIG_SH_STX7105) ||	\
+ 	defined(CONFIG_SH_STX7111) ||	\
+ 	defined(CONFIG_SH_STX7141) ||	\
+diff --git a/include/configs/5197cab.h b/include/configs/5197cab.h
+index 523b5cb..256f4f0 100644
+--- a/include/configs/5197cab.h
++++ b/include/configs/5197cab.h
+@@ -227,11 +227,15 @@
+ #endif
+ 
+ #define CONFIG_SPI			/* enable the SPI driver */
++#define CONFIG_STM_SSC_SPI		/* Use the H/W SSC for SPI */
+ #define CONFIG_CMD_SPI			/* SPI serial bus command support */
+ #define CONFIG_CMD_EEPROM		/* enable the "eeprom" command set */
+ #define CFG_I2C_FRAM			/* to minimize performance degradation */
+ #undef  CFG_EEPROM_PAGE_WRITE_DELAY_MS	/* to minimize performance degradation */
+-#define CFG_STM_SPI_SSC_BASE	ST40_SSC0_REGS_BASE	/* SPI is on SSC #0 */
++
++#if defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
++#	define CFG_STM_SPI_SSC_BASE	ST40_SSC0_REGS_BASE	/* SPI is on SSC #0 */
++#endif	/* defined(CONFIG_STM_SSC_SPI) */
+ 
+ /*
+  *	NOTE: To use the Atmel AT45DB321D serial flash for booting,
+diff --git a/include/configs/eud7141.h b/include/configs/eud7141.h
+index 1712a84..171b0a2 100644
+--- a/include/configs/eud7141.h
++++ b/include/configs/eud7141.h
+@@ -133,10 +133,10 @@
+  */
+ 
+ /*
+- * There are 2 options for ethernet, both use the on-chip ST-GMAC.
++ * There are 2 options for ethernet, both use the on-chip ST-GMACs.
+  * The choice in PHYs are:
+- *    The on-board SMSC LAN8700
+- *    External PHY connected via the MII off-board connector.
++ *    The on-board IC+ IP1001 (U51) with GMAC #1
++ *    External PHY connected via the MII off-board connector (J19) with GMAC #0.
+  */
+ 
+ /* are we using the internal ST GMAC device ? */
+@@ -147,8 +147,24 @@
+  * Also, choose which PHY to use.
+  */
+ #ifdef CONFIG_DRIVER_NET_STM_GMAC
+-#	define CFG_STM_STMAC_BASE	 0xfd110000ul	/* MAC = STM GMAC0 */
+-#	define CONFIG_STMAC_LAN8700			/* PHY = SMSC LAN8700 */
++#	define CFG_STM_STMAC0_BASE	 0xfd110000ul		/* MAC = STM GMAC#0 */
++#	define CFG_STM_STMAC1_BASE	 0xfd118000ul		/* MAC = STM GMAC#1 */
++#if 1
++#	define CFG_STM_STMAC_BASE	 CFG_STM_STMAC1_BASE	/* MAC = STM GMAC#1       */
++#	define CONFIG_STMAC_IP1001				/* PHY = IC+ IP1001 (U51) */
++#else
++	/*
++	 * Note: The use of GMAC #0 with an off-board PHY
++	 * has *not* been tested, as no suitable H/W was
++	 * provided to use with the supplied 7141EUD board.
++	 * The GMAC #0 functionally is provided only on a
++	 * "best-endeavours" basis. Also, phy_reset() will
++	 * need to be modified to reset the external PHY!
++	 */
++#	define CFG_STM_STMAC_BASE	 CFG_STM_STMAC0_BASE	/* MAC = STM GMAC#0 */
++#	error Need to specify which PHY is connected to GMAC0
++#	define CONFIG_STMAC_<QQQ>	 ???			/* PHY = External on J19 */
++#endif
+ #endif	/* CONFIG_DRIVER_NET_STM_GMAC */
+ 
+ /*  If this board does not have eeprom for ethernet address so allow the user
+diff --git a/include/configs/fldb.h b/include/configs/fldb.h
+index 63ac311..915b8fb 100644
+--- a/include/configs/fldb.h
++++ b/include/configs/fldb.h
+@@ -375,7 +375,7 @@
+ #if 1
+ #	define CONFIG_SOFT_SPI			/* Use S/W "bit-banging" PIO (not the SSC) */
+ #else
+-#	undef CONFIG_SOFT_SPI			/* Use H/W SSC (not S/W "bit-banging" PIO) */
++#	define CONFIG_STM_SSC_SPI		/* Use H/W SSC (not S/W "bit-banging" PIO) */
+ #endif
+ 
+ #if defined(CONFIG_SOFT_SPI)			/* Use "bit-banging" for SPI */
+@@ -383,7 +383,7 @@
+ #	define SPI_SDA(val)	do { fli7510_spi_sda((val)); } while (0)
+ #	define SPI_DELAY	do { udelay(1); } while (0)	/* QQQ: only 500 kHz ??? */
+ #	define SPI_READ		fli7510_spi_read()
+-#else
++#elif defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ #	define CFG_STM_SPI_SSC_BASE	0xfdb44000		/* SSC #4 */
+ #	define CFG_STM_SPI_FREQUENCY	(7*1000*1000)		/* 7.14 MHz */
+ #endif	/* CONFIG_SOFT_SPI */
+diff --git a/include/configs/hms1.h b/include/configs/hms1.h
+index 63cf6e7..1a634b0 100644
+--- a/include/configs/hms1.h
++++ b/include/configs/hms1.h
+@@ -1,7 +1,8 @@
+ /*
+- * (C) Copyright 2004 STMicroelectronics.
++ * (C) Copyright 2004,2010 STMicroelectronics.
+  *
+  * Andy Sturges <andy.sturges@st.com>
++ * Sean McGoogan <Sean.McGoogan@st.com>
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -42,7 +43,11 @@
+  */
+ 
+ #define CFG_SDRAM_BASE		0x84000000      /* SDRAM in P1 region         */
+-#define CFG_SDRAM_SIZE		0x08000000
++#if defined(CONFIG_SH_HMS1_128)
++#define CFG_SDRAM_SIZE		0x08000000	/* 128 MiB */
++#else
++#define CFG_SDRAM_SIZE		0x04000000	/* 64 MiB */
++#endif	/* CONFIG_SH_HMS1_128 */
+ #define CFG_FLASH_BASE		0xA0000000
+ #define CFG_RESET_ADDRESS	0xA0000000
+ 
+@@ -53,7 +58,7 @@
+ #define CFG_GBL_DATA_SIZE	1024		/* Global data structures */
+ 
+ #define CFG_MEMTEST_START	CFG_SDRAM_BASE
+-#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (2 << 20))
++#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (3 << 20))
+ 
+ #define CONFIG_BAUDRATE		115200
+ #define CFG_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
+diff --git a/include/configs/mb411.h b/include/configs/mb411.h
+index 0a7a5d3..ae0ab16 100644
+--- a/include/configs/mb411.h
++++ b/include/configs/mb411.h
+@@ -53,7 +53,7 @@
+ #define CFG_GBL_DATA_SIZE	1024		/* Global data structures */
+ 
+ #define CFG_MEMTEST_START	CFG_SDRAM_BASE
+-#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (2 << 20))
++#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (3 << 20))
+ 
+ #define CONFIG_BAUDRATE		115200
+ #define CFG_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
+diff --git a/include/configs/mb448.h b/include/configs/mb448.h
+index 428021a..65d4e4a 100644
+--- a/include/configs/mb448.h
++++ b/include/configs/mb448.h
+@@ -53,7 +53,7 @@
+ #define CFG_GBL_DATA_SIZE	1024		/* Global data structures */
+ 
+ #define CFG_MEMTEST_START	CFG_SDRAM_BASE
+-#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (2 << 20))
++#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (3 << 20))
+ 
+ #define CONFIG_BAUDRATE		115200
+ #define CFG_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
+diff --git a/include/configs/mb628.h b/include/configs/mb628.h
+index 5ce3021..5608dd4 100644
+--- a/include/configs/mb628.h
++++ b/include/configs/mb628.h
+@@ -147,7 +147,7 @@
+  */
+ 
+ /* are we using the internal ST GMAC device ? */
+-#define CONFIG_DRIVER_NET_STM_GMAC
++//#define CONFIG_DRIVER_NET_STM_GMAC
+ 
+ /*
+  * Select the appropriate base address for the GMAC.
+@@ -156,6 +156,8 @@
+ #ifdef CONFIG_DRIVER_NET_STM_GMAC
+ #	define CFG_STM_STMAC_BASE	 0xfd110000ul	/* MAC = STM GMAC0 */
+ #	define CONFIG_STMAC_LAN8700			/* PHY = SMSC LAN8700 */
++#else
++#	undef CONFIG_CMD_NET				/* No networking! */
+ #endif	/* CONFIG_DRIVER_NET_STM_GMAC */
+ 
+ /*  If this board does not have eeprom for ethernet address so allow the user
+diff --git a/include/configs/mb704.h b/include/configs/mb704.h
+index 73d407f..2433671 100644
+--- a/include/configs/mb704.h
++++ b/include/configs/mb704.h
+@@ -245,11 +245,15 @@
+ #endif
+ 
+ #define CONFIG_SPI			/* enable the SPI driver */
++#define CONFIG_STM_SSC_SPI		/* Use the H/W SSC for SPI */
+ #define CONFIG_CMD_SPI			/* SPI serial bus command support */
+ #define CONFIG_CMD_EEPROM		/* enable the "eeprom" command set */
+ #define CFG_I2C_FRAM			/* to minimize performance degradation */
+ #undef  CFG_EEPROM_PAGE_WRITE_DELAY_MS	/* to minimize performance degradation */
+-#define CFG_STM_SPI_SSC_BASE	ST40_SSC0_REGS_BASE	/* SPI is on SSC #0 */
++
++#if defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
++#	define CFG_STM_SPI_SSC_BASE	ST40_SSC0_REGS_BASE	/* SPI is on SSC #0 */
++#endif	/* defined(CONFIG_STM_SSC_SPI) */
+ 
+ /*
+  *	NOTE: To use the Atmel AT45DB321D serial flash for booting,
+diff --git a/include/configs/mb796.h b/include/configs/mb796.h
+new file mode 100644
+index 0000000..fe65517
+--- /dev/null
++++ b/include/configs/mb796.h
+@@ -0,0 +1,483 @@
++/*
++ * (C) Copyright 2008-2010 STMicroelectronics.
++ *
++ * Sean McGoogan <Sean.McGoogan@st.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++
++#define CONFIG_SH4	1		/* This is an SH4 CPU		*/
++#define CONFIG_CPU_SUBTYPE_SH4_3XX	/* it is an SH4-300		*/
++
++	/*
++	 * Define the following macro only if the MB796 CPU board
++	 * will be mated with a MB705 peripheral board.
++	 */
++#undef  CONFIG_SH_MB705		/* MB796 withOUT a MB705 */
++#define CONFIG_SH_MB705		/* MB796 + MB705 */
++
++
++/*-----------------------------------------------------------------------
++ *	Switch settings to select between the SoC's main 3 boot-modes:
++ *		a) boot from 16-bit NOR flash
++ *		b) boot from 8-bit NAND flash, small-page, long address
++ *		c) boot from SPI serial flash
++ *
++ *	These setting are on SW2 and SW3 on the CPU board,
++ *	Note: One of these is on the MB705 peripheral board!
++ *
++ *	Board	Switch	NOR	NAND	SPI	Mode
++ *	-----	------	---	----	---	----
++ *	MB796	SW2-4	  X	 ON	  X	mode[10]
++ *	MB796	SW2-3	  X	 ON	  X	mode[11]
++ *	MB796	SW3-3	  X	  X	off	mode[12]
++ *	MB796	SW2-2	 ON	off	  X	mode[13]
++ *	MB796	SW3-4	 ON	 ON	 ON	mode[14]
++ *	MB796	SW2-1	 ON	off	 ON	mode[15]
++ *	MB796	SW3-1	 ON	 ON	off	mode[16]
++ *
++ *	MB705	SW8-1	 ON	off	off	CS routing
++ *
++ *	Note: "X" denotes don't care (i.e. either ON or OFF)
++ */
++
++
++/*-----------------------------------------------------------------------
++ * Are we booting directly from a NAND Flash device ?
++ * If so, then define the "CFG_BOOT_FROM_NAND" macro,
++ * otherwise (e.g. NOR/SPI Flash booting), do not define it.
++ */
++#undef CFG_BOOT_FROM_NAND		/* define to build a NAND-bootable image */
++
++
++/*-----------------------------------------------------------------------
++ * Are we booting directly from a SPI Serial Flash device ?
++ * If so, then define the "CFG_BOOT_FROM_SPI" macro,
++ * otherwise (e.g. for NOR/NAND Flash booting), do not define it.
++ */
++#undef CFG_BOOT_FROM_SPI		/* define to build a SPI-bootable image */
++
++
++/*-----------------------------------------------------------------------
++ * Start addresses for the final memory configuration
++ * Assume we run out of uncached memory for the moment
++ */
++
++#if defined(CFG_BOOT_FROM_SPI)		/* we are booting from SPI, so *DO* swap CSA and CSB in EPLD */
++#define CFG_EMI_SPI_BASE	0xA0000000	/* CSA: SPI Flash,  Physical 0x00000000 (64MiB) */
++#define CFG_EMI_NAND_BASE	0xA0000000	/* CSA: NAND Flash, Physical 0x00000000 (64MiB) */
++#define CFG_EMI_NOR_BASE	0xA4000000	/* CSB: NOR Flash,  Physical 0x04000000 (8MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 0 }		/* NAND is on Chip Select CSB */
++#elif defined(CFG_BOOT_FROM_NAND)	/* we are booting from NAND, so *DO* swap CSA and CSB in EPLD */
++	/*
++	 * QQQ: do we want to make sizeof(CSA) = 8MiB, and sizeof(CSB) = 64MiB ?
++	 * If so, then who takes responsibility for this???
++	 * Is this implicit in the GDB pokes, or explicit in U-Boot's init code?
++	 * Should U-Boot read SW8(1) on the MB705, and do something?
++	 */
++#define CFG_EMI_NAND_BASE	0xA0000000	/* CSA: NAND Flash, Physical 0x00000000 (64MiB) */
++#define CFG_EMI_NOR_BASE	0xA4000000	/* CSB: NOR Flash,  Physical 0x04000000 (8MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 0 }		/* NAND is on Chip Select CSA */
++#else		/* else, do *NOT* swap CSA and CSB in EPLD */
++#define CFG_EMI_NOR_BASE	0xA0000000	/* CSA: NOR Flash,  Physical 0x00000000 (64MiB) */
++#define CFG_EMI_NAND_BASE	0xA4000000	/* CSB: NAND Flash, Physical 0x04000000 (8MiB) */
++#define CFG_NAND_FLEX_CSn_MAP	{ 1 }		/* NAND is on Chip Select CSB */
++#endif /* CFG_BOOT_FROM_NAND */
++
++#ifdef CONFIG_SH_SE_MODE
++#define CFG_FLASH_BASE		CFG_EMI_NOR_BASE/* NOR FLASH (uncached) via PMB */
++#define CFG_SE_PHYSICAL_BASE	0x40000000	/* LMI Physical Address */
++#define CFG_SDRAM_BASE		0x80000000      /* LMI    Cached addr via PMB */
++#define CFG_SE_UNACHED_BASE	0x90000000	/* LMI UN-cached addr via PMB */
++#define CFG_SE_SDRAM_WINDOW	(CFG_SDRAM_SIZE-1)
++#else
++#define CFG_FLASH_BASE		CFG_EMI_NOR_BASE/* NOR FLASH in P2 region */
++#define CFG_SDRAM_BASE		0x8C000000      /* SDRAM in P1 region */
++#endif
++
++	/* in 32-bit mode, default TargetPack's PMB setup is only 128 MiB of RAM! */
++#if defined(CONFIG_SH_SE_MODE) && (TEXT_BASE < 0x8FF00000)
++#define CFG_SDRAM_SIZE		0x08000000	/* 128 MiB of LMI SDRAM */
++#else
++#define CFG_SDRAM_SIZE		0x10000000	/* 256 MiB of LMI SDRAM */
++#endif
++
++#define CFG_MONITOR_LEN		0x00040000	/* Reserve 256 KiB for Monitor */
++#define CFG_MONITOR_BASE        CFG_FLASH_BASE
++#define CFG_MALLOC_LEN		(1 << 20)	/* Reserve 1 MiB for malloc */
++#define CFG_BOOTPARAMS_LEN	(128 << 10)	/* 128 KiB */
++#define CFG_GBL_DATA_SIZE	1024		/* Global data structures */
++
++#define CFG_MEMTEST_START	CFG_SDRAM_BASE
++#define CFG_MEMTEST_END		(CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (3 << 20))
++
++#define CONFIG_BAUDRATE		115200
++#define CFG_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
++
++#define XSTR(s) STR(s)
++#define STR(s) #s
++
++#define BOARD mb796
++
++#if CFG_MONITOR_LEN == 0x00008000		/* 32 KiB */
++#	define MONITOR_SECTORS	"1:0"		/* 1 sector */
++#elif CFG_MONITOR_LEN == 0x00010000		/* 64 KiB */
++#	define MONITOR_SECTORS	"1:0-1"		/* 2 sectors */
++#elif CFG_MONITOR_LEN == 0x00018000		/* 96 KiB */
++#	define MONITOR_SECTORS	"1:0-2"		/* 3 sectors */
++#elif CFG_MONITOR_LEN == 0x00020000		/* 128 KiB */
++#	define MONITOR_SECTORS	"1:0-3"		/* 4 sectors */
++#elif CFG_MONITOR_LEN == 0x00040000		/* 256 KiB */
++#	define MONITOR_SECTORS	"1:0-4"		/* 5 sectors */
++#else						/* unknown */
++#	error "Unable to determine sectors for monitor"
++#endif
++
++#define CONFIG_EXTRA_ENV_SETTINGS \
++		"board=" XSTR(BOARD) "\0" \
++		"monitor_base=" XSTR(CFG_MONITOR_BASE) "\0" \
++		"monitor_len=" XSTR(CFG_MONITOR_LEN) "\0" \
++		"monitor_sec=" MONITOR_SECTORS "\0" \
++		"load_addr=" XSTR(CFG_LOAD_ADDR) "\0" \
++		"unprot=" \
++		  "protect off $monitor_sec\0" \
++		"update=" \
++		  "erase $monitor_sec;" \
++		  "cp.b $load_addr $monitor_base $monitor_len;" \
++		  "protect on $monitor_sec\0"
++
++/*--------------------------------------------------------------
++ * Command line configuration.
++ */
++
++#include <config_cmd_default.h>
++
++#define CONFIG_CMD_ASKENV
++#define CONFIG_CMD_NFS
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_DHCP
++#define CONFIG_CMD_MII
++
++/*--------------------------------------------------------------
++ * Serial console info
++ */
++
++/*
++ * We can use one of two methods for the "serial" console.
++ * We can either use the (normal hardware) internal ST ASC UART;
++ * OR we can use STMicroelectronics' DTF (Data Transfer Format)
++ * mechanism over a JTAG link to a remote GDB debugger.
++ */
++#if 1
++#	define CONFIG_STM_ASC_SERIAL	/* use a ST ASC UART */
++#else
++#	define CONFIG_STM_DTF_SERIAL	/* use DTF over JTAG */
++#endif
++
++/* choose which ST ASC UART to use */
++#if 1
++#	define CFG_STM_ASC_BASE		ST40_ASC2_REGS_BASE	/* UART2 = COM0 */
++#else
++#	define CFG_STM_ASC_BASE		ST40_ASC3_REGS_BASE	/* UART3 = COM1 */
++#endif
++
++/*---------------------------------------------------------------
++ * Ethernet driver config
++ */
++
++/*
++ * There are 2 options for ethernet, all use the on-chip ST-GMAC.
++ * The choice in PHYs are:
++ *    The on-board SMSC LAN8700 (IC30)
++ *    External PHY connected via the MII off-board connector (CN22).
++ */
++
++/* are we using the internal ST GMAC device ? */
++#define CONFIG_DRIVER_NET_STM_GMAC
++
++/*
++ * Select the appropriate base address for the GMAC.
++ * Also, choose which PHY to use.
++ */
++#ifdef CONFIG_DRIVER_NET_STM_GMAC
++#	define CFG_STM_STMAC_BASE	 0xfd110000ul	/* MAC = STM GMAC0 */
++#if 1
++#	define CONFIG_STMAC_LAN8700			/* PHY = SMSC LAN8700 */
++#else
++	/* QQQ define for CN22 ... */
++#endif
++#endif	/* CONFIG_DRIVER_NET_STM_GMAC */
++
++/*  If this board does not have eeprom for ethernet address so allow the user
++ *  to set it in the environment
++ */
++#define CONFIG_ENV_OVERWRITE
++
++
++/*---------------------------------------------------------------
++ * USB driver config
++ */
++
++/* Choose if we want USB Mass-Storage Support */
++#define CONFIG_SH_STB7100_USB
++
++#ifdef CONFIG_SH_STB7100_USB
++#	define CONFIG_CMD_USB
++#	define CONFIG_CMD_FAT
++#	define CONFIG_USB_OHCI_NEW
++#	define CONFIG_USB_STORAGE
++#	define CFG_USB_OHCI_CPU_INIT
++#	define CFG_USB_BASE			0xfe100000
++#	define CFG_USB_OHCI_REGS_BASE		(CFG_USB_BASE+0xffc00)
++#	define CFG_USB_OHCI_SLOT_NAME		"ohci"
++#	define CFG_USB_OHCI_MAX_ROOT_PORTS	2	/* Note: TWO root ports */
++#	define LITTLEENDIAN
++#endif	/* ifdef CONFIG_SH_STB7100_USB */
++
++#if defined(CONFIG_SH_STB7100_USB)
++#	define CFG_64BIT_LBA
++#	define CONFIG_LBA48
++#	define CONFIG_DOS_PARTITION
++#	define CONFIG_CMD_EXT2
++#endif
++
++/*-----------------------------------------------------------------------
++ * Miscellaneous configurable options
++ */
++
++#define CFG_HUSH_PARSER		1
++#define CONFIG_AUTO_COMPLETE	1
++#define CFG_LONGHELP		1		/* undef to save memory		*/
++#define CFG_PROMPT		"MB796> "	/* Monitor Command Prompt	*/
++#define CFG_PROMPT_HUSH_PS2	"> "
++#define CFG_CBSIZE		1024
++#define CFG_PBSIZE (CFG_CBSIZE+sizeof(CFG_PROMPT)+16) /* Print Buffer Size	*/
++#define CFG_MAXARGS		16		/* max number of command args	*/
++#define CFG_HZ			1000		/* HZ for timer ticks	*/
++#define CFG_LOAD_ADDR		CFG_SDRAM_BASE	/* default load address		*/
++#define CFG_BOOTMAPSZ		(16 << 20)	/* initial linux memory size	*/
++#define CONFIG_BOOTDELAY	10		/* default delay before executing bootcmd */
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++
++#define CONFIG_CMDLINE_EDITING
++
++/*-----------------------------------------------------------------------
++ * FLASH organization
++ */
++
++/* Choose if we want FLASH Support (NAND, NOR & SPI devices)
++ * With the MB796 + MB705 combination, we may use *both*
++ * NOR and NAND flash, at the same time, if we want.
++ *
++ * Note: by default CONFIG_CMD_FLASH is defined in config_cmd_default.h
++ */
++#undef CONFIG_CMD_FLASH		/* undefine it, define only if needed */
++#define CONFIG_CMD_FLASH	/* define for NOR flash */
++#define CONFIG_CMD_NAND		/* define for NAND flash */
++#define CONFIG_SPI_FLASH	/* define for SPI serial flash */
++
++/*-----------------------------------------------------------------------
++ * NOR FLASH organization
++ */
++
++/* M58LT256: 32MiB 259 blocks, 128 KiB block size */
++#ifdef CONFIG_CMD_FLASH				/* NOR flash present ? */
++#	define CFG_FLASH_CFI_DRIVER
++#	define CFG_FLASH_CFI
++#	define CONFIG_FLASH_PROTECT_SINGLE_CELL
++#	define CFG_FLASH_PROTECTION	1	/* use hardware flash protection	*/
++#	define CFG_MAX_FLASH_BANKS	1	/* max number of memory banks		*/
++#	define CFG_MAX_FLASH_SECT	259	/* max number of sectors on one chip	*/
++#	define CFG_FLASH_EMPTY_INFO		/* test if each sector is empty		*/
++#	define MTDPARTS_NOR						\
++	"physmap-flash:"	/* First NOR flash device */		\
++		"256k(U-Boot)"		/* first partition */		\
++		",128k(Environment)"					\
++		",4M(Kernel)"						\
++		",-(RestOfNor0)"	/* last partition */
++#	define MTDIDS_NOR						\
++	"nor0=physmap-flash"	/* First NOR flash device */
++#else
++#	undef CONFIG_CMD_IMLS			/* NOR-flash specific */
++#	define CFG_NO_FLASH			/* NOR-flash specific */
++#endif	/* CONFIG_CMD_FLASH */
++
++/*-----------------------------------------------------------------------
++ * NAND FLASH organization
++ */
++
++/* NAND512W3A: 64MiB  8-bit, 4096 Blocks (16KiB+512B) of 32 Pages (512+16) */
++#ifdef CONFIG_CMD_NAND				/* NAND flash present ? */
++#	define CFG_MAX_NAND_DEVICE	1
++#	define NAND_MAX_CHIPS		CFG_MAX_NAND_DEVICE
++#	define CFG_NAND0_BASE		CFG_EMI_NAND_BASE
++#	define CFG_NAND_BASE_LIST	{ CFG_NAND0_BASE }
++#	define MTDPARTS_NAND						\
++	"gen_nand.1:"		/* First NAND flash device */		\
++		"128k(env-nand0)"	/* first partition */		\
++		",4M(kernel-nand0)"					\
++		",32M(root-nand0)"					\
++		",-(RestOfNand0)"	/* last partition */
++#	define MTDIDS_NAND						\
++	"nand0=gen_nand.1"	/* First NAND flash device */
++
++	/*
++	 * Currently, there are 2 main modes to read/write from/to
++	 * NAND devices on STM SoCs:
++	 *	a) "bit-banging" (can NOT be used in boot-from-NAND)
++	 *	b) FLEX-mode (only supported means for boot-from-NAND)
++	 * If CFG_NAND_FLEX_MODE is defined, then FLEX-mode will be
++	 * used, otherwise, "bit-banging" will be used.
++	 */
++#	define CFG_NAND_FLEX_MODE	/* define to use NAND FLEX-MODE */
++
++	/*
++	 * Do we want to read/write NAND Flash compatible with the ST40's
++	 * NAND Controller H/W IP block for "boot-mode"? If we want
++	 * to read/write NAND flash that is meant to support booting
++	 * from NAND, then we need to use 3 bytes of ECC per 128 byte
++	 * record.  If so, then define the "CFG_NAND_ECC_HW3_128" macro.
++	 */
++#	define CFG_NAND_ECC_HW3_128	/* define for "boot-from-NAND" compatibility */
++
++	/*
++	 * If using CFG_NAND_ECC_HW3_128, then we must also define
++	 * where the (high watermark) boundary is. That is, the
++	 * NAND offset, below which we are in "boot-mode", and
++	 * must use 3 bytes of ECC for each 128 byte record.
++	 * For this offset (and above) we can use any supported
++	 * ECC configuration (e.g 3/256 S/W, or 3/512 H/W).
++	 */
++#	define CFG_NAND_STM_BOOT_MODE_BOUNDARY (1ul << 20)	/* 1 MiB */
++
++	/*
++	 * If we want to store the U-boot environment variables in
++	 * the NAND device, then we also need to specify *where* the
++	 * environment variables will be stored. Typically this
++	 * would be immediately after the U-boot monitor itself.
++	 * However, that *may* be a bad block. Define the following
++	 * to place the environment in an appropriate good block.
++	 */
++#	define CFG_NAND_ENV_OFFSET (CFG_MONITOR_LEN + 0x0)	/* immediately after u-boot.bin */
++#endif	/* CONFIG_CMD_NAND */
++
++#if 0 && defined(CFG_BOOT_FROM_NAND)		/* we are booting from NAND */
++	/*
++	 * If we want to store "u-boot.bin" in NAND flash starting at
++	 * physical block #0, but there are Bad Blocks in the first
++	 * few blocks that we need to "skip" over, then we need
++	 * to define CFG_NAND_SKIP_BAD_BLOCKS_ON_RELOCATING to allow
++	 * skipping of these bad blocks for u-boot to relocate itself.
++	 * In addition, we also need to tell U-boot the block size,
++	 * and provide it a local abridged copy of the master Bad Block
++	 * Table (BBT), which must also be stored in physical block #0
++	 * - see "cpu/sh/start.S" for details.
++	 * Also, CFG_NAND_SKIP_BLOCK_COUNT defines the number of blocks
++	 * stored in the abridged copy of the master BBT.
++	 */
++#	define CFG_NAND_SKIP_BAD_BLOCKS_ON_RELOCATING	/* define for skipping */
++#	define CFG_NAND_SKIP_BLOCK_SIZE		(16<<10)/* Block Size = 16 KiB */
++#	define CFG_NAND_SKIP_BLOCK_COUNT	16	/* entries in the array */
++#endif /* CFG_BOOT_FROM_NAND */
++
++/*-----------------------------------------------------------------------
++ * SPI SERIAL FLASH organization
++ */
++
++/*
++ *	Name	Manuf	Device
++ *	-----	-----	------
++ *	IC27	ST	M25P32	(on MB705 Peripheral Board)
++ */
++#if defined(CONFIG_SPI_FLASH)			/* SPI serial flash present ? */
++#	define CONFIG_SPI_FLASH_ST		/* ST M25Pxx (IC27) */
++#	define CONFIG_SPI			/* enable the SPI driver */
++//#	define CONFIG_CMD_SPI			/* SPI serial bus command support - NOT with FSM! */
++#	define CONFIG_CMD_EEPROM		/* enable the "eeprom" command set */
++#	define CFG_I2C_FRAM			/* to minimize performance degradation */
++#	undef  CFG_EEPROM_PAGE_WRITE_DELAY_MS	/* to minimize performance degradation */
++
++	/* Can only use H/W FSM SPI Controller (not H/W SSC, nor S/W "bit-banging") */
++#	define CONFIG_STM_FSM_SPI		/* Use the H/W FSM for SPI */
++#	define CFG_STM_SPI_FSM_BASE	0xfe702000	/* FSM SPI Controller Base */
++#endif	/* CONFIG_SPI_FLASH */
++
++/*-----------------------------------------------------------------------
++ * Address, size, & location of U-boot's Environment Sector
++ */
++
++#define CFG_ENV_SIZE			0x4000	/* 16 KiB of environment data */
++
++#if 1 && defined(CONFIG_CMD_FLASH)		/* NOR flash present ? */
++#	define CFG_ENV_IS_IN_FLASH		/* environment in NOR flash */
++#	define CFG_ENV_OFFSET	CFG_MONITOR_LEN	/* immediately after u-boot.bin */
++#	define CFG_ENV_SECT_SIZE	0x20000	/* 128 KiB Sector size */
++#elif 1 && defined(CONFIG_CMD_NAND)		/* NAND flash present ? */
++#	define CFG_ENV_IS_IN_NAND		/* environment in NAND flash */
++#	define CFG_ENV_OFFSET	CFG_NAND_ENV_OFFSET
++#	if CFG_ENV_SIZE < 0x20000		/* needs to be a multiple of block-size */
++#		undef CFG_ENV_SIZE		/* give it just one large-page block */
++#		define CFG_ENV_SIZE	0x20000	/* 128 KiB of environment data */
++#	endif /* if CFG_ENV_SIZE < 0x20000 */
++#elif 1 && defined(CONFIG_SPI_FLASH)		/* SPI serial flash present ? */
++#	define CFG_ENV_IS_IN_EEPROM		/* ENV is stored in SPI Serial Flash */
++#	define CFG_ENV_OFFSET	CFG_MONITOR_LEN	/* immediately after u-boot.bin */
++#else
++#	define CFG_ENV_IS_NOWHERE		/* ENV is stored in volatile RAM */
++#endif	/* CONFIG_CMD_NAND */
++
++/*----------------------------------------------------------------------
++ * JFFS2 + MTD Partition support
++ */
++
++#if 1 && (defined(CONFIG_CMD_FLASH) || defined(CONFIG_CMD_NAND))
++#	define CONFIG_CMD_JFFS2			/* enable JFFS2 support */
++#endif
++
++#if defined(CONFIG_CMD_JFFS2)
++#	define CONFIG_JFFS2_CMDLINE		/* mtdparts command line support */
++#	define CONFIG_JFFS2_NAND		/* JFFS2 support on NAND Flash */
++#	if defined(CONFIG_CMD_FLASH) && defined(CONFIG_CMD_NAND) /* Both NOR + NAND */
++#		define MTDPARTS_DEFAULT						\
++		"mtdparts="							\
++			MTDPARTS_NOR	/* NOR flash devices */			\
++			";"		/* delimiter */				\
++			MTDPARTS_NAND	/* NAND flash devices */
++#		define MTDIDS_DEFAULT						\
++			MTDIDS_NOR	/* NOR flash devices */			\
++			","		/* delimiter */				\
++			MTDIDS_NAND	/* NAND flash devices */
++#	elif defined(CONFIG_CMD_FLASH)		/* Only NOR flash devices */
++#		define MTDPARTS_DEFAULT	"mtdparts=" MTDPARTS_NOR
++#		define MTDIDS_DEFAULT	MTDIDS_NOR
++#	elif defined(CONFIG_CMD_NAND)		/* Only NAND flash devices */
++#		define MTDPARTS_DEFAULT	"mtdparts=" MTDPARTS_NAND
++#		define MTDIDS_DEFAULT	MTDIDS_NAND
++#	endif	/* defined(CONFIG_CMD_FLASH) && defined(CONFIG_CMD_NAND) */
++#endif	/* CONFIG_CMD_JFFS2 */
++
++#endif	/* __CONFIG_H */
+diff --git a/include/configs/pdk7105.h b/include/configs/pdk7105.h
+index 646c5fd..603c72f 100644
+--- a/include/configs/pdk7105.h
++++ b/include/configs/pdk7105.h
+@@ -399,7 +399,7 @@
+ #if 1
+ #	define CONFIG_SOFT_SPI			/* Use S/W "bit-banging" PIO (not the SSC) */
+ #else
+-#	undef CONFIG_SOFT_SPI			/* Use H/W SSC (not S/W "bit-banging" PIO) */
++#	define CONFIG_STM_SSC_SPI		/* Use H/W SSC (not S/W "bit-banging" PIO) */
+ #endif
+ 
+ #if defined(CONFIG_SOFT_SPI)			/* Use "bit-banging" for SPI */
+@@ -407,7 +407,7 @@
+ #	define SPI_SDA(val)	do { stx7105_spi_sda((val)); } while (0)
+ #	define SPI_DELAY	do { udelay(1); } while (0)	/* QQQ: only 500 kHz ??? */
+ #	define SPI_READ		stx7105_spi_read()
+-#else
++#elif defined(CONFIG_STM_SSC_SPI)		/* Use the H/W SSC for SPI */
+ #	define CFG_STM_SPI_SSC_BASE	ST40_SSC1_REGS_BASE	/* SSC #1 */
+ #	define CFG_STM_SPI_FREQUENCY	(5*1000*1000)		/* 5 MHz */
+ #endif	/* CONFIG_SOFT_SPI */
+diff --git a/lib_sh/board.c b/lib_sh/board.c
+index 48ebea3..2e8d30b 100644
+--- a/lib_sh/board.c
++++ b/lib_sh/board.c
+@@ -1,5 +1,5 @@
+ /*
+- * (C) Copyright 2004-2009 STMicroelectronics.
++ * (C) Copyright 2004-2010 STMicroelectronics.
+  *
+  * Andy Sturges <andy.sturges@st.com>
+  * Sean McGoogan <Sean.McGoogan@st.com>
+@@ -40,6 +40,63 @@
+ #include <asm/socregs.h>
+ #include <asm/st40reg.h>
+ 
++/*
++ * Currently, there are several macros which define where SDRAM
++ * starts, how big it is, and where various things in RAM are located.
++ * Unfortunately, it is possible to define these different
++ * macros such that the overall set is mutually inconsistent!
++ * In the future, it should be a goal to define only TWO of these
++ * macros, and derive all the others automatically. To this end
++ * the following code will issue compile-time diagnostics, if
++ * the proposed derivations would fail!
++ *
++ * The two essential macros to be defined:
++ *	CFG_SDRAM_BASE, CFG_SDRAM_SIZE
++ *
++ * Derived Macros:
++ * 	CFG_LOAD_ADDR       = CFG_SDRAM_BASE
++ *	CFG_MEMTEST_START   = CFG_SDRAM_BASE
++ *	CFG_MEMTEST_END     = CFG_SDRAM_BASE + CFG_SDRAM_SIZE - 3MiB
++ *	TEXT_BASE           = CFG_SDRAM_BASE + CFG_SDRAM_SIZE - 1MiB
++ *	CFG_SE_SDRAM_WINDOW = CFG_SDRAM_SIZE - 1
++ *
++ *	Note: The 3 MiB figure above should be confirmed!
++ *
++ * The "mtest" command will totally trash the system, if the address
++ * U-Boot is running from (starting at TEXT_BASE) is included the
++ * range of memory we are testing. We ensure here that the "default"
++ * range that "mtest" uses is not stupid!
++ * This is done only as a compile-time test.
++ */
++#if (TEXT_BASE >= CFG_MEMTEST_START) && (TEXT_BASE < CFG_MEMTEST_END)
++#	warning "mtest" will fail when CFG_MEMTEST_START < TEXT_BASE < CFG_MEMTEST_END!
++#endif
++
++#if CFG_LOAD_ADDR != CFG_SDRAM_BASE
++#	warning CFG_LOAD_ADDR != CFG_SDRAM_BASE
++#endif
++
++#if CFG_MEMTEST_START != CFG_SDRAM_BASE
++#	warning CFG_MEMTEST_START != CFG_SDRAM_BASE
++#endif
++
++#if CFG_MEMTEST_END != (CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (3 << 20))
++#	warning CFG_MEMTEST_END != CFG_SDRAM_BASE + CFG_SDRAM_SIZE - 3MiB
++#endif
++
++#if TEXT_BASE != (CFG_SDRAM_BASE + CFG_SDRAM_SIZE - (1 << 20))
++#	warning TEXT_BASE != CFG_SDRAM_BASE + CFG_SDRAM_SIZE - 1MiB
++#endif
++
++#if defined(CONFIG_SH_SE_MODE)	/* only in 32-bit mode */
++#   if !defined(CFG_SE_SDRAM_WINDOW)
++#	warning CFG_SE_SDRAM_WINDOW is not defined in 32-bit mode
++#   elif CFG_SE_SDRAM_WINDOW != (CFG_SDRAM_SIZE - 1)
++#	warning CFG_SE_SDRAM_WINDOW != CFG_SDRAM_SIZE - 1
++#   endif
++#endif	/* CONFIG_SH_SE_MODE */
++
++
+ extern ulong _uboot_end_data;
+ extern ulong _uboot_end;
+ 
+diff --git a/sh_config.mk b/sh_config.mk
+index f208535..1fdc414 100644
+--- a/sh_config.mk
++++ b/sh_config.mk
+@@ -27,7 +27,7 @@
+ # for actual build number, in the following identifier.
+ # Regular Expression for string is:
+ # 	"stm[2-9][0-9]-[2-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]"
+-SH_IDENT_STRING="\"stm23-2010-04-15\""
++SH_IDENT_STRING="\"stm23-2010-04-29\""
+ 
+ PLATFORM_CPPFLAGS += -DCONFIG_SH4 -D__SH4__ -DCONFIG_IDENT_STRING=$(SH_IDENT_STRING)
+ PLATFORM_LDFLAGS  += -n
