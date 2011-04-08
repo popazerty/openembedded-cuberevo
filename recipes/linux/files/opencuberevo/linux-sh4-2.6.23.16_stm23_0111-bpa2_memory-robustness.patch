@@ -1,0 +1,27 @@
+Fix bpa2 bpa2_memory() so that it checks if part parameter is
+non-NULL before de-referencing it.
+
+See Bugzilla 3990
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux-2.6.23/mm/bpa2.c
+===================================================================
+--- linux-2.6.23.orig/mm/bpa2.c	2008-05-15 09:10:27.000000000 +0100
++++ linux-2.6.23/mm/bpa2.c	2008-05-15 09:30:05.000000000 +0100
+@@ -664,9 +664,13 @@
+ 		 unsigned long *size)
+ {
+ 	if (base)
+-		*base = (unsigned long)phys_to_virt(part->res.start);
++		*base = part?
++			(unsigned long)phys_to_virt(part->res.start)
++			: 0;
+ 	if (size)
+-		*size = part->res.end - part->res.start + 1;
++		*size = part?
++			part->res.end - part->res.start + 1
++			: 0;
+ }
+ 
+ void bigphysarea_memory(unsigned long *base, unsigned long *size)

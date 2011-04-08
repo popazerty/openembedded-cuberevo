@@ -1,0 +1,161 @@
+Fix a few problems with the IDE PIODMA driver:
+ - the reference counting technique used to determine if any drive
+   is using DMA didn't work because the generic IDE code doesn't call
+   ide_piodma_host_off the same number times as ide_piodma_host_on.
+   Switch to an explicit check to see if any drive hanging off this
+   controller is using DMA, and only free the resources when none are.
+ - revert a change (in linux-sh4-2.6.17.8_stm22-34-stm_ide_piodma-0001.patch)
+   which caused a message about inability to find a DMA channel to be
+   printed too frequently.
+ - fixed the parameters to request_dma_bycap() which should be NULL
+   terminated lists.
+ - moved read/write_configured flags from global statics to members of
+   struct ide_piodma. This fixes a theoretical problem if there are
+   multiple controllers. It also allows a real problem to be fixed:
+   when freeing DMA descriptors should only free those which have been
+   configured.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/drivers/ide/sh/ide-piodma.c
+===================================================================
+--- linux.orig/drivers/ide/sh/ide-piodma.c
++++ linux/drivers/ide/sh/ide-piodma.c
+@@ -20,7 +20,6 @@
+ #include "../ide-piodma.h"
+ 
+ typedef struct ide_piodma {
+-	unsigned int ref_count;
+ 	ide_handler_t *driver_handler;
+ 	int *driver_dma_flag;
+ 	struct scatterlist dma_table[PRD_ENTRIES];
+@@ -36,6 +35,8 @@ typedef struct ide_piodma {
+ 	int xfer_sz;
+ 	struct stm_dma_params read_dmap;
+ 	struct stm_dma_params write_dmap;
++	unsigned int read_configured;
++	unsigned int write_configured;
+ 	unsigned long ide_data_reg;
+ } ide_piodma_t;
+ 
+@@ -337,8 +338,7 @@ static int ide_piodma_prepare_read_dma(	
+ 					ide_drive_t *drive,
+ 					unsigned long len)
+ {
+-	static int read_configured=0;
+-	if(!read_configured){
++	if(!pd->read_configured){
+ 		declare_dma_parms(	&pd->read_dmap,
+ 					MODE_DST_SCATTER,
+ 					STM_DMA_LIST_OPEN,
+@@ -355,7 +355,7 @@ static int ide_piodma_prepare_read_dma(	
+ 
+ 		dma_parms_addrs(&pd->read_dmap,pd->ide_data_reg,0,len);
+ 
+-		read_configured=1;
++		pd->read_configured=1;
+ 	}
+ 	dma_parms_sg(&pd->read_dmap,pd->dst_sg,pd->dst_sg_len);
+ 	return dma_compile_list(&pd->read_dmap);
+@@ -365,8 +365,7 @@ static int ide_piodma_prepare_write_dma(
+ 					 ide_drive_t *drive,
+ 					 unsigned long len)
+ {
+-	static int write_configured=0;
+-	if(!write_configured){
++	if(!pd->write_configured){
+ 		declare_dma_parms(&pd->write_dmap,
+ 				  MODE_SRC_SCATTER,
+ 				  STM_DMA_LIST_OPEN,
+@@ -383,7 +382,7 @@ static int ide_piodma_prepare_write_dma(
+ 
+ 		dma_parms_addrs(&pd->write_dmap,0,pd->ide_data_reg,len);
+ 
+-		write_configured=1;
++		pd->write_configured=1;
+ 	}
+ 	dma_parms_sg(&pd->write_dmap,pd->src_sg,pd->src_sg_len);
+ 	return dma_compile_list(&pd->write_dmap);
+@@ -508,15 +507,21 @@ static int ide_piodma_host_off (ide_driv
+ 	PDMA_TRACE("%s: deallocating PIO DMA channel\n", drive->name);
+ 
+ 	if (pd) {
+-		if (0 == --pd->ref_count) {
++		int d;
++		int any_using_dma = 0;
++
++		for (d=0; d<MAX_DRIVES; d++) {
++			any_using_dma |= hwif->drives[d].using_dma;
++		}
++		if (! any_using_dma) {
+ 			free_dma(pd->dma_chan_id);
+-			dma_free_descriptor(&pd->read_dmap);
+-			dma_free_descriptor(&pd->write_dmap);
++			if (pd->read_configured)
++				dma_free_descriptor(&pd->read_dmap);
++			if (pd->write_configured)
++				dma_free_descriptor(&pd->write_dmap);
+ 			kfree(pd);
+ 			ide_set_hwifdata(hwif, NULL);
+ 		}
+-	} else {
+-		PDMA_ERROR("%s: PIO DMA is not enabled\n", drive->name);
+ 	}
+ 
+ 	return 0;
+@@ -557,7 +562,6 @@ static int ide_piodma_host_on (ide_drive
+ 		return 1;
+ 
+ 	if (pd) {
+-		pd->ref_count++;
+ 		return 0;
+ 	}
+ 
+@@ -566,9 +570,10 @@ static int ide_piodma_host_on (ide_drive
+ 		PDMA_ERROR("%s: not enough memory\n", drive->name);
+ 		return 1;
+ 	}
+-	pd->ref_count = 0;
+ 	pd->dma_chan_id = -1;
+ 	pd->dma_busy = 0;
++	pd->read_configured = 0;
++	pd->write_configured = 0;
+ 
+ 	ide_set_hwifdata(hwif, pd);
+ 	return 0; /* DMA enabled */
+@@ -801,9 +806,9 @@ static int ide_piodma_setup (ide_drive_t
+ 	ide_hwif_t *hwif = HWIF(drive);
+ 	ide_piodma_t *pd = ide_get_hwifdata(hwif);
+ 	struct request *rq = HWGROUP(drive)->rq;
+-	const char * stm_dmac_id =STM_DMAC_ID;
+-	const char * stm_lb_cap  =STM_DMA_CAP_LOW_BW;
+-	const char * stm_hb_cap  =STM_DMA_CAP_HIGH_BW;
++	const char * stm_dmac_id[] = { STM_DMAC_ID, NULL };
++	const char * stm_lb_cap[] = { STM_DMA_CAP_LOW_BW, NULL };
++	const char * stm_hb_cap[] = { STM_DMA_CAP_HIGH_BW, NULL };
+ 
+ 	PDMA_TRACE("%s: preparing for PIO DMA transaction\n", drive->name);
+ 
+@@ -821,10 +826,12 @@ static int ide_piodma_setup (ide_drive_t
+ 	 * partition table.
+ 	 */
+ 	if (pd->dma_chan_id < 0) {
+-		int chan_id = request_dma_bycap(&stm_dmac_id,&stm_lb_cap ,"IDE_PIO_DMA");
++		int chan_id = request_dma_bycap(stm_dmac_id, stm_lb_cap ,"IDE_PIO_DMA");
++		if (chan_id < 0)
++			chan_id = request_dma_bycap(stm_dmac_id, stm_hb_cap ,"IDE_PIO_DMA");
+ 		if (chan_id < 0) {
+-			chan_id = request_dma_bycap(&stm_dmac_id,&stm_hb_cap ,"IDE_PIO_DMA");
+-			if(chan_id <  0){
++			pd->dma_chan_id--;
++			if (REQUEST_DMA_LIMIT < -pd->dma_chan_id) {
+ 				pd->dma_chan_id = -1;
+ 				printk(KERN_ERR "%s: cannot allocate DMA "
+ 				                "channel for IDE (PIODMA)\n",
+@@ -833,7 +840,6 @@ static int ide_piodma_setup (ide_drive_t
+ 
+ 			return 1; /* fallback to PIO */
+ 		}
+-		/*HACK here - assuming that no dma channel === first setup*/
+ 
+ 		pd->dma_chan_id = chan_id;
+ 		PDMA_TRACE("%s: allocated DMA channel %d\n",

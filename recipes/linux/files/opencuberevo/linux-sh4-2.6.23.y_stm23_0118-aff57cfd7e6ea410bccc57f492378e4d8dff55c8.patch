@@ -1,0 +1,40 @@
+From aff57cfd7e6ea410bccc57f492378e4d8dff55c8 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Wed, 11 Feb 2009 13:49:31 +0000
+Subject: [PATCH] stm_fdma: Fix stb710x_fdma_get_residue for circular lists
+
+The previous modification to stb710x_fdma_get_residue (commit
+916f97b0e408fdb50ed58beb9daa3b2d347f1daf "stm_fdma: Fix reading of
+addresses from hardware in stb710x_fdma_get_residue") introduced a bug
+in the case of circular lists. This patch fixes that bug, and should
+also be more efficient, as it removes the read of the node's next
+pointer, which is uncached.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/stm/710x_fdma2.c |    9 +++------
+ 1 files changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/stm/710x_fdma2.c b/drivers/stm/710x_fdma2.c
+index 57b690a..90887ba 100644
+--- a/drivers/stm/710x_fdma2.c
++++ b/drivers/stm/710x_fdma2.c
+@@ -931,12 +931,9 @@ static int fdma_get_residue(struct dma_channel *dma_chan)
+ 			break;
+ 		}
+ 
+-		if (current_node->virt_addr->next_item) {
+-			do {
+-				BUG_ON(node_num++ == desc->alloced_nodes);
+-				current_node++;
+-				count += current_node->virt_addr->size_bytes;
+-			} while (current_node->virt_addr->next_item);
++		while (++node_num < desc->alloced_nodes) {
++			current_node++;
++			count += current_node->virt_addr->size_bytes;
+ 		}
+ 	}
+ 
+-- 
+1.5.6.3
+

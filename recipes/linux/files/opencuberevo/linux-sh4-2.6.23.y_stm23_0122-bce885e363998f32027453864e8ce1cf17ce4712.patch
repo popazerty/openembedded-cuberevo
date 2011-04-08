@@ -1,0 +1,435 @@
+From bce885e363998f32027453864e8ce1cf17ce4712 Mon Sep 17 00:00:00 2001
+From: Francesco Virlinzi <francesco.virlinzi@st.com>
+Date: Tue, 17 Nov 2009 16:47:05 +0100
+Subject: [PATCH] stm: clk: Added Clk LLA function
+
+This patch adds:
+ - new clk functions to set the PLL frequency
+ - new REGISTER_CLK_P to initialize clock with fixed parent
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-common.c  |  182 +++++++++++++++++++++++++++++--
+ arch/sh/kernel/cpu/sh4/clock-common.h  |   80 ++++++++++++---
+ arch/sh/kernel/cpu/sh4/clock-oslayer.h |   10 ++
+ 3 files changed, 246 insertions(+), 26 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-common.c b/arch/sh/kernel/cpu/sh4/clock-common.c
+index 4156758..75830f6 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-common.c
++++ b/arch/sh/kernel/cpu/sh4/clock-common.c
+@@ -1,4 +1,4 @@
+-/******************************************************************************
++/*****************************************************************************
+  *
+  * File name   : clock-common.c
+  * Description : Low Level API - Common LLA functions (SOC independant)
+@@ -6,11 +6,24 @@
+  * COPYRIGHT (C) 2009 STMicroelectronics - All Rights Reserved
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+-******************************************************************************/
++ *
++ *****************************************************************************/
++
++/* ----- Modification history (most recent first)----
++13/oct/09 fabrice.charpentier@st.com
++	  clk_fsyn_get_rate() API changed. Now returns error code.
++30/sep/09 fabrice.charpentier@st.com
++	  Introducing clk_pll800_get_rate() & clk_pll1600_get_rate() to
++	  replace clk_pll800_freq() & clk_pll1600_freq().
++*/
+ 
+ #include <linux/clk.h>
+ #include <asm-generic/div64.h>
+ 
++/*
++ * Linux specific function
++ */
++
+ /* Return the number of set bits in x. */
+ static unsigned int population(unsigned int x)
+ {
+@@ -44,7 +57,7 @@ static unsigned int most_significant_set_bit(unsigned int x)
+ #include "clock-common.h"
+ 
+ int clk_info_get_index(unsigned long clk_id, struct clk_info *table,
+-		       unsigned long t_size)
++		    unsigned long t_size)
+ {
+ 	int i;
+ 
+@@ -57,8 +70,11 @@ int clk_info_get_index(unsigned long clk_id, struct clk_info *table,
+ /* ========================================================================
+    Name:	clk_pll800_freq()
+    Description: Convert PLLx_CFG to freq for PLL800
+-   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++   Params:   'input' freq (Hz), 'cfg'=PLLx_CFG register value
+    ======================================================================== */
++/*
++ * OBSOLETE FUNCTION !! clk_pll800_get_rate() to use instead !!!!
++ */
+ 
+ unsigned long clk_pll800_freq(unsigned long input, unsigned long cfg)
+ {
+@@ -73,12 +89,38 @@ unsigned long clk_pll800_freq(unsigned long input, unsigned long cfg)
+ }
+ 
+ /* ========================================================================
++   Name:	clk_pll800_get_rate()
++   Description: Convert input/mdiv/ndiv/pvid values to frequency for PLL800
++   Params:   'input' freq (Hz), mdiv/ndiv/pvid values
++   Output:   '*rate' updated
++   Return:   Error code.
++   ======================================================================== */
++
++int clk_pll800_get_rate(unsigned long input, unsigned long mdiv,
++			unsigned long ndiv, unsigned long pdiv,
++			unsigned long *rate)
++{
++	if (!mdiv)
++		return CLK_ERR_BAD_PARAMETER;
++
++	/* Note: input is divided by 1000 to avoid overflow */
++	*rate = (((2 * (input / 1000) * ndiv) / mdiv) / (1 << pdiv)) * 1000;
++
++	return 0;
++}
++
++/* ========================================================================
+    Name:	clk_pll1600_freq()
+    Description: Convert PLLx_CFG to freq for PLL1600
+-		Always returns HS output value.
+-   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++	  Always returns HS output value.
++   Params:   'input' freq (Hz), 'cfg'=PLLx_CFG register value
+    ======================================================================== */
+ 
++/*
++ * OBSOLETE function !!!
++ * clk_pll1600_get_rate() to be used instead  !!!
++ */
++
+ unsigned long clk_pll1600_freq(unsigned long input, unsigned long cfg)
+ {
+ 	unsigned long freq, ndiv, mdiv;
+@@ -91,6 +133,27 @@ unsigned long clk_pll1600_freq(unsigned long input, unsigned long cfg)
+ }
+ 
+ /* ========================================================================
++   Name:	clk_pll1600_get_rate()
++   Description: Convert input/mdiv/ndiv values to frequency for PLL1600
++   Params:   'input' freq (Hz), mdiv/ndiv values
++	  Info: mdiv also called rdiv, ndiv also called ddiv
++   Output:   '*rate' updated with value of HS output.
++   Return:   Error code.
++   ======================================================================== */
++
++int clk_pll1600_get_rate(unsigned long input, unsigned long mdiv,
++			 unsigned long ndiv, unsigned long *rate)
++{
++	if (!mdiv)
++		return CLK_ERR_BAD_PARAMETER;
++
++	/* Note: input is divided by 1000 to avoid overflow */
++	*rate = ((2 * (input / 1000) * ndiv) / mdiv) * 1000;
++
++	return 0;
++}
++
++/* ========================================================================
+    Name:	clk_fsyn_get_rate()
+    Description: Parameters to freq computation for frequency synthesizers
+    ======================================================================== */
+@@ -118,11 +181,106 @@ unsigned long clk_fsyn_get_rate(unsigned long input, unsigned long pe,
+ }
+ 
+ /* ========================================================================
++   Name:	clk_pll800_get_params()
++   Description: Freq to parameters computation for PLL800
++   Input: input,output=input/output freqs (Hz)
++   Output:   updated *mdiv, *ndiv & *pdiv
++   Return:   'clk_err_t' error code
++   ======================================================================== */
++
++/*
++ * The PLL_800 equation is:
++ *
++ *	  2 * N * Fin Mhz
++ * Fout Mhz = -----------------		[1]
++ *	  M * (2 ^ P)
++ *
++ * The algorithm sets:
++ * M = Fin  / 500000			[2]
++ * N = Fout / 500000			[3]
++ *
++ * Thefore [1][2][3] becomes
++ *
++ *	2 * (Fout / 500000) * Fin
++ * Fout = --------------------------	[4]
++ *	(2 ^ P) * (Fin  / 500000)
++ *
++ * Now the algorithm search the right P value
++ * during an interation in [0, 32]
++ */
++
++int clk_pll800_get_params(unsigned long input, unsigned long output,
++			  unsigned long *mdiv, unsigned long *ndiv,
++			  unsigned long *pdiv)
++{
++	int ret = 0;
++	unsigned long input_scaled = input / 500000;
++	unsigned long output_scaled = output / 500000;
++
++	*mdiv = input_scaled;
++	*ndiv = output_scaled;
++	*pdiv = 0;
++
++	for (*pdiv = 0; *pdiv < 33; ++*pdiv)
++		if (((2 * input_scaled * *ndiv) / (*mdiv * (2 << *pdiv)))
++		 == output_scaled)
++			break;
++	if (*pdiv == 33)
++		return -1;
++
++	return 0;
++}
++
++/* ========================================================================
++   Name:	clk_pll1600_get_params()
++   Description: Freq to parameters computation for PLL1600
++   Input: input,output=input/output freqs (Hz)
++   Output:   updated *mdiv & *ndiv
++   Return:   'clk_err_t' error code
++   ======================================================================== */
++
++/*
++ * The PLL equation is:
++ *
++ *	   2 * N * Fin Mhz
++ * Fout Mhz = -------------------- [1]
++ *		 M
++ *
++ *	2 * N * Fin
++ * Fout = -----------
++ *	 M
++ *
++ * The algorithm sets:
++ * M = 4 			[2]
++ *
++ * and N becomes
++ *
++ * Fount * 2 = N * Fin		[3]
++ *
++ * 2 * Fout
++ * N =  ---------
++ *	Fin
++ */
++
++int clk_pll1600_get_params(unsigned long input, unsigned long output,
++			   unsigned long *mdiv, unsigned long *ndiv)
++{
++	*mdiv = 4;		/* as medium value allowed between [1, 7] */
++
++	input /= 1000;
++	output /= 1000;
++
++	*ndiv = (output * 2) / input;
++
++	return (*mdiv <= 7 && *mdiv > 0 && *ndiv > 0 && *ndiv <= 255) ? 0 : -1;
++}
++
++/* ========================================================================
+    Name:	clk_fsyn_get_params()
+    Description: Freq to parameters computation for frequency synthesizers
+-   Input:       input=input freq (Hz), output=output freq (Hz)
+-   Output:      updated *md, *pe & *sdiv
+-   Return:      'clk_err_t' error code
++   Input: input=input freq (Hz), output=output freq (Hz)
++   Output:   updated *md, *pe & *sdiv
++   Return:   'clk_err_t' error code
+    ======================================================================== */
+ 
+ /* This has to be enhanced to support several Fsyn types.
+@@ -185,7 +343,7 @@ int clk_fsyn_get_params(int input, int output, int *md, int *pe, int *sdiv)
+ /* ========================================================================
+    Name:	clk_err_string
+    Description: Convert LLA error code to string.
+-   Returns:     const char *ErrMessage
++   Returns:  const char *ErrMessage
+    ======================================================================== */
+ 
+ const char *clk_err_string(int err)
+@@ -197,7 +355,7 @@ const char *clk_err_string(int err)
+ 	};
+ 
+ 	if (err > CLK_ERR_INTERNAL)
+-		return (errors[0]);
++		return errors[0];
+ 
+-	return (errors[err]);
++	return errors[err];
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/clock-common.h b/arch/sh/kernel/cpu/sh4/clock-common.h
+index 8c0508a..a7c2e8a 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-common.h
++++ b/arch/sh/kernel/cpu/sh4/clock-common.h
+@@ -5,8 +5,6 @@ File  : Low Level clock API
+ Author: F. Charpentier <fabrice.charpentier@st.com>
+ 
+ Copyright (C) 2008 STMicroelectronics
+-May be copied or modified under the terms of the GNU General Public
+- License.  See linux/COPYING for more information.
+ ************************************************************************/
+ 
+ #ifndef __CLKLLA_COMMON_H
+@@ -23,7 +21,7 @@ struct xratio {
+ };
+ 
+ int get_xratio_field(unsigned long rate, unsigned long prate,
+-		     struct xratio *ratios);
++		  struct xratio *ratios);
+ 
+ /* ========================================================================
+    Name:	clk_info_get_index()
+@@ -37,26 +35,58 @@ struct clk_info {
+ };
+ 
+ int clk_info_get_index(unsigned long clk_id, struct clk_info *table,
+-			       unsigned long t_size);
++		    unsigned long t_size);
+ 
+ /* ========================================================================
+    Name:	clk_pll800_freq()
+    Description: Convert PLLx_CFG to freq for PLL800
+-   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++   Params:   'input' freq (Hz), 'cfg'=PLLx_CFG register value
+    ======================================================================== */
+ 
++/*
++ * OBSOLETE function !!!
++ * clk_pll800_get_rate() to be used instead  !!!
++ */
+ unsigned long clk_pll800_freq(unsigned long input, unsigned long cfg);
+ 
+ /* ========================================================================
++   Name:	clk_pll800_get_rate()
++   Description: Convert input/mdiv/ndiv/pvid values to frequency for PLL800
++   Params:   'input' freq (Hz), mdiv/ndiv/pvid values
++   Output:   '*rate' updated
++   Return:   Error code.
++   ======================================================================== */
++
++int clk_pll800_get_rate(unsigned long input, unsigned long mdiv,
++			unsigned long ndiv, unsigned long pdiv,
++			unsigned long *rate);
++
++/* ========================================================================
+    Name:	clk_pll1600_freq()
+    Description: Convert PLLx_CFG to freq for PLL1600
+-		Always returns HS output value.
+-   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++	  Always returns HS output value.
++   Params:   'input' freq (Hz), 'cfg'=PLLx_CFG register value
+    ======================================================================== */
+ 
++/*
++ * OBSOLETE function !!!
++ * clk_pll1600_get_rate() to be used instead  !!!
++ */
+ unsigned long clk_pll1600_freq(unsigned long input, unsigned long cfg);
+ 
+ /* ========================================================================
++   Name:	clk_pll1600_get_rate()
++   Description: Convert input/mdiv/ndiv values to frequency for PLL1600
++   Params:   'input' freq (Hz), mdiv/ndiv values
++	  Info: mdiv also called rdiv, ndiv also called ddiv
++   Output:   '*rate' updated with value of HS output
++   Return:   Error code.
++   ======================================================================== */
++
++int clk_pll1600_get_rate(unsigned long input, unsigned long mdiv,
++			 unsigned long ndiv, unsigned long *rate);
++
++/* ========================================================================
+    Name:	clk_fsyn_get_rate()
+    Description: Parameters to freq computation for frequency synthesizers
+    ======================================================================== */
+@@ -67,24 +97,46 @@ unsigned long clk_fsyn_get_rate(unsigned long input, unsigned long pe,
+ 				unsigned long md, unsigned long sd);
+ 
+ /* ========================================================================
++   Name:	clk_pll800_get_params()
++   Description: Freq to parameters computation for PLL800
++   Input: input,output=input/output freqs (Hz)
++   Output:   updated *mdiv, *ndiv & *pdiv
++   Return:   'clk_err_t' error code
++   ======================================================================== */
++
++int clk_pll800_get_params(unsigned long input, unsigned long output,
++			  unsigned long *mdiv, unsigned long *ndiv,
++			  unsigned long *pdiv);
++
++/* ========================================================================
++   Name:	clk_pll1600_get_params()
++   Description: Freq to parameters computation for PLL1600
++   Input: input,output=input/output freqs (Hz)
++   Output:   updated *mdiv & *ndiv
++   Return:   'clk_err_t' error code
++   ======================================================================== */
++
++int clk_pll1600_get_params(unsigned long input, unsigned long output,
++			   unsigned long *mdiv, unsigned long *ndiv);
++
++/* ========================================================================
+    Name:	clk_fsyn_get_params()
+    Description: Freq to parameters computation for frequency synthesizers
+-   Input:       input=input freq (Hz), output=output freq (Hz)
+-   Output:      updated *md, *pe & *sdiv
+-   Return:      'clk_err_t' error code
++   Input: input=input freq (Hz), output=output freq (Hz)
++   Output:   updated *md, *pe & *sdiv
++   Return:   'clk_err_t' error code
+    ======================================================================== */
+ 
+ /* This has to be enhanced to support several Fsyn types */
+ 
+-int clk_fsyn_get_params(int input, int output, int *md, int *pe,
+-				int *sdiv);
++int clk_fsyn_get_params(int input, int output, int *md, int *pe, int *sdiv);
+ 
+ /* ========================================================================
+    Name:	clk_err_string
+    Description: Convert LLA error code to string.
+-   Returns:     const char *ErrMessage
++   Returns:  const char *ErrMessage
+    ======================================================================== */
+ 
+ const char *clk_err_string(int err);
+ 
+-#endif				/* #ifndef __CLKLLA_COMMON_H */
++#endif /* #ifndef __CLKLLA_COMMON_H */
+diff --git a/arch/sh/kernel/cpu/sh4/clock-oslayer.h b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+index fd345f6..c25085d 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-oslayer.h
++++ b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+@@ -125,6 +125,16 @@ static struct clk_ops  _name= {						\
+ 		 .childs = LIST_HEAD_INIT(clk_clocks[_id].childs),	\
+ }
+ 
++#define REGISTER_CLK_P(_id, _ops, _nominal, _flags, _parent)		\
++[_id] = (clk_t){ .name = #_id,						\
++		 .id = (_id),						\
++		 .ops = (_ops),						\
++		 .flags = (_flags),					\
++		 .nominal_rate = (_nominal),				\
++		 .parent = (_parent),					\
++		 .childs = LIST_HEAD_INIT(clk_clocks[_id].childs),	\
++}
++
+ #define time_ticks_per_sec()		CONFIG_HZ
+ #define task_delay(x)			mdelay((x)/CONFIG_HZ)
+ 
+-- 
+1.6.0.6
+

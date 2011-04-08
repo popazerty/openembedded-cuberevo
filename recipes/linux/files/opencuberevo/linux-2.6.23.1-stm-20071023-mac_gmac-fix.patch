@@ -1,0 +1,2561 @@
+This patch updates the MAC/GMAC driver for the kernel 2.6.23.1.
+It fully merges the two driver (STb7109 Embedded MAC and new 
+experimental GMAC), fixes the VLAN support and adds the 
+flow control.
+It also fixes some bugs both in the rx poll method and in the transmission
+process.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+=============================================================================
+--- linux/drivers/net/Makefile.orig	2007-10-24 17:11:44.000000000 +0200
++++ linux/drivers/net/Makefile	2007-10-24 17:07:23.000000000 +0200
+@@ -10,6 +10,7 @@ obj-$(CONFIG_CHELSIO_T3) += cxgb3/
+ obj-$(CONFIG_EHEA) += ehea/
+ obj-$(CONFIG_BONDING) += bonding/
+ obj-$(CONFIG_ATL1) += atl1/
++obj-$(CONFIG_STMMAC_ETH) += stmmac/
+ obj-$(CONFIG_GIANFAR) += gianfar_driver.o
+ 
+ gianfar_driver-objs := gianfar.o \
+@@ -208,7 +209,6 @@ obj-$(CONFIG_DM9000) += dm9000.o
+ obj-$(CONFIG_FEC_8XX) += fec_8xx/
+ obj-$(CONFIG_PASEMI_MAC) += pasemi_mac.o
+ obj-$(CONFIG_MLX4_CORE) += mlx4/
+-obj-$(CONFIG_STMMAC_ETH) += stmmac/
+ 
+ obj-$(CONFIG_MACB) += macb.o
+ 
+--- linux/drivers/net/Kconfig.orig	2007-10-24 17:04:02.000000000 +0200
++++ linux/drivers/net/Kconfig	2007-10-24 17:05:01.000000000 +0200
+@@ -2027,17 +2027,6 @@ config NE_H8300
+ source "drivers/net/fec_8xx/Kconfig"
+ source "drivers/net/fs_enet/Kconfig"
+ 
+-config STMMAC_ETH
+-	tristate "MAC 10/100 Ethernet driver"
+-	select MII
+-	select PHYLIB
+-	depends on NETDEVICES && (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200)
+-	---help---
+-	  This is the driver for the MAC 10/100 on-chip Ethernet controller.
+-	  The STb7109 ETH subsystem is composed of three main layers:
+-	  a DMA layer, a Transaction Layer Interface (TLI), and a Media Access
+-	  Controller layer (MAC).
+-
+ endif # NET_ETHERNET
+ 
+ #
+@@ -2506,11 +2495,16 @@ config ATL1
+ 	  To compile this driver as a module, choose M here.  The module
+ 	  will be called atl1.
+ 
+-config STMGMAC_ETH
+-	tristate "Gigabit Ethernet support (EXPERIMENTAL)"
+-	depends on NETDEVICES && NOT_YET_SUPPORTED
++config STMMAC_ETH
++	tristate "MAC 10/100/1000 Ethernet driver"
++	select MII
++	select PHYLIB
++	depends on NETDEVICES && (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200)
+ 	---help---
+-	  This is the driver for the GMAC on-chip Ethernet controller.
++	  This is the driver for the MAC 10/100/1000 on-chip Ethernet 
++	  controller (Synopsys Core).
++	  This driver also supports the old embedded on-chip Ethernet in the
++	  Stb7109 CPU.
+ 
+ endif # NETDEV_1000
+ 
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/common.h drivers/net/stmmac/common.h
+--- linux/drivers/net/stmmac.orig/common.h	1970-01-01 01:00:00.000000000 +0100
++++ linux/drivers/net/stmmac/common.h	2007-10-24 17:05:27.000000000 +0200
+@@ -0,0 +1,175 @@
++/* *********************************************
++   DMA CRS Control and Status Register Mapping 
++ * *********************************************/
++#define DMA_BUS_MODE		0x00001000	/* Bus Mode */
++#define DMA_XMT_POLL_DEMAND	0x00001004	/* Transmit Poll Demand */
++#define DMA_RCV_POLL_DEMAND	0x00001008	/* Received Poll Demand */
++#define DMA_RCV_BASE_ADDR	0x0000100c	/* Receive List Base */
++#define DMA_TX_BASE_ADDR	0x00001010	/* Transmit List Base */
++#define DMA_STATUS		0x00001014	/* Status Register */
++#define DMA_CONTROL		0x00001018	/* Ctrl (Operational Mode) */
++#define DMA_INTR_ENA		0x0000101c	/* Interrupt Enable */
++#define DMA_MISSED_FRAME_CTR	0x00001020	/* Missed Frame Counter */
++#define DMA_CUR_TX_BUF_ADDR	0x00001050	/* Current Host Tx Buffer */
++#define DMA_CUR_RX_BUF_ADDR	0x00001054	/* Current Host Rx Buffer */
++
++/* ********************************
++   DMA Bus Mode register defines 
++ * ********************************/
++#define DMA_BUS_MODE_PBL_MASK	0x00003f00	/* Programmable Burst Len */
++#define DMA_BUS_MODE_PBL_SHIFT	8
++#define DMA_BUS_MODE_DSL_MASK	0x0000007c	/* Descriptor Skip Length */
++#define DMA_BUS_MODE_DSL_SHIFT	2	/*   (in DWORDS)      */
++#define DMA_BUS_MODE_BAR_BUS	0x00000002	/* Bar-Bus Arbitration */
++#define DMA_BUS_MODE_SFT_RESET	0x00000001	/* Software Reset */
++#define DMA_BUS_MODE_DEFAULT	0x00000000
++
++/* ********************************
++   DMA Control register defines
++ * ********************************/
++#define DMA_CONTROL_ST		0x00002000	/* Start/Stop Transmission */
++#define DMA_CONTROL_SR		0x00000002	/* Start/Stop Receive */
++
++/* **************************************
++   DMA Interrupt Enable register defines
++ * **************************************/
++#define DMA_INTR_ENA_NIE 0x00010000	/* Normal Interrupt Summary */
++#define DMA_INTR_ENA_AIE 0x00008000	/* Abnormal Interrupt Summary */
++#define DMA_INTR_ENA_ERE 0x00004000	/* Early Receive */
++#define DMA_INTR_ENA_FBE 0x00002000	/* Fatal Bus Error */
++#define DMA_INTR_ENA_ETE 0x00000400	/* Early Transmit */
++#define DMA_INTR_ENA_RWE 0x00000200	/* Receive Watchdog */
++#define DMA_INTR_ENA_RSE 0x00000100	/* Receive Stopped */
++#define DMA_INTR_ENA_RUE 0x00000080	/* Receive Buffer Unavailable */
++#define DMA_INTR_ENA_RIE 0x00000040	/* Receive Interrupt */
++#define DMA_INTR_ENA_UNE 0x00000020	/* Underflow */
++#define DMA_INTR_ENA_OVE 0x00000010	/* Receive Overflow */
++#define DMA_INTR_ENA_TJE 0x00000008	/* Transmit Jabber */
++#define DMA_INTR_ENA_TUE 0x00000004	/* Transmit Buffer Unavailable */
++#define DMA_INTR_ENA_TSE 0x00000002	/* Transmit Stopped */
++#define DMA_INTR_ENA_TIE 0x00000001	/* Transmit Interrupt */
++
++/* DMA default interrupt mask */
++#define DMA_INTR_DEFAULT_MASK	(DMA_INTR_ENA_NIE | DMA_INTR_ENA_RIE | \
++				 DMA_INTR_ENA_TIE)
++#define DMA_INTR_NO_RX		(DMA_INTR_ENA_NIE | DMA_INTR_ENA_TIE)
++
++/* ****************************
++ *  DMA Status register defines
++ * ****************************/
++#define DMA_STATUS_EB_MASK	0x00380000	/* Error Bits Mask */
++#define DMA_STATUS_EB_TX_ABORT	0x00080000	/* Error Bits - TX Abort */
++#define DMA_STATUS_EB_RX_ABORT	0x00100000	/* Error Bits - RX Abort */
++#define DMA_STATUS_TS_MASK	0x00700000	/* Transmit Process State */
++#define DMA_STATUS_TS_SHIFT	20
++#define DMA_STATUS_RS_MASK	0x000e0000	/* Receive Process State */
++#define DMA_STATUS_RS_SHIFT	17
++#define DMA_STATUS_NIS	0x00010000	/* Normal Interrupt Summary */
++#define DMA_STATUS_AIS	0x00008000	/* Abnormal Interrupt Summary */
++#define DMA_STATUS_ERI	0x00004000	/* Early Receive Interrupt */
++#define DMA_STATUS_FBI	0x00002000	/* Fatal Bus Error Interrupt */
++#define DMA_STATUS_ETI	0x00000400	/* Early Transmit Interrupt */
++#define DMA_STATUS_RWT	0x00000200	/* Receive Watchdog Timeout */
++#define DMA_STATUS_RPS	0x00000100	/* Receive Process Stopped */
++#define DMA_STATUS_RU	0x00000080	/* Receive Buffer Unavailable */
++#define DMA_STATUS_RI	0x00000040	/* Receive Interrupt */
++#define DMA_STATUS_UNF	0x00000020	/* Transmit Underflow */
++#define DMA_STATUS_OVF	0x00000010	/* Receive Overflow */
++#define DMA_STATUS_TJT	0x00000008	/* Transmit Jabber Timeout */
++#define DMA_STATUS_TU	0x00000004	/* Transmit Buffer Unavailable */
++#define DMA_STATUS_TPS	0x00000002	/* Transmit Process Stopped */
++#define DMA_STATUS_TI	0x00000001	/* Transmit Interrupt */
++
++/* ****************************
++ *     Descriptor defines
++ * ****************************/
++#define OWN_BIT			0x80000000	/* Own Bit (owned by hardware) */
++#define DES1_CONTROL_CH		0x01000000	/* Second Address Chained */
++#define DES1_CONTROL_TER	0x02000000	/* End of Ring */
++#define DES1_RBS2_SIZE_MASK	0x003ff800	/* Buffer 2 Size Mask */
++#define DES1_RBS2_SIZE_SHIFT	11	/* Buffer 2 Size Shift */
++#define DES1_RBS1_SIZE_MASK	0x000007ff	/* Buffer 1 Size Mask */
++#define DES1_RBS1_SIZE_SHIFT	0	/* Buffer 1 Size Shift */
++
++/* Transmit descriptor 1*/
++#define TDES1_CONTROL_IC	0x80000000	/* Interrupt on Completion */
++#define TDES1_CONTROL_LS	0x40000000	/* Last Segment */
++#define TDES1_CONTROL_FS	0x20000000	/* First Segment */
++#define TDES1_CONTROL_AC	0x04000000	/* Add CRC Disable */
++#define TDES1_CONTROL_DPD	0x00800000	/* Disable Padding */
++
++/* Rx descriptor 0 */
++#define RDES0_STATUS_FL_MASK	0x3fff0000	/* Frame Length Mask */
++#define RDES0_STATUS_FL_SHIFT	16	/* Frame Length Shift */
++
++/* Other defines */
++#define HASH_TABLE_SIZE 64
++#define PAUSE_TIME 0x200
++
++#undef MAC_DEBUG
++/*#define MAC_DEBUG*/
++#ifdef MAC_DEBUG
++#define MAC_DBG(klevel, fmt, args...) \
++	printk(KERN_##klevel fmt, ## args)
++#else
++#define MAC_DBG(klevel, fmt, args...)  do { } while(0)
++#endif
++
++/* Flow Control defines */
++#define FLOW_OFF	0x0
++#define FLOW_RX		0x1
++#define FLOW_TX		0x2
++#define FLOW_AUTO	(FLOW_TX | FLOW_RX)
++
++struct device_ops {
++	/* MAC controller initialization */
++	void (*core_init) (unsigned long ioaddr);
++	/* Dump MAC CORE registers */
++	void (*mac_registers) (unsigned long ioaddr);
++	/* Dump DMA registers */
++	void (*dma_registers) (unsigned long ioaddr);
++	/* Return zero if no error is happened during the transmission */
++	int (*check_tx_summary) (void *p, unsigned int status);
++	/* Check if the frame was not successfully received */
++	int (*check_rx_summary) (void *p, unsigned int status);
++	/* Verify the TX checksum */
++	void (*tx_checksum) (struct sk_buff * skb);
++	/* Verifies the RX checksum */
++	void (*rx_checksum) (struct sk_buff * skb, int status);
++	/* Enable/Disable Multicast filtering */
++	void (*set_filter) (struct net_device * dev);
++	/* Flow Control */
++	void (*flow_ctrl) (unsigned long ioaddr, unsigned int duplex,
++			   unsigned int fc, unsigned int pause_time);
++
++};
++
++struct mac_link_t {
++	int port;
++	int duplex;
++	int speed;
++};
++
++struct mii_regs_t {
++	unsigned int addr;	/* MII Address */
++	unsigned int data;	/* MII Data */
++	unsigned int addr_write;	/* MII Write */
++	unsigned int addr_busy;	/* MII Busy */
++};
++
++struct mac_regs_t {
++	unsigned int control;	/* MAC CTRL register */
++	unsigned int addr_high;	/* Multicast Hash Table High */
++	unsigned int addr_low;	/* Multicast Hash Table Low */
++	unsigned int enable_rx;	/* Receiver Enable */
++	unsigned int enable_tx;	/* Transmitter Enable */
++	unsigned int version;	/* Core Version register */
++	struct mac_link_t link;
++	struct mii_regs_t mii;
++};
++
++struct device_info_t {
++	char *name;		/* device name */
++	struct mac_regs_t hw;
++	struct device_ops *ops;
++};
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/gmac.c drivers/net/stmmac/gmac.c
+--- linux/drivers/net/stmmac.orig/gmac.c	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/gmac.c	2007-10-24 17:05:27.000000000 +0200
+@@ -20,17 +20,8 @@
+ #include <linux/ethtool.h>
+ #include <asm/io.h>
+ 
+-#include "mac_hw.h"
+-
+-#undef GMAC_DEBUG
+-#ifdef GMAC_DEBUG
+-#define DBG(klevel, fmt, args...) \
+-                printk(KERN_##klevel fmt, ## args)
+-#else
+-#define DBG(klevel, fmt, args...)  do { } while(0)
+-#endif
+-
+-#define HASH_TABLE_SIZE 64
++#include "common.h"
++#include "gmac.h"
+ 
+ static void gmac_mac_registers(unsigned long ioaddr)
+ {
+@@ -72,39 +63,39 @@ static int gmac_tx_summary(void *p, unsi
+ 	struct net_device_stats *stats = (struct net_device_stats *)p;
+ 
+ 	if (unlikely(status & TDES0_STATUS_DF)) {
+-		DBG(WARNING, "gmac: DMA tx: deferred error\n");
++		MAC_DBG(WARNING, "gmac: DMA tx: deferred error\n");
+ 		ret = -1;
+ 	}
+ 	if (unlikely(status & TDES0_STATUS_VLAN)) {
+-		DBG(WARNING, "gmac: DMA tx: VLAN frame Fails\n");
++		MAC_DBG(WARNING, "gmac: DMA tx: VLAN frame Fails\n");
+ 		ret = -1;
+ 	}
+ 	if (unlikely(status & TDES0_STATUS_ES)) {
+-		DBG(ERR, "gmac: DMA tx ERROR: ");
++		MAC_DBG(ERR, "gmac: DMA tx ERROR: ");
+ 		if (unlikely(status & TDES0_STATUS_JT))
+-			DBG(WARNING, "jabber timeout\n");
++			MAC_DBG(WARNING, "jabber timeout\n");
+ 		if (unlikely(status & TDES0_STATUS_FF))
+-			DBG(WARNING, "frame flushed\n");
++			MAC_DBG(WARNING, "frame flushed\n");
+ 		if (unlikely(status & TDES0_STATUS_LOSS_CARRIER))
+-			DBG(WARNING, "Loss of Carrier\n");
++			MAC_DBG(WARNING, "Loss of Carrier\n");
+ 		if (status & TDES0_STATUS_NO_CARRIER)
+-			DBG(ERR, "No Carrier\n");
++			MAC_DBG(ERR, "No Carrier\n");
+ 		if (status & TDES0_STATUS_LATE_COL) {
+-			DBG(ERR, "Late Collision\n");
++			MAC_DBG(ERR, "Late Collision\n");
+ 			stats->collisions +=
+ 			    ((status & TDES0_STATUS_COLCNT_MASK) >>
+ 			     TDES0_STATUS_COLCNT_SHIFT);
+ 		}
+ 		if (status & TDES0_STATUS_EX_COL) {
+-			DBG(ERR, "Ex Collisions\n");
++			MAC_DBG(ERR, "Ex Collisions\n");
+ 			stats->collisions +=
+ 			    ((status & TDES0_STATUS_COLCNT_MASK) >>
+ 			     TDES0_STATUS_COLCNT_SHIFT);
+ 		}
+ 		if (status & TDES0_STATUS_EX_DEF)
+-			DBG(ERR, "Ex Deferrals\n");
++			MAC_DBG(ERR, "Ex Deferrals\n");
+ 		if (status & TDES0_STATUS_UF)
+-			DBG(ERR, "Underflow\n");
++			MAC_DBG(ERR, "Underflow\n");
+ 		ret = -1;
+ 	}
+ 
+@@ -117,31 +108,31 @@ static int gmac_rx_summary(void *p, unsi
+ 	struct net_device_stats *stats = (struct net_device_stats *)p;
+ 
+ 	if (unlikely((status & RDES0_STATUS_ES))) {
+-		DBG(ERR, "gmac: DMA rx ERROR: ");
++		MAC_DBG(ERR, "gmac: DMA rx ERROR: ");
+ 		if (unlikely(status & RDES0_STATUS_DE))
+-			DBG(ERR, "descriptor\n");
++			MAC_DBG(ERR, "descriptor\n");
+ 		if (unlikely(status & RDES0_STATUS_OE))
+-			DBG(ERR, "Overflow\n");
++			MAC_DBG(ERR, "Overflow\n");
+ 		if (unlikely(status & RDES0_STATUS_LC)) {
+-			DBG(ERR, "late collision\n");
++			MAC_DBG(ERR, "late collision\n");
+ 			stats->collisions++;
+ 		}
+ 		if (unlikely(status & RDES0_STATUS_RWT))
+-			DBG(ERR, "watchdog timeout\n");
++			MAC_DBG(ERR, "watchdog timeout\n");
+ 		if (unlikely(status & RDES0_STATUS_RE))
+-			DBG(ERR, "Receive Error (MII)\n");
++			MAC_DBG(ERR, "Receive Error (MII)\n");
+ 		if (unlikely(status & RDES0_STATUS_CE)) {
+-			DBG(ERR, "CRC Error\n");
++			MAC_DBG(ERR, "CRC Error\n");
+ 			stats->rx_crc_errors++;
+ 		}
+ 		ret = -1;
+ 	}
+ 	if (unlikely(status & RDES0_STATUS_FILTER_FAIL)) {
+-		DBG(ERR, "DMA rx: DA Filtering Fails\n");
++		MAC_DBG(ERR, "DMA rx: DA Filtering Fails\n");
+ 		ret = -1;
+ 	}
+ 	if (unlikely(status & RDES0_STATUS_LENGTH_ERROR)) {
+-		DBG(ERR, "DMA rx: Lenght error\n");
++		MAC_DBG(ERR, "DMA rx: Lenght error\n");
+ 		ret = -1;
+ 	}
+ 	return (ret);
+@@ -165,10 +156,9 @@ static void gmac_rx_checksum(struct sk_b
+ 	return;
+ }
+ 
+-static void gmac_core_init(struct net_device *dev)
++static void gmac_core_init(unsigned long ioaddr)
+ {
+ 	unsigned int value = 0;
+-	unsigned long ioaddr = dev->base_addr;
+ 
+ 	/* Set the MAC control register with our default value */
+ 	value = (unsigned int)readl(ioaddr + MAC_CONTROL);
+@@ -176,7 +166,7 @@ static void gmac_core_init(struct net_de
+ 	writel(value, ioaddr + MAC_CONTROL);
+ 
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	writel(ETH_P_8021Q, dev->base_addr + MAC_VLAN);
++	writel(ETH_P_8021Q, ioaddr + MAC_VLAN);
+ #endif
+ 	return;
+ }
+@@ -228,15 +218,33 @@ static void gmac_set_filter(struct net_d
+ 
+ 	writel(value, ioaddr + MAC_CONTROL);
+ 
+-	DBG(DEBUG, "%s: CTRL reg: 0x%08x - Hash regs: HI 0x%08x, LO 0x%08x\n",
+-	    __FUNCTION__, readl(ioaddr + MAC_CONTROL),
+-	    readl(ioaddr + MAC_HASH_HIGH), readl(ioaddr + MAC_HASH_LOW));
++	MAC_DBG(DEBUG,
++		"%s: CTRL reg: 0x%08x - Hash regs: HI 0x%08x, LO 0x%08x\n",
++		__FUNCTION__, readl(ioaddr + MAC_CONTROL),
++		readl(ioaddr + MAC_HASH_HIGH), readl(ioaddr + MAC_HASH_LOW));
++	return;
++}
++
++static void gmac_flow_ctrl(unsigned long ioaddr, unsigned int duplex,
++			   unsigned int fc, unsigned int pause_time)
++{
++	unsigned int flow = 0;
++
++	if (fc & FLOW_RX)
++		flow |= MAC_FLOW_CTRL_RFE;
++	if (fc & FLOW_TX)
++		flow |= MAC_FLOW_CTRL_TFE;
++
++	if (duplex) {
++		MAC_DBG(INFO, "mac100: flow control (pause 0x%x)\n.",
++			pause_time);
++		flow |= (pause_time << MAC_FLOW_CTRL_PT_SHIFT);
++	}
++	writel(flow, ioaddr + MAC_FLOW_CTRL);
+ 	return;
+ }
+ 
+-struct stmmmac_driver mac_driver = {
+-	.name = "gmac",
+-	.have_hw_fix = 0,
++struct device_ops gmac_driver = {
+ 	.core_init = gmac_core_init,
+ 	.mac_registers = gmac_mac_registers,
+ 	.dma_registers = gmac_dma_registers,
+@@ -245,4 +253,36 @@ struct stmmmac_driver mac_driver = {
+ 	.tx_checksum = gmac_tx_checksum,
+ 	.rx_checksum = gmac_rx_checksum,
+ 	.set_filter = gmac_set_filter,
++	.flow_ctrl = gmac_flow_ctrl,
+ };
++
++struct device_info_t *gmac_setup(unsigned long ioaddr)
++{
++	struct device_info_t *mac;
++	unsigned int id;
++	id = (unsigned int)readl(ioaddr + MAC_VERSION);
++	id &= 0x000000ff;
++
++	if (id != GMAC_CORE_VERSION)
++		return NULL;
++
++	mac = kmalloc(sizeof(const struct device_info_t), GFP_KERNEL);
++	memset(mac, 0, sizeof(struct device_info_t));
++
++	mac->ops = &gmac_driver;
++	mac->name = "gmac";
++	mac->hw.control = MAC_CONTROL;
++	mac->hw.addr_high = MAC_ADDR_HIGH;
++	mac->hw.addr_low = MAC_ADDR_LOW;
++	mac->hw.enable_rx = MAC_CONTROL_RE;
++	mac->hw.enable_tx = MAC_CONTROL_TE;
++	mac->hw.link.port = MAC_CONTROL_PS;
++	mac->hw.link.duplex = MAC_CONTROL_DM;
++	mac->hw.link.speed = MAC_CONTROL_FES;
++	mac->hw.mii.addr = MAC_MII_ADDR;
++	mac->hw.mii.data = MAC_MII_DATA;
++	mac->hw.mii.addr_write = MAC_MII_ADDR_WRITE;
++	mac->hw.mii.addr_busy = MAC_MII_ADDR_BUSY;
++
++	return mac;
++}
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/gmac.h drivers/net/stmmac/gmac.h
+--- linux/drivers/net/stmmac.orig/gmac.h	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/gmac.h	2007-10-24 17:05:27.000000000 +0200
+@@ -4,49 +4,52 @@
+  */
+ 
+ /* --- GMAC BLOCK defines --- */
+-#define MAC_CONTROL               0x00000000	/* Configuration */
+-#define MAC_FRAME_FILTER          0x00000004	/* Frame Filter */
+-#define MAC_HASH_HIGH             0x00000008	/* Multicast Hash Table High */
+-#define MAC_HASH_LOW              0x0000000c	/* Multicast Hash Table Low */
+-#define MAC_MII_ADDR             0x00000010	/* MII Address */
+-#define MAC_MII_DATA             0x00000014	/* MII Data */
+-#define MAC_FLOW_CONTROL          0x00000018	/* Flow Control */
+-#define MAC_VLAN                  0x0000001c	/* VLAN Tag */
+-#define MAC_VERSION               0x00000020	/* GMAC CORE Version */
+-#define MAC_WAKEUP_FILTER         0x00000028	/* Wake-up Frame Filter */
+-#define MAC_PMT 		   0x0000002c	/* PMT Control and Status */
+-/* To be verified */
+-/*#define MAC_ADDR_HIGH(reg)	  (0x00000040+(reg*8))
+-#define MAC_ADDR_LOW(reg)	  (0x00000044+(reg*8))*/
+-#define MAC_ADDR_HIGH   	   0x00000040	/* Mac Address 0 higher 16 bits */
+-#define MAC_ADDR_LOW		   0x00000044	/* Mac Address 0 lower 32 bits */
+-#define MAC_AN_CTRL		   0x000000c0	/* AN control */
+-#define MAC_AN_STATUS  	   0x000000c4	/* AN status */
+-#define MAC_ANE_ADV		   0x000000c8	/* Auto-Neg. Advertisement */
+-#define MAC_ANE_LINK		   0x000000cc	/* Auto-Neg. link partener ability */
+-#define MAC_ANE_EXP		   0x000000d0	/* ANE expansion */
+-#define MAC_TBI		   0x000000d4	/* TBI extend status */
+-#define MAC_GMII_STATUS 	   0x000000d8	/* S/R-GMII status */
++#define MAC_CONTROL		0x00000000	/* Configuration */
++#define MAC_FRAME_FILTER	0x00000004	/* Frame Filter */
++#define MAC_HASH_HIGH		0x00000008	/* Multicast Hash Table High */
++#define MAC_HASH_LOW		0x0000000c	/* Multicast Hash Table Low */
++#define MAC_MII_ADDR		0x00000010	/* MII Address */
++#define MAC_MII_DATA		0x00000014	/* MII Data */
++#define MAC_FLOW_CTRL		0x00000018	/* Flow Control */
++#define MAC_VLAN		0x0000001c	/* VLAN Tag */
++#define MAC_VERSION		0x00000020	/* GMAC CORE Version */
++#define MAC_WAKEUP_FILTER	0x00000028	/* Wake-up Frame Filter */
++#define MAC_PMT 		0x0000002c	/* PMT Control and Status */
++
++#define GMAC_CORE_VERSION	0x31	/*Synopsys define version */
++/*
++  #define MAC_ADDR_HIGH(reg)	  (0x00000040+(reg*8))
++  #define MAC_ADDR_LOW(reg)	  (0x00000044+(reg*8))
++*/
++#define MAC_ADDR_HIGH	0x00000040	/* Mac Address 0 higher 16 bits */
++#define MAC_ADDR_LOW	0x00000044	/* Mac Address 0 lower 32 bits */
++#define MAC_AN_CTRL	0x000000c0	/* AN control */
++#define MAC_AN_STATUS	0x000000c4	/* AN status */
++#define MAC_ANE_ADV	0x000000c8	/* Auto-Neg. Advertisement */
++#define MAC_ANE_LINK	0x000000cc	/* Auto-Neg. link partener ability */
++#define MAC_ANE_EXP	0x000000d0	/* ANE expansion */
++#define MAC_TBI		0x000000d4	/* TBI extend status */
++#define MAC_GMII_STATUS	0x000000d8	/* S/R-GMII status */
+ /* GMAC Configuration defines */
+-#define MAC_CONTROL_WD            0x00800000	/* Disable Watchdog */
+-#define MAC_CONTROL_JD		   0x00400000	/* Jabber disable */
+-#define MAC_CONTROL_BE		   0x00200000	/* Frame Burst Enable */
+-#define MAC_CONTROL_JE		   0x00100000	/* Jumbo frame */
+-#define MAC_CONTROL_IFG_88	   0x00040000
+-#define MAC_CONTROL_IFG_80	   0x00020000
+-#define MAC_CONTROL_IFG_40	   0x000e0000
+-#define MAC_CONTROL_PS		   0x00008000	/* Port Select 0:GMI 1:MII */
+-#define MAC_CONTROL_FES	   0x00004000	/* Speed 0:10 1:100 */
+-#define MAC_CONTROL_DO		   0x00002000	/* Disable Rx Own */
+-#define MAC_CONTROL_LM		   0x00001000	/* Loop-back mode */
+-#define MAC_CONTROL_DM            0x00000800	/* Duplex Mode */
+-#define MAC_CONTROL_IPC	   0x00000400	/* Checksum Offload */
+-#define MAC_CONTROL_DR            0x00000200	/* Disable Retry */
+-#define MAC_CONTROL_LUD           0x00000100	/* Link up/down */
+-#define MAC_CONTROL_ACS          0x00000080	/* Automatic Pad Stripping */
+-#define MAC_CONTROL_DC            0x00000010	/* Deferral Check */
+-#define MAC_CONTROL_TE            0x00000008	/* Transmitter Enable */
+-#define MAC_CONTROL_RE            0x00000004	/* Receiver Enable */
++#define MAC_CONTROL_WD	0x00800000	/* Disable Watchdog */
++#define MAC_CONTROL_JD	0x00400000	/* Jabber disable */
++#define MAC_CONTROL_BE	0x00200000	/* Frame Burst Enable */
++#define MAC_CONTROL_JE	0x00100000	/* Jumbo frame */
++#define MAC_CONTROL_IFG_88	0x00040000
++#define MAC_CONTROL_IFG_80	0x00020000
++#define MAC_CONTROL_IFG_40	0x000e0000
++#define MAC_CONTROL_PS		0x00008000	/* Port Select 0:GMI 1:MII */
++#define MAC_CONTROL_FES	   	0x00004000	/* Speed 0:10 1:100 */
++#define MAC_CONTROL_DO		0x00002000	/* Disable Rx Own */
++#define MAC_CONTROL_LM		0x00001000	/* Loop-back mode */
++#define MAC_CONTROL_DM		0x00000800	/* Duplex Mode */
++#define MAC_CONTROL_IPC		0x00000400	/* Checksum Offload */
++#define MAC_CONTROL_DR		0x00000200	/* Disable Retry */
++#define MAC_CONTROL_LUD		0x00000100	/* Link up/down */
++#define MAC_CONTROL_ACS		0x00000080	/* Automatic Pad Stripping */
++#define MAC_CONTROL_DC		0x00000010	/* Deferral Check */
++#define MAC_CONTROL_TE		0x00000008	/* Transmitter Enable */
++#define MAC_CONTROL_RE		0x00000004	/* Receiver Enable */
+ 
+ #define MAC_CORE_INIT (MAC_CONTROL_JE | MAC_CONTROL_ACS | MAC_CONTROL_IPC)
+ 
+@@ -59,126 +62,57 @@
+ #define MAC_FRAME_FILTER_DBF	0x00000020	/*Disable Broadcast frames */
+ #define MAC_FRAME_FILTER_RA	0x80000000	/*Receive all mode */
+ /* GMII ADDR  defines */
+-#define MAC_MII_ADDR_WRITE        0x00000002	/* MII Write */
+-#define MAC_MII_ADDR_BUSY         0x00000001	/* MII Busy */
++#define MAC_MII_ADDR_WRITE	0x00000002	/* MII Write */
++#define MAC_MII_ADDR_BUSY	0x00000001	/* MII Busy */
+ /* GMAC FLOW CTRL defines */
+-#define MAC_FLOW_CONTROL_PT_MASK  0xffff0000	/* Pause Time Mask */
+-#define MAC_FLOW_CONTROL_PT_SHIFT 16
+-#define MAC_FLOW_CONTROL_RFE      0x00000004	/* Rx Flow Control Enable */
+-#define MAC_FLOW_CONTROL_TFE      0x00000002	/* Tx Flow Control Enable */
+-#define MAC_FLOW_CONTROL_PAUSE    0x00000001	/* Flow Control Busy ... */
++#define MAC_FLOW_CTRL_PT_MASK	0xffff0000	/* Pause Time Mask */
++#define MAC_FLOW_CTRL_PT_SHIFT	16
++#define MAC_FLOW_CTRL_RFE	0x00000004	/* Rx Flow Control Enable */
++#define MAC_FLOW_CTRL_TFE	0x00000002	/* Tx Flow Control Enable */
++#define MAC_FLOW_CTRL_FCB_BPA	0x00000001	/* Flow Control Busy ... */
+ 
+ /*--- DMA BLOCK defines ---*/
+ /* DMA CRS Control and Status Register Mapping */
+-#define DMA_BUS_MODE              0x00001000	/* Bus Mode */
+-#define DMA_XMT_POLL_DEMAND       0x00001004	/* Transmit Poll Demand */
+-#define DMA_RCV_POLL_DEMAND       0x00001008	/* Received Poll Demand */
+-#define DMA_RCV_BASE_ADDR         0x0000100c	/* Receive List Base */
+-#define DMA_TX_BASE_ADDR          0x00001010	/* Transmit List Base */
+-#define DMA_STATUS                0x00001014	/* Status Register */
+-#define DMA_CONTROL               0x00001018	/* Operation Mode */
+-#define DMA_INTR_ENA              0x0000101c	/* Interrupt Enable */
+-#define DMA_MISSED_FRAME_CTR      0x00001020	/* Missed Frame Counter and Buffer Overflow Counter */
+ #define DMA_HOST_TX_DESC	  0x00001048	/* Current Host Tx descriptor */
+ #define DMA_HOST_RX_DESC	  0x0000104c	/* Current Host Rx descriptor */
+-#define DMA_CUR_TX_BUF_ADDR       0x00001050	/* Current Host Transmit Buffer */
+-#define DMA_CUR_RX_BUF_ADDR       0x00001054	/* Current Host Receive Buffer */
+ /*  DMA Bus Mode register defines */
+-#define DMA_BUS_MODE_SFT_RESET    0x00000001	/* Software Reset */
+-#define DMA_BUS_MODE_BAR_BUS      0x00000002	/* Bar-Bus Arbitration */
+-#define DMA_BUS_MODE_DSL_MASK     0x0000007c	/* Descriptor Skip Length */
+-#define DMA_BUS_MODE_DSL_SHIFT    2
+-#define DMA_BUS_MODE_PBL_MASK     0x00003f00	/* Programmable Burst Length */
+-#define DMA_BUS_MODE_PBL_SHIFT    8
+ #define DMA_BUS_PR_RATIO_MASK	  0x0000c000	/* Rx/Tx priority ratio */
+ #define DMA_BUS_PR_RATIO_SHIFT	  14
+ #define DMA_BUS_FB	  	  0x00010000	/* Fixed Burst */
+-#define DMA_BUS_MODE_DEFAULT      0x00000000
++
+ /* DMA Status register defines */
+ #define DMA_STATUS_GPI		0x10000000	/* PMT interrupt */
+ #define DMA_STATUS_GMI		0x08000000	/* MMC interrupt */
+ #define DMA_STATUS_GLI		0x04000000	/* GMAC Line interface interrupt */
+-#define DMA_STATUS_EB_MASK        0x00380000	/* Error Bits Mask */
+-#define DMA_STATUS_EB_TX_ABORT    0x00080000	/* Error Bits - TX Abort */
+-#define DMA_STATUS_EB_RX_ABORT    0x00100000	/* Error Bits - RX Abort */
+-#define DMA_STATUS_TS_MASK        0x00700000	/* Transmit Process State */
+-#define DMA_STATUS_TS_SHIFT       20
+-#define DMA_STATUS_RS_MASK        0x000e0000	/* Receive Process State */
+-#define DMA_STATUS_RS_SHIFT       17
+-#define DMA_STATUS_NIS            0x00010000	/* Normal Interrupt Summary */
+-#define DMA_STATUS_AIS            0x00008000	/* Abnormal Interrupt Summary */
+-#define DMA_STATUS_ERI            0x00004000	/* Early Receive Interrupt */
+-#define DMA_STATUS_FBI            0x00002000	/* Fatal Bus Error Interrupt */
+-#define DMA_STATUS_ETI            0x00000400	/* Early Transmit Interrupt */
+-#define DMA_STATUS_RWT            0x00000200	/* Receive Watchdog Timeout */
+-#define DMA_STATUS_RPS            0x00000100	/* Receive Process Stopped */
+-#define DMA_STATUS_RU             0x00000080	/* Receive Buffer Unavailable */
+-#define DMA_STATUS_RI             0x00000040	/* Receive Interrupt */
+-#define DMA_STATUS_UNF            0x00000020	/* Transmit Underflow */
+-#define DMA_STATUS_OVF            0x00000010	/* Receive Overflow */
+-#define DMA_STATUS_TJT            0x00000008	/* Transmit Jabber Timeout */
+-#define DMA_STATUS_TU             0x00000004	/* Transmit Buffer Unavailable */
+-#define DMA_STATUS_TPS            0x00000002	/* Transmit Process Stopped */
+-#define DMA_STATUS_TI             0x00000001	/* Transmit Interrupt */
++
+ /* DMA operation mode defines */
+-#define DMA_CONTROL_SF            0x00200000	/* Store And Forward */
++#define DMA_CONTROL_SF	    0x00200000	/* Store And Forward */
+ #define DMA_CONTROL_FTF		  0x00100000	/* Flush transmit FIFO */
+ #define DMA_CONTROL_TTC_MASK      0x0001c000	/* Transmit Threshold Control */
+-#define DMA_CONTROL_ST            0x00002000	/* Start/Stop Transmission */
+-#define DMA_CONTROL_SR            0x00000002	/* Start/Stop Receive */
+-/* DMA Interrupt Enable register defines */
+-#define DMA_INTR_ENA_NIE          0x00010000	/* Normal Interrupt Summary */
+-#define DMA_INTR_ENA_AIE          0x00008000	/* Abnormal Interrupt Summary */
+-#define DMA_INTR_ENA_ERE          0x00004000	/* Early Receive */
+-#define DMA_INTR_ENA_FBE          0x00002000	/* Fatal Bus Error */
+-#define DMA_INTR_ENA_ETE          0x00000400	/* Early Transmit */
+-#define DMA_INTR_ENA_RWE          0x00000200	/* Receive Watchdog */
+-#define DMA_INTR_ENA_RSE          0x00000100	/* Receive Stopped */
+-#define DMA_INTR_ENA_RUE          0x00000080	/* Receive Buffer Unavailable */
+-#define DMA_INTR_ENA_RIE          0x00000040	/* Receive Interrupt */
+-#define DMA_INTR_ENA_UNE          0x00000020	/* Underflow */
+-#define DMA_INTR_ENA_OVE          0x00000010	/* Receive Overflow */
+-#define DMA_INTR_ENA_TJE          0x00000008	/* Transmit Jabber */
+-#define DMA_INTR_ENA_TUE          0x00000004	/* Transmit Buffer Unavailable */
+-#define DMA_INTR_ENA_TSE          0x00000002	/* Transmit Stopped */
+-#define DMA_INTR_ENA_TIE          0x00000001	/* Transmit Interrupt */
+-/* DMA default interrupt mask */
+-#define DMA_INTR_DEFAULT_MASK 	(DMA_INTR_ENA_NIE | DMA_INTR_ENA_RIE | \
+-				DMA_INTR_ENA_TIE)
+-#define DMA_INTR_NO_RX		(DMA_INTR_ENA_NIE | DMA_INTR_ENA_TIE)
+ 
+ /* --- Descriptor defines --- */
+-/* Common fields */
+-#define OWN_BIT			0x80000000	/* Own Bit (owned by hardware) */
+-#define DES1_CONTROL_CH		0x01000000	/* Second Address Chained */
+-#define DES1_CONTROL_TER	0x02000000	/* End of Ring */
+-#define DES1_RBS2_SIZE_MASK	0x003ff800	/* Buffer 2 Size Mask */
+-#define DES1_RBS2_SIZE_SHIFT	11	/* Buffer 2 Size Shift */
+-#define DES1_RBS1_SIZE_MASK	0x000007ff	/* Buffer 1 Size Mask */
+-#define DES1_RBS1_SIZE_SHIFT	0	/* Buffer 1 Size Shift */
+-
+ /* Receive Descriptor 1*/
+-#define RDES1_CONTROL_DIOC        0x80000000	/* Disable Intr On Completion */
++#define RDES1_CONTROL_DIOC	0x80000000	/* Disable Intr On Completion */
+ /* Receive Descriptor 0*/
+ #define RDES0_STATUS_FILTER_FAIL  0x40000000	/* DA Filtering Fails */
+ #define RDES0_STATUS_FL_MASK      0x3fff0000	/* Frame Length Mask */
+ #define RDES0_STATUS_FL_SHIFT     16	/* Frame Length Shift */
+-#define RDES0_STATUS_ES           0x00008000	/* Error Summary */
+-#define RDES0_STATUS_DE           0x00004000	/* Descriptor Error */
+-#define RDES0_STATUS_SAF          0x00002000	/* Source Address filter Fail */
++#define RDES0_STATUS_ES	   0x00008000	/* Error Summary */
++#define RDES0_STATUS_DE	   0x00004000	/* Descriptor Error */
++#define RDES0_STATUS_SAF	  0x00002000	/* Source Address filter Fail */
+ #define RDES0_STATUS_LENGTH_ERROR 0x00001000	/* Length Error */
+ #define RDES0_STATUS_OE     0x00000800	/* Overflow Error */
+ #define RDES0_STATUS_VLAN 0x00000400	/* VLAN tag */
+-#define RDES0_STATUS_FS           0x00000200	/* First Descriptor */
+-#define RDES0_STATUS_LS           0x00000100	/* Last Descriptor */
+-#define RDES0_STATUS_IPC           0x00000080	/* Checksum Error */
++#define RDES0_STATUS_FS	   0x00000200	/* First Descriptor */
++#define RDES0_STATUS_LS	   0x00000100	/* Last Descriptor */
++#define RDES0_STATUS_IPC	   0x00000080	/* Checksum Error */
+ #define RDES0_STATUS_LC     0x00000040	/* Collision Seen */
+ #define RDES0_STATUS_FT     0x00000020	/* Frame Type */
+ #define RDES0_STATUS_RWT  0x00000010	/* Receive Watchdog */
+ #define RDES0_STATUS_RE      0x00000008	/* Receive Error  */
+ #define RDES0_STATUS_DRIBBLE      0x00000004	/* Dribbling Bit */
+-#define RDES0_STATUS_CE           0x00000002	/* CRC Error */
+-#define RDES0_STATUS_RX_MAC_ADDR            0x00000001	/* RX MAC ADDR. */
++#define RDES0_STATUS_CE	   0x00000002	/* CRC Error */
++#define RDES0_STATUS_RX_MAC_ADDR	    0x00000001	/* RX MAC ADDR. */
+ 
+ /* Transmit Descriptor */
+ #define TDES0_STATUS_ES		  0x00008000	/* Error Summary */
+@@ -187,19 +121,10 @@
+ #define TDES0_STATUS_LOSS_CARRIER 0x00000800	/* Loss of Carrier */
+ #define TDES0_STATUS_NO_CARRIER   0x00000400	/* No Carrier */
+ #define TDES0_STATUS_LATE_COL     0x00000200	/* Late Collision */
+-#define TDES0_STATUS_EX_COL       0x00000100	/* Excessive Collisions */
++#define TDES0_STATUS_EX_COL	0x00000100	/* Excessive Collisions */
+ #define TDES0_STATUS_VLAN   0x00000080	/* VLAN FRAME */
+ #define TDES0_STATUS_COLCNT_MASK  0x00000078	/* Collision Count Mask */
+ #define TDES0_STATUS_COLCNT_SHIFT 3	/* Collision Count Shift */
+-#define TDES0_STATUS_EX_DEF       0x00000004	/* Excessive Deferrals */
+-#define TDES0_STATUS_UF           0x00000002	/* Underflow Error */
+-#define TDES0_STATUS_DF           0x00000001	/* Deferred */
+-#define TDES1_CONTROL_IC          0x80000000	/* Interrupt on Completion */
+-#define TDES1_CONTROL_LS          0x40000000	/* Last Segment */
+-#define TDES1_CONTROL_FS          0x20000000	/* First Segment */
+-#define TDES1_CONTROL_AC          0x04000000	/* Add CRC Disable */
+-#define TDES1_CONTROL_DPD         0x00800000	/* Disable Padding */
+-
+-#define STMMAC_FULL_DUPLEX MAC_CONTROL_DM
+-#define STMMAC_PORT	   MAC_CONTROL_PS
+-#define STMMAC_SPEED_100   MAC_CONTROL_FES
++#define TDES0_STATUS_EX_DEF	0x00000004	/* Excessive Deferrals */
++#define TDES0_STATUS_UF	   0x00000002	/* Underflow Error */
++#define TDES0_STATUS_DF	   0x00000001	/* Deferred */
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/mac100.c drivers/net/stmmac/mac100.c
+--- linux/drivers/net/stmmac.orig/mac100.c	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/mac100.c	2007-10-24 17:05:27.000000000 +0200
+@@ -21,17 +21,8 @@
+ #include <linux/phy.h>
+ #include <asm/io.h>
+ 
+-#include "mac_hw.h"
+-
+-#define HASH_TABLE_SIZE 64
+-
+-#undef MAC100_DEBUG
+-#ifdef MAC100_DEBUG
+-#define DBG(klevel, fmt, args...) \
+-                printk(KERN_##klevel fmt, ## args)
+-#else
+-#define DBG(klevel, fmt, args...)  do { } while(0)
+-#endif
++#include "common.h"
++#include "mac100.h"
+ 
+ static void mac100_mac_registers(unsigned long ioaddr)
+ {
+@@ -49,14 +40,12 @@ static void mac100_mac_registers(unsigne
+ 	       readl(ioaddr + MAC_HASH_HIGH));
+ 	printk("\tmulticast hash LO (offset 0x%x): 0x%08x\n", MAC_HASH_LOW,
+ 	       readl(ioaddr + MAC_HASH_LOW));
+-	printk("\tflow control (offset 0x%x): 0x%08x\n", MAC_FLOW_CONTROL,
+-	       readl(ioaddr + MAC_FLOW_CONTROL));
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
++	printk("\tflow control (offset 0x%x): 0x%08x\n", MAC_FLOW_CTRL,
++	       readl(ioaddr + MAC_FLOW_CTRL));
+ 	printk("\tVLAN1 tag (offset 0x%x): 0x%08x\n", MAC_VLAN1,
+ 	       readl(ioaddr + MAC_VLAN1));
+ 	printk("\tVLAN2 tag (offset 0x%x): 0x%08x\n", MAC_VLAN2,
+ 	       readl(ioaddr + MAC_VLAN2));
+-#endif
+ 	printk("\tmac wakeup frame (offset 0x%x): 0x%08x\n", MAC_WAKEUP_FILTER,
+ 	       readl(ioaddr + MAC_WAKEUP_FILTER));
+ 	printk("\tmac wakeup crtl (offset 0x%x): 0x%08x\n",
+@@ -100,17 +89,19 @@ static int mac100_tx_summary(void *p, un
+ 	struct net_device_stats *stats = (struct net_device_stats *)p;
+ 
+ 	if (unlikely(status & TDES0_STATUS_ES)) {
+-		DBG(ERR, "mac100: DMA tx ERROR: ");
++		MAC_DBG(ERR, "mac100: DMA tx ERROR: ");
++/*		TO BE VERIFIED !
+ 		if (status & TDES0_STATUS_UF) {
+-			DBG(ERR, "Underflow Error\n");
++			MAC_DBG(ERR, "Underflow Error\n");
+ 			stats->tx_fifo_errors++;
+ 		}
++*/
+ 		if (status & TDES0_STATUS_NO_CARRIER) {
+-			DBG(ERR, "No Carrier detected\n");
++			MAC_DBG(ERR, "No Carrier detected\n");
+ 			stats->tx_carrier_errors++;
+ 		}
+ 		if (status & TDES0_STATUS_LOSS_CARRIER) {
+-			DBG(ERR, "Loss of Carrier\n");
++			MAC_DBG(ERR, "Loss of Carrier\n");
+ 		}
+ 		if ((status & TDES0_STATUS_EX_DEF) ||
+ 		    (status & TDES0_STATUS_EX_COL) ||
+@@ -123,12 +114,12 @@ static int mac100_tx_summary(void *p, un
+ 	}
+ 
+ 	if (unlikely(status & TDES0_STATUS_HRTBT_FAIL)) {
+-		DBG(ERR, "mac100: Heartbeat Fail\n");
++		MAC_DBG(ERR, "mac100: Heartbeat Fail\n");
+ 		stats->tx_heartbeat_errors++;
+ 		ret = -1;
+ 	}
+ 	if (unlikely(status & TDES0_STATUS_DF)) {
+-		DBG(WARNING, "mac100: tx deferred\n");
++		MAC_DBG(WARNING, "mac100: tx deferred\n");
+ 		/*ret = -1; */
+ 	}
+ 
+@@ -143,28 +134,28 @@ static int mac100_rx_summary(void *p, un
+ 	struct net_device_stats *stats = (struct net_device_stats *)p;
+ 
+ 	if ((status & RDES0_STATUS_ERROR)) {
+-		DBG(ERR, "stmmaceth RX:\n");
++		MAC_DBG(ERR, "stmmaceth RX:\n");
+ 		if (status & RDES0_STATUS_DE)
+-			DBG(ERR, "\tdescriptor error\n");
++			MAC_DBG(ERR, "\tdescriptor error\n");
+ 		if (status & RDES0_STATUS_PFE)
+-			DBG(ERR, "\tpartial frame error\n");
++			MAC_DBG(ERR, "\tpartial frame error\n");
+ 		if (status & RDES0_STATUS_RUNT_FRM)
+-			DBG(ERR, "\trunt Frame\n");
++			MAC_DBG(ERR, "\trunt Frame\n");
+ 		if (status & RDES0_STATUS_TL)
+-			DBG(ERR, "\tframe too long\n");
++			MAC_DBG(ERR, "\tframe too long\n");
+ 		if (status & RDES0_STATUS_COL_SEEN) {
+-			DBG(ERR, "\tcollision seen\n");
++			MAC_DBG(ERR, "\tcollision seen\n");
+ 			stats->collisions++;
+ 		}
+ 		if (status & RDES0_STATUS_CE) {
+-			DBG(ERR, "\tCRC Error\n");
++			MAC_DBG(ERR, "\tCRC Error\n");
+ 			stats->rx_crc_errors++;
+ 		}
+ 
+ 		if (status & RDES0_STATUS_LENGTH_ERROR)
+-			DBG(ERR, "\tLenght error\n");
++			MAC_DBG(ERR, "\tLenght error\n");
+ 		if (status & RDES0_STATUS_MII_ERR)
+-			DBG(ERR, "\tMII error\n");
++			MAC_DBG(ERR, "\tMII error\n");
+ 
+ 		ret = -1;
+ 	}
+@@ -196,19 +187,20 @@ static void mac100_rx_checksum(struct sk
+ 	return;
+ }
+ 
+-static void mac100_core_init(struct net_device *dev)
++static void mac100_core_init(unsigned long ioaddr)
+ {
+ 	unsigned int value = 0;
+-	unsigned long ioaddr = dev->base_addr;
+ 
+-	DBG(DEBUG, "mac100_core_init");
++	MAC_DBG(DEBUG, "mac100_core_init");
+ 
+ 	/* Set the MAC control register with our default value */
+ 	value = (unsigned int)readl(ioaddr + MAC_CONTROL);
+ 	writel((value | MAC_CORE_INIT), ioaddr + MAC_CONTROL);
+ 
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	writel(ETH_P_8021Q, dev->base_addr + MAC_VLAN1);
++	/* VLAN1 Tag identifier register is programmed to 
++	 * the 802.1Q VLAN Extended Header (0x8100). */
++	writel(ETH_P_8021Q, ioaddr + MAC_VLAN1);
+ #endif
+ 	return;
+ }
+@@ -260,15 +252,29 @@ static void mac100_set_filter(struct net
+ 
+ 	writel(value, ioaddr + MAC_CONTROL);
+ 
+-	DBG(DEBUG, "%s: CTRL reg: 0x%08x - Hash regs: HI 0x%08x, LO 0x%08x\n",
+-	    __FUNCTION__, readl(ioaddr + MAC_CONTROL),
+-	    readl(ioaddr + MAC_HASH_HIGH), readl(ioaddr + MAC_HASH_LOW));
++	MAC_DBG(DEBUG,
++		"%s: CTRL reg: 0x%08x - Hash regs: HI 0x%08x, LO 0x%08x\n",
++		__FUNCTION__, readl(ioaddr + MAC_CONTROL),
++		readl(ioaddr + MAC_HASH_HIGH), readl(ioaddr + MAC_HASH_LOW));
+ 	return;
+ }
+ 
+-struct stmmmac_driver mac_driver = {
+-	.name = "mac100",
+-	.have_hw_fix = 1,
++static void mac100_flow_ctrl(unsigned long ioaddr, unsigned int duplex,
++			     unsigned int fc, unsigned int pause_time)
++{
++	unsigned int flow = MAC_FLOW_CTRL_ENABLE;
++
++	if (duplex) {
++		MAC_DBG(INFO, "mac100: flow control (pause 0x%x)\n.",
++			pause_time);
++		flow |= (pause_time << MAC_FLOW_CTRL_PT_SHIFT);
++	}
++	writel(flow, ioaddr + MAC_FLOW_CTRL);
++
++	return;
++}
++
++struct device_ops mac100_driver = {
+ 	.core_init = mac100_core_init,
+ 	.mac_registers = mac100_mac_registers,
+ 	.dma_registers = mac100_dma_registers,
+@@ -277,4 +283,28 @@ struct stmmmac_driver mac_driver = {
+ 	.tx_checksum = mac100_tx_checksum,
+ 	.rx_checksum = mac100_rx_checksum,
+ 	.set_filter = mac100_set_filter,
++	.flow_ctrl = mac100_flow_ctrl,
+ };
++
++struct device_info_t *mac100_setup(unsigned long ioaddr)
++{
++	struct device_info_t *mac;
++	mac = kmalloc(sizeof(const struct device_info_t), GFP_KERNEL);
++	memset(mac, 0, sizeof(struct device_info_t));
++	mac->ops = &mac100_driver;
++	mac->name = "mac100";
++	mac->hw.control = MAC_CONTROL;
++	mac->hw.addr_high = MAC_ADDR_HIGH;
++	mac->hw.addr_low = MAC_ADDR_LOW;
++	mac->hw.enable_rx = MAC_CONTROL_RE;
++	mac->hw.enable_tx = MAC_CONTROL_TE;
++	mac->hw.link.port = MAC_CONTROL_PS;
++	mac->hw.link.duplex = MAC_CONTROL_F;
++	mac->hw.link.speed = 0;
++	mac->hw.mii.addr = MAC_MII_ADDR;
++	mac->hw.mii.data = MAC_MII_DATA;
++	mac->hw.mii.addr_write = MAC_MII_ADDR_WRITE;
++	mac->hw.mii.addr_busy = MAC_MII_ADDR_BUSY;
++
++	return mac;
++}
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/mac100.h drivers/net/stmmac/mac100.h
+--- linux/drivers/net/stmmac.orig/mac100.h	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/mac100.h	2007-10-24 17:05:27.000000000 +0200
+@@ -1,224 +1,133 @@
+-/* 
+- * MAC 10/100 header file
+- * Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+- */
+-
+ /*----------------------------------------------------------------------------
+  *	 			MAC BLOCK defines
+  *---------------------------------------------------------------------------*/
+ /* MAC CSR offset */
+-#define MAC_CONTROL               0x00000000	/* MAC Control */
+-#define MAC_ADDR_HIGH             0x00000004	/* MAC Address High */
+-#define MAC_ADDR_LOW              0x00000008	/* MAC Address Low */
+-#define MAC_HASH_HIGH             0x0000000c	/* Multicast Hash Table High */
+-#define MAC_HASH_LOW              0x00000010	/* Multicast Hash Table Low */
+-#define MAC_MII_ADDR              0x00000014	/* MII Address */
+-#define MAC_MII_DATA              0x00000018	/* MII Data */
+-#define MAC_FLOW_CONTROL          0x0000001c	/* Flow Control */
+-#define MAC_VLAN1                 0x00000020	/* VLAN1 Tag */
+-#define MAC_VLAN2                 0x00000024	/* VLAN2 Tag */
+-#define MAC_WAKEUP_FILTER         0x00000028	/* Wake-up Frame Filter */
++#define MAC_CONTROL	0x00000000	/* MAC Control */
++#define MAC_ADDR_HIGH	0x00000004	/* MAC Address High */
++#define MAC_ADDR_LOW	0x00000008	/* MAC Address Low */
++#define MAC_HASH_HIGH	0x0000000c	/* Multicast Hash Table High */
++#define MAC_HASH_LOW	0x00000010	/* Multicast Hash Table Low */
++#define MAC_MII_ADDR	0x00000014	/* MII Address */
++#define MAC_MII_DATA	0x00000018	/* MII Data */
++#define MAC_FLOW_CTRL	0x0000001c	/* Flow Control */
++#define MAC_VLAN1	0x00000020	/* VLAN1 Tag */
++#define MAC_VLAN2	0x00000024	/* VLAN2 Tag */
++#define MAC_WAKEUP_FILTER	  0x00000028	/* Wake-up Frame Filter */
+ #define MAC_WAKEUP_CONTROL_STATUS 0x0000002c	/* Wake-up Control And Status */
+ 
+ /* MAC CTRL defines */
+-#define MAC_CONTROL_RA            0x80000000	/* Receive All Mode */
+-#define MAC_CONTROL_BLE           0x40000000	/* Endian Mode */
+-#define MAC_CONTROL_HBD           0x10000000	/* Heartbeat Disable */
+-#define MAC_CONTROL_PS            0x08000000	/* Port Select */
+-#define MAC_CONTROL_DRO           0x00800000	/* Disable Receive Own */
+-#define MAC_CONTROL_EXT_LOOPBACK  0x00400000	/* Reserved (ext loopback?) */
+-#define MAC_CONTROL_OM            0x00200000	/* Loopback Operating Mode */
+-#define MAC_CONTROL_F             0x00100000	/* Full Duplex Mode */
+-#define MAC_CONTROL_PM            0x00080000	/* Pass All Multicast */
+-#define MAC_CONTROL_PR            0x00040000	/* Promiscuous Mode */
+-#define MAC_CONTROL_IF            0x00020000	/* Inverse Filtering */
+-#define MAC_CONTROL_PB            0x00010000	/* Pass Bad Frames */
+-#define MAC_CONTROL_HO            0x00008000	/* Hash Only Filtering Mode */
+-#define MAC_CONTROL_HP            0x00002000	/* Hash/Perfect Filtering Mode */
+-#define MAC_CONTROL_LCC           0x00001000	/* Late Collision Control */
+-#define MAC_CONTROL_DBF           0x00000800	/* Disable Broadcast Frames */
+-#define MAC_CONTROL_DRTY          0x00000400	/* Disable Retry */
+-#define MAC_CONTROL_ASTP          0x00000100	/* Automatic Pad Stripping */
+-#define MAC_CONTROL_BOLMT_10      0x00000000	/* Back Off Limit 10 */
+-#define MAC_CONTROL_BOLMT_8       0x00000040	/* Back Off Limit 8 */
+-#define MAC_CONTROL_BOLMT_4       0x00000080	/* Back Off Limit 4 */
+-#define MAC_CONTROL_BOLMT_1       0x000000c0	/* Back Off Limit 1 */
+-#define MAC_CONTROL_DC            0x00000020	/* Deferral Check */
+-#define MAC_CONTROL_TE            0x00000008	/* Transmitter Enable */
+-#define MAC_CONTROL_RE            0x00000004	/* Receiver Enable */
++#define MAC_CONTROL_RA	0x80000000	/* Receive All Mode */
++#define MAC_CONTROL_BLE	0x40000000	/* Endian Mode */
++#define MAC_CONTROL_HBD	0x10000000	/* Heartbeat Disable */
++#define MAC_CONTROL_PS	0x08000000	/* Port Select */
++#define MAC_CONTROL_DRO	0x00800000	/* Disable Receive Own */
++#define MAC_CONTROL_EXT_LOOPBACK 0x00400000	/* Reserved (ext loopback?) */
++#define MAC_CONTROL_OM	0x00200000	/* Loopback Operating Mode */
++#define MAC_CONTROL_F	0x00100000	/* Full Duplex Mode */
++#define MAC_CONTROL_PM	0x00080000	/* Pass All Multicast */
++#define MAC_CONTROL_PR	0x00040000	/* Promiscuous Mode */
++#define MAC_CONTROL_IF	0x00020000	/* Inverse Filtering */
++#define MAC_CONTROL_PB	0x00010000	/* Pass Bad Frames */
++#define MAC_CONTROL_HO	0x00008000	/* Hash Only Filtering Mode */
++#define MAC_CONTROL_HP	0x00002000	/* Hash/Perfect Filtering Mode */
++#define MAC_CONTROL_LCC	0x00001000	/* Late Collision Control */
++#define MAC_CONTROL_DBF	0x00000800	/* Disable Broadcast Frames */
++#define MAC_CONTROL_DRTY	0x00000400	/* Disable Retry */
++#define MAC_CONTROL_ASTP	0x00000100	/* Automatic Pad Stripping */
++#define MAC_CONTROL_BOLMT_10	0x00000000	/* Back Off Limit 10 */
++#define MAC_CONTROL_BOLMT_8	0x00000040	/* Back Off Limit 8 */
++#define MAC_CONTROL_BOLMT_4	0x00000080	/* Back Off Limit 4 */
++#define MAC_CONTROL_BOLMT_1	0x000000c0	/* Back Off Limit 1 */
++#define MAC_CONTROL_DC		0x00000020	/* Deferral Check */
++#define MAC_CONTROL_TE		0x00000008	/* Transmitter Enable */
++#define MAC_CONTROL_RE		0x00000004	/* Receiver Enable */
+ 
+ #define MAC_CORE_INIT (MAC_CONTROL_HBD | MAC_CONTROL_ASTP)
+ 
+ /* MAC FLOW CTRL defines */
+-#define MAC_FLOW_CONTROL_PT_MASK  0xffff0000	/* Pause Time Mask */
+-#define MAC_FLOW_CONTROL_PT_SHIFT 16
+-#define MAC_FLOW_CONTROL_PCF      0x00000004	/* Pass Control Frames */
+-#define MAC_FLOW_CONTROL_FCE      0x00000002	/* Flow Control Enable */
+-#define MAC_FLOW_CONTROL_PAUSE    0x00000001	/* Flow Control Busy ... */
++#define MAC_FLOW_CTRL_PT_MASK	0xffff0000	/* Pause Time Mask */
++#define MAC_FLOW_CTRL_PT_SHIFT	16
++#define MAC_FLOW_CTRL_PASS	0x00000004	/* Pass Control Frames */
++#define MAC_FLOW_CTRL_ENABLE	0x00000002	/* Flow Control Enable */
++#define MAC_FLOW_CTRL_PAUSE	0x00000001	/* Flow Control Busy ... */
+ 
+ /* MII ADDR  defines */
+-#define MAC_MII_ADDR_WRITE        0x00000002	/* MII Write */
+-#define MAC_MII_ADDR_BUSY         0x00000001	/* MII Busy */
++#define MAC_MII_ADDR_WRITE	0x00000002	/* MII Write */
++#define MAC_MII_ADDR_BUSY	0x00000001	/* MII Busy */
+ 
+ /* MAC Management Counters register */
+-#define MMC_CONTROL               0x00000100	/* MMC Control */
+-#define MMC_HIGH_INTR             0x00000104	/* MMC High Interrupt */
+-#define MMC_LOW_INTR              0x00000108	/* MMC Low Interrupt */
+-#define MMC_HIGH_INTR_MASK        0x0000010c	/* MMC High Interrupt Mask */
+-#define MMC_LOW_INTR_MASK         0x00000110	/* MMC Low Interrupt Mask */
+-
+-#define MMC_CONTROL_MAX_FRM_MASK  0x0003ff8	/* Maximum Frame Size */
+-#define MMC_CONTROL_MAX_FRM_SHIFT 3
+-#define MMC_CONTROL_MAX_FRAME 	  0x7FF
++#define MMC_CONTROL		0x00000100	/* MMC Control */
++#define MMC_HIGH_INTR		0x00000104	/* MMC High Interrupt */
++#define MMC_LOW_INTR		0x00000108	/* MMC Low Interrupt */
++#define MMC_HIGH_INTR_MASK	0x0000010c	/* MMC High Interrupt Mask */
++#define MMC_LOW_INTR_MASK	0x00000110	/* MMC Low Interrupt Mask */
++
++#define MMC_CONTROL_MAX_FRM_MASK	0x0003ff8	/* Maximum Frame Size */
++#define MMC_CONTROL_MAX_FRM_SHIFT	3
++#define MMC_CONTROL_MAX_FRAME		0x7FF
+ 
+ /*----------------------------------------------------------------------------
+  * 				DMA BLOCK defines
+  *---------------------------------------------------------------------------*/
+-/* DMA CRS Control and Status Register Mapping */
+-#define DMA_BUS_MODE              0x00001000	/* Bus Mode */
+-#define DMA_XMT_POLL_DEMAND       0x00001004	/* Transmit Poll Demand */
+-#define DMA_RCV_POLL_DEMAND       0x00001008	/* Received Poll Demand */
+-#define DMA_RCV_BASE_ADDR         0x0000100c	/* Receive List Base */
+-#define DMA_TX_BASE_ADDR          0x00001010	/* Transmit List Base */
+-#define DMA_STATUS                0x00001014	/* Status Register */
+-#define DMA_CONTROL               0x00001018	/* Control (Operational Mode) */
+-#define DMA_INTR_ENA              0x0000101c	/* Interrupt Enable */
+-#define DMA_MISSED_FRAME_CTR      0x00001020	/* Missed Frame Counter */
+-#define DMA_CUR_TX_BUF_ADDR       0x00001050	/* Current Host Transmit Buffer */
+-#define DMA_CUR_RX_BUF_ADDR       0x00001054	/* Current Host Receive Buffer */
+-
+ /*  DMA Bus Mode register defines */
+-#define DMA_BUS_MODE_DBO          0x00100000	/* Descriptor Byte Ordering */
+-#define DMA_BUS_MODE_PBL_MASK     0x00003f00	/* Programmable Burst Length */
+-#define DMA_BUS_MODE_PBL_SHIFT    8
+-#define DMA_BUS_MODE_BLE          0x00000080	/* Big Endian/Little Endian */
+-#define DMA_BUS_MODE_DSL_MASK     0x0000007c	/* Descriptor Skip Length */
+-#define DMA_BUS_MODE_DSL_SHIFT    2	/*       (in DWORDS)      */
+-#define DMA_BUS_MODE_BAR_BUS      0x00000002	/* Bar-Bus Arbitration */
+-#define DMA_BUS_MODE_SFT_RESET    0x00000001	/* Software Reset */
+-#define DMA_BUS_MODE_DEFAULT      0x00000000
+-
+-/* DMA Status register defines */
+-#define DMA_STATUS_EB_MASK        0x00380000	/* Error Bits Mask */
+-#define DMA_STATUS_EB_TX_ABORT    0x00080000	/* Error Bits - TX Abort */
+-#define DMA_STATUS_EB_RX_ABORT    0x00100000	/* Error Bits - RX Abort */
+-#define DMA_STATUS_TS_MASK        0x00700000	/* Transmit Process State */
+-#define DMA_STATUS_TS_SHIFT       20
+-#define DMA_STATUS_RS_MASK        0x000e0000	/* Receive Process State */
+-#define DMA_STATUS_RS_SHIFT       17
+-#define DMA_STATUS_NIS            0x00010000	/* Normal Interrupt Summary */
+-#define DMA_STATUS_AIS            0x00008000	/* Abnormal Interrupt Summary */
+-#define DMA_STATUS_ERI            0x00004000	/* Early Receive Interrupt */
+-#define DMA_STATUS_FBI            0x00002000	/* Fatal Bus Error Interrupt */
+-#define DMA_STATUS_ETI            0x00000400	/* Early Transmit Interrupt */
+-#define DMA_STATUS_RWT            0x00000200	/* Receive Watchdog Timeout */
+-#define DMA_STATUS_RPS            0x00000100	/* Receive Process Stopped */
+-#define DMA_STATUS_RU             0x00000080	/* Receive Buffer Unavailable */
+-#define DMA_STATUS_RI             0x00000040	/* Receive Interrupt */
+-#define DMA_STATUS_UNF            0x00000020	/* Transmit Underflow */
+-#define DMA_STATUS_OVF            0x00000010	/* Receive Overflow */
+-#define DMA_STATUS_TJT            0x00000008	/* Transmit Jabber Timeout */
+-#define DMA_STATUS_TU             0x00000004	/* Transmit Buffer Unavailable */
+-#define DMA_STATUS_TPS            0x00000002	/* Transmit Process Stopped */
+-#define DMA_STATUS_TI             0x00000001	/* Transmit Interrupt */
++#define DMA_BUS_MODE_DBO	0x00100000	/* Descriptor Byte Ordering */
++#define DMA_BUS_MODE_BLE	0x00000080	/* Big Endian/Little Endian */
+ 
+ /* DMA Control register defines */
+-#define DMA_CONTROL_SF            0x00200000	/* Store And Forward */
++#define DMA_CONTROL_SF		0x00200000	/* Store And Forward */
+ /* Transmit Threshold Control */
+-#define DMA_CONTROL_TTC_DEFAULT   0x00000000	/* Threshold is 32 DWORDS */
+-#define DMA_CONTROL_TTC_64        0x00004000	/* Threshold is 64 DWORDS */
+-#define DMA_CONTROL_TTC_128       0x00008000	/* Threshold is 128 DWORDS */
+-#define DMA_CONTROL_TTC_256       0x0000c000	/* Threshold is 256 DWORDS */
+-#define DMA_CONTROL_TTC_18        0x00400000	/* Threshold is 18 DWORDS [22:1] */
+-#define DMA_CONTROL_TTC_24        0x00404000	/* Threshold is 24 DWORDS [22:1] */
+-#define DMA_CONTROL_TTC_32	  0x00408000	/* Threshold is 32 DWORDS [22:1] */
+-#define DMA_CONTROL_TTC_40        0x0040c000	/* Threshold is 40 DWORDS [22:1] */
+-#define DMA_CONTROL_ST            0x00002000	/* Start/Stop Transmission */
+-#define DMA_CONTROL_SE            0x00000008	/* Stop On Empty */
+-#define DMA_CONTROL_OSF           0x00000004	/* Operate On 2nd Frame */
+-#define DMA_CONTROL_SR            0x00000002	/* Start/Stop Receive */
+-
+-/* DMA Interrupt Enable register defines */
+-#define DMA_INTR_ENA_NIE          0x00010000	/* Normal Interrupt Summary */
+-#define DMA_INTR_ENA_AIE          0x00008000	/* Abnormal Interrupt Summary */
+-#define DMA_INTR_ENA_ERE          0x00004000	/* Early Receive */
+-#define DMA_INTR_ENA_FBE          0x00002000	/* Fatal Bus Error */
+-#define DMA_INTR_ENA_ETE          0x00000400	/* Early Transmit */
+-#define DMA_INTR_ENA_RWE          0x00000200	/* Receive Watchdog */
+-#define DMA_INTR_ENA_RSE          0x00000100	/* Receive Stopped */
+-#define DMA_INTR_ENA_RUE          0x00000080	/* Receive Buffer Unavailable */
+-#define DMA_INTR_ENA_RIE          0x00000040	/* Receive Interrupt */
+-#define DMA_INTR_ENA_UNE          0x00000020	/* Underflow */
+-#define DMA_INTR_ENA_OVE          0x00000010	/* Receive Overflow */
+-#define DMA_INTR_ENA_TJE          0x00000008	/* Transmit Jabber */
+-#define DMA_INTR_ENA_TUE          0x00000004	/* Transmit Buffer Unavailable */
+-#define DMA_INTR_ENA_TSE          0x00000002	/* Transmit Stopped */
+-#define DMA_INTR_ENA_TIE          0x00000001	/* Transmit Interrupt */
+-/* DMA default interrupt mask */
+-#define DMA_INTR_DEFAULT_MASK 	(DMA_INTR_ENA_NIE | DMA_INTR_ENA_RIE | \
+-				DMA_INTR_ENA_TIE)
+-#define DMA_INTR_NO_RX		(DMA_INTR_ENA_NIE | DMA_INTR_ENA_TIE)
++#define DMA_CONTROL_TTC_DEFAULT	0x00000000	/* Threshold is 32 DWORDS */
++#define DMA_CONTROL_TTC_64	0x00004000	/* Threshold is 64 DWORDS */
++#define DMA_CONTROL_TTC_128	0x00008000	/* Threshold is 128 DWORDS */
++#define DMA_CONTROL_TTC_256	0x0000c000	/* Threshold is 256 DWORDS */
++#define DMA_CONTROL_TTC_18	0x00400000	/* Threshold is 18 DWORDS [22:1] */
++#define DMA_CONTROL_TTC_24	0x00404000	/* Threshold is 24 DWORDS [22:1] */
++#define DMA_CONTROL_TTC_32	0x00408000	/* Threshold is 32 DWORDS [22:1] */
++#define DMA_CONTROL_TTC_40	0x0040c000	/* Threshold is 40 DWORDS [22:1] */
++#define DMA_CONTROL_SE		0x00000008	/* Stop On Empty */
++#define DMA_CONTROL_OSF		0x00000004	/* Operate On 2nd Frame */
++
+ /* STMAC110 DMA Missed Frame Counter register defines */
+-#define DMA_MISSED_FRAME_OVE      0x10000000	/* FIFO Overflow Overflow */
++#define DMA_MISSED_FRAME_OVE	0x10000000	/* FIFO Overflow Overflow */
+ #define DMA_MISSED_FRAME_OVE_CNTR 0x0ffe0000	/* Overflow Frame Counter */
+-#define DMA_MISSED_FRAME_OVE_M    0x00010000	/* Missed Frame Overflow */
+-#define DMA_MISSED_FRAME_M_CNTR   0x0000ffff	/* Missed Frame Couinter */
++#define DMA_MISSED_FRAME_OVE_M	0x00010000	/* Missed Frame Overflow */
++#define DMA_MISSED_FRAME_M_CNTR	0x0000ffff	/* Missed Frame Couinter */
+ 
+ /*----------------------------------------------------------------------------
+  * 		    	    Descriptor defines
+  *---------------------------------------------------------------------------*/
+-/* Common fields */
+-#define OWN_BIT			0x80000000	/* Own Bit (owned by hardware) */
+-#define DES1_CONTROL_CH		0x01000000	/* Second Address Chained */
+-#define DES1_CONTROL_TER	0x02000000	/* End of Ring */
+-#define DES1_RBS2_SIZE_MASK	0x003ff800	/* Buffer 2 Size Mask */
+-#define DES1_RBS2_SIZE_SHIFT	11	/* Buffer 2 Size Shift */
+-#define DES1_RBS1_SIZE_MASK	0x000007ff	/* Buffer 1 Size Mask */
+-#define DES1_RBS1_SIZE_SHIFT	0	/* Buffer 1 Size Shift */
+ 
+ /* Receive Descriptor */
+-#define RDES0_STATUS_FILTER_FAIL  0x40000000	/* Filtering Fail */
+-#define RDES0_STATUS_FL_MASK      0x3fff0000	/* Frame Length Mask */
+-#define RDES0_STATUS_FL_SHIFT     16	/* Frame Length Shift */
+-#define RDES0_STATUS_ES           0x00008000	/* Error Summary */
+-#define RDES0_STATUS_DE           0x00004000	/* Descriptor Error */
+-#define RDES0_STATUS_PFE          0x00002000	/* Partial Frame Error */
++#define RDES0_STATUS_FILTER_FAIL	0x40000000	/* Filtering Fail */
++#define RDES0_STATUS_ES		0x00008000	/* Error Summary */
++#define RDES0_STATUS_DE		0x00004000	/* Descriptor Error */
++#define RDES0_STATUS_PFE	0x00002000	/* Partial Frame Error */
+ #define RDES0_STATUS_LENGTH_ERROR 0x00001000	/* Length Error */
+-#define RDES0_STATUS_RUNT_FRM     0x00000800	/* Runt Frame */
++#define RDES0_STATUS_RUNT_FRM	0x00000800	/* Runt Frame */
+ #define RDES0_STATUS_MULTICST_FRM 0x00000400	/* Multicast Frame */
+-#define RDES0_STATUS_FS           0x00000200	/* First Descriptor */
+-#define RDES0_STATUS_LS           0x00000100	/* Last Descriptor */
+-#define RDES0_STATUS_TL           0x00000080	/* Frame Too Long */
+-#define RDES0_STATUS_COL_SEEN     0x00000040	/* Collision Seen */
+-#define RDES0_STATUS_FRM_TYPE     0x00000020	/* Frame Type */
+-#define RDES0_STATUS_RX_WATCHDOG  0x00000010	/* Receive Watchdog */
+-#define RDES0_STATUS_MII_ERR      0x00000008	/* Report on MII Error */
+-#define RDES0_STATUS_DRIBBLE      0x00000004	/* Dribbling Bit */
+-#define RDES0_STATUS_CE           0x00000002	/* CRC Error */
+-#define RDES0_STATUS_0            0x00000000	/* Always tied to zero */
++#define RDES0_STATUS_FS	0x00000200	/* First Descriptor */
++#define RDES0_STATUS_LS	0x00000100	/* Last Descriptor */
++#define RDES0_STATUS_TL	0x00000080	/* Frame Too Long */
++#define RDES0_STATUS_COL_SEEN	0x00000040	/* Collision Seen */
++#define RDES0_STATUS_FRM_TYPE	0x00000020	/* Frame Type */
++#define RDES0_STATUS_RX_WATCHDOG	0x00000010	/* Receive Watchdog */
++#define RDES0_STATUS_MII_ERR	0x00000008	/* Report on MII Error */
++#define RDES0_STATUS_DRIBBLE	0x00000004	/* Dribbling Bit */
++#define RDES0_STATUS_CE	0x00000002	/* CRC Error */
++#define RDES0_STATUS_0	0x00000000	/* Always tied to zero */
+ 
+-#define RDES1_CONTROL_DIOC        0x80000000	/* Disable Intr On Completion */
++#define RDES1_CONTROL_DIOC	0x80000000	/* Disable Intr On Completion */
+ #define RDES0_STATUS_ERROR  (RDES0_STATUS_ES|RDES0_STATUS_LENGTH_ERROR|RDES0_STATUS_MII_ERR)
+ 
+ /* Transmit Descriptor */
+-#define TDES0_STATUS_ES		  0x00008000	/* Error Summary */
++#define TDES0_STATUS_ES	0x00008000	/* Error Summary */
+ #define TDES0_STATUS_LOSS_CARRIER 0x00000800	/* Loss of Carrier */
+-#define TDES0_STATUS_NO_CARRIER   0x00000400	/* No Carrier */
+-#define TDES0_STATUS_LATE_COL     0x00000200	/* Late Collision */
+-#define TDES0_STATUS_EX_COL       0x00000100	/* Excessive Collisions */
+-#define TDES0_STATUS_HRTBT_FAIL   0x00000080	/* Heartbeat Fail */
+-#define TDES0_STATUS_COLCNT_MASK  0x00000078	/* Collision Count Mask */
++#define TDES0_STATUS_NO_CARRIER 0x00000400	/* No Carrier */
++#define TDES0_STATUS_LATE_COL 0x00000200	/* Late Collision */
++#define TDES0_STATUS_EX_COL 0x00000100	/* Excessive Collisions */
++#define TDES0_STATUS_HRTBT_FAIL 0x00000080	/* Heartbeat Fail */
++#define TDES0_STATUS_COLCNT_MASK 0x00000078	/* Collision Count Mask */
+ #define TDES0_STATUS_COLCNT_SHIFT 3	/* Collision Count Shift */
+-#define TDES0_STATUS_EX_DEF       0x00000004	/* Excessive Deferrals */
+-#define TDES0_STATUS_UF           0x00000002	/* Underflow Error */
+-#define TDES0_STATUS_DF           0x00000001	/* Deferred */
+-
+-#define TDES1_CONTROL_IC          0x80000000	/* Interrupt on Completion */
+-#define TDES1_CONTROL_LS          0x40000000	/* Last Segment */
+-#define TDES1_CONTROL_FS          0x20000000	/* First Segment */
+-#define TDES1_CONTROL_AC          0x04000000	/* Add CRC Disable */
+-#define TDES1_CONTROL_DPD         0x00800000	/* Disable Padding */
+-
+-#define STMMAC_FULL_DUPLEX MAC_CONTROL_F
+-#define STMMAC_PORT 	   MAC_CONTROL_PS
+-#define STMMAC_SPEED_100   0xdeadbeef
++#define TDES0_STATUS_EX_DEF 0x00000004	/* Excessive Deferrals */
++#define TDES0_STATUS_UF	0x00000002	/* Underflow Error */
++#define TDES0_STATUS_DF	0x00000001	/* Deferred */
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/mac_hw.h drivers/net/stmmac/mac_hw.h
+--- linux/drivers/net/stmmac.orig/mac_hw.h	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/mac_hw.h	1970-01-01 01:00:00.000000000 +0100
+@@ -1,29 +0,0 @@
+-#ifdef CONFIG_STMMAC_ETH
+-#include "mac100.h"
+-#elif CONFIG_STMGMAC_ETH
+-#include "gmac.h"
+-#endif
+-
+-/* MAC HW structure */
+-struct stmmmac_driver {
+-	char *name;
+-	/* It has been added to cover some issues about the HW setup
+-	 * especially in the stb7109 Ethernet. */
+-	int have_hw_fix;
+-	/* Initial setup of the MAC controller */
+-	void (*core_init) (struct net_device * dev);
+-	/* Dump MAC CORE registers */
+-	void (*mac_registers) (unsigned long ioaddr);
+-	/* Dump DMA registers */
+-	void (*dma_registers) (unsigned long ioaddr);
+-	/* Return zero if no error is happened during the transmission */
+-	int (*check_tx_summary) (void *p, unsigned int status);
+-	/* Check if the frame was not successfully received */
+-	int (*check_rx_summary) (void *p, unsigned int status);
+-	/* Verify the TX checksum */
+-	void (*tx_checksum) (struct sk_buff * skb);
+-	/* Verifies the RX checksum */
+-	void (*rx_checksum) (struct sk_buff * skb, int status);
+-	/* Enable/Disable Multicast filtering */
+-	void (*set_filter) (struct net_device * dev);
+-};
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/Makefile drivers/net/stmmac/Makefile
+--- linux/drivers/net/stmmac.orig/Makefile	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/Makefile	2007-10-24 17:05:27.000000000 +0200
+@@ -1,3 +1,3 @@
+-obj-$(CONFIG_STMMAC_ETH) += mac100.o stmmac.o 
+-obj-$(CONFIG_STMGMAC_ETH) += gmac.o stmmac.o 
+-stmmac-objs:= stmmac_mdio.o stmmac_ethtool.o stmmac_main.o
++obj-$(CONFIG_STMMAC_ETH) += stmmac.o 
++stmmac-objs:= stmmac_main.o stmmac_ethtool.o stmmac_mdio.o \
++		mac100.o  gmac.o
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/stmmac_ethtool.c drivers/net/stmmac/stmmac_ethtool.c
+--- linux/drivers/net/stmmac.orig/stmmac_ethtool.c	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/stmmac_ethtool.c	2007-10-24 17:05:27.000000000 +0200
+@@ -19,7 +19,7 @@
+ 
+ #include "stmmac.h"
+ 
+-#define REGDUMP_LEN         (32 * 1024)
++#define REG_SPACE_SIZE	0x1054
+ 
+ void stmmac_ethtool_getdrvinfo(struct net_device *dev,
+ 			       struct ethtool_drvinfo *info)
+@@ -60,9 +60,9 @@ int stmmac_ethtool_setsettings(struct ne
+ 	struct phy_device *phy = lp->phydev;
+ 	int rc;
+ 
+-	spin_lock_irq(&lp->lock);
++	spin_lock(&lp->lock);
+ 	rc = phy_ethtool_sset(phy, cmd);
+-	spin_unlock_irq(&lp->lock);
++	spin_unlock(&lp->lock);
+ 
+ 	return rc;
+ }
+@@ -89,7 +89,7 @@ int stmmac_check_if_running(struct net_d
+ 
+ int stmmac_ethtool_get_regs_len(struct net_device *dev)
+ {
+-	return (REGDUMP_LEN);
++	return (REG_SPACE_SIZE);
+ }
+ 
+ void stmmac_ethtool_gregs(struct net_device *dev,
+@@ -99,7 +99,7 @@ void stmmac_ethtool_gregs(struct net_dev
+ 	u32 reg;
+ 	u32 *reg_space = (u32 *) space;
+ 
+-	memset(reg_space, 0x0, REGDUMP_LEN);
++	memset(reg_space, 0x0, REG_SPACE_SIZE);
+ 
+ 	/* MAC registers */
+ 	for (i = 0; i < 11; i++) {
+@@ -149,6 +149,66 @@ int stmmac_ethtool_set_rx_csum(struct ne
+ 	return 0;
+ }
+ 
++static void
++stmmac_get_pauseparam(struct net_device *netdev,
++		      struct ethtool_pauseparam *pause)
++{
++	struct eth_driver_local *lp = netdev_priv(netdev);
++
++	spin_lock(&lp->lock);
++
++	pause->rx_pause = pause->tx_pause = 0;
++	pause->autoneg = lp->phydev->autoneg;
++
++	if (lp->flow_ctrl & FLOW_RX)
++		pause->rx_pause = 1;
++	if (lp->flow_ctrl & FLOW_TX)
++		pause->tx_pause = 1;
++
++	spin_unlock(&lp->lock);
++	return;
++}
++
++static int
++stmmac_set_pauseparam(struct net_device *netdev,
++		      struct ethtool_pauseparam *pause)
++{
++	struct eth_driver_local *lp = netdev_priv(netdev);
++	struct phy_device *phy = lp->phydev;
++	int new_pause = FLOW_OFF;
++	int ret = 0;
++
++	spin_lock(&lp->lock);
++
++	if (pause->rx_pause)
++		new_pause |= FLOW_RX;
++	if (pause->tx_pause)
++		new_pause |= FLOW_TX;
++
++	lp->flow_ctrl = new_pause;
++
++	if (phy->autoneg) {
++		if (netif_running(netdev)) {
++			struct ethtool_cmd cmd;
++			/* auto-negotiation automatically restarted */
++			cmd.cmd = ETHTOOL_NWAY_RST;
++			cmd.supported = phy->supported;
++			cmd.advertising = phy->advertising;
++			cmd.autoneg = phy->autoneg;
++			cmd.speed = phy->speed;
++			cmd.duplex = phy->duplex;
++			cmd.phy_address = phy->addr;
++			ret = phy_ethtool_sset(phy, &cmd);
++		}
++	} else {
++		unsigned long ioaddr = netdev->base_addr;
++		lp->mac->ops->flow_ctrl(ioaddr, phy->duplex,
++					lp->flow_ctrl, lp->pause);
++	}
++	spin_unlock(&lp->lock);
++	return ret;
++}
++
+ struct ethtool_ops stmmac_ethtool_ops = {
+ 	.begin = stmmac_check_if_running,
+ 	.get_drvinfo = stmmac_ethtool_getdrvinfo,
+@@ -171,4 +231,6 @@ struct ethtool_ops stmmac_ethtool_ops = 
+ #endif
+ 	.get_ufo = ethtool_op_get_ufo,
+ 	.set_ufo = ethtool_op_set_ufo,
++	.get_pauseparam = stmmac_get_pauseparam,
++	.set_pauseparam = stmmac_set_pauseparam,
+ };
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/stmmac.h drivers/net/stmmac/stmmac.h
+--- linux/drivers/net/stmmac.orig/stmmac.h	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/stmmac.h	2007-10-24 17:05:27.000000000 +0200
+@@ -1,10 +1,12 @@
+-/*
+- * stmmac main header file
+- */
+-#define ETH_RESOURCE_NAME         "stmmaceth"
++#define ETH_RESOURCE_NAME	"stmmaceth"
+ #define PHY_RESOURCE_NAME	"stmmacphy"
+-#define DRV_MODULE_VERSION     "1.0"
+-#include "mac_hw.h"
++#define DRV_MODULE_VERSION	"Oct_2007"
++
++#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
++#define STMMAC_VLAN_TAG_USED
++#endif
++
++#include "common.h"
+ 
+ /* This structure is common for both receive and transmit DMA descriptors.
+  * A descriptor should not be used for storing more than one frame. */
+@@ -37,29 +39,26 @@ struct eth_driver_local {
+ 	u32 msg_enable;
+ 	spinlock_t lock;
+ 	spinlock_t tx_lock;
+-
+ 	dma_desc *dma_tx;	/* virtual DMA TX addr */
+ 	dma_addr_t dma_tx_phy;	/* bus DMA TX addr */
+ 	unsigned int cur_tx, dirty_tx;	/* Producer/consumer ring indices */
+ 	struct sk_buff **tx_skbuff;
+-
+ 	dma_desc *dma_rx;	/* virtual DMA RX addr */
+ 	dma_addr_t dma_rx_phy;	/* bus DMA RX addr */
+ 	int dma_buf_sz;
+-	unsigned int rx_buff;	/* it contains the last rx buf owned by
+-				   the DMA */
++	unsigned int rx_buff;	/* Last rx buffer owned by the DMA */
+ 	int rx_csum;
+ 	unsigned int cur_rx, dirty_rx;	/* Producer/consumer ring indices */
+-	/* The addresses of receive-in-place skbuffs. */
+ 	struct sk_buff **rx_skbuff;
+ 	dma_addr_t *rx_skbuff_dma;
+-
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	struct vlan_group *vlgrp;
+-#endif
+ 	struct device *device;
+-	struct stmmmac_driver *mac;
+-	int pause_time;
+ 	unsigned int dma_tx_size;
+ 	unsigned int dma_rx_size;
++	struct device_info_t *mac;
++	unsigned int mac_type;
++	unsigned int flow_ctrl;	/* FC [on/off] - [RX/TX/AUTO] */
++	unsigned int pause;
++#ifdef STMMAC_VLAN_TAG_USED
++	struct vlan_group *vlgrp;
++#endif
+ };
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/stmmac_main.c drivers/net/stmmac/stmmac_main.c
+--- linux/drivers/net/stmmac.orig/stmmac_main.c	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/stmmac_main.c	2007-10-24 17:05:27.000000000 +0200
+@@ -12,8 +12,10 @@
+  *
+  * Changelog:
+  *
+- *  Sep 2007:
+- *	- first version of this driver
++ * Oct 2007:
++ *	- The driver completely merges the new GMAC code and the previous 
++ *	  stmmac Ethernet driver (tested on the 7109/7200 STM platforms).
++ *	  The GMAC core remains not tested yet.
+  * ===========================================================================*/
+ 
+ #include <linux/module.h>
+@@ -34,13 +36,12 @@
+ #include <linux/mii.h>
+ #include <linux/phy.h>
+ #include <linux/stm/soc.h>
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+ #include <linux/if_vlan.h>
+-#endif
+ #include <linux/dma-mapping.h>
+ #include "stmmac.h"
+ 
+-#define DMA_MAX_BUFFER_SIZE 0x7ff	/* maximum value in according to the TBS1/2 RBS1/2 bits */
++/* maximum value in according to the TBS1/2 RBS1/2 bits */
++#define DMA_MAX_BUFFER_SIZE 0x7ff
+ #define DMA_BUFFER_SIZE DMA_MAX_BUFFER_SIZE	//0x600
+ #define TDES1_MAX_BUF1_SIZE ((DMA_BUFFER_SIZE << DES1_RBS1_SIZE_SHIFT) & \
+ 			DES1_RBS1_SIZE_MASK);
+@@ -53,8 +54,8 @@
+ /*#define STMMAC_DEBUG*/
+ #ifdef STMMAC_DEBUG
+ #define DBG(nlevel, klevel, fmt, args...) \
+-                (void)(netif_msg_##nlevel(lp) && \
+-                printk(KERN_##klevel fmt, ## args))
++		(void)(netif_msg_##nlevel(lp) && \
++		printk(KERN_##klevel fmt, ## args))
+ #else
+ #define DBG(nlevel, klevel, fmt, args...)  do { } while(0)
+ #endif
+@@ -63,8 +64,8 @@
+ /*#define STMMAC_TX_DEBUG*/
+ #ifdef STMMAC_TX_DEBUG
+ #define TX_DBG(mss, klevel, fmt, args...) \
+-                if (mss!=0)     \
+-                printk(KERN_##klevel fmt, ## args)
++		if (mss!=0)     \
++		printk(KERN_##klevel fmt, ## args)
+ #else
+ #define TX_DBG(mss, klevel, fmt, args...)  do { } while(0)
+ #endif
+@@ -87,7 +88,7 @@ static int debug = -1;		/* -1: default, 
+ module_param(debug, int, S_IRUGO);
+ MODULE_PARM_DESC(debug, "Message Level (0: no output, 16: all)");
+ 
+-static int rx_copybreak = ETH_FRAME_LEN + 22;
++static int rx_copybreak = 0;
+ module_param(rx_copybreak, int, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(rx_copybreak, "Copy only tiny-frames");
+ 
+@@ -99,7 +100,7 @@ static int dma_buffer_size = DMA_BUFFER_
+ module_param(dma_buffer_size, int, S_IRUGO);
+ MODULE_PARM_DESC(dma_buffer_size, "DMA buffer size");
+ 
+-#define DMA_TX_SIZE 16
++#define DMA_TX_SIZE 32
+ static int dma_tx_size_param = DMA_TX_SIZE;
+ module_param(dma_tx_size_param, int, S_IRUGO);
+ MODULE_PARM_DESC(dma_buffer_size, "Number of descriptors in the TX list");
+@@ -109,10 +110,18 @@ static int dma_rx_size_param = DMA_RX_SI
+ module_param(dma_rx_size_param, int, S_IRUGO);
+ MODULE_PARM_DESC(dma_buffer_size, "Number of descriptors in the RX list");
+ 
++static int flow_ctrl = FLOW_OFF;
++module_param(flow_ctrl, int, S_IRUGO);
++MODULE_PARM_DESC(flow_ctrl, "Flow control ability [on/off]");
++
++static int pause = PAUSE_TIME;
++module_param(pause, int, S_IRUGO);
++MODULE_PARM_DESC(pause, "Flow Control Pause Time");
++
+ #define TX_BUFFS_AVAIL(lp) \
+-        (lp->dirty_tx + lp->dma_tx_size - lp->cur_tx - 1)
++	(lp->dirty_tx + lp->dma_tx_size - lp->cur_tx - 1)
+ 
+-static const char version[] = "stmmac - (C) 2006-2007 STMicroelectronics\n";
++static const char version[] = "STMMAC - (C) STMicroelectronics\n";
+ 
+ static const u32 default_msg_level = (NETIF_MSG_DRV | NETIF_MSG_PROBE |
+ 				      NETIF_MSG_LINK | NETIF_MSG_IFUP |
+@@ -121,10 +130,11 @@ static const u32 default_msg_level = (NE
+ extern int stmmac_mdio_unregister(struct net_device *ndev);
+ extern int stmmac_mdio_register(struct net_device *ndev);
+ extern struct ethtool_ops stmmac_ethtool_ops;
+-extern struct stmmmac_driver mac_driver;
+ static irqreturn_t stmmac_interrupt(int irq, void *dev_id);
+ static int stmmac_poll(struct net_device *dev, int *budget);
+-static void stmmac_check_mod_params(struct net_device *dev);
++/* STb7109 embedded MAC / GMAC device setup */
++extern struct device_info_t *gmac_setup(unsigned long addr);
++extern struct device_info_t *mac100_setup(unsigned long addr);
+ 
+ static inline void print_mac_addr(u8 addr[6])
+ {
+@@ -135,8 +145,31 @@ static inline void print_mac_addr(u8 add
+ 	return;
+ }
+ 
++static __inline__ void stmmac_verify_args(void)
++{
++	/* Wrong parameters are forced with the default values */
++	if (watchdog < 0)
++		watchdog = TX_TIMEO;
++	if (dma_buffer_size > DMA_MAX_BUFFER_SIZE)
++		dma_buffer_size = DMA_MAX_BUFFER_SIZE;
++	if (rx_copybreak < 0)
++		rx_copybreak = ETH_FRAME_LEN;
++	if (dma_rx_size_param < 0)
++		dma_rx_size_param = DMA_RX_SIZE;
++	if (dma_tx_size_param < 0)
++		dma_tx_size_param = DMA_TX_SIZE;
++	if (flow_ctrl > 1) {
++		flow_ctrl = FLOW_AUTO;
++	} else if (flow_ctrl < 0) {
++		flow_ctrl = FLOW_OFF;
++	}
++	if ((pause < 0) || (pause > 0xffff))
++		pause = PAUSE_TIME;
++	return;
++}
++
+ #ifdef STMMAC_DEBUG
+-static void print_pkt(unsigned char *buf, int len)
++static __inline__ void print_pkt(unsigned char *buf, int len)
+ {
+ 	int j;
+ 	printk("len = %d byte, buf addr: 0x%p", len, buf);
+@@ -162,47 +195,51 @@ static void stmmac_adjust_link(struct ne
+ 	unsigned long ioaddr = dev->base_addr;
+ 	unsigned long flags;
+ 	int new_state = 0;
++	unsigned int fc = lp->flow_ctrl, pause_time = lp->pause;
+ 
+ 	DBG(probe, DEBUG, "stmmac_adjust_link: called.  address %d link %d\n",
+ 	    phydev->addr, phydev->link);
+ 
+ 	spin_lock_irqsave(&lp->lock, flags);
+ 	if (phydev->link) {
+-		unsigned int ctrl = (unsigned int)readl(ioaddr + MAC_CONTROL);
++		unsigned int ctrl =
++		    (unsigned int)readl(ioaddr + lp->mac->hw.control);
+ 
+ 		/* Now we make sure that we can be in full duplex mode.
+ 		 * If not, we operate in half-duplex mode. */
+ 		if (phydev->duplex != lp->oldduplex) {
+ 			new_state = 1;
+-			if (!(phydev->duplex))
+-				ctrl &= ~STMMAC_FULL_DUPLEX;
+-			else
+-				ctrl |= STMMAC_FULL_DUPLEX;
++			if (!(phydev->duplex)) {
++				ctrl &= ~lp->mac->hw.link.duplex;
++			} else {
++				ctrl |= lp->mac->hw.link.duplex;
++			}
+ 			lp->oldduplex = phydev->duplex;
+ 		}
++		/* Flow Control operation */
++		if (phydev->pause)
++			lp->mac->ops->flow_ctrl(ioaddr, phydev->duplex,
++						fc, pause_time);
+ 
+ 		if (phydev->speed != lp->speed) {
+ 			new_state = 1;
+ 			switch (phydev->speed) {
+ 			case 1000:
+-				ctrl |= STMMAC_PORT;	/* GMII...if supported */
++				ctrl |= lp->mac->hw.link.port;	/* GMII */
+ 			case 100:
+ 			case 10:
+-				ctrl &= ~STMMAC_PORT;	/* MII */
++				ctrl &= ~lp->mac->hw.link.port;	/* MII */
+ 				/* In RMII mode, the 7109 MAC 10/100 needs 
+ 				 * to change the MAC speed field in
+ 				 * system configuration register. */
+-				if (lp->mac->have_hw_fix) {
+-					lp->fix_mac_speed(lp->bsp_priv,
+-							  phydev->speed);
+-				} else {
+-					/* GMAC needs no special hack...
+-					 * just reduces mode distinguishes
+-					 * between 10 and 100 */
++				lp->fix_mac_speed(lp->bsp_priv, phydev->speed);
++
++				if (lp->mac_type) {
+ 					if (phydev->speed == SPEED_100) {
+-						ctrl |= STMMAC_SPEED_100;
++						ctrl |= lp->mac->hw.link.speed;
+ 					} else {
+-						ctrl &= ~(STMMAC_SPEED_100);
++						ctrl &=
++						    ~(lp->mac->hw.link.speed);
+ 					}
+ 				}
+ 				break;
+@@ -217,7 +254,7 @@ static void stmmac_adjust_link(struct ne
+ 			lp->speed = phydev->speed;
+ 		}
+ 
+-		writel(ctrl, ioaddr + MAC_CONTROL);
++		writel(ctrl, ioaddr + lp->mac->hw.control);
+ 
+ 		if (!lp->oldlink) {
+ 			new_state = 1;
+@@ -280,16 +317,19 @@ static int stmmac_init_phy(struct net_de
+  * set_mac_addr
+  * @ioaddr: device I/O address
+  * @Addr: new MAC address
++ * @high: High register offset
++ * @low: low register offset
+  * Description: the function sets the hardware MAC address
+  */
+-static void set_mac_addr(unsigned long ioaddr, u8 Addr[6])
++static void set_mac_addr(unsigned long ioaddr, u8 Addr[6],
++			 unsigned int high, unsigned int low)
+ {
+ 	unsigned long data;
+ 
+ 	data = (Addr[5] << 8) | Addr[4];
+-	writel(data, ioaddr + MAC_ADDR_HIGH);
++	writel(data, ioaddr + high);
+ 	data = (Addr[3] << 24) | (Addr[2] << 16) | (Addr[1] << 8) | Addr[0];
+-	writel(data, ioaddr + MAC_ADDR_LOW);
++	writel(data, ioaddr + low);
+ 
+ 	return;
+ }
+@@ -298,15 +338,18 @@ static void set_mac_addr(unsigned long i
+  * get_mac_addr
+  * @ioaddr: device I/O address
+  * @addr: mac address
++ * @high: High register offset
++ * @low: low register offset
+  * Description: the function gets the hardware MAC address
+  */
+-static void get_mac_address(unsigned long ioaddr, unsigned char *addr)
++static void get_mac_address(unsigned long ioaddr, unsigned char *addr,
++			    unsigned int high, unsigned int low)
+ {
+ 	unsigned int hi_addr, lo_addr;
+ 
+ 	/* Read the MAC address from the hardware */
+-	hi_addr = (unsigned int)readl(ioaddr + MAC_ADDR_HIGH);
+-	lo_addr = (unsigned int)readl(ioaddr + MAC_ADDR_LOW);
++	hi_addr = (unsigned int)readl(ioaddr + high);
++	lo_addr = (unsigned int)readl(ioaddr + low);
+ 
+ 	/* Extract the MAC address from the high and low words */
+ 	addr[0] = lo_addr & 0xff;
+@@ -327,11 +370,12 @@ static void get_mac_address(unsigned lon
+ static void stmmac_mac_enable_rx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+-	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
++	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned int value = (unsigned int)readl(ioaddr + lp->mac->hw.control);
+ 
+ 	/* set the RE (receive enable, bit 2) */
+-	value |= (MAC_CONTROL_RE);
+-	writel(value, ioaddr + MAC_CONTROL);
++	value |= lp->mac->hw.enable_rx;
++	writel(value, ioaddr + lp->mac->hw.control);
+ 	return;
+ }
+ 
+@@ -343,11 +387,12 @@ static void stmmac_mac_enable_rx(struct 
+ static void stmmac_mac_enable_tx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+-	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
++	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned int value = (unsigned int)readl(ioaddr + lp->mac->hw.control);
+ 
+ 	/* set: TE (transmitter enable, bit 3) */
+-	value |= (MAC_CONTROL_TE);
+-	writel(value, ioaddr + MAC_CONTROL);
++	value |= lp->mac->hw.enable_tx;
++	writel(value, ioaddr + lp->mac->hw.control);
+ 	return;
+ }
+ 
+@@ -359,10 +404,11 @@ static void stmmac_mac_enable_tx(struct 
+ static void stmmac_mac_disable_rx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+-	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
++	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned int value = (unsigned int)readl(ioaddr + lp->mac->hw.control);
+ 
+-	value &= ~MAC_CONTROL_RE;
+-	writel(value, ioaddr + MAC_CONTROL);
++	value &= ~(lp->mac->hw.enable_rx);
++	writel(value, ioaddr + lp->mac->hw.control);
+ 	return;
+ }
+ 
+@@ -374,10 +420,11 @@ static void stmmac_mac_disable_rx(struct
+ static void stmmac_mac_disable_tx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+-	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
++	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned int value = (unsigned int)readl(ioaddr + lp->mac->hw.control);
+ 
+-	value &= ~(MAC_CONTROL_TE);
+-	writel(value, ioaddr + MAC_CONTROL);
++	value &= ~(lp->mac->hw.enable_tx);
++	writel(value, ioaddr + lp->mac->hw.control);
+ 	return;
+ }
+ 
+@@ -475,15 +522,14 @@ static void init_dma_desc_rings(struct n
+ 	    "(buff size: %d)\n", lp->dma_buf_sz);
+ 	for (i = 0; i < rxsize; i++) {
+ 		dma_desc *p = lp->dma_rx + i;
+-		struct sk_buff *skb = dev_alloc_skb(lp->dma_buf_sz);
+-		skb->dev = dev;
+-		skb_reserve(skb, NET_IP_ALIGN);
+-		lp->rx_skbuff[i] = skb;
++		struct sk_buff *skb = netdev_alloc_skb(dev, lp->dma_buf_sz);
+ 		if (unlikely(skb == NULL)) {
+ 			printk(KERN_ERR "%s: Rx init fails; skb is NULL\n",
+ 			       __FUNCTION__);
+ 			break;
+ 		}
++		skb_reserve(skb, NET_IP_ALIGN);
++		lp->rx_skbuff[i] = skb;
+ 		lp->rx_skbuff_dma[i] = dma_map_single(lp->device, skb->data,
+ 						      lp->dma_buf_sz,
+ 						      DMA_FROM_DEVICE);
+@@ -711,7 +757,7 @@ static int stmmac_dma_init(struct net_de
+ 	writel((unsigned long)lp->dma_rx_phy, ioaddr + DMA_RCV_BASE_ADDR);
+ 
+ 	if (netif_msg_hw(lp))
+-		lp->mac->dma_registers(ioaddr);
++		lp->mac->ops->dma_registers(ioaddr);
+ 
+ 	return 0;
+ }
+@@ -799,11 +845,11 @@ static void show_rx_process_state(unsign
+ #endif
+ 
+ /**
+- * stmmac_clean_tx_irq1
+- * @data:  address of the private member of the device structure
++ * stmmac_tx
++ * @dev: net device structure
+  * Description: it is used for freeing the TX resources.  
+  */
+-static void stmmac_clean_tx_irq1(struct net_device *dev)
++static __inline__ void stmmac_tx(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 	unsigned int txsize = lp->dma_tx_size;
+@@ -814,46 +860,45 @@ static void stmmac_clean_tx_irq1(struct 
+ 	while (lp->dirty_tx != lp->cur_tx) {
+ 		dma_desc *p = lp->dma_tx + entry;
+ 		int status = p->des0;
+-		if (!(status & OWN_BIT)) {
+-			/* When the transmission is completed the frame status
+-			 * is written into TDESC0 of the descriptor having the 
+-			 * LS bit set. */
+-			if (likely(p->des1 & TDES1_CONTROL_LS)) {
+-				if (unlikely(lp->mac->check_tx_summary(&lp->stats, status)<0)) {
+-					lp->stats.tx_errors++;
+-				} else {
+-					lp->stats.tx_packets++;
+-				}
+-			}
+-#ifdef STMMAC_TX_DEBUG
+-			if (netif_queue_stopped(dev))
+-				if (netif_msg_tx_done(lp))
+-					printk("tx done free entry %d\n",
+-					       entry);
+-#endif
+-			if (p->des2) {
+-				dma_unmap_single(lp->device, p->des2,
+-					 (p->des1 & DES1_RBS1_SIZE_MASK)>>DES1_RBS1_SIZE_SHIFT,
+-					 DMA_TO_DEVICE);
+-				p->des2 = 0;
+-			}
+-			if (unlikely(p->des3)) {
+-				dma_unmap_single(lp->device, p->des3,
+-					 (p->des1 & DES1_RBS2_SIZE_MASK)>>DES1_RBS2_SIZE_SHIFT,
+-						 DMA_TO_DEVICE);
+-				p->des3 = 0;
+-			}
+-			if (lp->tx_skbuff[entry] != NULL) {
+-				dev_kfree_skb_irq(lp->tx_skbuff[entry]);
+-				lp->tx_skbuff[entry] = NULL;
++
++		if (status & OWN_BIT)
++			break;
++
++		/* When the transmission is completed the frame status
++		 * is written into TDESC0 of the descriptor having the 
++		 * LS bit set. */
++		if (likely(p->des1 & TDES1_CONTROL_LS)) {
++			if (unlikely
++			    (lp->mac->ops->check_tx_summary(&lp->stats,
++							    status) < 0)) {
++				lp->stats.tx_errors++;
++			} else {
++				lp->stats.tx_packets++;
+ 			}
+ 		}
++		if (p->des2) {
++			dma_unmap_single(lp->device, p->des2,
++					 (p->
++					  des1 & DES1_RBS1_SIZE_MASK) >>
++					 DES1_RBS1_SIZE_SHIFT, DMA_TO_DEVICE);
++			p->des2 = 0;
++		}
++		if (unlikely(p->des3)) {
++			dma_unmap_single(lp->device, p->des3,
++					 (p->
++					  des1 & DES1_RBS2_SIZE_MASK) >>
++					 DES1_RBS2_SIZE_SHIFT, DMA_TO_DEVICE);
++			p->des3 = 0;
++		}
++		if (lp->tx_skbuff[entry] != NULL) {
++			dev_kfree_skb_irq(lp->tx_skbuff[entry]);
++			lp->tx_skbuff[entry] = NULL;
++		}
+ 		entry = (++lp->dirty_tx) % txsize;
+ 	}
+-	if (netif_queue_stopped(dev)) {
+-		/*printk ("TX queue started.\n"); */
++	if (netif_queue_stopped(dev) &&
++	    TX_BUFFS_AVAIL(lp) > (MAX_SKB_FRAGS + 1))
+ 		netif_wake_queue(dev);
+-	}
+ 
+ 	spin_unlock(&lp->tx_lock);
+ 	return;
+@@ -900,9 +945,40 @@ static void stmmac_dma_interrupt(struct 
+ 
+ 		}
+ 		if (status & DMA_STATUS_TI) {
+-			DBG(intr, INFO, " Transmit irq [buf: 0x%lx]\n",
++			DBG(intr, INFO, " Transmit irq [buf: 0x%08x]\n",
+ 			    readl(ioaddr + DMA_CUR_TX_BUF_ADDR));
+-			stmmac_clean_tx_irq1(dev);
++			stmmac_tx(dev);
++		}
++	}
++	/* ABNORMAL interrupts */
++	if (unlikely(status & DMA_STATUS_AIS)) {
++		DBG(intr, INFO, "CSR5[15] DMA ABNORMAL IRQ: ");
++		if (status & DMA_STATUS_TPS) {
++			DBG(intr, INFO, "Transmit Process Stopped \n");
++		}
++		if (status & DMA_STATUS_TJT) {
++			DBG(intr, INFO, "Transmit Jabber Timeout\n");
++		}
++		if (status & DMA_STATUS_OVF) {
++			DBG(intr, INFO, "Receive Overflow\n");
++		}
++		if (status & DMA_STATUS_UNF) {
++			DBG(intr, INFO, "Transmit Underflow\n");
++		}
++		if (status & DMA_STATUS_RU) {
++			DBG(intr, INFO, "Rx Buffer Unavailable\n");
++		}
++		if (status & DMA_STATUS_RPS) {
++			DBG(intr, INFO, "Receive Process Stopped\n");
++		}
++		if (status & DMA_STATUS_RWT) {
++			DBG(intr, INFO, "Rx Watchdog Timeout\n");
++		}
++		if (status & DMA_STATUS_ETI) {
++			DBG(intr, INFO, "Early Tx Interrupt\n");
++		}
++		if (status & DMA_STATUS_FBI) {
++			DBG(intr, INFO, "Fatal Bus Error Interrupt\n");
+ 		}
+ 	}
+ 	DBG(intr, INFO, "\n\n");
+@@ -924,6 +1000,7 @@ static void stmmac_dma_interrupt(struct 
+ int stmmac_open(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned long ioaddr = dev->base_addr;
+ 	int ret;
+ 
+ 	/* Check that the MAC address is valid.  If its not, refuse
+@@ -968,17 +1045,19 @@ int stmmac_open(struct net_device *dev)
+ 	/* Copy the MAC addr into the HW in case we have set it with nwhw */
+ 	printk(KERN_DEBUG "stmmac_open (%s) ", lp->mac->name);
+ 	print_mac_addr(dev->dev_addr);
+-	set_mac_addr(dev->base_addr, dev->dev_addr);
++	set_mac_addr(ioaddr, dev->dev_addr, lp->mac->hw.addr_high,
++		     lp->mac->hw.addr_low);
+ 
+ 	/* Initialize the MAC110 Core */
+-	lp->mac->core_init(dev);
++	lp->mac->ops->core_init(ioaddr);
+ 
+ 	/* Enable the MAC/DMA */
+ 	stmmac_mac_enable_rx(dev);
+ 	stmmac_mac_enable_tx(dev);
+ 
++	/* Dump MAC registers */
+ 	if (netif_msg_hw(lp))
+-		lp->mac->mac_registers((unsigned int)dev->base_addr);
++		lp->mac->ops->mac_registers((unsigned int)ioaddr);
+ 
+ 	phy_start(lp->phydev);
+ 
+@@ -986,8 +1065,8 @@ int stmmac_open(struct net_device *dev)
+ 	DBG(probe, DEBUG, "%s: DMA RX/TX processes started...\n",
+ 	    ETH_RESOURCE_NAME);
+ 
+-	stmmac_dma_start_rx(dev->base_addr);
+-	stmmac_dma_start_tx(dev->base_addr);
++	stmmac_dma_start_rx(ioaddr);
++	stmmac_dma_start_tx(ioaddr);
+ 
+ 	netif_start_queue(dev);
+ 	return 0;
+@@ -1142,31 +1221,43 @@ int stmmac_xmit(struct sk_buff *skb, str
+ 	    entry = lp->cur_tx % txsize, i, mss = 0, nopaged_len;
+ 	unsigned long flags;
+ 
+-	if (skb_padto(skb, ETH_ZLEN)) {
+-		printk("stmmac: xmit padto returned 0\n");
+-		return 0;
++	local_irq_save(flags);
++	if (!spin_trylock(&lp->tx_lock)) {
++		/* Tell upper layer to requeue */
++		local_irq_restore(flags);
++		return NETDEV_TX_LOCKED;
+ 	}
+ 
+-	spin_lock_irqsave(&lp->tx_lock, flags);
+ 	/* This is a hard error log it. */
+ 	if (unlikely(TX_BUFFS_AVAIL(lp) < nfrags + 1)) {
+-		if (netif_msg_drv(lp)) {
+-			printk(KERN_ERR
+-			       "%s: bug! Tx Ring full when queue awake!\n",
+-			       dev->name);
+-		}
+-		return 1;
++		netif_stop_queue(dev);
++		spin_unlock_irqrestore(&lp->tx_lock, flags);
++		printk(KERN_ERR "%s: bug! Tx Ring full when queue awake!\n",
++		       dev->name);
++		return NETDEV_TX_BUSY;
+ 	}
+ 
++	if (dev->features & NETIF_F_GSO)
++		mss = skb_shinfo(skb)->gso_size;
++
+ 	/* Verify the checksum */
+-	lp->mac->tx_checksum(skb);
++	lp->mac->ops->tx_checksum(skb);
+ 
+ 	/* Get the amount of non-paged data (skb->data). */
+ 	nopaged_len = skb_headlen(skb);
++
++	if (unlikely((lp->tx_skbuff[entry] != NULL))) {
++		/* This should never happen! */
++		printk(KERN_ERR "%s: bug! Inconsistent Tx skb utilization!\n",
++		       dev->name);
++		dev_kfree_skb(skb);
++		return -1;
++	}
+ 	lp->tx_skbuff[entry] = skb;
+ 	TX_DBG(mss, INFO, "\n%s:\n(skb->len=%d, nfrags=%d, "
+ 	       "nopaged_len=%d, mss=%d)\n", __FUNCTION__, skb->len,
+ 	       nfrags, nopaged_len, mss);
++
+ 	/* Handle the non-paged data (skb->data) */
+ 	stmmac_fill_tx_buffer(skb->data, nopaged_len, mss, lp, 1);
+ 
+@@ -1180,6 +1271,9 @@ int stmmac_xmit(struct sk_buff *skb, str
+ 		lp->cur_tx++;
+ 		entry = stmmac_fill_tx_buffer(addr, len, mss, lp, 0);
+ 	}
++	/* If there are more than one fragment, we set the interrupt
++	 * on completition in the latest fragment (where we also set 
++	 * the LS bit. */
+ 	p[entry].des1 |= TDES1_CONTROL_LS | TDES1_CONTROL_IC;
+ 	lp->cur_tx++;
+ 	lp->stats.tx_bytes += skb->len;
+@@ -1193,25 +1287,16 @@ int stmmac_xmit(struct sk_buff *skb, str
+ 		print_pkt(skb->data, skb->len);
+ 	}
+ #endif
++	if (TX_BUFFS_AVAIL(lp) <= (MAX_SKB_FRAGS + 1))
++		netif_stop_queue(dev);
++
+ 	/* CSR1 enables the transmit DMA to check for new descriptor */
+ 	writel(1, dev->base_addr + DMA_XMT_POLL_DEMAND);
+ 
+-	if (TX_BUFFS_AVAIL(lp) <= (MAX_SKB_FRAGS + 1)) {
+-#if 0
+-		printk("XMIT (current=%d, dirty=%d; entry=%d, "
+-		       "nfrags=%d,skb->data=0x%p\n",
+-		       (lp->cur_tx % txsize), (lp->dirty_tx % txsize),
+-		       entry, nfrags, skb->data);
+-		display_dma_desc_ring(lp->dma_tx, txsize);
+-		printk("\tstop Queue: buffs_avail %d)\n", TX_BUFFS_AVAIL(lp));
+-#endif
+-		netif_stop_queue(dev);
+-	}
++	spin_unlock_irqrestore(&lp->tx_lock, flags);
+ 
+ 	dev->trans_start = jiffies;
+-
+-	spin_unlock_irqrestore(&lp->tx_lock, flags);
+-	return 0;
++	return NETDEV_TX_OK;
+ }
+ 
+ static __inline__ void stmmac_rx_refill(struct net_device *dev)
+@@ -1223,20 +1308,23 @@ static __inline__ void stmmac_rx_refill(
+ 		struct sk_buff *skb;
+ 		int entry = lp->dirty_rx % rxsize;
+ 		if (lp->rx_skbuff[entry] == NULL) {
+-			skb = dev_alloc_skb(lp->dma_buf_sz);
+-			lp->rx_skbuff[entry] = skb;
++			skb = netdev_alloc_skb(dev, lp->dma_buf_sz);
+ 			if (unlikely(skb == NULL)) {
+ 				printk(KERN_ERR "%s: skb is NULL\n",
+ 				       __FUNCTION__);
+ 				break;
+ 			}
+-			skb->dev = dev;
++			skb_reserve(skb, NET_IP_ALIGN);
++			lp->rx_skbuff[entry] = skb;
+ 			lp->rx_skbuff_dma[entry] = dma_map_single(lp->device,
+-							  skb->data, lp->dma_buf_sz,
+-							  DMA_FROM_DEVICE);
++								  skb->data,
++								  lp->
++								  dma_buf_sz,
++								  DMA_FROM_DEVICE);
+ 			(lp->dma_rx + entry)->des2 = lp->rx_skbuff_dma[entry];
+ 			RX_DBG(rx_status, INFO, "\trefill entry #%d\n", entry);
+ 		}
++		(lp->dma_rx + entry)->des0 = OWN_BIT;
+ 	}
+ 	return;
+ }
+@@ -1286,7 +1374,8 @@ static int stmmac_poll(struct net_device
+ 			goto not_done;
+ 		}
+ 
+-		if (unlikely(lp->mac->check_rx_summary(&lp->stats, status) < 0)) {
++		if (unlikely
++		    (lp->mac->ops->check_rx_summary(&lp->stats, status) < 0)) {
+ 			lp->stats.rx_errors++;
+ 		} else {
+ 			struct sk_buff *skb;
+@@ -1303,19 +1392,24 @@ static int stmmac_poll(struct net_device
+ 			/* Check if the packet is long enough to accept without
+ 			   copying to a minimally-sized skbuff. */
+ 			if ((frame_len < rx_copybreak) &&
+-			    (skb = dev_alloc_skb(frame_len + 2)) != NULL) {
+-				skb->dev = dev;
++			    (skb =
++			     netdev_alloc_skb(dev, frame_len + 2)) != NULL) {
+ 				skb_reserve(skb, NET_IP_ALIGN);
+ 				dma_sync_single_for_cpu(lp->device,
+-						lp->rx_skbuff_dma[entry], frame_len,
+-						DMA_FROM_DEVICE);
+-				skb_copy_to_linear_data(skb, lp->rx_skbuff[entry]->data, 
+-							frame_len);
++							lp->
++							rx_skbuff_dma[entry],
++							frame_len,
++							DMA_FROM_DEVICE);
++				skb_copy_to_linear_data(skb,
++							lp->rx_skbuff[entry]->
++							data, frame_len);
+ 
+ 				skb_put(skb, frame_len);
+ 				dma_sync_single_for_device(lp->device,
+-						   lp->rx_skbuff_dma[entry], frame_len,
+-						   DMA_FROM_DEVICE);
++							   lp->
++							   rx_skbuff_dma[entry],
++							   frame_len,
++							   DMA_FROM_DEVICE);
+ 			} else {	/* zero-copy */
+ 				skb = lp->rx_skbuff[entry];
+ 				if (unlikely(!skb)) {
+@@ -1323,7 +1417,7 @@ static int stmmac_poll(struct net_device
+ 					       "descriptor chain.\n",
+ 					       dev->name);
+ 					lp->stats.rx_dropped++;
+-					goto next_frame;
++					break;
+ 				}
+ 				lp->rx_skbuff[entry] = NULL;
+ 				skb_put(skb, frame_len);
+@@ -1338,15 +1432,15 @@ static int stmmac_poll(struct net_device
+ 			}
+ #endif
+ 			skb->protocol = eth_type_trans(skb, dev);
+-			lp->mac->rx_checksum(skb, status);
++			lp->mac->ops->rx_checksum(skb, status);
++
+ 			netif_receive_skb(skb);
++
+ 			lp->stats.rx_packets++;
+ 			lp->stats.rx_bytes += frame_len;
+ 			dev->last_rx = jiffies;
+ 			nframe++;
+ 		}
+-	      next_frame:
+-		drx->des0 = OWN_BIT;
+ 		entry = (++lp->cur_rx) % rxsize;
+ 		drx = lp->dma_rx + entry;
+ 	}
+@@ -1452,7 +1546,7 @@ static void stmmac_multicast_list(struct
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	/* Calling the hw function. */
+-	lp->mac->set_filter(dev);
++	lp->mac->ops->set_filter(dev);
+ 
+ 	return;
+ }
+@@ -1543,35 +1637,16 @@ static int stmmac_ioctl(struct net_devic
+ 	return ret;
+ }
+ 
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
++#ifdef STMMAC_VLAN_TAG_USED
+ static void stmmac_vlan_rx_register(struct net_device *dev,
+ 				    struct vlan_group *grp)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	spin_lock(&lp->lock);
++	/* VLAN Tag identifier register already contains the VLAN tag ID. 
++	   (see hw mac initialization). */
+ 	lp->vlgrp = grp;
+-	stmmac_multicast_list(dev);
+-	spin_unlock(&lp->lock);
+-}
+-
+-static void stmmac_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
+-{
+-	struct eth_driver_local *lp = netdev_priv(dev);
+-
+-	spin_lock(&lp->lock);
+-	stmmac_multicast_list(dev);
+-	spin_unlock(&lp->lock);
+-}
+-
+-static void stmmac_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
+-{
+-	struct eth_driver_local *lp = netdev_priv(dev);
+-
+-	spin_lock(&lp->lock);
+-	if (lp->vlgrp)
+-		lp->vlgrp->vlan_devices[vid] = NULL;
+-	stmmac_multicast_list(dev);
+ 	spin_unlock(&lp->lock);
+ }
+ #endif
+@@ -1579,16 +1654,17 @@ static void stmmac_vlan_rx_kill_vid(stru
+ /**
+  *  stmmac_probe - Initialization of the adapter .
+  *  @dev : device pointer
+- *  @ioaddr: device I/O address
+  *  Description: The function initializes the network device structure for
+- *	         the STMMAC driver. It also calls the low level routines 
++ *		the STMMAC driver. It also calls the low level routines 
+  *		 in order to init the HW (i.e. the DMA engine)
+  */
+-static int stmmac_probe(struct net_device *dev, unsigned long ioaddr)
++static int stmmac_probe(struct net_device *dev)
+ {
+ 	int ret = 0;
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
++	stmmac_verify_args();
++
+ 	ether_setup(dev);
+ 
+ 	dev->open = stmmac_open;
+@@ -1596,7 +1672,8 @@ static int stmmac_probe(struct net_devic
+ 	dev->set_config = stmmac_config;
+ 
+ 	dev->hard_start_xmit = stmmac_xmit;
+-	dev->features |= (NETIF_F_SG | NETIF_F_HW_CSUM | NETIF_F_HIGHDMA);
++	dev->features |= (NETIF_F_SG | NETIF_F_HW_CSUM |
++			  NETIF_F_HIGHDMA | NETIF_F_LLTX);
+ 
+ 	dev->get_stats = stmmac_stats;
+ 	dev->tx_timeout = stmmac_tx_timeout;
+@@ -1608,35 +1685,30 @@ static int stmmac_probe(struct net_devic
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 	dev->poll_controller = stmmac_poll_controller;
+ #endif
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	dev->features |= NETIF_F_HW_VLAN_RX | NETIF_F_HW_VLAN_FILTER;
++#ifdef STMMAC_VLAN_TAG_USED
++	/*Supports IEEE 802.1Q VLAN tag detection for reception frames */
++	dev->features |= NETIF_F_HW_VLAN_RX;
+ 	dev->vlan_rx_register = stmmac_vlan_rx_register;
+-	dev->vlan_rx_add_vid = stmmac_vlan_rx_add_vid;
+-	dev->vlan_rx_kill_vid = stmmac_vlan_rx_kill_vid;
+ #endif
+ 
+ 	lp->msg_enable = netif_msg_init(debug, default_msg_level);
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	lp->ip_header_len = VLAN_ETH_HLEN;
+-#else
+-	lp->ip_header_len = ETH_HLEN;
+-#endif
++
+ 	lp->rx_csum = 0;
+ 
+ 	lp->dma_tx_size = dma_tx_size_param;
+ 	lp->dma_rx_size = dma_rx_size_param;
+ 
+-	dev->poll = stmmac_poll;
+-	dev->weight = lp->dma_rx_size;
++	if (flow_ctrl)
++		lp->flow_ctrl = FLOW_AUTO;	/* RX/TX pause on */
+ 
+-	/* Check the module arguments */
+-	stmmac_check_mod_params(dev);
++	lp->pause = pause;
+ 
+-	/* Set the I/O base addr */
+-	dev->base_addr = ioaddr;
++	dev->poll = stmmac_poll;
++	dev->weight = lp->dma_rx_size;
+ 
+ 	/* Get the MAC address */
+-	get_mac_address(ioaddr, dev->dev_addr);
++	get_mac_address(dev->base_addr, dev->dev_addr,
++			lp->mac->hw.addr_high, lp->mac->hw.addr_low);
+ 
+ 	if (!is_valid_ether_addr(dev->dev_addr)) {
+ 		printk(KERN_WARNING "\tno valid MAC address; "
+@@ -1656,30 +1728,32 @@ static int stmmac_probe(struct net_devic
+ }
+ 
+ /**
+- * stmmac_hw_dev_register
+- * @lp : driver local structure
+- * Description: it inits the hw mac device function pointers 
+- *		within the local network driver structure.
+- */
+-static int stmmac_hw_dev_register(struct eth_driver_local *lp)
+-{
+-	struct stmmmac_driver *mac = &mac_driver;
+-
+-	printk(KERN_DEBUG "stmmmac: %s device\n", mac->name);
+-
+-	lp->mac = kmalloc(sizeof(struct stmmmac_driver), GFP_KERNEL);
+-	lp->mac->name = mac->name;
+-	lp->mac->have_hw_fix = mac->have_hw_fix;
+-	lp->mac->core_init = mac->core_init;
+-	lp->mac->mac_registers = mac->mac_registers;
+-	lp->mac->dma_registers = mac->dma_registers;
+-	lp->mac->check_tx_summary = mac->check_tx_summary;
+-	lp->mac->check_rx_summary = mac->check_rx_summary;
+-	lp->mac->tx_checksum = mac->tx_checksum;
+-	lp->mac->rx_checksum = mac->rx_checksum;
+-	lp->mac->set_filter = mac->set_filter;
++ * stmmac_mac_device_setup
++ * @dev : device pointer
++ * Description: it detects and inits the hw mac device.
++ *  if gmac is not recognized the stb7109 mac 10/100 is used 
++ *  by default.
++ *  Return value:
++ *  0 MAC 10/100 device (Stb7109/7200 embedded MAC).
++ *  1 GMAC device
++ */
++static inline int stmmac_mac_device_setup(struct net_device *dev)
++{
++	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned long ioaddr = dev->base_addr;
++	unsigned int ret = 1;
+ 
+-	return 0;
++	struct device_info_t *device = gmac_setup(ioaddr);
++
++	if (device == NULL) {
++		device = mac100_setup(ioaddr);
++		ret = 0;
++	}
++	lp->mac = device;
++
++	printk(KERN_DEBUG "%s device detected\n", device->name);
++
++	return ret;
+ }
+ 
+  /**
+@@ -1715,10 +1789,11 @@ static struct platform_driver stmmacphy_
+ 
+ /**
+  * stmmac_associate_phy
+- * @lp: pointer to local context
++ * @dev: pointer to device structure
++ * @data: points to the private structure.
+  * Description: Scans through all the PHYs we have registered and checks if
+- *              any are associated with our MAC.  If so, then just fill in
+- *              the blanks in our local context structure
++ *		any are associated with our MAC.  If so, then just fill in
++ *		the blanks in our local context structure
+  */
+ static int stmmac_associate_phy(struct device *dev, void *data)
+ {
+@@ -1742,7 +1817,8 @@ static int stmmac_associate_phy(struct d
+ 	    "stmmacphy_dvr_probe: PHY irq on bus %d is %d\n",
+ 	    plat_dat->bus_id, lp->phy_irq);
+ 
+-	/* override with kernel parameters if supplied XXX CRS XXX this needs to have multiple instances */
++	/* Override with kernel parameters if supplied XXX CRS XXX 
++	 * this needs to have multiple instances */
+ 	if ((phy_n >= 0) && (phy_n <= 31)) {
+ 		plat_dat->phy_addr = phy_n;
+ 	}
+@@ -1753,7 +1829,7 @@ static int stmmac_associate_phy(struct d
+ 	lp->phy_reset = plat_dat->phy_reset;
+ 
+ 	DBG(probe, DEBUG, "stmmacphy_dvr_probe: exiting\n");
+-	return 1;		/* forces exit of driver_for_each_device() */
++	return 1;	/* forces exit of driver_for_each_device() */
+ }
+ 
+ /**
+@@ -1821,14 +1897,18 @@ static int stmmac_dvr_probe(struct platf
+ 
+ 	platform_set_drvdata(pdev, ndev);
+ 
++	/* Set the I/O base addr */
++	ndev->base_addr = (unsigned long)addr;
++
++	/* MAC HW revice detection */
++	lp->mac_type = stmmac_mac_device_setup(ndev);
++
+ 	/* Network Device Registration */
+-	ret = stmmac_probe(ndev, (unsigned long)addr);
++	ret = stmmac_probe(ndev);
+ 	if (ret < 0) {
+ 		goto out;
+ 	}
+ 
+-	stmmac_hw_dev_register(lp);
+-
+ 	/* associate a PHY - it is provided by another platform bus */
+ 	if (!driver_for_each_device
+ 	    (&(stmmacphy_driver.driver), NULL, (void *)lp,
+@@ -1989,22 +2069,6 @@ static void __exit stmmac_cleanup_module
+ 	platform_driver_unregister(&stmmac_driver);
+ }
+ 
+-static void stmmac_check_mod_params(struct net_device *dev)
+-{
+-	/* Wrong parameters are replaced with the default values */
+-	if (watchdog < 0)
+-		watchdog = TX_TIMEO;
+-	if (dma_buffer_size > DMA_MAX_BUFFER_SIZE)
+-		dma_buffer_size = DMA_MAX_BUFFER_SIZE;
+-	if (rx_copybreak < 0)
+-		rx_copybreak = ETH_FRAME_LEN;
+-	if (dma_rx_size_param < 0)
+-		dma_rx_size_param = DMA_RX_SIZE;
+-	if (dma_tx_size_param < 0)
+-		dma_tx_size_param = DMA_TX_SIZE;
+-	return;
+-}
+-
+ static int __init stmmac_cmdline_opt(char *str)
+ {
+ 	char *opt;
+@@ -2027,6 +2091,10 @@ static int __init stmmac_cmdline_opt(cha
+ 			dma_tx_size_param = simple_strtoul(opt + 7, NULL, 0);
+ 		} else if (!strncmp(opt, "rxsize:", 7)) {
+ 			dma_rx_size_param = simple_strtoul(opt + 7, NULL, 0);
++		} else if (!strncmp(opt, "flow_ctrl:", 10)) {
++			flow_ctrl = simple_strtoul(opt + 10, NULL, 0);
++		} else if (!strncmp(opt, "pause:", 6)) {
++			pause = simple_strtoul(opt + 6, NULL, 0);
+ 		}
+ 	}
+ 	return 0;
+diff -upNr -X dontdiff.txt drivers/net/stmmac.orig/stmmac_mdio.c drivers/net/stmmac/stmmac_mdio.c
+--- linux/drivers/net/stmmac.orig/stmmac_mdio.c	2007-10-24 16:12:17.000000000 +0200
++++ linux/drivers/net/stmmac/stmmac_mdio.c	2007-10-24 17:05:27.000000000 +0200
+@@ -33,22 +33,26 @@
+ int stmmac_mdio_read(struct mii_bus *bus, int phyaddr, int phyreg)
+ {
+ 	struct net_device *ndev = bus->priv;
++	struct eth_driver_local *lp = netdev_priv(ndev);
+ 	unsigned long ioaddr = ndev->base_addr;
++	unsigned int mii_address = lp->mac->hw.mii.addr;
++	unsigned int mii_busy = lp->mac->hw.mii.addr_busy;
++	unsigned int mii_data = lp->mac->hw.mii.data;
+ 
+ 	int data;
+ 	u16 regValue = (((phyaddr << 11) & (0x0000F800)) |
+ 			((phyreg << 6) & (0x000007C0)));
+ 
+-	while (((readl(ioaddr + MAC_MII_ADDR)) & MAC_MII_ADDR_BUSY) == 1) {
++	while (((readl(ioaddr + mii_address)) & mii_busy) == 1) {
+ 	}
+ 
+-	writel(regValue, ioaddr + MAC_MII_ADDR);
++	writel(regValue, ioaddr + mii_address);
+ 
+-	while (((readl(ioaddr + MAC_MII_ADDR)) & MAC_MII_ADDR_BUSY) == 1) {
++	while (((readl(ioaddr + mii_address)) & mii_busy) == 1) {
+ 	}
+ 
+ 	/* Read the data from the MII data register */
+-	data = (int)readl(ioaddr + MAC_MII_DATA);
++	data = (int)readl(ioaddr + mii_data);
+ 	return data;
+ }
+ 
+@@ -63,22 +67,27 @@ int stmmac_mdio_read(struct mii_bus *bus
+ int stmmac_mdio_write(struct mii_bus *bus, int phyaddr, int phyreg, u16 phydata)
+ {
+ 	struct net_device *ndev = bus->priv;
++	struct eth_driver_local *lp = netdev_priv(ndev);
+ 	unsigned long ioaddr = ndev->base_addr;
++	unsigned int mii_address = lp->mac->hw.mii.addr;
++	unsigned int mii_busy = lp->mac->hw.mii.addr_busy;
++	unsigned int mii_write = lp->mac->hw.mii.addr_write;
++	unsigned int mii_data = lp->mac->hw.mii.data;
+ 
+ 	u16 value =
+ 	    (((phyaddr << 11) & (0x0000F800)) | ((phyreg << 6) & (0x000007C0)))
+-	    | MAC_MII_ADDR_WRITE;
++	    | mii_write;
+ 
+ 	/* Wait until any existing MII operation is complete */
+-	while (((readl(ioaddr + MAC_MII_ADDR)) & MAC_MII_ADDR_BUSY) == 1) {
++	while (((readl(ioaddr + mii_address)) & mii_busy) == 1) {
+ 	}
+ 
+ 	/* Set the MII address register to write */
+-	writel(phydata, ioaddr + MAC_MII_DATA);
+-	writel(value, ioaddr + MAC_MII_ADDR);
++	writel(phydata, ioaddr + mii_data);
++	writel(value, ioaddr + mii_address);
+ 
+ 	/* Wait until any existing MII operation is complete */
+-	while (((readl(ioaddr + MAC_MII_ADDR)) & MAC_MII_ADDR_BUSY) == 1) {
++	while (((readl(ioaddr + mii_address)) & mii_busy) == 1) {
+ 	}
+ 
+ 	/* NOTE: we need to perform this "extra" read in order to fix an error
+@@ -93,6 +102,7 @@ int stmmac_mdio_reset(struct mii_bus *bu
+ 	struct net_device *ndev = bus->priv;
+ 	struct eth_driver_local *lp = netdev_priv(ndev);
+ 	unsigned long ioaddr = ndev->base_addr;
++	unsigned int mii_address = lp->mac->hw.mii.addr;
+ 
+ 	printk(KERN_DEBUG "stmmac_mdio_reset: called!\n");
+ 
+@@ -105,7 +115,7 @@ int stmmac_mdio_reset(struct mii_bus *bu
+ 	 * It doesn't complete its reset until at least one clock cycle
+ 	 * on MDC, so perform a dummy mdio read.
+ 	 */
+-	writel(0, ioaddr + MAC_MII_ADDR);
++	writel(0, ioaddr + mii_address);
+ 
+ 	return 0;
+ }

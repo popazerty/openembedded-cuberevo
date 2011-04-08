@@ -1,0 +1,11 @@
+--- old/Makefile	2010-03-17 21:35:52.000000000 +0100
++++ new/Makefile	2010-03-17 21:36:00.000000000 +0100
+@@ -291,7 +291,7 @@
+ AWK		= awk
+ GENKSYMS	= scripts/genksyms/genksyms
+ DEPMOD_PATH	?= /sbin
+-DEPMOD		= $(DEPMOD_PATH)/depmod
++DEPMOD		= depmod
+ KALLSYMS	= scripts/kallsyms
+ PERL		= perl
+ CHECK		= sparse

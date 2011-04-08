@@ -1,0 +1,1030 @@
+This patch removes GPDMA support from the new DMA system, in
+accordance with removal of st220eval support.
+
+Signed-off-by: Mark Glaisher <mark.glaisher@st.com>
+
+Index: linux-2.6.17/drivers/stm/Kconfig
+===================================================================
+--- linux-2.6.17.orig/drivers/stm/Kconfig
++++ linux-2.6.17/drivers/stm/Kconfig
+@@ -12,7 +12,7 @@ menu "STM specific devices"
+ 
+ config STM_DMA
+ 	bool "STMicroelectronics DMA API"
+-	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STM8000
++	depends on CPU_SUBTYPE_STB7100
+ 	default y
+ 	---help---
+ 	  Selecting this option will provide support for STMicroelectronics'
+@@ -51,9 +51,6 @@ config STM_DMA_DEBUG
+ config STB7100_FDMA
+ 	def_bool STM_DMA && CPU_SUBTYPE_STB7100
+ 
+-config STM_GPDMA
+-	def_bool STM_DMA && CPU_SUBTYPE_STM8000
+-
+ config STM_SSC
+        bool "STM Synchronous Serial Controller"
+        depends on !I2C_ST40_PIO
+Index: linux-2.6.17/drivers/stm/Makefile
+===================================================================
+--- linux-2.6.17.orig/drivers/stm/Makefile
++++ linux-2.6.17/drivers/stm/Makefile
+@@ -3,7 +3,6 @@
+ #
+ 
+ obj-$(CONFIG_STB7100_FDMA)	+= 710x_fdma2.o
+-obj-$(CONFIG_STM_GPDMA)		+= gpdma.o
+ obj-$(CONFIG_STM_SSC)           += stm_ssc.o
+ obj-$(CONFIG_STM_SPI)           += stm_spi.o
+ obj-$(CONFIG_STM_COPROCESSOR)   += stm-coprocessor.o
+Index: linux-2.6.17/drivers/stm/gpdma.c
+===================================================================
+--- linux-2.6.17.orig/drivers/stm/gpdma.c
++++ /dev/null
+@@ -1,985 +0,0 @@
+-/*
+- *   STMicroelectronics GPDMA Driver
+- *   Copyright (c) 2005 STMicroelectronics Limited
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-#include <asm/io.h>
+-#include <linux/config.h>
+-#include <linux/init.h>
+-#include <linux/interrupt.h>
+-#include <linux/proc_fs.h>
+-#include <linux/wait.h>
+-#include <linux/module.h>
+-#include <linux/sched.h>
+-#include <linux/slab.h>
+-#include <linux/fb.h>
+-#include <linux/interrupt.h>
+-#include <linux/debugfs.h>
+-#include <linux/device.h>
+-
+-#include <asm/uaccess.h>
+-#include <asm/irq.h>
+-#include <asm/semaphore.h>
+-
+-#include <linux/delay.h>
+-
+-#include <asm/dma.h>
+-#include <linux/stm/710x_fdma2.h>
+-
+-static int enable_trace = 0;
+-#define GPDMA_TRACE(fmt, args...) \
+-		(enable_trace && printk("%s: " fmt, __FUNCTION__, ##args))
+-
+-/* TODO: really ought to be in the headers */
+-const int DIM_MASK = DIM_0_x_0 | DIM_0_x_1 | DIM_0_x_2 |
+-		     DIM_1_x_0 | DIM_1_x_1 | DIM_1_x_2 |
+-		     DIM_2_x_0 | DIM_2_x_1 | DIM_2_x_2 |
+-		     DIM_0_x_SG  | DIM_SG_x_0 | DIM_SG_x_SG;
+-
+-#define __GPDMA(ctx, n)			((ctx)->io_base + (n))
+-#define __GPDMA_CHAN(ctx, n, o)		__GPDMA(ctx, (((n + 1) * 0x100) + o))
+-
+-#define DMA_GLOBAL_VCR_STATUS(ctx)	__GPDMA(ctx, 0x00)
+-#define DMA_GLOBAL_VCR_VERSION(ctx)	__GPDMA(ctx, 0x08)
+-#define DMA_GLOBAL_ENABLE(ctx)		__GPDMA(ctx, 0x10)
+-#define DMA_GLOBAL_DISABLE(ctx)		__GPDMA(ctx, 0x18)
+-#define DMA_GLOBAL_STATUS(ctx)		__GPDMA(ctx, 0x20)
+-#define DMA_GLOBAL_INTERRUPT(ctx)	__GPDMA(ctx, 0x28)
+-#define DMA_GLOBAL_ERROR(ctx)		__GPDMA(ctx, 0x30)
+-#define DMA_GLOBAL_DEFINED(ctx)		__GPDMA(ctx, 0x38)
+-#define DMA_GLOBAL_HANDSHAKE(ctx)	__GPDMA(ctx, 0x40)
+-
+-#define DMA_CHAN_IDENITY(ctx, n)	__GPDMA_CHAN(ctx, n, 0x00)
+-#define DMA_CHAN_ENABLE(ctx, n)		__GPDMA_CHAN(ctx, n, 0x08)
+-#define DMA_CHAN_DISABLE(ctx, n)	__GPDMA_CHAN(ctx, n, 0x10)
+-#define DMA_CHAN_STATUS(ctx, n)		__GPDMA_CHAN(ctx, n, 0x18)
+-#define DMA_CHAN_ACTION(ctx, n)		__GPDMA_CHAN(ctx, n, 0x20)
+-#define DMA_CHAN_POINTER(ctx, n)	__GPDMA_CHAN(ctx, n, 0x28)
+-#define DMA_CHAN_REQUEST(ctx, n)	__GPDMA_CHAN(ctx, n, 0x30)
+-
+-#define DMA_CHAN_CONTROL(ctx, n)	__GPDMA_CHAN(ctx, n, 0x80)
+-#define DMA_CHAN_COUNT(ctx, n)		__GPDMA_CHAN(ctx, n, 0x88)
+-#define DMA_CHAN_SAR(ctx, n)		__GPDMA_CHAN(ctx, n, 0x90)
+-#define DMA_CHAN_DAR(ctx, n)		__GPDMA_CHAN(ctx, n, 0x98)
+-#define DMA_CHAN_NEXT_PTR(ctx, n)	__GPDMA_CHAN(ctx, n, 0xa0)
+-#define DMA_CHAN_SRC_LENGTH(ctx, n)	__GPDMA_CHAN(ctx, n, 0xa8)
+-#define DMA_CHAN_SRC_STRIDE(ctx, n)	__GPDMA_CHAN(ctx, n, 0xb0)
+-#define DMA_CHAN_DST_LENGTH(ctx, n)	__GPDMA_CHAN(ctx, n, 0xb8)
+-#define DMA_CHAN_DST_STRIDE(ctx, n)	__GPDMA_CHAN(ctx, n, 0xc0)
+-
+-/* DMAC bitmasks */
+-#define DMA_GLOBAL_ENABLE_CHAN_(n)              (0x00000001UL << n)
+-#define DMA_GLOBAL_DISABLE_CHAN_(n)             (0x00000001UL << n)
+-#define DMA_CHAN_ENABLE_CHAN_                   0x00000001UL
+-#define DMA_CHAN_ENABLE_COMPLETE_		0x00000002UL
+-#define DMA_CHAN_ENABLE_BUS_ERROR_		0x00000004UL
+-#define DMA_CHAN_ENABLE_ALIGNMENT_		0x00000008UL
+-#define DMA_CHAN_ENABLE_ALL_			0x0000003FUL
+-#define DMA_CHAN_CONTROL_FREE_RUNNING_          0x00000000UL
+-#define DMA_CHAN_CONTROL_TRIGGER_               0x00000001UL
+-#define DMA_CHAN_CONTROL_PACED_SOURCE_          0x00000002UL
+-#define DMA_CHAN_CONTROL_PACED_DESTINATION_     0x00000003UL
+-#define DMA_CHAN_CONTROL_NO_LINK_LIST_          0x00000000UL
+-#define DMA_CHAN_CONTROL_FINAL_LINK_ELEM_       0x00000000UL
+-#define DMA_CHAN_CONTROL_LINK_ELEM_             0x00000080UL
+-#define DMA_CHAN_CONTROL_SRC_TYPE_CONST_        0x00000000UL
+-#define DMA_CHAN_CONTROL_SRC_ADDRESSMODE_INC_   0x00010000UL
+-#define DMA_CHAN_CONTROL_SRC_UNIT_2BYTES_       0x00080000UL
+-#define DMA_CHAN_CONTROL_SRC_UNIT_4BYTES_       0x00100000UL
+-#define DMA_CHAN_CONTROL_SRC_UNIT_32BYTES_      0x00280000UL
+-#define DMA_CHAN_CONTROL_DST_TYPE_CONST_        0x00000000UL
+-#define DMA_CHAN_CONTROL_DST_ADDRESSMODE_INC_   0x01000000UL
+-#define DMA_CHAN_CONTROL_DST_UNIT_2BYTES_       0x08000000UL
+-#define DMA_CHAN_CONTROL_DST_UNIT_4BYTES_       0x10000000UL
+-#define DMA_CHAN_CONTROL_DST_UNIT_32BYTES_      0x28000000UL
+-#define DMA_CHAN_ACTION_UPDATE_			0x00000040UL
+-#define DMA_CHAN_ACTION_STALL_ACK_              0x00000010UL
+-#define DMA_CHAN_ACTION_ALIGNMENT_ACK_          0x00000008UL
+-#define DMA_CHAN_ACTION_BUS_ERROR_ACK_          0x00000004UL
+-#define DMA_CHAN_ACTION_COMPLETE_ACK_           0x00000002UL
+-#define DMA_CHAN_STATUS_COMPLETE_               0x00000002UL
+-#define DMA_CHAN_REQUEST0                       0x0
+-#define DMA_CHAN_REQUEST1                       0x1
+-#define DMA_CHAN_REQUEST2                       0x2
+-#define DMA_CHAN_REQUEST3                       0x3
+-
+-#define DMA_LINKAGE_CONTROL(s)			((*(s))[0])
+-#define DMA_LINKAGE_COUNT(s)			((*(s))[1])
+-#define DMA_LINKAGE_SAR(s)			((*(s))[2])
+-#define DMA_LINKAGE_DAR(s)			((*(s))[3])
+-#define DMA_LINKAGE_NEXT_PTR(s)			((*(s))[4])
+-#define DMA_LINKAGE_SRC_LENGTH(s)		((*(s))[5])
+-#define DMA_LINKAGE_SRC_STRIDE(s)		((*(s))[6])
+-#define DMA_LINKAGE_DST_LENGTH(s)		((*(s))[7])
+-#define DMA_LINKAGE_DST_STRIDE(s)		((*(s))[8])
+-#define DMA_LINKAGE_LENGTH			10 /* must be 64-bit aligned */
+-
+-#define DMA_LINKAGE_TABLE_SIZE			96
+-
+-#define DMA_LINKAGE_TABLE_SIZE_BYTES \
+-			(DMA_LINKAGE_TABLE_SIZE*DMA_LINKAGE_LENGTH*4)
+-
+-typedef u32 gpdma_linkage_t[DMA_LINKAGE_LENGTH];
+-
+-/* TODO: this probably ought to be increated to 36 (since we probably want
+- *       to configure each of the paced sub-channels independantly)
+- */
+-#define GPDMA_FIRST_FREERUNNING_CHANNEL 1
+-#define GPDMA_DMA_CHANNELS 5
+-
+-typedef struct channel_status {
+-	char    locked;
+-	pf 	comp_callback;
+-	pf	err_callback;
+-	char    ch_term;
+-	char    ch_pause;
+-	char    is_xferring;
+-
+-	gpdma_linkage_t *dma_table;
+-
+-	struct tasklet_struct completion_tasklet;
+-	struct tasklet_struct error_tasklet;
+-} channel_status;
+-
+-typedef struct gpdma_chip {
+-	channel_status channel[GPDMA_DMA_CHANNELS];
+-	spinlock_t gpdma_lock;
+-	spinlock_t channel_lock;
+-	unsigned long io_base;
+-	int	irq_chan[5];
+-	int	irq_err;
+-} gpdma_chip;
+-
+-/* TODO: why is this a global variable (forces single instance of driver) */
+-static gpdma_chip chip;
+-
+-static int claim_gpdma_channel(int chan_id)
+-{
+-	int res = -ENODEV;
+-
+-	if (0 == chan_id)
+-		return -ENODEV;
+-
+-	spin_lock(&chip.channel_lock);
+-
+-	if(!chip.channel[chan_id].locked) {
+-		chip.channel[chan_id].dma_table =
+-			kmalloc(DMA_LINKAGE_TABLE_SIZE_BYTES, GFP_KERNEL);
+-
+-		if (chip.channel[chan_id].dma_table) {
+-			writel(DMA_GLOBAL_ENABLE_CHAN_(chan_id),
+-			       DMA_GLOBAL_ENABLE(&chip));
+-			chip.channel[chan_id].locked = 1;
+-			res = chan_id;
+-		}
+-	}
+-
+-	spin_unlock(&chip.channel_lock);
+-	return res;
+-}
+-
+-static void free_gpdma_channel(int chan_id)
+-{
+-	spin_lock(&chip.channel_lock);
+-	kfree(chip.channel[chan_id].dma_table);
+-	writel(DMA_GLOBAL_ENABLE_CHAN_(chan_id), DMA_GLOBAL_DISABLE(&chip));
+-	memset(&chip.channel[chan_id], 0, sizeof(channel_status));
+-	spin_unlock(&chip.channel_lock);
+-
+-}
+-
+-static inline void gpdma_decode_control(unsigned long control)
+-{
+-	const char *timing, *list_enb;
+-	unsigned int sub_offset;
+-	const char *src_type, *src_unit, *src_update;
+-	const char *dst_type, *dst_unit, *dst_update;
+-
+-	switch((control >>  0) & 0x03) {
+-	case 0: timing = "free running"; break;
+-	case 1: timing = "triggered"; break;
+-	case 2: timing = "paced src"; break;
+-	case 3: timing = "paced dst"; break;
+-	default: timing = "ILLEGAL"; break;
+-	}
+-
+-	switch((control >>  7) & 0x01) {
+-	case 0:	list_enb = "single/final elem"; break;
+-	case 1: list_enb = "linked list"; break;
+-	default: list_enb = "ILLEGAL"; break;
+-	}
+-
+-	sub_offset = (control >>  8) & 0xff;
+-
+-	switch((control >> 16) & 0x07) {
+-	case 0: src_type = "constant src"; break;
+-	case 1: src_type = "linear inc. src"; break;
+-	case 2: src_type = "linear dec. src"; break;
+-	case 3: src_type = "2D inc. src"; break;
+-	case 4: src_type = "2D dec. src"; break;
+-	default: src_type = "ILLEGAL"; break;
+-	}
+-
+-	switch((control >> 19) & 0x07) {
+-	case 0: src_unit = "1 byte read"; break;
+-	case 1: src_unit = "2 byte read"; break;
+-	case 2: src_unit = "4 byte read"; break;
+-	case 3: src_unit = "8 byte read"; break;
+-	case 4: src_unit = "16 byte read"; break;
+-	case 5: src_unit = "32 byte read"; break;
+-	default: src_unit = "ILLEGAL"; break;
+-	}
+-
+-	switch((control >> 22) & 0x01) {
+-	case 0: src_update = "update src"; break;
+-	case 1: src_update = "no update src"; break;
+-	default: src_update = "ILLEGAL"; break;
+-	}
+-
+-	switch((control >> 24) & 0x07) {
+-	case 0: dst_type = "constant dst"; break;
+-	case 1: dst_type = "linear inc. dst"; break;
+-	case 2: dst_type = "linear dec. dst"; break;
+-	case 3: dst_type = "2D inc. dst"; break;
+-	case 4: dst_type = "2D dec. dst"; break;
+-	default: dst_type = "ILLEGAL"; break;
+-	}
+-
+-	switch((control >> 27) & 0x07) {
+-	case 0: dst_unit = "1 byte write"; break;
+-	case 1: dst_unit = "2 byte write"; break;
+-	case 2: dst_unit = "4 byte write"; break;
+-	case 3: dst_unit = "8 byte write"; break;
+-	case 4: dst_unit = "16 byte write"; break;
+-	case 5: dst_unit = "32 byte write"; break;
+-	default: dst_unit = "ILLEGAL"; break;
+-	}
+-
+-	switch((control >> 30) & 0x01) {
+-	case 0: dst_update = "update dst"; break;
+-	case 1: dst_update = "no update dst"; break;
+-	default: dst_update = "ILLEGAL"; break;
+-	}
+-
+-	GPDMA_TRACE("%s, %s, offset %d, %s, %s, %s, %s, %s, %s\n",
+-		    timing, list_enb, sub_offset,
+-		    src_type, src_unit, src_update,
+-		    dst_type, dst_unit, dst_update);
+-
+-}
+-
+-static inline void gpdma_wback_linkage(struct dma_channel *chan,
+-                                       gpdma_linkage_t *link)
+-{
+-	GPDMA_TRACE("dmac%d: writing back linkage table (%p, count = %d)\n",
+-		    chan->chan, link, DMA_LINKAGE_COUNT(link));
+-
+-#if 0
+-	GPDMA_TRACE("   control = %08x\n", DMA_LINKAGE_CONTROL(link));
+-	gpdma_decode_control(DMA_LINKAGE_CONTROL(link));
+-	GPDMA_TRACE("     count = %d\n", DMA_LINKAGE_COUNT(link));
+-	GPDMA_TRACE("       sar = %p\n", (void *) DMA_LINKAGE_SAR(link));
+-	GPDMA_TRACE("       dar = %p\n", (void *) DMA_LINKAGE_DAR(link));
+-	GPDMA_TRACE("  next ptr = %p\n", (void *) DMA_LINKAGE_NEXT_PTR(link));
+-	GPDMA_TRACE("src_length = %d\n", DMA_LINKAGE_SRC_LENGTH(link));
+-	GPDMA_TRACE("src_stride = %d\n", DMA_LINKAGE_SRC_STRIDE(link));
+-	GPDMA_TRACE("dst_length = %d\n", DMA_LINKAGE_DST_LENGTH(link));
+-	GPDMA_TRACE("dst_stride = %d\n", DMA_LINKAGE_DST_STRIDE(link));
+-#endif
+-
+-	dma_cache_wback(link, sizeof(gpdma_linkage_t));
+-}
+-
+-static gpdma_linkage_t * gpdma_extend_linkage(struct dma_channel *chan,
+-                                              gpdma_linkage_t *link)
+-{
+-	gpdma_linkage_t *dma_table;
+-
+-	GPDMA_TRACE("dmac%d: extending linkage table (%p)\n", chan->chan, link);
+-	dma_table = chip.channel[chan->chan].dma_table;
+-
+-	BUG_ON(link < dma_table);
+-	BUG_ON(link > (dma_table + DMA_LINKAGE_TABLE_SIZE));
+-
+-	/* check that the link is in range */
+-	if (link + 2 >  (dma_table + DMA_LINKAGE_TABLE_SIZE)) {
+-		return NULL;
+-	}
+-
+-	/* set the next link to be identical to pre-decessor */
+-	memcpy(link+1, link+0, sizeof(gpdma_linkage_t));
+-
+-	DMA_LINKAGE_CONTROL(link) |= DMA_CHAN_CONTROL_LINK_ELEM_;
+-	DMA_LINKAGE_NEXT_PTR(link) = (unsigned long) virt_to_bus(link+1);
+-
+-	gpdma_wback_linkage(chan, link);
+-	return link+1;
+-}
+-
+-static void gpdma_final_linkage(struct dma_channel *chan, gpdma_linkage_t *link)
+-{
+-	GPDMA_TRACE("dmac%d: completed linkage table (%p)\n", chan->chan, link);
+-	gpdma_wback_linkage(chan, link);
+-}
+-
+-static inline long long gpdma_get_unit_from_size(unsigned long sz,
+-                                                 unsigned int write)
+-{
+-	if (write) {
+-		switch (sz) {
+-		case  2:
+-			return DMA_CHAN_CONTROL_DST_UNIT_2BYTES_;
+-		case  4:
+-			return DMA_CHAN_CONTROL_DST_UNIT_4BYTES_;
+-		case 32:
+-			return DMA_CHAN_CONTROL_DST_UNIT_32BYTES_;
+-		}
+-	} else {
+-		switch (sz) {
+-		case  2:
+-			return DMA_CHAN_CONTROL_SRC_UNIT_2BYTES_;
+-		case  4:
+-			return DMA_CHAN_CONTROL_SRC_UNIT_4BYTES_;
+-		case 32:
+-			return DMA_CHAN_CONTROL_SRC_UNIT_32BYTES_;
+-		}
+-	}
+-
+-	return -1;
+-}
+-
+-static inline long long gpdma_get_unit_from_alignment(
+-		unsigned long addr, unsigned int count, unsigned int write)
+-{
+-	unsigned int sz = 0;
+-
+-	/* TODO: support other alignments */
+-	if (0 == ((addr | count) & 0x1f))
+-		sz = 32;
+-	else if (0 == ((addr | count) & 0x03))
+-		sz = 4;
+-	else if (0 == ((addr | count) & 0x01))
+-		sz = 2;
+-
+-	return gpdma_get_unit_from_size(sz, write);
+-}
+-
+-static gpdma_linkage_t *gpdma_map_sg(struct dma_channel *chan,
+-                                     gpdma_linkage_t *link, unsigned int write)
+-{
+-	int chan_id = chan->chan;
+-	struct scatterlist *sg;
+-	unsigned int nents;
+-	int i;
+-
+-	GPDMA_TRACE("dmac%d: mapping scatterlist to GPDMA linkage "
+-	            "structure(s)\n", chan_id);
+-
+-	if (write) {
+-		sg = chan->src_sg;
+-		nents = chan->src_sg_len;
+-	} else {
+-		sg = chan->dst_sg;
+-		nents = chan->dst_sg_len;
+-	}
+-
+-	i = 0;
+-	do {
+-		/* although counter-intuitive we really do want to invert write
+-		 * here because gpdma_get_unit_from_alignment's write flag is
+-		 * from the point of view of the DMA engine, not of the IDE
+-		 * transaction.
+-		 */
+-		DMA_LINKAGE_CONTROL(link) |= gpdma_get_unit_from_alignment(
+-			sg_dma_address(sg+i), sg_dma_len(sg+i), !write);
+-		DMA_LINKAGE_COUNT(link) = sg_dma_len(sg+i);
+-		if (write)
+-			DMA_LINKAGE_SAR(link) = sg_dma_address(sg+i);
+-		else {
+-			DMA_LINKAGE_DAR(link) = sg_dma_address(sg+i);
+-		}
+-
+-		if (++i >= nents) {
+-			break;
+-		}
+-
+-		link = gpdma_extend_linkage(chan, link);
+-	} while (link);
+-
+-	return link;
+-}
+-
+-static int gpdma_map_channel(struct dma_channel *chan, gpdma_linkage_t *link)
+-{
+-	int chan_id = chan->chan;
+-	long long control;
+-
+-	GPDMA_TRACE("dmac%d: mapping dma_channel to GPDMA linkage structure\n",
+-	            chan_id);
+-
+-	switch (chan->flags & DIM_MASK) {
+-	case DIM_0_x_0:
+-		control = DMA_CHAN_CONTROL_SRC_TYPE_CONST_ |
+-			  gpdma_get_unit_from_size(chan->src_sz, READ) |
+-			  DMA_CHAN_CONTROL_DST_TYPE_CONST_ |
+-			  gpdma_get_unit_from_size(chan->dst_sz, WRITE);
+-		break;
+-	case DIM_0_x_1:
+-		control = DMA_CHAN_CONTROL_SRC_TYPE_CONST_ |
+-			  gpdma_get_unit_from_size(chan->src_sz, READ) |
+-			  DMA_CHAN_CONTROL_DST_ADDRESSMODE_INC_ |
+-			  gpdma_get_unit_from_alignment(chan->dar, chan->count,
+-			                                WRITE);
+-		break;
+-	case DIM_0_x_SG:
+-		control = DMA_CHAN_CONTROL_SRC_TYPE_CONST_ |
+-			  gpdma_get_unit_from_size(chan->src_sz, READ) |
+-			  DMA_CHAN_CONTROL_DST_ADDRESSMODE_INC_;
+-		break;
+-	case DIM_1_x_0:
+-		control = DMA_CHAN_CONTROL_SRC_ADDRESSMODE_INC_ |
+-			  gpdma_get_unit_from_alignment(chan->sar, chan->count,
+-			                                READ) |
+-			  DMA_CHAN_CONTROL_DST_TYPE_CONST_ |
+-			  gpdma_get_unit_from_size(chan->dst_sz, WRITE);
+-		break;
+-	case DIM_SG_x_0:
+-		control = DMA_CHAN_CONTROL_SRC_ADDRESSMODE_INC_ |
+-			  DMA_CHAN_CONTROL_DST_TYPE_CONST_ |
+-			  gpdma_get_unit_from_size(chan->dst_sz, WRITE);
+-		break;
+-	case DIM_1_x_1:
+-		control = DMA_CHAN_CONTROL_SRC_ADDRESSMODE_INC_ |
+-			  gpdma_get_unit_from_alignment(chan->sar, chan->count,
+-			                                READ) |
+-			  DMA_CHAN_CONTROL_DST_ADDRESSMODE_INC_ |
+-			  gpdma_get_unit_from_alignment(chan->dar, chan->count,
+-			                                WRITE);
+-		break;
+-	case DIM_SG_x_SG:
+-	case DIM_0_x_2:
+-	case DIM_2_x_0:
+-	case DIM_1_x_2:
+-	case DIM_2_x_1:
+-	case DIM_2_x_2:
+-	default:
+-		control = -1;
+-	}
+-
+-	if (control < 0) {
+-		return -EINVAL;
+-	}
+-
+-	DMA_LINKAGE_CONTROL(link) = (unsigned int) control;
+-	DMA_LINKAGE_COUNT(link) = chan->count;
+-	DMA_LINKAGE_SAR(link) = chan->sar;
+-	DMA_LINKAGE_DAR(link) = chan->dar;
+-	DMA_LINKAGE_NEXT_PTR(link) = 0;
+-	DMA_LINKAGE_SRC_LENGTH(link) = chan->src_sz;
+-	DMA_LINKAGE_SRC_STRIDE(link) = chan->sstride;
+-	DMA_LINKAGE_DST_LENGTH(link) = chan->dst_sz;
+-	DMA_LINKAGE_DST_STRIDE(link) = chan->dstride;
+-
+-	return 0;
+-}
+-
+-static int gpdma_configure_freerunning(struct dma_channel *chan,
+-                                       unsigned long flags)
+-{
+-	int chan_id = chan->chan, res;
+-	gpdma_linkage_t *link, *newlink;
+-	unsigned int list_len;
+-
+-	GPDMA_TRACE("dmac%d: configuring freerunning GPDMA transfer\n",
+-	            chan_id);
+-
+-	link = chip.channel[chan_id].dma_table;
+-
+-	if (LIST_TYPE_LINKED & flags)
+-		list_len = chan->list_len;
+-	else
+-		list_len = 1;
+-
+-	while (1) {
+-		/* configure the first node in the list */
+-		res = gpdma_map_channel(chan, link);
+-		if (res != 0) {
+-			return res;
+-		}
+-
+-		/* cope with any scatterlist transfers */
+-		switch (flags & DIM_MASK) {
+-		case DIM_SG_x_0:
+-			newlink = gpdma_map_sg(chan, link, WRITE);
+-			break;
+-		case DIM_0_x_SG:
+-			newlink = gpdma_map_sg(chan, link, READ);
+-			break;
+-		default:
+-			newlink = link;
+-		}
+-
+-		if (!newlink) {
+-			printk(KERN_ERR "cannot configure scatterlist for "
+-			                "GPDMAC channel %d\n", chan_id);
+-			return -ENOMEM;
+-		}
+-
+-		list_len--;
+-		if (0 == list_len)
+-			break;
+-
+-		link = gpdma_extend_linkage(chan, newlink);
+-		if (!link) {
+-			printk(KERN_ERR "cannot configure linked list for "
+-			                "GPDMAC channel %d\n", chan_id);
+-			return -ENOMEM;
+-		}
+-	}
+-
+-	gpdma_final_linkage(chan, newlink);
+-	return 0;
+-}
+-
+-static void inline gpdma_handle_channel_completion(int chan_id)
+-{
+-	GPDMA_TRACE("dmac%d: received GPDMA completion interrupt\n", chan_id);
+-
+-	/* TODO: do we need to check for error on this channel? */
+-	writel(DMA_CHAN_ENABLE_COMPLETE_, DMA_CHAN_DISABLE(&chip, chan_id));
+-	tasklet_schedule(&chip.channel[chan_id].completion_tasklet);
+-}
+-
+-static irqreturn_t gpdma_completion_interrupt_handler
+-		(int irq, void *p, struct pt_regs *regs)
+-{
+-	unsigned long i, mask;
+-
+-	/* this code assumed that DMA_CHAN_ENABLE_ERROR_ is never set */
+-	while (0 != (mask = readl(DMA_GLOBAL_INTERRUPT(&chip)))) {
+-		for (i=0; i<GPDMA_DMA_CHANNELS; i++) {
+-			if (mask & (1 << i)) {
+-				gpdma_handle_channel_completion(i);
+-			}
+-		}
+-	}
+-
+-	return IRQ_HANDLED;
+-}
+-
+-static void gpdma_completion_tasklet(int chan_id)
+-{
+-	void (*comp_callback)(void) = (chip.channel[chan_id]).comp_callback;
+-
+-	GPDMA_TRACE("dmac%d: GPDMA transfer completed OK\n", chan_id);
+-
+-	if (comp_callback)
+-		comp_callback();
+-
+-	/* TODO: mark not tranfering? */
+-}
+-
+-static void inline gpdma_handle_channel_error(int chan_id)
+-{
+-	GPDMA_TRACE("dmac%d: received GPDMA error interrupt\n", chan_id);
+-
+-	writel(DMA_CHAN_ENABLE_BUS_ERROR_ | DMA_CHAN_ENABLE_ALIGNMENT_,
+-	       DMA_CHAN_DISABLE(&chip, chan_id));
+-	tasklet_schedule(&chip.channel[chan_id].error_tasklet);
+-}
+-
+-static irqreturn_t gpdma_error_interrupt_handler
+-		(int irq, void *p, struct pt_regs *regs)
+-{
+-	unsigned long i, mask;
+-
+-	GPDMA_TRACE("received GPDMA error interrupt\n");
+-
+-	while (0 != (mask = readl(DMA_GLOBAL_ERROR(&chip)))) {
+-		for (i=0; i<GPDMA_DMA_CHANNELS; i++) {
+-			if (mask & (1 << i)) {
+-				gpdma_handle_channel_error(i);
+-			}
+-		}
+-	}
+-
+-	return IRQ_HANDLED;
+-}
+-
+-static void gpdma_error_tasklet(int chan_id)
+-{
+-	void (*err_callback)(void) = (chip.channel[chan_id]).err_callback;
+-
+-	printk(KERN_ERR "dmac%d: GPDMA transfer terminated with error\n",
+-	       chan_id);
+-	if(err_callback)
+-		err_callback();
+-
+-}
+-
+-
+-/*
+- * Linux SH-DMA-API hooks
+- * */
+-
+-extern int gpdma_get_residue(struct dma_channel *chan)
+-{
+-	unsigned long pos = 0;
+-	unsigned int chan_id = chan->chan;
+-
+-	spin_lock(&chip.channel_lock);
+-	pos = readl(DMA_CHAN_COUNT(&chip, chan_id));
+-	if (1 & readl(DMA_CHAN_STATUS(&chip, chan_id))) {
+-		pos += 100000;
+-	}
+-	spin_unlock(&chip.channel_lock);
+-
+-	GPDMA_TRACE("dmac%d: %ld bytes left to transfer (status = %lx)\n",
+-		    chan_id, pos, readl(DMA_CHAN_STATUS(&chip, chan_id)));
+-
+-	return pos;
+-}
+-
+-static int gpdma_request(struct dma_channel *chan)
+-{
+-	int i, res;
+-
+-	GPDMA_TRACE("dmac: allocating GPDMA resources\n");
+-
+-	spin_lock(&chip.channel_lock);
+-
+-	if (chan->chan == ANY_CHANNEL) {
+-		for (i=GPDMA_FIRST_FREERUNNING_CHANNEL;
+-						i<GPDMA_DMA_CHANNELS; i++) {
+-			res = claim_gpdma_channel(i);
+-			if (res >= 0) {
+-				break;
+-			}
+-		}
+-
+-		return res;
+-	}
+-
+-	return claim_gpdma_channel(chan->chan);
+-}
+-
+-static int gpdma_stop(struct dma_channel *chan)
+-{
+-	unsigned int chan_id = chan->chan;
+-
+-	GPDMA_TRACE("dmac%d: halting GPDMA transfer\n", chan_id);
+-	GPDMA_TRACE("status = %08lx\n", readl(DMA_CHAN_STATUS(&chip, chan_id)));
+-	GPDMA_TRACE("enable = %08lx\n", readl(DMA_CHAN_ENABLE(&chip, chan_id)));
+-
+-	spin_lock(chip.channel_lock);
+-	chip.channel[chan->chan].ch_term = 1;
+-	spin_unlock(chip.channel_lock);
+-
+-	spin_lock(chip.gpdma_lock);
+-	writel(DMA_CHAN_ENABLE_CHAN_, DMA_CHAN_DISABLE(&chip, chan_id));
+-	spin_unlock(chip.gpdma_lock);
+-
+-	return 1;
+-}
+-
+-
+-static void gpdma_free(struct dma_channel *chan)
+-{
+-	unsigned int chan_id = chan->chan;
+-
+-	GPDMA_TRACE("dmac%d: freeing GPDMA resources\n", chan_id);
+-
+-	gpdma_stop(chan);
+-	/* TODO: wait for GPDMA to acknowledge stop */
+-
+-	/* TODO: this will clobber the tasklet structure */
+-	free_gpdma_channel(chan->chan);
+-
+-#if 0
+-	/* do our best to ensure no-one is orphaned by the free */
+-	chip.channel[chan->chan].completion_tasklet.data = chan_id;
+-	tasklet_schedule(&chip.channel[chan->chan].completion_tasklet);
+-#endif
+-}
+-
+-static int gpdma_configure(struct dma_channel *channel, unsigned long flags)
+-{
+-	struct dma_channel *chan = channel;
+-	int chan_id = chan->chan;
+-	int res;
+-
+-	GPDMA_TRACE("dmac%d: configuring GPDMA transfer\n", chan_id);
+-
+-	if (chan->mode != MODE_FREERUNNING) {
+-		BUG();
+-		return -ENODEV;
+-	}
+-
+-	spin_lock(&chip.channel_lock);
+-
+-	if (readl(DMA_GLOBAL_STATUS(&chip)) & (1 << chan_id)) {
+-		spin_unlock(&chip.channel_lock);
+-		return -EBUSY;
+-	}
+-
+-	if(chan->comp_callback)
+-		chip.channel[chan_id].comp_callback = (pf)chan->comp_callback;
+-	if(chan->err_callback)
+-		chip.channel[chan_id].err_callback = (pf)chan->err_callback;
+-
+-	spin_unlock(&chip.channel_lock);
+-
+-	res = gpdma_configure_freerunning(channel, flags);
+-	if (0 == res)
+-		chan->flags |= DMA_CONFIGURED;
+-
+-	return res;
+-}
+-
+-static int gpdma_xfer(struct dma_channel *chan)
+-{
+-	unsigned int chan_id = chan->chan;
+-	unsigned long flags = chan->flags;
+-	unsigned long status;
+-	gpdma_linkage_t *link = chip.channel[chan_id].dma_table;
+-
+-	GPDMA_TRACE("dmac%d: starting GPDMA transfer\n", chan_id);
+-
+-	if (0 == (flags & DMA_CONFIGURED)) {
+-		BUG();
+-		return -EINVAL;
+-	}
+-
+-	/* clear all existing error flags */
+-	writel(DMA_CHAN_ACTION_COMPLETE_ACK_ | DMA_CHAN_ACTION_BUS_ERROR_ACK_ |
+-	       DMA_CHAN_ACTION_ALIGNMENT_ACK_ | DMA_CHAN_ACTION_STALL_ACK_,
+-	       DMA_CHAN_ACTION(&chip, chan_id));
+-
+-	/* check that the channel really is idle */
+-	if (0 != (status = readl(DMA_CHAN_STATUS(&chip, chan_id)))) {
+-		printk(KERN_ERR "dmac%d: cannot start new transfer - "
+-		                 "non-zero status (%lx)", chan_id, status);
+-		return -EBUSY;
+-	}
+-
+-	/* set it running */
+-	writel(DMA_CHAN_ENABLE_CHAN_, DMA_CHAN_DISABLE(&chip, chan_id));
+-	writel(virt_to_bus(link), DMA_CHAN_NEXT_PTR(&chip, chan_id));
+-	writel(DMA_CHAN_ACTION_UPDATE_, DMA_CHAN_ACTION(&chip, chan_id));
+-	writel(DMA_CHAN_ENABLE_CHAN_ | DMA_CHAN_ENABLE_COMPLETE_ |
+-	       DMA_CHAN_ENABLE_BUS_ERROR_ | DMA_CHAN_ENABLE_ALIGNMENT_,
+-	       DMA_CHAN_ENABLE(&chip, chan_id));
+-
+-	return 0;
+-}
+-
+-
+-int gpdma_pause(int flush, struct dma_channel * chan)
+-{
+-	unsigned int chan_id = chan->chan;
+-	GPDMA_TRACE("dmac%d: pausing GPDMA transfer\n", chan_id);
+-	writel(DMA_CHAN_ENABLE_CHAN_, DMA_CHAN_DISABLE(&chip, chan_id));
+-	return 1;
+-}
+-
+-void gpdma_unpause(struct dma_channel * chan)
+-{
+-	unsigned int chan_id = chan->chan;
+-	GPDMA_TRACE("dmac%d: continuing GPDMA transfer\n", chan_id);
+-	writel(DMA_CHAN_ENABLE_CHAN_, DMA_CHAN_ENABLE(&chip, chan_id));
+-}
+-
+-static struct dma_ops gpdma_ops = {
+-	.request		= gpdma_request,
+-	.free			= gpdma_free,
+-	.get_residue		= gpdma_get_residue,
+-	.xfer			= gpdma_xfer,
+-	.configure		= gpdma_configure,
+-	.pause			= gpdma_pause,
+-	.unpause		= gpdma_unpause,
+-	.stop			= gpdma_stop,
+-};
+-
+-static struct dma_info gpdma_info = {
+-	.name			= "STM GPDMAC",
+-	.nr_channels		= GPDMA_DMA_CHANNELS,
+-	.ops			= &gpdma_ops,
+-	.flags			= DMAC_CHANNELS_TEI_CAPABLE,
+-};
+-
+-static int gpdma_drv_probe(struct device *dev)
+-{
+-	gpdma_chip *ctx = &chip;
+-
+-	struct platform_device *pdev = to_platform_device(dev);
+-	struct resource *res;
+-	int err, i;
+-
+-	GPDMA_TRACE("initialising STM GPDMAC driver\n");
+-
+-	memset(ctx, 0, sizeof(gpdma_chip));
+-
+-	spin_lock_init(&ctx->channel_lock);
+-	spin_lock_init(&ctx->gpdma_lock);
+-
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	if (!res)
+-		return -ENODEV;
+-
+-#if 0
+-	/* TODO: this appears to already be in use ... */
+-	if (!request_mem_region(res->start, res->end+1, "gpdma"))
+-		return -EBUSY;
+-#endif
+-
+-	ctx->io_base = (unsigned long) ioremap(res->start, res->end+1);
+-	if (!ctx->io_base) {
+-		err = -ENOMEM;
+-		goto release_region;
+-	}
+-
+-	ctx->irq_err = platform_get_irq(pdev, GPDMA_DMA_CHANNELS);
+-	if (ctx->irq_err) {
+-		if (request_irq(ctx->irq_err,
+-				gpdma_error_interrupt_handler,
+-				SA_INTERRUPT, "STM GPDMAC (error)", ctx)) {
+-			err = -ENXIO;
+-			goto release_ioremap;
+-		}
+-	} else {
+-		err = -ENODEV;
+-		goto release_ioremap;
+-	}
+-
+-	for (i=0; i<GPDMA_DMA_CHANNELS; i++) {
+-		ctx->irq_chan[i] = platform_get_irq(pdev, i);
+-		if (ctx->irq_chan[i]) {
+-			if (request_irq(ctx->irq_chan[i],
+-					gpdma_completion_interrupt_handler,
+-					SA_INTERRUPT, "STM GPDMAC", ctx)) {
+-				err = -ENXIO;
+-				ctx->irq_chan[i] = 0;
+-				goto release_all;
+-			}
+-		} else {
+-			err = -ENODEV;
+-			goto release_all;
+-		}
+-
+-		tasklet_init(&ctx->channel[i].error_tasklet,
+-			     (void *) gpdma_error_tasklet, i);
+-		tasklet_init(&ctx->channel[i].completion_tasklet,
+-		             (void *) gpdma_completion_tasklet, i);
+-
+-		/* park the channel in sensible state */
+-		writel(DMA_GLOBAL_ENABLE_CHAN_(i), DMA_GLOBAL_DISABLE(ctx));
+-		writel(DMA_CHAN_ENABLE_ALL_, DMA_CHAN_DISABLE(ctx, i));
+-		writel(0, DMA_CHAN_COUNT(ctx, i));
+-		writel(DMA_CHAN_ACTION_STALL_ACK_ |
+-		       DMA_CHAN_ACTION_ALIGNMENT_ACK_ |
+-		       DMA_CHAN_ACTION_BUS_ERROR_ACK_ |
+-		       DMA_CHAN_ACTION_COMPLETE_ACK_,
+-		       DMA_CHAN_ACTION(ctx, i));
+-	}
+-
+-	register_dmac(&gpdma_info);
+-
+-	return 0;
+-
+-    release_all:
+-
+-	for (i=0; i<GPDMA_DMA_CHANNELS; i++) {
+-		if (ctx->irq_chan[i])
+-			free_irq(ctx->irq_chan[i], ctx);
+-	}
+-
+-	free_irq(ctx->irq_err, ctx);
+-
+-    release_ioremap:
+-	iounmap((void *) ctx->io_base);
+-
+-    release_region:
+-	release_mem_region(res->start, res->end+1);
+-
+-	return err;
+-}
+-
+-static int gpdma_drv_remove(struct device *dev)
+-{
+-	gpdma_chip *ctx = &chip;
+-
+-	struct platform_device *pdev = to_platform_device(dev);
+-	struct resource *res;
+-	int i;
+-
+-	GPDMA_TRACE("terminating STM GPDMAC driver\n");
+-
+-	/* TODO: can't call this as it is discarded by kbuild (marked __exit) */
+-	/*unregister_dmac(&gpdma_info);*/
+-
+-	free_irq(ctx->irq_err, ctx);
+-	for (i=0; i<GPDMA_DMA_CHANNELS; i++)
+-		free_irq(ctx->irq_chan[i], ctx);
+-
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	BUG_ON(!res);
+-	release_mem_region(res->start, res->end+1);
+-	iounmap((void *) ctx->io_base);
+-
+-
+-	return 0;
+-}
+-
+-
+-static struct device_driver gpdma_driver = {
+-	.name		= "gpdma",
+-	.bus		= &platform_bus_type,
+-	.probe		= gpdma_drv_probe,
+-	.remove		= gpdma_drv_remove,
+-};
+-
+-static struct dentry *gpdma_debugfs_root = NULL;
+-static struct dentry *gpdma_debugfs_trace = NULL;
+-
+-static int __init gpdma_init(void)
+-{
+-	GPDMA_TRACE("registering STM GPDMAC driver\n");
+-
+-	/* expose some internal control variables using debugfs (good for
+-	 * benchmarking) */
+-	gpdma_debugfs_root = debugfs_create_dir("gpdma", NULL);
+-	if (gpdma_debugfs_root)
+-		gpdma_debugfs_trace = debugfs_create_bool("trace", 0600,
+-				gpdma_debugfs_root, &enable_trace);
+-
+-	return driver_register(&gpdma_driver);
+-}
+-
+-static void __exit gpdma_cleanup(void)
+-{
+-	GPDMA_TRACE("unregistering STM GPDMAC driver\n");
+-
+-	debugfs_remove(gpdma_debugfs_trace);
+-	debugfs_remove(gpdma_debugfs_root);
+-
+-	driver_unregister(&gpdma_driver);
+-}
+-
+-module_init(gpdma_init);
+-module_exit(gpdma_cleanup);
+-

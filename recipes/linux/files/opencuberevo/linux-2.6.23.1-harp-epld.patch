@@ -1,0 +1,492 @@
+Index: linux-2.6.23.1-stm/arch/sh/boards/st/mb411/setup.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/boards/st/mb411/setup.c
++++ linux-2.6.23.1-stm/arch/sh/boards/st/mb411/setup.c
+@@ -20,27 +20,16 @@
+ #include <linux/mtd/partitions.h>
+ #include <linux/phy.h>
+ #include <asm/io.h>
+-#include <asm/mb411/harp.h>
++#include <asm/mach/harp.h>
++#include <asm/irq-stb7100.h>
++#include "../harp-common/epld.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+-void __init mb411_setup(char** cmdline_p)
++static void __init mb411_setup(char** cmdline_p)
+ {
+-	unsigned char epldver;
+-	unsigned char pod_devid;
+-
+ 	printk("STMicroelectronics STb7100 MBoard board initialisation\n");
+ 
+-	epldver = ctrl_inb(EPLD_EPLDVER),
+-	printk("EPLD v%dr%d, PCB ver %X\n",
+-	       epldver >> 4, epldver & 0xf,
+-	       ctrl_inb(EPLD_PCBVER));
+-
+-	pod_devid = ctrl_inb(EPLD_POD_DEVID);
+-	printk("POD EPLD version: %d, DevID: MB411(%d) Rev.%c\n",
+-	       ctrl_inb(EPLD_POD_REVID),
+-	       pod_devid >> 4, 'A'-1+(pod_devid & 0xf));
+-
+         stx7100_early_device_init();
+         stb7100_configure_asc(ascs, 2, 0);
+ }
+@@ -58,8 +47,8 @@ static struct plat_ssc_data ssc_private_
+ 
+ static struct resource smc91x_resources[] = {
+ 	[0] = {
+-		.start	= 0xa3e00300,
+-		.end	= 0xa3e00300 + 0xff,
++		.start	= 0x03e00300,
++		.end	= 0x03e00300 + 0xff,
+ 		.flags	= IORESOURCE_MEM,
+ 	},
+ 	[1] = {
+@@ -92,18 +81,22 @@ static struct mtd_partition mtd_parts_ta
+ 	}
+ };
+ 
+-static void stb7100_mtd_set_vpp(struct map_info *map, int vpp)
++static void mtd_set_vpp(struct map_info *map, int vpp)
+ {
++	/* Bit 0: VPP enable
++	 * Bit 1: Reset (not used in later EPLD versions)
++	 */
++
+ 	if (vpp) {
+-		harp_set_vpp_on();
++		epld_write(3, EPLD_FLASH);
+ 	} else {
+-		harp_set_vpp_off();
++		epld_write(2, EPLD_FLASH);
+ 	}
+ }
+ 
+ static struct physmap_flash_data physmap_flash_data = {
+ 	.width		= 2,
+-	.set_vpp	= stb7100_mtd_set_vpp,
++	.set_vpp	= mtd_set_vpp,
+ 	.nr_parts	= ARRAY_SIZE(mtd_parts_table),
+ 	.parts		= mtd_parts_table
+ };
+@@ -148,7 +141,24 @@ static struct platform_device mb411_phy_
+          }
+ };
+ 
++static struct platform_device epld_device = {
++	.name		= "harp-epld",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= EPLD_BASE,
++			.end	= EPLD_BASE + EPLD_SIZE - 1,
++			.flags	= IORESOURCE_MEM,
++		}
++	},
++	.dev.platform_data = &(struct plat_epld_data) {
++		 .opsize = 8,
++	},
++};
++
+ static struct platform_device *mb411_devices[] __initdata = {
++	&epld_device,
+ 	&smc91x_device,
+ 	&physmap_flash,
+ 	&mb411_phy_device,
+@@ -167,5 +177,53 @@ static int __init device_init(void)
+ 	return platform_add_devices(mb411_devices,
+                                     ARRAY_SIZE(mb411_devices));
+ }
+-
+ device_initcall(device_init);
++
++static void __iomem *mb411_ioport_map(unsigned long port, unsigned int size)
++{
++	/* However picking somewhere safe isn't as easy as you might think.
++	 * I used to use external ROM, but that can cause problems if you are
++	 * in the middle of updating Flash. So I'm now using the processor core
++	 * version register, which is guaranted to be available, and non-writable.
++	 */
++	return (void __iomem *)CCN_PVR;
++}
++
++static void __init mb411_init_irq(void)
++{
++	unsigned long epldver;
++	unsigned long pcbver;
++
++	epld_early_init(&epld_device);
++
++	epldver = epld_read(EPLD_EPLDVER);
++	pcbver = epld_read(EPLD_PCBVER);
++	printk("EPLD v%ldr%ld, PCB ver %lX\n",
++	       epldver >> 4, epldver & 0xf, pcbver);
++
++	/* Set the ILC to route external interrupts to the the INTC */
++	/* Outputs 0-3 are the interrupt pins, 4-7 are routed to the INTC */
++	ilc_route_external(ILC_EXT_IRQ0, 4, 0);
++	ilc_route_external(ILC_EXT_IRQ1, 5, 0);
++	ilc_route_external(ILC_EXT_IRQ2, 6, 0);
++
++        /* Route e/net PHY interrupt to SH4 - only for STb7109 */
++#ifdef CONFIG_STMMAC_ETH
++	/* Note that we invert the signal - the ste101p is connected
++	   to the mb411 as active low. The sh4 INTC expects active high */
++	ilc_route_external(ILC_EXT_MDINT, 7, 1);
++#else
++	ilc_route_external(ILC_EXT_IRQ3, 7, 0);
++#endif
++
++	/* ...where they are handled as normal HARP style (encoded) interrpts */
++	harp_init_irq();
++}
++
++static struct sh_machine_vector mv_mb411 __initmv = {
++	.mv_name		= "mb411",
++	.mv_setup		= mb411_setup,
++	.mv_nr_irqs		= NR_IRQS,
++	.mv_init_irq		= mb411_init_irq,
++	.mv_ioport_map		= mb411_ioport_map,
++};
+Index: linux-2.6.23.1-stm/arch/sh/boards/st/harp-common/epld.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/boards/st/harp-common/epld.c
++++ linux-2.6.23.1-stm/arch/sh/boards/st/harp-common/epld.c
+@@ -32,6 +32,20 @@ unsigned long epld_read(unsigned long of
+ 		return readb(epld_base + offset);
+ }
+ 
++void __init epld_early_init(struct platform_device *pdev)
++{
++	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
++	struct plat_epld_data *data = pdev->dev.platform_data;
++
++	epld_base = ioremap(pdev->resource[0].start, size);
++	if (!epld_base)
++		panic("Unable to ioremap EPLD");
++
++	if (data) {
++		epld_opsize = data->opsize;
++	}
++}
++
+ static int __init epld_probe(struct platform_device *pdev)
+ {
+ 	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
+@@ -39,9 +53,10 @@ static int __init epld_probe(struct plat
+ 	if (!request_mem_region(pdev->resource[0].start, size, pdev->name))
+ 		return -EBUSY;
+ 
+-	epld_base = ioremap(pdev->resource[0].start, size);
+-	if (!epld_base)
+-		return -ENOMEM;
++	if (epld_base)
++		return 0;
++
++	epld_early_init(pdev);
+ 
+ 	return 0;
+ }
+@@ -54,24 +69,9 @@ static struct platform_driver epld_drive
+ 	},
+ };
+ 
+-int harp_configure_epld(struct platform_device *epld_device)
++static int __init epld_init(void)
+ {
+-	int error;
+-	struct plat_epld_data *data = epld_device->dev.platform_data;
+-
+-	error = platform_driver_register(&epld_driver);
+-	if (error)
+-		return error;
+-
+-	error = platform_device_register(epld_device);
+-	if (error) {
+-		platform_driver_unregister(&epld_driver);
+-		return error;
+-	}
+-
+-	if (data) {
+-		epld_opsize = data->opsize;
+-	}
+-
+-	return 0;
++	return platform_driver_register(&epld_driver);
+ }
++
++arch_initcall(epld_init);
+Index: linux-2.6.23.1-stm/arch/sh/boards/st/harp-common/epld.h
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/boards/st/harp-common/epld.h
++++ linux-2.6.23.1-stm/arch/sh/boards/st/harp-common/epld.h
+@@ -1,6 +1,8 @@
+ void epld_write(unsigned long value, unsigned long offset);
+ unsigned long epld_read(unsigned long offset);
+-int harp_configure_epld(struct platform_device *device);
++void epld_early_init(struct platform_device *device);
++
++void harp_init_irq(void);
+ 
+ struct plat_epld_data {
+ 	int opsize;
+Index: linux-2.6.23.1-stm/arch/sh/boards/st/harp-common/irq.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/boards/st/harp-common/irq.c
++++ linux-2.6.23.1-stm/arch/sh/boards/st/harp-common/irq.c
+@@ -11,16 +11,13 @@
+  */
+ 
+ #include <linux/init.h>
++#include <linux/platform_device.h>
+ #include <linux/irq.h>
+ #include <linux/interrupt.h>
+ #include <asm/system.h>
+ #include <asm/io.h>
+ #include <asm/mach/harp.h>
+-
+-#ifndef epld_out
+-#define epld_out(val,addr) ctrl_outl(val,addr)
+-#define epld_in(addr)      ctrl_inl(addr)
+-#endif
++#include "epld.h"
+ 
+ #define NUM_EXTERNAL_IRQS 16
+ 
+@@ -43,10 +40,10 @@ static void disable_harp_irq(unsigned in
+ 	}
+ 	mask=1<<pri;
+ 
+-	epld_out(mask, maskReg);
++	epld_write(mask, maskReg);
+ 
+ 	/* Read back the value we just wrote to flush any write posting */
+-	epld_in(maskReg);
++	epld_read(maskReg);
+ }
+ 
+ static void enable_harp_irq(unsigned int irq)
+@@ -68,13 +65,13 @@ static void enable_harp_irq(unsigned int
+ 	}
+ 	mask=1<<pri;
+ 
+-	epld_out(mask, maskReg);
++	epld_write(mask, maskReg);
+ }
+ 
+ static void __init disable_all_interrupts(void)
+ {
+-	epld_out(0x00, EPLD_INTMASK0);
+-	epld_out(0x00, EPLD_INTMASK1);
++	epld_write(0x00, EPLD_INTMASK0);
++	epld_write(0x00, EPLD_INTMASK1);
+ }
+ 
+ static struct irq_chip harp_chips[NUM_EXTERNAL_IRQS] = {
+Index: linux-2.6.23.1-stm/arch/sh/boards/st/mb411/Makefile
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/boards/st/mb411/Makefile
++++ linux-2.6.23.1-stm/arch/sh/boards/st/mb411/Makefile
+@@ -2,4 +2,5 @@
+ # Makefile for STMicroelectronics STb7100 Validation board
+ #
+ 
+-obj-y := setup.o mach.o
++obj-y := setup.o epld.o
++epld-y := ../harp-common/epld.o
+Index: linux-2.6.23.1-stm/arch/sh/boards/st/mb519/setup.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/boards/st/mb519/setup.c
++++ linux-2.6.23.1-stm/arch/sh/boards/st/mb519/setup.c
+@@ -20,12 +20,12 @@
+ #include <linux/phy.h>
+ #include <asm/irq-ilc.h>
+ #include <asm/io.h>
++#include <asm/mach/harp.h>
+ #include "../harp-common/epld.h"
+-#include "epld.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+-void __init mb519_setup(char** cmdline_p)
++static void __init mb519_setup(char** cmdline_p)
+ {
+ 	printk("STMicroelectronics STx7200 Mboard initialisation\n");
+ 
+@@ -69,9 +69,9 @@ static void mtd_set_vpp(struct map_info 
+ 	 */
+ 
+ 	if (vpp) {
+-		epld_write(3, EPLD_Flash);
++		epld_write(3, EPLD_FLASH);
+ 	} else {
+-		epld_write(2, EPLD_Flash);
++		epld_write(2, EPLD_FLASH);
+ 	}
+ }
+ 
+@@ -172,6 +172,7 @@ static struct platform_device epld_devic
+ };
+ 
+ static struct platform_device *mb519_devices[] __initdata = {
++	&epld_device,
+ 	&physmap_flash,
+ 	&mb519_phy_devices[0],
+ 	&mb519_phy_devices[1],
+@@ -182,10 +183,8 @@ static int __init device_init(void)
+ 	unsigned int epld_rev;
+ 	unsigned int pcb_rev;
+ 
+-	harp_configure_epld(&epld_device);
+-
+-	epld_rev = epld_read(EPLD_ver);
+-	pcb_rev = epld_read(EPLD_cpcbver);
++	epld_rev = epld_read(EPLD_EPLDVER);
++	pcb_rev = epld_read(EPLD_PCBVER);
+ 	printk("mb519 PCB rev %X EPLD rev %dr%d\n",
+ 	       pcb_rev,
+ 	       epld_rev >> 4, epld_rev & 0xf);
+@@ -201,7 +200,7 @@ static int __init device_init(void)
+ }
+ arch_initcall(device_init);
+ 
+-static void __iomem *stx7200mboard_ioport_map(unsigned long port, unsigned int size)
++static void __iomem *mb519_ioport_map(unsigned long port, unsigned int size)
+ {
+ 	/* However picking somewhere safe isn't as easy as you might think.
+ 	 * I used to use external ROM, but that can cause problems if you are
+@@ -211,8 +210,10 @@ static void __iomem *stx7200mboard_iopor
+ 	return (void __iomem *)CCN_PVR;
+ }
+ 
+-static void __init stx7200mboard_init_irq(void)
++static void __init mb519_init_irq(void)
+ {
++	epld_early_init(&epld_device);
++
+ #if 0
+ 	/* The off chip interrupts on the mb519 are a mess. The external
+ 	 * EPLD priority encodes them, but because they pass through the ILC3
+@@ -228,10 +229,10 @@ static void __init stx7200mboard_init_ir
+ #endif
+ }
+ 
+-struct sh_machine_vector mv_stx7200mboard __initmv = {
++struct sh_machine_vector mv_mb519 __initmv = {
+ 	.mv_name		= "mb519",
+ 	.mv_setup		= mb519_setup,
+ 	.mv_nr_irqs		= NR_IRQS,
+-	.mv_init_irq		= stx7200mboard_init_irq,
+-	.mv_ioport_map		= stx7200mboard_ioport_map,
++	.mv_init_irq		= mb519_init_irq,
++	.mv_ioport_map		= mb519_ioport_map,
+ };
+Index: linux-2.6.23.1-stm/include/asm-sh/mb519/harp.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23.1-stm/include/asm-sh/mb519/harp.h
+@@ -0,0 +1,23 @@
++#define EPLD_BASE	0x05000000
++#define EPLD_SIZE	0x01000000
++
++#define EPLD_EPLDVER		0x000000
++#define EPLD_PCBVER		0x020000
++#define EPLD_STEM		0x040000
++#define EPLD_DRIVER		0x060000
++#define EPLD_RESET		0x080000
++#define EPLD_INTSTAT0		0x0A0000
++#define EPLD_INTSTAT1		0x0C0000
++#define EPLD_INTMASK0		0x0E0000
++#define EPLD_INTMASK0SET	0x100000
++#define EPLD_INTMASK0CLR	0x120000
++#define EPLD_INTMASK1		0x140000
++#define EPLD_INTMASK1SET	0x160000
++#define EPLD_INTMASK1CLR	0x180000
++#define EPLD_LEDSTDADDR		0x1A0000
++
++#define EPLD_FLASH		0x400000
++#define EPLD_STEM2		0x500000
++#define EPLD_STEMSET		0x600000
++#define EPLD_STEMCLR		0x700000
++#define EPLD_DACSPMUX		0xD00000
+Index: linux-2.6.23.1-stm/include/asm-sh/mb411/harp.h
+===================================================================
+--- linux-2.6.23.1-stm.orig/include/asm-sh/mb411/harp.h
++++ linux-2.6.23.1-stm/include/asm-sh/mb411/harp.h
+@@ -8,51 +8,31 @@
+  * Definitions applicable to the STMicroelectronics STb7100 Validation board.
+  */
+ 
+-#define epld_out(val,addr) ctrl_outb(val,addr)
+-#define epld_in(addr)      ctrl_inb(addr)
++#define EPLD_BASE		0x03000000
++#define EPLD_SIZE		0x00800000
+ 
+-#define EPLD_BASE		0xa3000000
+-#define EPLD_EPLDVER		(EPLD_BASE + 0x000000)
+-#define EPLD_PCBVER		(EPLD_BASE + 0x020000)
+-#define EPLD_STEM		(EPLD_BASE + 0x040000)
+-#define EPLD_DRIVER		(EPLD_BASE + 0x060000)
+-#define EPLD_RESET		(EPLD_BASE + 0x080000)
+-#define EPLD_INTSTAT0		(EPLD_BASE + 0x0a0000)
+-#define EPLD_INTSTAT1		(EPLD_BASE + 0x0c0000)
+-#define EPLD_INTMASK0		(EPLD_BASE + 0x0e0000)
+-#define EPLD_INTMASK0SET	(EPLD_BASE + 0x100000)
+-#define EPLD_INTMASK0CLR	(EPLD_BASE + 0x120000)
+-#define EPLD_INTMASK1		(EPLD_BASE + 0x140000)
+-#define EPLD_INTMASK1SET	(EPLD_BASE + 0x160000)
+-#define EPLD_INTMASK1CLR	(EPLD_BASE + 0x180000)
+-#define EPLD_TEST		(EPLD_BASE + 0x1e0000)
++#define EPLD_EPLDVER		0x000000
++#define EPLD_PCBVER		0x020000
++#define EPLD_STEM		0x040000
++#define EPLD_DRIVER		0x060000
++#define EPLD_RESET		0x080000
++#define EPLD_INTSTAT0		0x0a0000
++#define EPLD_INTSTAT1		0x0c0000
++#define EPLD_INTMASK0		0x0e0000
++#define EPLD_INTMASK0SET	0x100000
++#define EPLD_INTMASK0CLR	0x120000
++#define EPLD_INTMASK1		0x140000
++#define EPLD_INTMASK1SET	0x160000
++#define EPLD_INTMASK1CLR	0x180000
++#define EPLD_TEST		0x1e0000
+ 
+-#define EPLD_FLASH		(EPLD_BASE + 0x400000)
++#define EPLD_FLASH		0x400000
+ 
+ /* Some registers are also available in the POD EPLD */
+-#define EPLD_POD_BASE		0xa2100000
+-#define EPLD_POD_REVID		(EPLD_POD_BASE + 0x00)
+-#define EPLD_POD_LED		(EPLD_POD_BASE + 0x10)
+-#define EPLD_POD_DEVID		(EPLD_POD_BASE + 0x1c)
++#define EPLD_POD_BASE		0x02100000
++#define EPLD_POD_REVID		0x00
++#define EPLD_POD_LED		0x10
++#define EPLD_POD_DEVID		0x1c
+ 
+ #define EPLD_LED_ON     1
+ #define EPLD_LED_OFF    0
+-
+-#ifndef __ASSEMBLY__
+-extern inline int harp_has_intmask_setclr(void)
+-{
+-        return 1;
+-}
+-
+-extern inline void harp_set_vpp_on(void)
+-{
+-	epld_out(3, EPLD_FLASH);	/* bits: 0 = VPP ON; 1 = RESET	*/
+-}
+-
+-extern inline void harp_set_vpp_off(void)
+-{
+-	epld_out(2, EPLD_FLASH);	/* Leave ON only RESET		*/
+-}
+-
+-void harp_init_irq(void);
+-#endif /* !__ASSEMBLY__ */

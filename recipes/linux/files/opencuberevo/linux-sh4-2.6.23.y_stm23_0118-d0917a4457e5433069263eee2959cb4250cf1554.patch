@@ -1,0 +1,29 @@
+From d0917a4457e5433069263eee2959cb4250cf1554 Mon Sep 17 00:00:00 2001
+From: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Date: Tue, 17 Feb 2009 11:57:23 +0000
+Subject: [PATCH] stmmac: fixed a bug within the mdio reset function
+
+stmmac_mdio_reset() returns early, bypassing the workaround,
+if the PHY reset is under software control.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/stmmac_mdio.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_mdio.c b/drivers/net/stmmac/stmmac_mdio.c
+index 5782755..0c32ffe 100644
+--- a/drivers/net/stmmac/stmmac_mdio.c
++++ b/drivers/net/stmmac/stmmac_mdio.c
+@@ -118,7 +118,7 @@ int stmmac_mdio_reset(struct mii_bus *bus)
+ 
+ 	if (priv->phy_reset) {
+ 		printk(KERN_DEBUG "stmmac_mdio_reset: calling phy_reset\n");
+-		return priv->phy_reset(priv->bsp_priv);
++		priv->phy_reset(priv->bsp_priv);
+ 	}
+ 
+ 	/* This is a workaround for problems with the STE101P PHY.
+-- 
+1.5.6.3
+

@@ -1,0 +1,125 @@
+This patch addresses bugzilla bugs 1059 & 1066.
+
+This patch inverts the clock edge bit determining LR PCM channel
+ordering for 32bit mode.  In doing so we break LR ordering of 16b
+playback due to our packing of a stereo pair of 16b samples into a
+single I2s 32b word (necessary due to fixed external DAC config of
+I2s). This is because packing into buffer is done LSB first, read out
+is vice versa). The original situation left us with by luck left
+channel packed and L sample on falling edge. Now we have left channel
+packed first, but on rising edge, so the L channel is clocked out as
+R.
+
+To prevent this we switch back to FALLING edge clock for 16b mode in
+the knowledge that we will lose the first stereo sample, meaning our
+output stage is 1 sample out of phase from the position SW expects. I
+am prepared to live with the guilt of this :)
+ 
+An additional problem which was highlighted by the above fix was that,
+when swtiching between 16/32 - 32/16 bit modes on PCM0 / PCM_CNV (off
+chip DAC in both cases) there was an unreliable channel switch which
+took place if the clocks were not removed after each playback.  Alas
+removing the clocks is oft fatal to both the converter IP and Ext DAC
+So we temporarily also disable 16b mode here for PCM0 & PCM_CNV until
+a solution is found.
+
+Signed-off-by: Mark Glaisher <mark.glaisher@st.com>
+
+--- linux-2.6.17.14_stm22_0038.clean/sound/stm/stm7100_pcm.c	2007-01-28 12:51:08.000000000 +0000
++++ linux-2.6.17.14_stm22_0038/sound/stm/stm7100_pcm.c	2007-02-01 14:46:28.275007000 +0000
+@@ -151,7 +151,9 @@
+ 			 SNDRV_PCM_INFO_MMAP_VALID     |
+ 			 SNDRV_PCM_INFO_PAUSE),
+ 
+-	.formats =	(SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S16_LE),
++	/*.formats   now defined at runtime on card - card basis due
++	to reliability problems when switching between modes on cards utilising an external DAC*/	
++	
+ 
+ 	.rates =	(SNDRV_PCM_RATE_32000 |
+ 			 SNDRV_PCM_RATE_44100 |
+@@ -351,7 +353,14 @@
+ 	 * Note: the internal DAC doesn't absolutely need this (as it
+ 	 * can be reset).
+ 	 */
+-	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
++	 /* It is  possible for us to effect a mute at the internal DAC
++	 * rather than in the player.  For the externally connected DAC, this is not
++	 * possible.
++	 */
++	if( chip->card_data->major == PCM1_DEVICE){
++		writel((chip->pcmplayer_control|PCMP_OFF),chip->pcm_player+STM_PCMP_CONTROL);
++	}
++	else writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+ 
+ 	spin_unlock(&chip->lock);
+ 	dma_stop_channel(chip->fdma_channel);
+@@ -389,6 +398,8 @@
+ 	if(chip->fifo_check_mode)
+ 		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
+ 
++	
++
+ 	spin_unlock(&chip->lock);
+ }
+ 
+@@ -577,8 +588,8 @@
+ 	unsigned long irqmask = MEM_FULL_READIRQ;
+ 	unsigned long flags=0;
+ 
+-	fmtreg = PCMP_FORMAT_32  | PCMP_ALIGN_START       | PCMP_MSB_FIRST  |
+-		 chip->i2s_sampling_edge | PCMP_LRLEVEL_LEFT_HIGH | PCMP_PADDING_ON;
++	fmtreg = PCMP_FORMAT_32  | PCMP_ALIGN_START  | PCMP_MSB_FIRST  |
++		 chip->i2s_sampling_edge |PCMP_PADDING_ON;
+ 
+ 	ctrlreg = (runtime->period_size * runtime->channels) << PCMP_SAMPLES_SHIFT;
+ 
+@@ -594,13 +605,16 @@
+          */
+ 
+         ctrlreg |= PCMP_NO_ROUNDING;
+-
++	
++	/*We will always clock out I2s from the DAC's, however, when in 16bit
++	 * mode we can flip the L/R ordering bit to give the correct LR ordering for
++	 * 16 bit packed into I2s.  With the caviat that */
+         if(runtime->format == SNDRV_PCM_FORMAT_S16_LE) {
+ 		ctrlreg |= PCMP_MEM_FMT_16_16;
+-		fmtreg  |= PCMP_LENGTH_16;
++		fmtreg  |= PCMP_LENGTH_16 | PCMP_LRLEVEL_LEFT_HIGH;
+         } else {
+ 		ctrlreg |= PCMP_MEM_FMT_16_0;
+-		fmtreg  |= PCMP_LENGTH_24;
++		fmtreg  |= PCMP_LENGTH_24| PCMP_LRLEVEL_LEFT_LOW;
+         }
+ 
+ 
+@@ -810,6 +824,17 @@
+ 
+ 	runtime->hw.channels_min = chip->min_ch;
+ 	runtime->hw.channels_max = chip->max_ch;
++	
++	/*It is necessary for us to disable 16 bit mode
++	 * for devices attached to an external DAC due to reliability issues
++	 * affecting L/R channel switch when switching between 16/32b modes*/
++	if(	(chip->card_data->major == PCM0_DEVICE) || 
++		(chip->card_data->major == PROTOCOL_CONVERTER_DEVICE))
++	
++		runtime->hw.formats = SNDRV_PCM_FMTBIT_S32_LE;
++	else
++		runtime->hw.formats = (SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S16_LE);
++	
+ 	runtime->hw.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,chip->max_ch),
+ 	runtime->hw.period_bytes_min = FRAMES_TO_BYTES(1,chip->min_ch),
+ 	runtime->hw.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,chip->max_ch),
+--- linux-2.6.17.14_stm22_0038.clean/sound/stm/stb7100_i2s_spdif.c	2007-01-28 12:51:08.000000000 +0000
++++ linux-2.6.17.14_stm22_0038/sound/stm/stb7100_i2s_spdif.c	2007-01-31 16:38:34.640133000 +0000
+@@ -33,7 +33,7 @@
+ 			 SNDRV_PCM_INFO_MMAP_VALID     |
+ 			 SNDRV_PCM_INFO_PAUSE),
+ 
+-	.formats =	(SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S16_LE),
++	.formats =	(SNDRV_PCM_FMTBIT_S32_LE),
+ 
+ 	.rates =	(SNDRV_PCM_RATE_32000 |
+ 			 SNDRV_PCM_RATE_44100 |

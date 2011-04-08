@@ -1,0 +1,122 @@
+sh_stm: Correct definition of dma_mask for USB devices
+
+The dma_mask and coherent_dma_mask fields set up for the USB devices on
+all the STMicroelectronics parts was incorrect. This doesn't appear to
+matter, given the way the value is currently used, but should be fixed
+in case the code changes in the future.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -21,6 +21,7 @@
+ #include <linux/stm/sysconf.h>
+ #include <linux/stm/emi.h>
+ #include <linux/pata_platform.h>
++#include <linux/dma-mapping.h>
+ #include <asm/sci.h>
+ #include <asm/irq-ilc.h>
+ #include <linux/stm/fdma-plat.h>
+@@ -77,7 +78,7 @@ struct platform_device wdt_device = {
+ #define AHB2STBUS_EHCI_BASE		(UHOST2C_BASE + 0x000ffe00)
+ #define AHB2STBUS_PROTOCOL_BASE		(UHOST2C_BASE + 0x000fff00)
+ 
+-static u64 st40_dma_mask = 0xfffffff;
++static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
+ static struct plat_usb_data usb_wrapper =
+ 	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE, AHB2STBUS_PROTOCOL_BASE,
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -24,9 +24,10 @@
+ #include <linux/stm/fdma-reqs.h>
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/partitions.h>
++#include <linux/dma-mapping.h>
+ #include <asm/irq-ilc.h>
+ 
+-static u64 st40_dma_mask = 0xfffffff;
++static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
+ static struct {
+ 	unsigned char syscfg;
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -23,11 +23,12 @@
+ #include <linux/stm/fdma-reqs.h>
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/partitions.h>
++#include <linux/dma-mapping.h>
+ #include <asm/irl.h>
+ #include <asm/irq-ilc.h>
+ 
+ static struct sysconf_field *sc7_3;
+-static u64 st40_dma_mask = 0xfffffff;
++static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
+ 
+ /* USB resources ----------------------------------------------------------- */
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -25,9 +25,10 @@
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/partitions.h>
+ #include <linux/delay.h>
++#include <linux/dma-mapping.h>
+ #include <asm/irq-ilc.h>
+ 
+-static u64 st40_dma_mask = 0xfffffff;
++static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
+ static struct {
+ 	unsigned char syscfg;
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -28,6 +28,7 @@
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/partitions.h>
+ #include <linux/delay.h>
++#include <linux/dma-mapping.h>
+ 
+ static unsigned long chip_revision;
+ static struct sysconf_field *sc7_2;
+@@ -41,7 +42,7 @@ static struct sysconf_field *sc7_2;
+ #define AHB2STBUS_EHCI_BASE(N)          (UHOST2C_BASE(N) + 0x000ffe00)
+ #define AHB2STBUS_PROTOCOL_BASE(N)      (UHOST2C_BASE(N) + 0x000fff00)
+ 
+-static u64 st40_dma_mask = 0xfffffff;
++static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
+ static struct plat_usb_data usb_wrapper[3] = {
+ 	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE(0),
+Index: linux-2.6.23-stm/include/linux/stm/soc_init.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc_init.h
++++ linux-2.6.23-stm/include/linux/stm/soc_init.h
+@@ -89,7 +89,7 @@
+ 	.id=_port,							\
+ 	.dev = {							\
+ 		.dma_mask = &st40_dma_mask,				\
+-		.coherent_dma_mask = 0xffffffful,			\
++		.coherent_dma_mask = DMA_32BIT_MASK,			\
+ 		.platform_data = _wrapper,				\
+ 	},								\
+ 	.num_resources = 2,						\
+@@ -114,7 +114,7 @@
+ 	.id=_port,							\
+ 	.dev = {							\
+ 		.dma_mask = &st40_dma_mask,				\
+-		.coherent_dma_mask = 0xffffffful,			\
++		.coherent_dma_mask = DMA_32BIT_MASK,			\
+ 		.platform_data = _wrapper,				\
+ 	},								\
+ 	.num_resources = 2,						\

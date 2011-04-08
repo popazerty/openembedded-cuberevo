@@ -1,0 +1,339 @@
+From c7b9d55e8269cf2d732bd3deb9fd8ac4e78fc358 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:24 +0200
+Subject: [PATCH] stm: clk: Update the stx7111 to the new clk frmwk
+
+This patch updates the STX7111 clock implementation due to the new clock
+framework
+
+Moreover it fixes the Fsynth_C evaluation as bug:
+[Bug 7117] [PM] setting clock frequency for FS#C returns error on 7111
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx7111.c |  187 ++++++++++++++++----------------
+ arch/sh/kernel/cpu/sh4/clock-stx7111.h |    5 +-
+ 2 files changed, 97 insertions(+), 95 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7111.c b/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+index da41229..7d60f8f 100755
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+@@ -24,7 +24,7 @@
+ 
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+-#include <asm/clock.h>
++#include <linux/stm/clk.h>
+ #include <linux/pm.h>
+ #include <asm/io.h>
+ #include "clock-stx7111.h"
+@@ -133,7 +133,7 @@ REGISTER_OPS(Top,
+ 	NULL,	/* No measure function */
+ 	NULL		/* No observation point */
+ );
+-REGISTER_OPS(ClockGenA,
++REGISTER_OPS(clkgena,
+ 	"clockgen A",
+ 	clkgena_init,
+ 	clkgena_set_parent,
+@@ -145,7 +145,7 @@ REGISTER_OPS(ClockGenA,
+ 	clkgena_get_measure,
+ 	"SYSA_CLKOUT"	/* Observation point */
+ );
+-REGISTER_OPS(ClockGenB,
++REGISTER_OPS(clkgenb,
+ 	"clockgen B/Video",
+ 	clkgenb_init,
+ 	clkgenb_set_parent,
+@@ -157,7 +157,7 @@ REGISTER_OPS(ClockGenB,
+ 	NULL,	/* No measure function */
+ 	"PIO5[2]"		/* Observation point */
+ );
+-REGISTER_OPS(ClockGenC,
++REGISTER_OPS(clkgenc,
+ 	"clockgen C/Audio",
+ 	clkgenc_init,
+ 	clkgenc_set_parent,
+@@ -169,7 +169,7 @@ REGISTER_OPS(ClockGenC,
+ 	NULL,	/* No measure function */
+ 	NULL	/* No observation point */
+ );
+-REGISTER_OPS(ClockGenD,
++REGISTER_OPS(clkgend,
+ 	"clockgen D/LMI",
+ 	clkgend_init,
+ 	clkgend_set_parent,
+@@ -181,7 +181,7 @@ REGISTER_OPS(ClockGenD,
+ 	NULL,	/* No measure function */
+ 	NULL	/* No observation point */
+ );
+-REGISTER_OPS(ClockGenE,
++REGISTER_OPS(clkgene,
+ 	"USB",
+ 	clkgene_init,
+ 	clkgene_set_parent,
+@@ -206,80 +206,80 @@ clk_t clk_clocks[] = {
+ 		     CLK_RATE_PROPAGATES | CLK_ALWAYS_ENABLED),
+ 
+ 	/* Clockgen A */
+-	REGISTER_CLK(CLKA_REF, &ClockGenA, 0,
++	REGISTER_CLK(CLKA_REF, &clkgena, 0,
+ 		     CLK_RATE_PROPAGATES | CLK_ALWAYS_ENABLED),
+-	REGISTER_CLK(CLKA_PLL0HS, &ClockGenA, 900000000, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKA_PLL0LS, &ClockGenA, 450000000, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKA_PLL1, &ClockGenA, 800000000, CLK_RATE_PROPAGATES),
+-
+-	REGISTER_CLK(CLKA_IC_STNOC, &ClockGenA, 400000000, 0),
+-	REGISTER_CLK(CLKA_FDMA0, &ClockGenA, 400000000, 0),
+-	REGISTER_CLK(CLKA_FDMA1, &ClockGenA, 400000000, 0),
+-	REGISTER_CLK(CLKA_ST40_ICK, &ClockGenA, 450000000, 0),
+-	REGISTER_CLK(CLKA_IC_IF_100, &ClockGenA, 100000000, 0),
+-	REGISTER_CLK(CLKA_LX_DMU_CPU, &ClockGenA, 450000000, 0),
+-	REGISTER_CLK(CLKA_LX_AUD_CPU, &ClockGenA, 450000000, 0),
+-	REGISTER_CLK(CLKA_IC_BDISP_200, &ClockGenA, 200000000, 0),
+-	REGISTER_CLK(CLKA_IC_DISP_200, &ClockGenA, 200000000, 0),
+-	REGISTER_CLK(CLKA_IC_TS_200, &ClockGenA, 200000000, 0),
+-	REGISTER_CLK(CLKA_DISP_PIPE_200, &ClockGenA, 200000000, 0),
+-	REGISTER_CLK(CLKA_BLIT_PROC, &ClockGenA, 266666666, 0),
+-	REGISTER_CLK(CLKA_IC_DELTA_200, &ClockGenA, 266666666, 0),
+-	REGISTER_CLK(CLKA_ETH_PHY, &ClockGenA, 25000000, 0),
+-	REGISTER_CLK(CLKA_PCI, &ClockGenA, 66666666, 0),
+-	REGISTER_CLK(CLKA_EMI_MASTER, &ClockGenA, 100000000, 0),
+-	REGISTER_CLK(CLKA_IC_COMPO_200, &ClockGenA, 200000000, 0),
+-	REGISTER_CLK(CLKA_IC_IF_200, &ClockGenA, 200000000, 0),
++	REGISTER_CLK(CLKA_PLL0HS, &clkgena, 900000000, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKA_PLL0LS, &clkgena, 450000000, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKA_PLL1, &clkgena, 800000000, CLK_RATE_PROPAGATES),
++
++	REGISTER_CLK(CLKA_IC_STNOC, &clkgena, 400000000, 0),
++	REGISTER_CLK(CLKA_FDMA0, &clkgena, 400000000, 0),
++	REGISTER_CLK(CLKA_FDMA1, &clkgena, 400000000, 0),
++	REGISTER_CLK(CLKA_ST40_ICK, &clkgena, 450000000, 0),
++	REGISTER_CLK(CLKA_IC_IF_100, &clkgena, 100000000, 0),
++	REGISTER_CLK(CLKA_LX_DMU_CPU, &clkgena, 450000000, 0),
++	REGISTER_CLK(CLKA_LX_AUD_CPU, &clkgena, 450000000, 0),
++	REGISTER_CLK(CLKA_IC_BDISP_200, &clkgena, 200000000, 0),
++	REGISTER_CLK(CLKA_IC_DISP_200, &clkgena, 200000000, 0),
++	REGISTER_CLK(CLKA_IC_TS_200, &clkgena, 200000000, 0),
++	REGISTER_CLK(CLKA_DISP_PIPE_200, &clkgena, 200000000, 0),
++	REGISTER_CLK(CLKA_BLIT_PROC, &clkgena, 266666666, 0),
++	REGISTER_CLK(CLKA_IC_DELTA_200, &clkgena, 266666666, 0),
++	REGISTER_CLK(CLKA_ETH_PHY, &clkgena, 25000000, 0),
++	REGISTER_CLK(CLKA_PCI, &clkgena, 66666666, 0),
++	REGISTER_CLK(CLKA_EMI_MASTER, &clkgena, 100000000, 0),
++	REGISTER_CLK(CLKA_IC_COMPO_200, &clkgena, 200000000, 0),
++	REGISTER_CLK(CLKA_IC_IF_200, &clkgena, 200000000, 0),
+ 
+ 	/* Clockgen B */
+-	REGISTER_CLK(CLKB_REF, &ClockGenB, 0,
++	REGISTER_CLK(CLKB_REF, &clkgenb, 0,
+ 		     CLK_RATE_PROPAGATES | CLK_ALWAYS_ENABLED),
+-	REGISTER_CLK(CLKB_FS0, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS0_CH1, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS0_CH2, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS0_CH3, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS0_CH4, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS1, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS1_CH1, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS1_CH2, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS1_CH3, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_FS1_CH4, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-
+-	REGISTER_CLK(CLKB_TMDS_HDMI, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_PIX_HDMI, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_PIX_HD, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_DISP_HD, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_656, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_GDP3, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_DISP_ID, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKB_PIX_SD, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_DVP, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_PIX_FROM_DVP, &ClockGenB, 0, 0),
+-
+-	REGISTER_CLK(CLKB_DSS, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_DAA, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_PP, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_LPC, &ClockGenB, 0, 0),
+-
+-	REGISTER_CLK(CLKB_SPARE12, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_PIP, &ClockGenB, 0, 0),
++	REGISTER_CLK(CLKB_FS0, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS0_CH1, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS0_CH2, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS0_CH3, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS0_CH4, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH1, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH2, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH3, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH4, &clkgenb, 0, CLK_RATE_PROPAGATES),
++
++	REGISTER_CLK(CLKB_TMDS_HDMI, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_PIX_HDMI, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_PIX_HD, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_DISP_HD, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_656, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_GDP3, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_DISP_ID, &clkgenb, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_PIX_SD, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_PIX_FROM_DVP, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_DVP, &clkgenb, 0, 0),
++
++	REGISTER_CLK(CLKB_DSS, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_DAA, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_PP, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_LPC, &clkgenb, 0, 0),
++
++	REGISTER_CLK(CLKB_SPARE12, &clkgenb, 0, 0),
++	REGISTER_CLK(CLKB_PIP, &clkgenb, 0, 0),
+ 
+ 	/* Clockgen C (AUDIO) */
+-	REGISTER_CLK(CLKC_REF, &ClockGenC, 0,
++	REGISTER_CLK(CLKC_REF, &clkgenc, 0,
+ 		     CLK_RATE_PROPAGATES | CLK_ALWAYS_ENABLED),
+-	REGISTER_CLK(CLKC_FS0, &ClockGenC, 0, CLK_RATE_PROPAGATES),
+-	REGISTER_CLK(CLKC_FS0_CH1, &ClockGenC, 0, 0),
+-	REGISTER_CLK(CLKC_FS0_CH2, &ClockGenC, 0, 0),
+-	REGISTER_CLK(CLKC_FS0_CH3, &ClockGenC, 0, 0),
+-	REGISTER_CLK(CLKC_FS0_CH4, &ClockGenC, 0, 0),
++	REGISTER_CLK(CLKC_FS0, &clkgenc, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKC_FS0_CH1, &clkgenc, 0, 0),
++	REGISTER_CLK(CLKC_FS0_CH2, &clkgenc, 0, 0),
++	REGISTER_CLK(CLKC_FS0_CH3, &clkgenc, 0, 0),
++	REGISTER_CLK(CLKC_FS0_CH4, &clkgenc, 0, 0),
+ 
+ 	/* Clockgen D (LMI) */
+-	REGISTER_CLK(CLKD_REF, &ClockGenD, 30000000,
++	REGISTER_CLK(CLKD_REF, &clkgend, 30000000,
+ 		     CLK_RATE_PROPAGATES | CLK_ALWAYS_ENABLED),
+-	REGISTER_CLK(CLKD_LMI2X, &ClockGenD, 800000000, 0),
++	REGISTER_CLK(CLKD_LMI2X, &clkgend, 800000000, 0),
+ 
+ 	/* Clockgen E (USB), not really a clockgen */
+-	REGISTER_CLK(CLKE_REF, &ClockGenE, 30000000, CLK_ALWAYS_ENABLED),
++	REGISTER_CLK(CLKE_REF, &clkgene, 30000000, CLK_ALWAYS_ENABLED),
+ /*
+  * Not required in Linux
+  *
+@@ -291,6 +291,13 @@ GENERIC_LINUX_CLKS(clk_clocks[CLKA_ST40_ICK],	/* sh4_clk parent    */
+ 		   clk_clocks[CLKA_IC_IF_100],	/* module_clk parent */
+ 		   clk_clocks[CLKA_IC_IF_100]);	/* comms_clk parent  */
+ 
++SYSCONF(1, 1, 0, 1);
++SYSCONF(2, 6, 0, 0);
++SYSCONF(2, 11, 1, 8);
++SYSCONF(2, 11, 9, 11);
++SYSCONF(2, 40, 0, 1);
++SYSCONF(2, 40, 2, 3);
++
+ /*
+  * The Linux clk_init function
+  */
+@@ -298,6 +305,13 @@ int __init clk_init(void)
+ {
+ 	int i;
+ 
++	SYSCONF_CLAIM(1, 1, 0, 1);
++	SYSCONF_CLAIM(2, 6, 0, 0);
++	SYSCONF_CLAIM(2, 11, 1, 8);
++	SYSCONF_CLAIM(2, 11, 9, 11);
++	SYSCONF_CLAIM(2, 40, 0, 1);
++	SYSCONF_CLAIM(2, 40, 2, 3);
++
+ 	for (i = 0; i < ARRAY_SIZE(clk_clocks); ++i)
+ 		if (clk_clocks[i].name && !clk_register(&clk_clocks[i]))
+ 			clk_enable(&clk_clocks[i]);
+@@ -1345,8 +1359,8 @@ static int clkgenb_observe(clk_t *clk_p, unsigned long *div_p)
+ 		6,		/* CLKB_GDP3	 */
+ 		7,		/* CLKB_DISP_ID      */
+ 		8,		/* CLKB_PIX_SD       */
+-		14		/* CLKB_DVP	  */
+-		    - 1,	/* CLKB_PIX_FROM_DVP */
++		- 1,		/* CLKB_PIX_FROM_DVP */
++		14,		/* CLKB_DVP	  */
+ 		12,		/* CLKB_PP	   */
+ 		13,		/* CLKB_LPC	  */
+ 		9,		/* CLKB_DSS	  */
+@@ -2002,37 +2016,22 @@ static int clkgenc_set_rate(clk_t *clk_p, U32 freq)
+ 	U32 ref;
+ 	U32 RegValue = 0;
+ 	struct fsyn_regs *regs;
++	static const int _set_rate_table[] = { 0x06, 0x0A, 0x012, 0x022};
+ 
+ 	if (!clk_p)
+ 		return (CLK_ERR_BAD_PARAMETER);
+ 
+-	ref = clk_p->parent->rate;
++	if (clk_p->id == CLKC_REF || clk_p->id == CLKC_FS0)
++		return (CLK_ERR_BAD_PARAMETER);
+ 
++	ref = clk_p->parent->rate;
+ 	/* Computing FSyn params. Should be common function with FSyn type */
+ 	if ((clk_fsyn_get_params(ref, freq, &md, &pe, &sdiv)) != 0)
+ 		return CLK_ERR_BAD_PARAMETER;
+ 
+ 	RegValue = CLK_READ(CKGC_BASE_ADDRESS + CKGC_FS0_CFG);
+-	switch (clk_p->id) {
+-	case CLKC_FS0_CH1:
+-		RegValue |= 0x06;
+-		regs = &clkgenc_regs[0];
+-		break;
+-	case CLKC_FS0_CH2:
+-		RegValue |= 0x0A;
+-		regs = &clkgenc_regs[1];
+-		break;
+-	case CLKC_FS0_CH3:
+-		RegValue |= 0x012;
+-		regs = &clkgenc_regs[2];
+-		break;
+-	case CLKC_FS0_CH4:
+-		RegValue |= 0x022;
+-		regs = &clkgenc_regs[3];
+-		break;
+-	default:
+-		return (CLK_ERR_BAD_PARAMETER);
+-	}
++	regs = &clkgenc_regs[clk_p->id - CLKC_FS0_CH1];
++	RegValue |= _set_rate_table[clk_p->id - CLKC_FS0_CH1];
+ 
+ 	/* Select FS clock only for the clock specified */
+ 	CLK_WRITE(CKGC_BASE_ADDRESS + CKGC_FS0_CFG, RegValue);
+@@ -2174,6 +2173,12 @@ static int clkgenc_enable(clk_t *clk_p)
+ 	RegValue = CLK_READ(CKGC_BASE_ADDRESS + CKGC_FS0_CFG);
+ 
+ 	switch (clk_p->id) {
++	case CLKC_FS0:
++		RegValue |= 0x4000;
++		CLK_WRITE(CKGC_BASE_ADDRESS + CKGC_FS0_CFG, RegValue);
++		clk_p->rate = clk_p->parent->rate;
++		return 0;
++		break;
+ 	case CLKC_FS0_CH1:
+ 		RegValue |= 0x440;
+ 		CLK_WRITE(CKGC_BASE_ADDRESS + CKGC_FS0_CFG, RegValue);
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7111.h b/arch/sh/kernel/cpu/sh4/clock-stx7111.h
+index d6371df..e9ca1a9 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7111.h
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7111.h
+@@ -66,8 +66,8 @@ typedef enum
+     CLKB_GDP3,
+     CLKB_DISP_ID,
+     CLKB_PIX_SD,
+-    CLKB_DVP,
+     CLKB_PIX_FROM_DVP,
++    CLKB_DVP,
+ 
+     CLKB_PP,
+     CLKB_LPC,
+@@ -94,7 +94,4 @@ typedef enum
+ 
+     /* Clockgen E = USB PHY */
+     CLKE_REF,	   /* Clockgen E reference clock */
+-/*
+- *  CLK_LAST	    * Keep this as last clock ID. Used to get number of clocks
+- */
+ } clk_id_t;
+-- 
+1.6.0.6
+

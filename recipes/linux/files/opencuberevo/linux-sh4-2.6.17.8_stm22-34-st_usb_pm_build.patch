@@ -1,0 +1,63 @@
+This patch fixes up the build errors with CONFIG_PM enabled on ST40. It
+does not and is not intended to implement usb power management on our
+devices. This is left as an exercise for the USB developers :-)
+
+Signed-off-by: Stephen Gallimore <Stephen.Gallimore@st.com>
+
+Index: linux-2.6.17/drivers/usb/host/ehci-stcore.c
+===================================================================
+--- linux-2.6.17.orig/drivers/usb/host/ehci-stcore.c
++++ linux-2.6.17/drivers/usb/host/ehci-stcore.c
+@@ -79,6 +79,18 @@ static void ehci_sof_workaround(struct u
+ 
+ #endif
+ 
++static int ehci_st40_suspend(struct usb_hcd *hcd, pm_message_t message)
++{
++	/* Needs implementation! Look at ehci-pci as guide */
++	return 0;
++}
++
++static int ehci_st40_resume(struct usb_hcd *hcd)
++{
++	/* Needs implementation! Look at ehci-pci as guide */
++	return 0;
++}
++
+ static irqreturn_t ehci_st40_irq(struct usb_hcd *hcd, struct pt_regs *regs)
+ {
+ 	irqreturn_t retval;
+@@ -108,8 +120,8 @@ static const struct hc_driver ehci_st40_
+ 	.reset = ehci_init,
+ 	.start = ehci_run,
+ #ifdef	CONFIG_PM
+-	.suspend = ehci_bus_suspend,
+-	.resume = ehci_bus_resume,
++	.suspend = ehci_st40_suspend,
++	.resume = ehci_st40_resume,
+ #endif
+ 	.stop = ehci_stop,
+ 
+Index: linux-2.6.17/drivers/usb/host/ohci-stcore.c
+===================================================================
+--- linux-2.6.17.orig/drivers/usb/host/ohci-stcore.c
++++ linux-2.6.17/drivers/usb/host/ohci-stcore.c
+@@ -175,6 +175,18 @@ ohci_st40_start(struct usb_hcd *hcd)
+ 	return 0;
+ }
+ 
++static int
++ohci_st40_suspend(struct usb_hcd *hcd, pm_message_t message)
++{
++	return 0;
++}
++
++static int
++ohci_st40_resume(struct usb_hcd *hcd)
++{
++	return 0;
++}
++
+ static const struct hc_driver ohci_st40_hc_driver = {
+ 	.description =		hcd_name,
+ 	.product_desc =		DEVICE_NAME,

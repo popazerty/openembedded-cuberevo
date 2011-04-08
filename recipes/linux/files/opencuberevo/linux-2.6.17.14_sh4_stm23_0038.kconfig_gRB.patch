@@ -1,0 +1,27 @@
+Trivial patch to remove ST Advanced Features Kconfig menu and move gRB up a level.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+Index: linux/arch/sh/Kconfig
+===================================================================
+--- linux.orig/arch/sh/Kconfig	2007-04-24 16:11:44.692669000 +0100
++++ linux/arch/sh/Kconfig	2007-04-26 13:41:33.724696000 +0100
+@@ -380,16 +380,12 @@
+ 
+           See <file:Documentation/bigphysarea.txt> for more information.
+ 
+-menu "STMicroelectronics Advanced Features"
+-        depends on CPU_SUBTYPE_ST40 && EXPERIMENTAL
+-
+ config STM_GRB
+-        bool "ST Atomic gRB (EXPERIMENTAL)"
++	bool "Atomic gRB (EXPERIMENTAL)"
++	depends on CPU_SH4 && EXPERIMENTAL
+ 	default n
+ 	---help---
+-          Enable this option to use atomic roll back support in the kernel
+-
+-endmenu
++	  Enable this option to use atomic roll back support in the kernel
+ 
+ config CF_ENABLER
+ 	bool "Compact Flash Enabler support"

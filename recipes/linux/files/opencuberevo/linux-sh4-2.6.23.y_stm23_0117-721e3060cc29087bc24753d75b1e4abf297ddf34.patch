@@ -1,0 +1,61 @@
+From 721e3060cc29087bc24753d75b1e4abf297ddf34 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 10 Nov 2008 14:02:47 +0000
+Subject: [PATCH] kgdb: review kgdboe configuration
+
+This path reviews the KGDB over Ethernet configuration.
+It removes the KGDBOE_NOMODULE option (kgdboe is often configured
+as built-in) making easier the Ethernet port selection.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ lib/Kconfig.kgdb |   18 ++++--------------
+ 1 files changed, 4 insertions(+), 14 deletions(-)
+
+diff --git a/lib/Kconfig.kgdb b/lib/Kconfig.kgdb
+index 3d4cd62..b9ec00d 100644
+--- a/lib/Kconfig.kgdb
++++ b/lib/Kconfig.kgdb
+@@ -49,27 +49,15 @@ choice
+ 	  kernel for debugging as the kernel is booting, or using only
+ 	  kernel modules.
+ 
+-config KGDBOE_NOMODULE
+-	bool "KGDB: On ethernet - in kernel"
+-	depends on NET
+-	select KGDBOE
+-	help
+-	  Uses the NETPOLL API to communicate with the host GDB via UDP.
+-	  In order for this to work, the ethernet interface specified must
+-	  support the NETPOLL API, and this must be initialized at boot.
+-	  See the documentation for syntax.
+-
+ config KGDB_ST_ASC
+ 	bool "KGDB: On STASC serial port"
+ 	depends on SUPERH
+ 	help
+ 	   Uses the STASC serial port to communicate with the host GDB.
+ 
+-endchoice
+-
+ config KGDBOE
+-	tristate "KGDB: On ethernet" if !KGDBOE_NOMODULE
+-	depends on m && KGDB && NET
++	bool "KGDB: On ethernet"
++	depends on NET
+ 	select NETPOLL
+ 	select NETPOLL_TRAP
+ 	select NET_POLL_CONTROLLER
+@@ -79,6 +67,8 @@ config KGDBOE
+ 	  support the NETPOLL API, and this must be initialized at boot.
+ 	  See the documentation for syntax.
+ 
++endchoice
++
+ config KGDB_SIMPLE_SERIAL
+ 	bool "Simple selection of KGDB serial port"
+ 	depends on KGDB_ST_ASC
+-- 
+1.5.3.6
+

@@ -1,0 +1,29 @@
+From 529c74f0bd23a9e5aabf9458295c65f73ea02d0c Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Tue, 8 Sep 2009 14:50:31 +0100
+Subject: [PATCH] sh_stm: Fix misleading comment in SSC private data declaration
+
+In and out pins are exactly the other way round comparing to
+what the comment said!
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ include/linux/stm/soc.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 9a31c80..f312177 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -15,7 +15,7 @@ struct ssc_pio_t {
+ 	struct {
+ 		unsigned char pio_port;
+ 		unsigned char pio_pin;
+-	} pio[3]; /* clk, in, out */
++	} pio[3]; /* clk, out, in */
+ 	int clk_unidir;
+ 	struct stpio_pin* clk;
+ 	struct stpio_pin* sdout;
+-- 
+1.6.0.6
+

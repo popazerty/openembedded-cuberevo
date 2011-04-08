@@ -1,0 +1,31 @@
+When a get_user(to, from++) is called the pointer increment is performed after its first usage, in the specific after the __add_ok invokation. This causes a wrong get_user return value, putting a wrong character in the destination variable.This patch solves the problem using a new temporary pointer.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+Signed-off-by: Giuseppe Condorelli <giuseppe.condorelli@st.com>
+================================================================================
+--- linux-sh4-2.6.23.1_stm23ear_0102/include/asm-sh/uaccess.h.orig	2007-10-25 10:10:07.000000000 +0200
++++ linux-sh4-2.6.23.1_stm23ear_0102/include/asm-sh/uaccess.h	2007-10-25 10:09:41.000000000 +0200
+@@ -152,7 +152,8 @@ do {								\
+ #define __get_user_nocheck(x,ptr,size)				\
+ ({								\
+ 	long __gu_err, __gu_val;				\
+-	__get_user_size(__gu_val, (ptr), (size), __gu_err);	\
++	__typeof__(*(ptr)) *__pu_addr = (ptr);  \
++	__get_user_size(__gu_val, (__pu_addr), (size), __gu_err);	\
+ 	(x) = (__typeof__(*(ptr)))__gu_val;			\
+ 	__gu_err;						\
+ })
+@@ -160,9 +161,10 @@ do {								\
+ #define __get_user_check(x,ptr,size)					\
+ ({									\
+ 	long __gu_err, __gu_val;					\
+-	__chk_user_ptr(ptr);						\
+-	if (likely(__addr_ok((unsigned long)(ptr)))) {			\
+-		__get_user_size(__gu_val, (ptr), (size), __gu_err);	\
++	__typeof__(*(ptr)) *__pu_addr = (ptr);	\
++	__chk_user_ptr(__pu_addr);						\
++	if (likely(__addr_ok((unsigned long)(__pu_addr)))) {			\
++		__get_user_size(__gu_val, (__pu_addr), (size), __gu_err);	\
+ 	} else {							\
+ 		__gu_err = -EFAULT;					\
+ 		__gu_val = 0;						\

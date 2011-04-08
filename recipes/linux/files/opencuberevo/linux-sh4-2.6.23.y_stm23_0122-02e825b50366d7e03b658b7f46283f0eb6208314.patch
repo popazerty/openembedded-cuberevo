@@ -1,0 +1,32 @@
+From 02e825b50366d7e03b658b7f46283f0eb6208314 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:28 +0200
+Subject: [PATCH] stm: lirc: Fixed clock included file due to the new clk frmwk
+
+This patch fixes the clk header file
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/char/lirc/lirc_stm.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/char/lirc/lirc_stm.c b/drivers/char/lirc/lirc_stm.c
+index 8e2910c..3967177 100644
+--- a/drivers/char/lirc/lirc_stm.c
++++ b/drivers/char/lirc/lirc_stm.c
+@@ -63,11 +63,11 @@
+ #include <linux/platform_device.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
+-#include <asm/clock.h>
+ #include <linux/ioport.h>
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
+ #include <linux/stm/pio.h>
++#include <linux/stm/clk.h>
+ #include <linux/stm/soc.h>
+ #include <linux/time.h>
+ #include <linux/lirc.h>
+-- 
+1.6.0.6
+

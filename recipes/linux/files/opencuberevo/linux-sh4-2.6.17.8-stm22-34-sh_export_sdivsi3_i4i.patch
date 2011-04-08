@@ -1,0 +1,12 @@
+Signed-off-by: Jon Frosdick <jon.frosdick@st.com>
+diff -Napur linux-sh4-2.6.17.8_stm22-34-orig/arch/sh/kernel/sh_ksyms.c linux-sh4-2.6.17.8_stm22-34/arch/sh/kernel/sh_ksyms.c
+--- linux-sh4-2.6.17.8_stm22-34-orig/arch/sh/kernel/sh_ksyms.c	2006-08-29 02:58:32.000000000 +0100
++++ linux-sh4-2.6.17.8_stm22-34/arch/sh/kernel/sh_ksyms.c	2006-08-29 12:30:33.000000000 +0100
+@@ -70,6 +70,7 @@ DECLARE_EXPORT(__udivsi3);
+ DECLARE_EXPORT(__udivdi3);
+ DECLARE_EXPORT(__sdivsi3);
+ DECLARE_EXPORT(__divdi3);
++DECLARE_EXPORT(__sdivsi3_i4i);
+ DECLARE_EXPORT(__ashrdi3);
+ DECLARE_EXPORT(__ashldi3);
+ DECLARE_EXPORT(__lshrdi3);

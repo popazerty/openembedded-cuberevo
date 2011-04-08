@@ -1,0 +1,28 @@
+In order to prevent unnecessary reprogramming of the display hardware when
+changing VTs, the console switching code tried to maintain the x/y offset and
+vmode fields in the framebuffer "var" structure. Unfortunately, when the
+display mode is different on each VT, this can cause an attempt to
+switch to a "var" which describes an invalid display mode and hence
+will fail. This eventually results in the total destruction of the kernel.
+
+This patch basically undoes the damage of an official kernel patch from 2005.
+
+Signed-off-by: Stephen Gallimore <Stephen.Gallimore@st.com>
+ 
+Index: linux-sh4-2.6.17.8_stm22ear-34/drivers/video/console/fbcon.c
+===================================================================
+--- linux-sh4-2.6.17.8_stm22ear-34.orig/drivers/video/console/fbcon.c	2006-06-18 02:49:35.000000000 +0100
++++ linux-sh4-2.6.17.8_stm22ear-34/drivers/video/console/fbcon.c	2006-10-10 17:07:32.509807000 +0100
+@@ -2088,9 +2088,9 @@
+ 	 * in fb_set_var()
+ 	 */
+ 	info->var.activate = var.activate;
+-	var.yoffset = info->var.yoffset;
+-	var.xoffset = info->var.xoffset;
+-	var.vmode = info->var.vmode;
++	var.yoffset = 0;
++	var.xoffset = 0;
++	var.vmode   = (info->var.vmode & ~FB_VMODE_MASK) | (var.vmode & FB_VMODE_MASK);
+ 	fb_set_var(info, &var);
+ 	ops->var = info->var;
+ 

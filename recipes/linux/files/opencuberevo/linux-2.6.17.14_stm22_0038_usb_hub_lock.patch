@@ -1,0 +1,70 @@
+Patch backported from 2.6.21 git patch db90e7a15cb4a160610b4e58576f25539ca216e7.  
+Original comment was
+
+   USB: fix concurrent buffer access in the hub driver
+
+    This patch (as849) fixes a bug in the USB hub driver.  A single
+    pre-allocated buffer is used for all port status reads, but nothing
+    guarantees exclusive use of the buffer.  A mutex is added to provide
+    this guarantee.
+
+    Signed-off-by: Alan Stern <stern@rowland.harvard.edu>
+    Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/drivers/usb/core/hub.c
+===================================================================
+--- linux.orig/drivers/usb/core/hub.c	2006-06-18 02:49:35.000000000 +0100
++++ linux/drivers/usb/core/hub.c	2007-03-06 14:28:47.983472000 +0000
+@@ -487,6 +487,7 @@
+ {
+ 	int ret;
+ 
++	mutex_lock(&hub->status_mutex);
+ 	ret = get_hub_status(hub->hdev, &hub->status->hub);
+ 	if (ret < 0)
+ 		dev_err (hub->intfdev,
+@@ -496,6 +497,7 @@
+ 		*change = le16_to_cpu(hub->status->hub.wHubChange); 
+ 		ret = 0;
+ 	}
++	mutex_unlock(&hub->status_mutex);
+ 	return ret;
+ }
+ 
+@@ -566,6 +568,7 @@
+ 		ret = -ENOMEM;
+ 		goto fail;
+ 	}
++	mutex_init(&hub->status_mutex);
+ 
+ 	hub->descriptor = kmalloc(sizeof(*hub->descriptor), GFP_KERNEL);
+ 	if (!hub->descriptor) {
+@@ -1442,6 +1445,7 @@
+ {
+ 	int ret;
+ 
++	mutex_lock(&hub->status_mutex);
+ 	ret = get_port_status(hub->hdev, port1, &hub->status->port);
+ 	if (ret < 0)
+ 		dev_err (hub->intfdev,
+@@ -1451,6 +1455,7 @@
+ 		*change = le16_to_cpu(hub->status->port.wPortChange); 
+ 		ret = 0;
+ 	}
++	mutex_unlock(&hub->status_mutex);
+ 	return ret;
+ }
+ 
+Index: linux/drivers/usb/core/hub.h
+===================================================================
+--- linux.orig/drivers/usb/core/hub.h	2006-06-18 02:49:35.000000000 +0100
++++ linux/drivers/usb/core/hub.h	2007-03-06 14:28:47.993472000 +0000
+@@ -204,6 +204,7 @@
+ 		struct usb_hub_status	hub;
+ 		struct usb_port_status	port;
+ 	}			*status;	/* buffer for status reports */
++	struct mutex            status_mutex;   /* for the status buffer */
+ 
+ 	int			error;		/* last reported error */
+ 	int			nerrors;	/* track consecutive errors */

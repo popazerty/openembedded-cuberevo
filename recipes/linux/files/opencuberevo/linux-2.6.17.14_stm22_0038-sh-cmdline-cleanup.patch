@@ -1,0 +1,294 @@
+This patch tidies up the SH architecture early command line parsing,
+switching to use the 'early_param' infrastructure for mem= and sh_mv=
+command line options.
+
+It also cleans up the initialisation of memory resources. It removes
+all the useless resources copied from i386, and fixes some problems
+with those which are relevant. At also renames some variables to make
+their meaning clearer, and some of the comments are now actually correct.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux/arch/sh/kernel/setup.c
+===================================================================
+--- linux.orig/arch/sh/kernel/setup.c
++++ linux/arch/sh/kernel/setup.c
+@@ -78,7 +78,11 @@ static struct sh_machine_vector* __init 
+ #define INITRD_START (*(unsigned long *) (PARAM+0x010))
+ #define INITRD_SIZE (*(unsigned long *) (PARAM+0x014))
+ /* ... */
++#ifdef CONFIG_CMDLINE_BOOL
++#define COMMAND_LINE CONFIG_CMDLINE
++#else
+ #define COMMAND_LINE ((char *) (PARAM+0x100))
++#endif
+ 
+ #define RAMDISK_IMAGE_START_MASK	0x07FF
+ #define RAMDISK_PROMPT_FLAG		0x8000
+@@ -86,112 +90,74 @@ static struct sh_machine_vector* __init 
+ 
+ static char command_line[COMMAND_LINE_SIZE] = { 0, };
+ 
+-struct resource standard_io_resources[] = {
+-	{ "dma1", 0x00, 0x1f },
+-	{ "pic1", 0x20, 0x3f },
+-	{ "timer", 0x40, 0x5f },
+-	{ "keyboard", 0x60, 0x6f },
+-	{ "dma page reg", 0x80, 0x8f },
+-	{ "pic2", 0xa0, 0xbf },
+-	{ "dma2", 0xc0, 0xdf },
+-	{ "fpu", 0xf0, 0xff }
++static struct resource ram_resource = {
++	.name	= "System RAM",
++	.start	= 0,
++	.end	= 0,
++	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+ };
+ 
+-#define STANDARD_IO_RESOURCES (sizeof(standard_io_resources)/sizeof(struct resource))
++static struct resource data_resource = {
++	.name	= "Kernel data",
++	.start	= 0,
++	.end	= 0,
++	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
++};
+ 
+-/* System RAM - interrupted by the 640kB-1M hole */
+-#define code_resource (ram_resources[3])
+-#define data_resource (ram_resources[4])
+-static struct resource ram_resources[] = {
+-	{ "System RAM", 0x000000, 0x09ffff, IORESOURCE_BUSY },
+-	{ "System RAM", 0x100000, 0x100000, IORESOURCE_BUSY },
+-	{ "Video RAM area", 0x0a0000, 0x0bffff },
+-	{ "Kernel code", 0x100000, 0 },
+-	{ "Kernel data", 0, 0 }
++static struct resource code_resource = {
++	.name	= "Kernel code",
++	.start	= 0,
++	.end	= 0,
++	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+ };
+ 
+ unsigned long memory_start, memory_end;
+ 
+-static inline void parse_cmdline (char ** cmdline_p, char mv_name[MV_NAME_SIZE],
+-				  struct sh_machine_vector** mvp,
+-				  unsigned long *mv_io_base,
+-				  int *mv_mmio_enable)
+-{
+-	char c = ' ', *to = command_line, *from = COMMAND_LINE;
+-	int len = 0;
+-
+-	/* Save unparsed command line copy for /proc/cmdline */
+-	memcpy(saved_command_line, COMMAND_LINE, COMMAND_LINE_SIZE);
+-	saved_command_line[COMMAND_LINE_SIZE-1] = '\0';
++static char mv_name[MV_NAME_SIZE] __initdata = "";
++static unsigned long mv_io_base __initdata = 0;
++static int mv_mmio_enable __initdata = 0;
+ 
+-	memory_start = (unsigned long)PAGE_OFFSET+__MEMORY_START;
+-	memory_end = memory_start + __MEMORY_SIZE;
++static int __init parse_mem(char *arg)
++{
++	unsigned long mem_size;
+ 
+-	for (;;) {
+-		/*
+-		 * "mem=XXX[kKmM]" defines a size of memory.
+-		 */
+-		if (c == ' ' && !memcmp(from, "mem=", 4)) {
+-			if (to != command_line)
+-				to--;
+-			{
+-				unsigned long mem_size;
+-
+-				mem_size = memparse(from+4, &from);
+-				memory_end = memory_start + mem_size;
+-			}
+-		}
+-		if (c == ' ' && !memcmp(from, "sh_mv=", 6)) {
+-			char* mv_end;
+-			char* mv_comma;
+-			int mv_len;
+-			if (to != command_line)
+-				to--;
+-			from += 6;
+-			mv_end = strchr(from, ' ');
+-			if (mv_end == NULL)
+-				mv_end = from + strlen(from);
+-
+-			mv_comma = strchr(from, ',');
+-			if ((mv_comma != NULL) && (mv_comma < mv_end)) {
+-				int ints[3];
+-				get_options(mv_comma+1, ARRAY_SIZE(ints), ints);
+-				*mv_io_base = ints[1];
+-				*mv_mmio_enable = ints[2];
+-				mv_len = mv_comma - from;
+-			} else {
+-				mv_len = mv_end - from;
+-			}
+-			if (mv_len > (MV_NAME_SIZE-1))
+-				mv_len = MV_NAME_SIZE-1;
+-			memcpy(mv_name, from, mv_len);
+-			mv_name[mv_len] = '\0';
+-			from = mv_end;
++	if (!arg)
++		return -EINVAL;
+ 
+-			*mvp = get_mv_byname(mv_name);
+-		}
+-		c = *(from++);
+-		if (!c)
+-			break;
+-		if (COMMAND_LINE_SIZE <= ++len)
+-			break;
+-		*(to++) = c;
++	mem_size = memparse(arg, &arg);
++	memory_end = memory_start + mem_size;
++	return 0;
++}
++early_param("mem", parse_mem);
++
++static int __init parse_sh_mv(char *arg)
++{
++	char* comma;
++
++	comma = strchr(arg, ',');
++	if (comma != NULL) {
++		int ints[3];
++		get_options(comma+1, ARRAY_SIZE(ints), ints);
++		mv_io_base = ints[1];
++		mv_mmio_enable = ints[2];
++		*comma = '\0';
+ 	}
+-	*to = '\0';
+-	*cmdline_p = command_line;
++	strlcpy(mv_name, arg, MV_NAME_SIZE);
++	if (comma != NULL)
++		*comma = ',';
++
++	return 0;
+ }
++early_param("sh_mv", parse_sh_mv);
+ 
+-static int __init sh_mv_setup(char **cmdline_p)
++static int __init sh_mv_setup(void)
+ {
+ #ifdef CONFIG_SH_UNKNOWN
+ 	extern struct sh_machine_vector mv_unknown;
+ #endif
+ 	struct sh_machine_vector *mv = NULL;
+-	char mv_name[MV_NAME_SIZE] = "";
+-	unsigned long mv_io_base = 0;
+-	int mv_mmio_enable = 0;
+ 
+-	parse_cmdline(cmdline_p, mv_name, &mv, &mv_io_base, &mv_mmio_enable);
++	mv = get_mv_byname(mv_name);
+ 
+ #ifdef CONFIG_SH_UNKNOWN
+ 	if (mv == NULL) {
+@@ -236,19 +202,31 @@ static int __init sh_mv_setup(char **cmd
+ 	return 0;
+ }
+ 
++static int __init request_standard_resources(void)
++{
++	request_resource(&iomem_resource, &ram_resource);
++	request_resource(&ram_resource, &code_resource);
++	request_resource(&ram_resource, &data_resource);
++	return 0;
++}
++
+ void __init setup_arch(char **cmdline_p)
+ {
+ 	unsigned long bootmap_size;
+-	unsigned long start_pfn, max_pfn, max_low_pfn;
++	unsigned long bootmap_pfn;
+ 
+ #ifdef CONFIG_EARLY_PRINTK
+ 	extern void enable_early_printk(void);
+ 
+ 	enable_early_printk();
+ #endif
+-#ifdef CONFIG_CMDLINE_BOOL
+-        strcpy(COMMAND_LINE, CONFIG_CMDLINE);
+-#endif
++
++	memory_start = (unsigned long)PAGE_OFFSET+__MEMORY_START;
++	memory_end = memory_start + __MEMORY_SIZE;
++
++	strlcpy(command_line, COMMAND_LINE, COMMAND_LINE_SIZE);
++	strlcpy(saved_command_line, command_line, COMMAND_LINE_SIZE);
++	*cmdline_p = command_line;
+ 
+ 	ROOT_DEV = old_decode_dev(ORIG_ROOT_DEV);
+ 
+@@ -260,42 +238,37 @@ void __init setup_arch(char **cmdline_p)
+ 
+ 	if (!MOUNT_ROOT_RDONLY)
+ 		root_mountflags &= ~MS_RDONLY;
++
++	parse_early_param();
++
++	sh_mv_setup();
++
+ 	init_mm.start_code = (unsigned long) _text;
+ 	init_mm.end_code = (unsigned long) _etext;
+ 	init_mm.end_data = (unsigned long) _edata;
+ 	init_mm.brk = (unsigned long) _end;
+ 
++	ram_resource.start = __pa(memory_start);
++	ram_resource.end = __pa(memory_end)-1;
+ 	code_resource.start = (unsigned long)virt_to_phys(_text);
+ 	code_resource.end = (unsigned long)virt_to_phys(_etext)-1;
+ 	data_resource.start = (unsigned long)virt_to_phys(_etext);
+ 	data_resource.end = (unsigned long)virt_to_phys(_edata)-1;
+ 
+-	sh_mv_setup(cmdline_p);
+-
+-	/*
+-	 * Find the highest page frame number we have available
+-	 */
+-	max_pfn = PFN_DOWN(__pa(memory_end));
+-
+-	/*
+-	 * Determine low and high memory ranges:
+-	 */
+-	max_low_pfn = max_pfn;
++	request_standard_resources();
+ 
+ 	/*
+-	 * Partially used pages are not usable - thus
+-	 * we are rounding upwards:
++	 * Initialize the boot-time allocator.
++	 * As we are not using bootmem_init() (because low memory
++	 * doesn't start at 0) we need to initialise some global
++	 * variables here.
+ 	 */
+-	start_pfn = PFN_UP(__pa(_end));
++	max_pfn = max_low_pfn = PFN_DOWN(__pa(memory_end));
++	min_low_pfn = __MEMORY_START>>PAGE_SHIFT;
+ 
+-	/*
+-	 * Find a proper area for the bootmem bitmap. After this
+-	 * bootstrap step all allocations (until the page allocator
+-	 * is intact) must be done via bootmem_alloc().
+-	 */
+-	bootmap_size = init_bootmem_node(NODE_DATA(0), start_pfn,
+-					 __MEMORY_START>>PAGE_SHIFT,
+-					 max_low_pfn);
++	bootmap_pfn = PFN_UP(__pa(_end));
++	bootmap_size = init_bootmem_node(NODE_DATA(0), bootmap_pfn,
++					 min_low_pfn, max_low_pfn);
+ 	/*
+ 	 * Register fully available low RAM pages with the bootmem allocator.
+ 	 */
+@@ -327,7 +300,7 @@ void __init setup_arch(char **cmdline_p)
+ 	 * an invalid RAM area.
+ 	 */
+ 	reserve_bootmem_node(NODE_DATA(0), __MEMORY_START+PAGE_SIZE,
+-		(PFN_PHYS(start_pfn)+bootmap_size+PAGE_SIZE-1)-__MEMORY_START);
++		(PFN_PHYS(bootmap_pfn)+bootmap_size+PAGE_SIZE-1)-__MEMORY_START);
+ 
+ 	/*
+ 	 * reserve physical page 0 - it's a special BIOS page on many boxes,

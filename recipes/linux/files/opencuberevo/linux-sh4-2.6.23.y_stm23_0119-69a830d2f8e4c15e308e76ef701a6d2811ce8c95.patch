@@ -1,0 +1,41 @@
+From 69a830d2f8e4c15e308e76ef701a6d2811ce8c95 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Mon, 18 May 2009 18:57:30 +0100
+Subject: [PATCH] stm_nand: Remove references to fdma-reqs.h
+
+Remove reference to linux/stm/fdma-reqs.h - the weren't being used, and files
+have now been removed from tree.
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ drivers/mtd/nand/stm_nand_emi.c  |    1 -
+ drivers/mtd/nand/stm_nand_flex.c |    1 -
+ 2 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/stm_nand_emi.c b/drivers/mtd/nand/stm_nand_emi.c
+index 19f94ff..c56fa95 100644
+--- a/drivers/mtd/nand/stm_nand_emi.c
++++ b/drivers/mtd/nand/stm_nand_emi.c
+@@ -35,7 +35,6 @@
+ #include <linux/stm/stm-dma.h>
+ #include <linux/stm/emi.h>
+ #include <linux/stm/pio.h>
+-#include <linux/stm/fdma-reqs.h>
+ #include <linux/completion.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/nand.h>
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index 297c46d..f4d83ed 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -55,7 +55,6 @@
+ #include <asm/dma.h>
+ #include <linux/clk.h>
+ #include <linux/stm/stm-dma.h>
+-#include <linux/stm/fdma-reqs.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/nand.h>
+ #include <linux/completion.h>
+-- 
+1.6.0.6
+

@@ -1,0 +1,27 @@
+From 3ff72b71c6cd775ba50033e77701b965112fa1b9 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Tue, 14 Oct 2008 19:46:13 +0100
+Subject: [PATCH] sh_stm: Fix incorrect PIO configuration for stx7141 ASC RTS pin
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 7e66bd3..16828e0 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -958,7 +958,7 @@ void __init stx7141_configure_asc(const int *ascs, int num_ascs, int console)
+ 			stx7141_pio_sysconf(pio_port, 2, 3, "asc");
+ 			uart_data->pio_pin[2] = 2;
+ 			/* RTS */
+-			stx7141_pio_sysconf(pio_port, 2, 3, "asc");
++			stx7141_pio_sysconf(pio_port, 3, 3, "asc");
+ 			uart_data->pio_pin[3] = 3;
+ 		}
+ 		pdev->id = i;
+-- 
+1.5.3.6
+

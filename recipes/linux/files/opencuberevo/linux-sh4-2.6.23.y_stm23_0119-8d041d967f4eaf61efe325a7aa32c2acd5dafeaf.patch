@@ -1,0 +1,387 @@
+From 8d041d967f4eaf61efe325a7aa32c2acd5dafeaf Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 13 May 2009 11:41:29 +0100
+Subject: [PATCH] stm_nand: Adds STM_NAND_EMI/FLEX support for 7105 (mb705)
+
+Updates 7105 and related boards (mb705, mb588) to use STM_NAND_EMI/FLEX drivers.
+The STM_NAND_FLEX driver is required for boot-from-NAND systems.
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/common/mb588.c       |   10 ++-
+ arch/sh/boards/st/common/mb705.c       |   51 ++++++++------
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |  119 +++-----------------------------
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |    4 -
+ drivers/mtd/nand/Kconfig               |    2 +-
+ drivers/mtd/nand/stm_nand_emi.c        |    6 +-
+ drivers/mtd/nand/stm_nand_flex.c       |    8 ++-
+ include/linux/stm/soc.h                |    2 +-
+ 8 files changed, 56 insertions(+), 146 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/mb588.c b/arch/sh/boards/st/common/mb588.c
+index 87bc5e8..96f24b4 100644
+--- a/arch/sh/boards/st/common/mb588.c
++++ b/arch/sh/boards/st/common/mb588.c
+@@ -51,7 +51,7 @@ static struct plat_stmnand_data nand_config = {
+ 	.rbn_port		= -1,
+ 	.rbn_pin		= -1,
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STX7200)
++#if defined(CONFIG_CPU_SUBTYPE_STX7200 | CONFIG_CPU_SUBTYPE_STX7105)
+ 	/* Timing data for SoCs using STM_NAND_EMI/FLEX/AFM drivers */
+ 	.timing_data = &(struct nand_timing_data) {
+ 		.sig_setup	= 50,		/* times in ns */
+@@ -81,10 +81,12 @@ static struct plat_stmnand_data nand_config = {
+ #endif
+ };
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STX7200)
++#if defined(CONFIG_CPU_SUBTYPE_STX7200 | CONFIG_CPU_SUBTYPE_STX7105)
+ 
+ /* For SoCs migrated to STM_NAND_EMI/FLEX/AFM drivers, setup template platform
+- * device structure.  SoC setup will configure SoC specific data.
++ * device structure.  SoC setup will configure SoC specific data.  Use
++ * 'stm-nand-emi/flex/afm.x' as ID for specifying MTD partitions on the kernel
++ * command line.
+  */
+ static struct platform_device nand_device =
+ 	STM_NAND_DEVICE("stm-nand-emi", STEM_CS0_BANK, &nand_config,
+@@ -95,7 +97,7 @@ static struct platform_device nand_device =
+ static int __init mb588_init(void)
+ {
+ #if defined(CONFIG_CPU_SUBTYPE_STX7105)
+-	stx7105_configure_nand(&nand_config);
++	stx7105_configure_nand(&nand_device);
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7111)
+ 	stx7111_configure_nand(&nand_config);
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7200)
+diff --git a/arch/sh/boards/st/common/mb705.c b/arch/sh/boards/st/common/mb705.c
+index c938a59..2988d1e 100644
+--- a/arch/sh/boards/st/common/mb705.c
++++ b/arch/sh/boards/st/common/mb705.c
+@@ -18,6 +18,9 @@
+ #include <linux/stm/soc.h>
+ #include <linux/stm/emi.h>
+ #include <linux/mtd/mtd.h>
++#include <linux/mtd/nand.h>
++#include <linux/stm/nand.h>
++#include <linux/stm/soc_init.h>
+ #include <linux/mtd/physmap.h>
+ #include <linux/mtd/partitions.h>
+ #include <linux/spi/spi.h>
+@@ -210,7 +213,8 @@ static struct platform_device *mb705_devices[] __initdata = {
+ 	&spi_pio_device[0],
+ };
+ 
+-static struct mtd_partition nand_partitions[] = {
++/* NAND Device */
++static struct mtd_partition nand_parts[] = {
+ 	{
+ 		.name	= "NAND root",
+ 		.offset	= 0,
+@@ -223,29 +227,32 @@ static struct mtd_partition nand_partitions[] = {
+ };
+ 
+ static struct plat_stmnand_data nand_config = {
+-	.emi_bank		= 1,	/* Can be overridden */
++	/* STM_NAND_EMI data */
+ 	.emi_withinbankoffset	= 0,
+-
+-	/* Timings for NAND512W3A */
+-	.emi_timing_data = &(struct emi_timing_data) {
+-		.rd_cycle_time	 = 40,		 /* times in ns */
+-		.rd_oee_start	 = 0,
+-		.rd_oee_end	 = 10,
+-		.rd_latchpoint	 = 10,
+-		.busreleasetime  = 0,
+-
+-		.wr_cycle_time	 = 40,
+-		.wr_oee_start	 = 0,
+-		.wr_oee_end	 = 10,
+-
+-		.wait_active_low = 0,
++	.rbn_port		= -1,
++	.rbn_pin		= -1,
++
++	/* Timing data for STM_NAND_EMI/FLEX/AFM drivers */
++	.timing_data = &(struct nand_timing_data) {
++		.sig_setup	= 20,		/* times in ns */
++		.sig_hold	= 10,
++		.CE_deassert	= 0,
++		.WE_to_RBn	= 100,
++		.wr_on		= 10,
++		.wr_off		= 30,
++		.rd_on		= 10,
++		.rd_off		= 40,
++		.chip_delay	= 40,		/* in us */
+ 	},
+-
+-	.chip_delay		= 40,		/* time in us */
+-	.mtd_parts		= nand_partitions,
+-	.nr_parts		= ARRAY_SIZE(nand_partitions),
++	.flex_rbn_connected	= 1,
+ };
+ 
++/* Platform data for STM_NAND_EMI/FLEX/AFM. (bank# may be updated later) */
++static struct platform_device nand_device =
++	STM_NAND_DEVICE("stm-nand-emi", 1, &nand_config,
++			nand_parts, ARRAY_SIZE(nand_parts), NAND_USE_FLASH_BBT);
++
++
+ #include <linux/delay.h>
+ 
+ static int __init mb705_init(void)
+@@ -285,7 +292,7 @@ static int __init mb705_init(void)
+ 		u32 bank2_start = emi_bank_base(2);
+ 		physmap_flash.resource[0].start = bank1_start;
+ 		physmap_flash.resource[0].end = bank2_start - 1;
+-		nand_config.emi_bank = 0;
++		nand_device.id = 0;
+ 	}
+ 
+ 	/*
+@@ -298,7 +305,7 @@ static int __init mb705_init(void)
+ 	i |= EPLD_EMI_MISC_NOTNANDFLASHWP;
+ 	epld_write(i, EPLD_EMI_MISC);
+ 
+-	stx7105_configure_nand(&nand_config);
++	stx7105_configure_nand(&nand_device);
+ 
+ 	/* Interrupt routing.
+ 	 * At the moment we only care about a small number of
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index dae7760..89f09f1 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -927,119 +927,22 @@ void __init stx7105_configure_lirc(lirc_scd_t *scd)
+ 	platform_device_register(&lirc_device);
+ }
+ 
+-/* NAND Resources ---------------------------------------------------------- */
++/* NAND Setup -------------------------------------------------------------- */
+ 
+-static void nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
++void __init stx7105_configure_nand(struct platform_device *pdev)
+ {
+-	struct nand_chip *this = mtd->priv;
++	/* EMI Bank base address */
++	/*  - setup done in stm_nand_emi probe */
+ 
+-	if (ctrl & NAND_CTRL_CHANGE) {
++	/* NAND Controller base address */
++	pdev->resource[0].start	= 0xFE701000;
++	pdev->resource[0].end	= 0xFE701FFF;
+ 
+-		if (ctrl & NAND_CLE) {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
+-						   (unsigned int)(1 << 17));
+-		}
+-		else {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
+-						   ~(unsigned int)(1 << 17));
+-		}
+-
+-		if (ctrl & NAND_ALE) {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
+-						   (unsigned int)(1 << 18));
+-		}
+-		else {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
+-						   ~(unsigned int)(1 << 18));
+-		}
+-	}
+-
+-	if (cmd != NAND_CMD_NONE) {
+-		writeb(cmd, this->IO_ADDR_W);
+-	}
+-}
+-
+-static void nand_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
+-{
+-	int i;
+-	struct nand_chip *chip = mtd->priv;
+-
+-	/* write buf up to 4-byte boundary */
+-	while ((unsigned int)buf & 0x3) {
+-		writeb(*buf++, chip->IO_ADDR_W);
+-		len--;
+-	}
+-
+-	writesl(chip->IO_ADDR_W, buf, len/4);
+-
+-	/* mop up trailing bytes */
+-	for (i = (len & ~0x3); i < len; i++) {
+-		writeb(buf[i], chip->IO_ADDR_W);
+-	}
+-}
+-
+-static void nand_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
+-{
+-	int i;
+-	struct nand_chip *chip = mtd->priv;
+-
+-	/* read buf up to 4-byte boundary */
+-	while ((unsigned int)buf & 0x3) {
+-		*buf++ = readb(chip->IO_ADDR_R);
+-		len--;
+-	}
+-
+-	readsl(chip->IO_ADDR_R, buf, len/4);
+-
+-	/* mop up trailing bytes */
+-	for (i = (len & ~0x3); i < len; i++) {
+-		buf[i] = readb(chip->IO_ADDR_R);
+-	}
+-}
+-
+-static const char *nand_part_probes[] = { "cmdlinepart", NULL };
+-
+-static struct platform_device nand_flash[] = {
+-	EMI_NAND_DEVICE(0),
+-	EMI_NAND_DEVICE(1),
+-	EMI_NAND_DEVICE(2),
+-	EMI_NAND_DEVICE(3),
+-	EMI_NAND_DEVICE(4),
+- };
+-
+-
+-/*
+- * stx7105_configure_nand - Configures NAND support for the STx7105
+- *
+- * Requires generic platform NAND driver (CONFIG_MTD_NAND_PLATFORM).
+- * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
+- * command line.
+- */
+-void __init stx7105_configure_nand(struct plat_stmnand_data *data)
+-{
+-	unsigned int bank_base, bank_end;
+-	unsigned int emi_bank = data->emi_bank;
+-
+-	struct platform_nand_data *nand_private_data =
+-		nand_flash[emi_bank].dev.platform_data;
+-
+-	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
+-	if (emi_bank == 4)
+-		bank_end = 0x07ffffff;
+-	else
+-		bank_end = emi_bank_base(emi_bank+1) - 1;
+-
+-	printk("Configuring EMI Bank%d for NAND device\n", emi_bank);
+-	emi_config_nand(data->emi_bank, data->emi_timing_data);
+-
+-	nand_flash[emi_bank].resource[0].start = bank_base;
+-	nand_flash[emi_bank].resource[0].end = bank_end;
+-
+-	nand_private_data->chip.chip_delay = data->chip_delay;
+-	nand_private_data->chip.partitions = data->mtd_parts;
+-	nand_private_data->chip.nr_partitions = data->nr_parts;
++	/* NAND Controller IRQ */
++	pdev->resource[1].start	= evt2irq(0x14a0);
++	pdev->resource[1].end	= evt2irq(0x14a0);
+ 
+-	platform_device_register(&nand_flash[emi_bank]);
++	platform_device_register(pdev);
+ }
+ 
+ /*
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 0fccacb..6b863db 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -871,10 +871,6 @@ void __init stx7200_configure_lirc(lirc_scd_t *scd)
+ 
+ /* NAND setup -------------------------------------------------------------- */
+ 
+-/*
+- * Requires STMicroelectonics NAND driver (CONFIG_MTD_NAND_STM_EMI).  Use
+- * 'stm-nand.x' as ID for specifying MTD partitions on the kernel command line.
+- */
+ void __init stx7200_configure_nand(struct platform_device *pdev)
+ {
+ 	/* EMI Bank base address */
+diff --git a/drivers/mtd/nand/Kconfig b/drivers/mtd/nand/Kconfig
+index 810a5c2..e070607 100644
+--- a/drivers/mtd/nand/Kconfig
++++ b/drivers/mtd/nand/Kconfig
+@@ -325,7 +325,7 @@ endchoice
+ 
+ config MTD_NAND_STM_FLEX
+        tristate "STMicroelectronics: H/W FLEX Controller"
+-       depends on CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7200
++       depends on CPU_SUBTYPE_STX7200 || CPU_SUBTYPE_STX7105 
+        help
+          Enables the STMicroelectronics NAND Controller operating in FLEX mode.
+          This driver is required to access NAND devices when boot-from-NAND is
+diff --git a/drivers/mtd/nand/stm_nand_emi.c b/drivers/mtd/nand/stm_nand_emi.c
+index 8c24010..19f94ff 100644
+--- a/drivers/mtd/nand/stm_nand_emi.c
++++ b/drivers/mtd/nand/stm_nand_emi.c
+@@ -671,6 +671,9 @@ static int __init stm_nand_emi_probe(struct platform_device *pdev)
+ 
+ 	data->chip.ecc.mode = NAND_ECC_SOFT;
+ 
++	/* Copy chip options from platform data */
++	data->chip.options = pdata->chip.options;
++
+ 	platform_set_drvdata(pdev, data);
+ 
+ 	/* Scan to find existance of the device */
+@@ -680,9 +683,6 @@ static int __init stm_nand_emi_probe(struct platform_device *pdev)
+ 		goto out6;
+ 	}
+ 
+-	/* Force options which may not have been set during scan() */
+-	data->chip.options |= pdata->chip.options;
+-
+ #ifdef CONFIG_MTD_PARTITIONS
+ 	res = parse_mtd_partitions(&data->mtd, part_probes, &data->parts, 0);
+ 	if (res > 0) {
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index b8cb125..602ec18 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -827,11 +827,11 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	uint32_t reg;
+ 	uint32_t prog[8] = {0};
+ 
+-	/* Initialise AFM NAND controller */
++	/* Initialise NAND controller */
+ 	res = flex_init_controller(pdev);
+ 	if (res != 0) {
+ 		printk(KERN_ERR NAME
+-		       ": Failed to initialise AFM NAND Controller.\n");
++		       ": Failed to initialise NAND Controller.\n");
+ 		return res;
+ 	}
+ 
+@@ -887,11 +887,13 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	data->chip.IO_ADDR_R = flex.base_addr + EMINAND_FLEX_DATA;
+ 	data->chip.IO_ADDR_W = flex.base_addr + EMINAND_FLEX_DATA;
+ 
+-	/* Reset AFM program. Is this really necessary? */
++#if defined(CONFIG_CPU_SUBTYPE_STX7200)
++	/* Reset AFM program. Why!?! */
+ 	memset(prog, 0, 32);
+ 	reg = flex_readreg(EMINAND_AFM_SEQUENCE_STATUS_REG);
+ 	memcpy_toio(flex.base_addr + EMINAND_AFM_SEQUENCE_REG_1,
+ 		    prog, 32);
++#endif
+ 
+ 	/* Scan to find existance of the device */
+ 	if (nand_scan(&data->mtd, 1)) {
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index e8c63e4..22d835b 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -485,7 +485,7 @@ void stx7105_configure_ssc(struct plat_ssc_data *data);
+ void stx7105_configure_usb(int port, struct usb_init_data *data);
+ void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
+ 				int ext_mdio, int ext_clk, int phy_bus);
+-void stx7105_configure_nand(struct plat_stmnand_data *data);
++void stx7105_configure_nand(struct platform_device *pdev);
+ void stx7105_configure_lirc(lirc_scd_t *scd);
+ void stx7105_configure_pata(int bank, int pc_mode, int irq);
+ void stx7105_configure_audio_pins(int pcmout, int spdif, int pcmin);
+-- 
+1.6.0.6
+

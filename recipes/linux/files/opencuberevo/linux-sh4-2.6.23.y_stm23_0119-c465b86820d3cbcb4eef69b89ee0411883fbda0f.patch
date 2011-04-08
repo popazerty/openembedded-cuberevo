@@ -1,0 +1,72 @@
+From c465b86820d3cbcb4eef69b89ee0411883fbda0f Mon Sep 17 00:00:00 2001
+From: Carl Shaw <car.shaw@st.com>
+Date: Thu, 21 May 2009 18:45:27 +0100
+Subject: [PATCH] sh_asc: Move platform flags from generic flags field
+
+This patch moves the platform-specific flags to a new field in
+struct asc_port as the PM code now (correctly) uses the generic
+flags field.
+
+Signed-off-by: Jon Frosdick <jon.frosdick@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ drivers/serial/stasc.c |    9 +++++----
+ drivers/serial/stasc.h |    1 +
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index 1bb741e..3d4fe61 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -252,7 +252,7 @@ static void asc_release_port(struct uart_port *port)
+ 		port->membase = NULL;
+ 	}
+ 
+-	for (i=0; i<((ascport->flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++)
++	for (i=0; i<((ascport->platform_flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++)
+ 		stpio_free_pin(ascport->pios[i]);
+ }
+ 
+@@ -334,7 +334,7 @@ static void __devinit asc_init_port(struct asc_port *ascport,
+ 
+ 	ascport->port.uartclk = rate;
+ 
+-	ascport->flags = data->flags;
++	ascport->platform_flags = data->flags;
+ }
+ 
+ static struct uart_driver asc_uart_driver = {
+@@ -566,7 +566,8 @@ static int asc_remap_port(struct asc_port *ascport, int req)
+ 		}
+ 	}
+ 
+-	for (i = 0; i < ((ascport->flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++)
++	for (i = 0; i < ((ascport->platform_flags & STASC_FLAG_NORTSCTS) ?
++								 2 : 4); i++)
+ 		ascport->pios[i] = stpio_request_pin(pdata->pios[i].pio_port,
+ 				pdata->pios[i].pio_pin, DRIVER_NAME,
+ 				pdata->pios[i].pio_direction);
+@@ -633,7 +634,7 @@ asc_set_termios_cflag (struct asc_port *ascport, int cflag, int baud)
+ 		ctrl_val |= ASC_CTL_PARITYODD;
+ 
+ 	/* hardware flow control */
+-	if ((cflag & CRTSCTS) && (!(ascport->flags & STASC_FLAG_NORTSCTS)))
++	if ((cflag & CRTSCTS) && (!(ascport->platform_flags & STASC_FLAG_NORTSCTS)))
+ 		ctrl_val |= ASC_CTL_CTSENABLE;
+ 
+ 	/* set speed and baud generator mode */
+diff --git a/drivers/serial/stasc.h b/drivers/serial/stasc.h
+index 27c1839..51383d1 100644
+--- a/drivers/serial/stasc.h
++++ b/drivers/serial/stasc.h
+@@ -37,6 +37,7 @@ struct asc_port {
+ #ifdef CONFIG_SERIAL_ST_ASC_FDMA
+ 	struct asc_port_fdma fdma;
+ #endif
++	unsigned char platform_flags;
+ };
+ 
+ #define ASC_MAJOR		204
+-- 
+1.6.0.6
+

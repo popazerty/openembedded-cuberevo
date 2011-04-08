@@ -1,0 +1,96 @@
+sh: Subnormal double to float conversion
+
+This patch adds support for the SH4 to convert a subnormal double
+into a float by catching the FPE and implementing the FCNVDS
+instruction in software.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/arch/sh/kernel/cpu/sh4/fpu.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/fpu.c	2008-06-30 14:28:55.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/fpu.c	2008-07-01 09:43:57.000000000 +0100
+@@ -39,7 +39,7 @@
+ extern unsigned long long float64_sub(unsigned long long a,
+ 				      unsigned long long b);
+ extern unsigned long int float32_sub(unsigned long int a, unsigned long int b);
+-
++extern unsigned long int float64_to_float32(unsigned long long a);
+ static unsigned int fpu_exception_flags;
+ 
+ /*
+@@ -419,8 +419,30 @@
+ 		regs->pc = nextpc;
+ 		return 1;
+ 
+-	} else
++	} else if ((finsn & 0xf0bd) == 0xf0bd) {
++		/* fcnvds - double to single precision convert */
++		struct task_struct *tsk = current;
++		int m;
++		unsigned int hx;
++
++		m = (finsn >> 9) & 0x7;
++		hx = tsk->thread.fpu.hard.fp_regs[m];
++
++		if ((tsk->thread.fpu.hard.fpscr & FPSCR_CAUSE_ERROR)
++			&& ((hx & 0x7fffffff) < 0x00100000)) {
++			/* subnormal double to float conversion */
++			long long llx;
++
++			llx = ((long long)tsk->thread.fpu.hard.fp_regs[m] << 32)
++			    | tsk->thread.fpu.hard.fp_regs[m + 1];
+ 
++			tsk->thread.fpu.hard.fpul = float64_to_float32(llx);
++		} else
++			return 0;
++
++		regs->pc = nextpc;
++		return 1;
++	} else
+ 		return 0;
+ }
+ 
+Index: linux/arch/sh/kernel/cpu/sh4/softfloat.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/softfloat.c	2008-06-30 14:28:52.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/softfloat.c	2008-07-01 09:10:35.000000000 +0100
+@@ -85,6 +85,7 @@
+ float32 float32_div(float32 a, float32 b);
+ float32 float32_mul(float32 a, float32 b);
+ float64 float64_mul(float64 a, float64 b);
++float32 float64_to_float32(float64 a);
+ inline void add128(bits64 a0, bits64 a1, bits64 b0, bits64 b1, bits64 * z0Ptr,
+ 		   bits64 * z1Ptr);
+ inline void sub128(bits64 a0, bits64 a1, bits64 b0, bits64 b1, bits64 * z0Ptr,
+@@ -890,3 +891,31 @@
+ 	}
+ 	return roundAndPackFloat64(zSign, zExp, zSig0);
+ }
++
++/*
++ * -------------------------------------------------------------------------------
++ *  Returns the result of converting the double-precision floating-point value
++ *  `a' to the single-precision floating-point format.  The conversion is
++ *  performed according to the IEC/IEEE Standard for Binary Floating-point
++ *  Arithmetic.
++ *  -------------------------------------------------------------------------------
++ *  */
++float32 float64_to_float32(float64 a)
++{
++    flag aSign;
++    int16 aExp;
++    bits64 aSig;
++    bits32 zSig;
++
++    aSig = extractFloat64Frac( a );
++    aExp = extractFloat64Exp( a );
++    aSign = extractFloat64Sign( a );
++
++    shift64RightJamming( aSig, 22, &aSig );
++    zSig = aSig;
++    if ( aExp || zSig ) {
++        zSig |= 0x40000000;
++        aExp -= 0x381;
++    }
++    return roundAndPackFloat32(aSign, aExp, zSig);
++}

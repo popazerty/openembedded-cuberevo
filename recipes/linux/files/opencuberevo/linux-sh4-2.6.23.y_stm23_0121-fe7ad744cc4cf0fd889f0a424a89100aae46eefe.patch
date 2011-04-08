@@ -1,0 +1,103 @@
+From fe7ad744cc4cf0fd889f0a424a89100aae46eefe Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Tue, 21 Jul 2009 10:25:53 +0100
+Subject: [PATCH] stm_pio: Return an error value when non-supported interrupt is requested
+
+Some of the PIO banks don't generate an interrupt.
+The stpio_flagged_request_irq() didn't check this and it was failing
+miserably...
+
+Fix this behaviour adding PORT_IRQ_REGISTERED flag and nicely returning
+an error code when not set.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/stm/pio.c       |   16 ++++++++++++----
+ include/linux/stm/pio.h |    7 ++++---
+ 2 files changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index d75375d..bac26bd 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -121,8 +121,9 @@ struct stpio_port {
+ 	struct platform_device *pdev;
+ 	unsigned int irq_comp;
+ 	unsigned char flags;
+-#define PORT_IRQ_ENABLED		0x1
+-#define PORT_IRQ_DISABLED_ON_SUSPEND	0x2
++#define PORT_IRQ_REGISTERED		0x1
++#define PORT_IRQ_ENABLED		0x2
++#define PORT_IRQ_DISABLED_ON_SUSPEND	0x4
+ };
+ 
+ 
+@@ -336,18 +337,22 @@ static irqreturn_t stpio_irq_wrapper(int irq, void *dev_id)
+ }
+ 
+ 
+-void stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
++int stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
+ 		       void (*handler)(struct stpio_pin *pin, void *dev),
+ 		       void *dev, unsigned long flags)
+ {
+-	int irq = pin_to_irq(pin);
++	int irq;
+ 	int ret;
+ 
+ 	DPRINTK("called\n");
+ 
++	if (!(pin->port->flags & PORT_IRQ_REGISTERED))
++		return -EINVAL;
++
+ 	/* stpio style interrupt handling doesn't allow sharing. */
+ 	BUG_ON(pin->func);
+ 
++	irq = pin_to_irq(pin);
+ 	pin->func = handler;
+ 	pin->dev = dev;
+ 
+@@ -359,6 +364,8 @@ void stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
+ 		disable_irq(irq);
+ 		pin->port->flags &= ~PORT_IRQ_ENABLED;
+ 	}
++
++	return 0;
+ }
+ EXPORT_SYMBOL(stpio_flagged_request_irq);
+ 
+@@ -703,6 +710,7 @@ static int stpio_init_port(struct platform_device *pdev, int early)
+ 
+ 		set_irq_chained_handler(irq, stpio_irq_chip_handler);
+ 		set_irq_data(irq, port);
++		port->flags |= PORT_IRQ_REGISTERED;
+ 
+ 		irq = stpio_irq_base + (portno * STPIO_PINS_IN_PORT);
+ 		for (i = 0; i < STPIO_PINS_IN_PORT; i++) {
+diff --git a/include/linux/stm/pio.h b/include/linux/stm/pio.h
+index 09af59d..be5e688 100644
+--- a/include/linux/stm/pio.h
++++ b/include/linux/stm/pio.h
+@@ -53,14 +53,15 @@ void stpio_set_pin(struct stpio_pin* pin, unsigned int value);
+ unsigned int stpio_get_pin(struct stpio_pin* pin);
+ 
+ /* Interrupt on external value change */
+-void stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
++int stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
+                        void (*handler)(struct stpio_pin *pin, void *dev),
+                        void *dev, unsigned long irqflags);
+-static inline void __deprecated stpio_request_irq(struct stpio_pin *pin, int comp,
++static inline int __deprecated stpio_request_irq(struct stpio_pin *pin,
++		       int comp,
+                        void (*handler)(struct stpio_pin *pin, void *dev),
+                        void *dev)
+ {
+-        stpio_flagged_request_irq (pin, comp, handler, dev, 0);
++	return stpio_flagged_request_irq(pin, comp, handler, dev, 0);
+ }
+ void stpio_free_irq(struct stpio_pin* pin);
+ void stpio_enable_irq(struct stpio_pin* pin, int mode);
+-- 
+1.6.0.6
+

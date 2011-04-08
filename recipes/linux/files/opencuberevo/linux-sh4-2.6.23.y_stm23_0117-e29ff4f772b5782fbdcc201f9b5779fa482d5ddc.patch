@@ -1,0 +1,39 @@
+From e29ff4f772b5782fbdcc201f9b5779fa482d5ddc Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Tue, 28 Oct 2008 14:58:57 +0000
+Subject: [PATCH] sh: Wire up start and stop-points in KPTrace.
+
+An old change, mysteriously lost...
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/kptrace.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index e9608ea..359a4a2 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -684,6 +684,9 @@ static void write_trace_record(struct kprobe *kp, struct pt_regs *regs,
+ 
+ 	tp = container_of(kp, tracepoint_t, kp);
+ 
++	if (kp && tp->starton == 1)
++		logging = 1;
++
+ 	if (!logging) {
+ 		spin_unlock_irqrestore(&tmpbuf_lock, flags);
+ 		return;
+@@ -706,6 +709,8 @@ static void write_trace_record(struct kprobe *kp, struct pt_regs *regs,
+ 
+ 	spin_unlock_irqrestore(&tmpbuf_lock, flags);
+ 
++	if (kp && tp->stopon == 1)
++		logging = 0;
+ }
+ 
+ /*
+-- 
+1.5.3.6
+

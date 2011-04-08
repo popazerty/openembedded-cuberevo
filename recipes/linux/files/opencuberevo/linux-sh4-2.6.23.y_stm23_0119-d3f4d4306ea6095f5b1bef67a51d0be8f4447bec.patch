@@ -1,0 +1,41 @@
+From d3f4d4306ea6095f5b1bef67a51d0be8f4447bec Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Fri, 17 Apr 2009 13:47:55 +0200
+Subject: [PATCH] LKM: fix is_exported() function with ELF HASH loader enabled.
+
+module_get_kallsym() function uses is_exported() to print all
+exported symbols by vmlinux and loaded modules.
+When used with ELF HASH loader support, the wrong hash table
+was passed to the elf_hash_lookup_symbol(). The patch fix this
+by resetting the htable to that one of the current module.
+
+Bugzilla: 6089
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ kernel/module.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/kernel/module.c b/kernel/module.c
+index a14a0a0..df3b6d2 100644
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -1688,12 +1688,14 @@ static int is_exported(const char *name, const struct module *mod)
+ 
+ 	if (!mod && LOOKUP_SYMBOL(name, __start___ksymtab, __stop___ksymtab))
+ 		return 1;
+-	else
++	else {
++		MOD_HTABLE_SET(mod->syms);
+ 		if (mod && LOOKUP_SYMBOL(name, mod->syms,
+ 				mod->syms + mod->num_syms))
+ 			return 1;
+ 		else
+ 			return 0;
++	}
+ }
+ 
+ /* As per nm */
+-- 
+1.6.0.6
+

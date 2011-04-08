@@ -1,0 +1,20 @@
+The output in /proc/dma is currently broken, as it appears to be
+checking the wrong flag to determine whether a channel is allocated.
+
+This fix appears to work. See bugzilla 1597 for details.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux/arch/sh/drivers/dma/dma-api.c
+===================================================================
+--- linux.orig/arch/sh/drivers/dma/dma-api.c
++++ linux/arch/sh/drivers/dma/dma-api.c
+@@ -347,7 +347,7 @@ static int dma_read_proc(char *buf, char
+ 		for (i = 0; i < info->nr_channels; i++) {
+ 			struct dma_channel *channel = info->channels + i;
+ 
+-			if (!(channel->flags & DMA_CONFIGURED))
++		        if(atomic_read(&channel->busy) == 0)
+ 				continue;
+ 
+ 			p += sprintf(p, "%2d: %14s    %s\n", i,

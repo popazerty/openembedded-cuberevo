@@ -1,0 +1,35 @@
+sh_stm: remove single byte clock stretch clear from I2C read
+
+Remove single byte clock stretch clearing from I2C read
+as it actually causes a false read of FF.  As the SSC is
+reset on the next transaction then this should be OK.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/drivers/i2c/busses/i2c-stm.c
+===================================================================
+--- linux.orig/drivers/i2c/busses/i2c-stm.c	2008-06-30 14:35:14.000000000 +0100
++++ linux/drivers/i2c/busses/i2c-stm.c	2008-06-30 14:35:25.000000000 +0100
+@@ -382,12 +382,6 @@
+ 			}
+ 		}
+ 
+-		idx=0;
+-		/* Release any clock stretch */
+-		if (status & SSC_STA_CLST){
+-			++idx;
+-			ssc_store32(adap, SSC_TBUF, 0x1ff);
+-		}
+ 		/* 2. Do we finish? */
+ 		if (trsc->idx_current_msg == pmsg->len) {
+ 			status &= ~SSC_STA_NACK;
+@@ -397,8 +391,9 @@
+ 		/* 3. Ask other 'idx' bytes in fifo mode
+ 		 *    but we want save the latest [pmsg->len-1]
+ 		 *    in any case...
++		 *    This will also clear any pending clockstretch
+ 		 */
+-		for (; idx<SSC_TXFIFO_SIZE &&
++		for (idx=0; idx<SSC_TXFIFO_SIZE &&
+ 			   (trsc->idx_current_msg+idx)<pmsg->len-1; ++idx)
+ 			ssc_store32(adap, SSC_TBUF, 0x1ff);
+ 

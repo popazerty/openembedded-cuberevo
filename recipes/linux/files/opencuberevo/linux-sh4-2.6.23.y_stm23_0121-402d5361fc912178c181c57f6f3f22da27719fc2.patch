@@ -1,0 +1,82 @@
+From 402d5361fc912178c181c57f6f3f22da27719fc2 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <tridge@samba.org>
+Date: Thu, 16 Jul 2009 12:47:15 +1000
+Subject: [PATCH] FAT: Added FAT_NO_83NAME
+
+This patch adds a new flag field 'FAT_NO_83NAME' for FAT files. When
+this flag is set on an 8.3 FAT entry, both the MSDOS and VFAT
+filesystems will skip the entry. For MSDOS this makes the file
+inaccessible. For VFAT it makes the file only accessible by the long
+filename.
+
+This is a backport of the patch FAT-Added-FAT_NO_83NAME.patch
+from http://kernel.org/pub/linux/kernel/people/tridge/VFAT.
+
+Signed-off-by: Andrew Tridgell <tridge@samba.org>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ fs/fat/dir.c             |   14 ++++++++++++++
+ include/linux/msdos_fs.h |    1 +
+ 2 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/fs/fat/dir.c b/fs/fat/dir.c
+index 72cbcd6..49f8cdf 100644
+--- a/fs/fat/dir.c
++++ b/fs/fat/dir.c
+@@ -346,6 +346,13 @@ parse_record:
+ 				goto EODir;
+ 		}
+ 
++		/*
++		 * The FAT_NO_83NAME flag is used to mark files
++		 * created with no 8.3 short name
++		 */
++		if (de->lcase & FAT_NO_83NAME)
++			goto compare_longname;
++
+ 		memcpy(work, de->name, sizeof(de->name));
+ 		/* see namei.c, msdos_format_name */
+ 		if (work[0] == 0x05)
+@@ -394,6 +401,7 @@ parse_record:
+ 								xlate_len)))
+ 				goto Found;
+ 
++compare_longname:
+ 		if (nr_slots) {
+ 			xlate_len = utf8
+ 				?utf8_wcstombs(bufname, unicode, sizeof(bufname))
+@@ -497,6 +505,8 @@ parse_record:
+ 		if (de->attr != ATTR_EXT && IS_FREE(de->name))
+ 			goto RecEnd;
+ 	} else {
++		if (de->lcase & FAT_NO_83NAME)
++			goto RecEnd;
+ 		if ((de->attr & ATTR_VOLUME) || IS_FREE(de->name))
+ 			goto RecEnd;
+ 	}
+@@ -901,6 +911,10 @@ int fat_scan(struct inode *dir, const unsigned char *name,
+ 	sinfo->bh = NULL;
+ 	while (fat_get_short_entry(dir, &sinfo->slot_off, &sinfo->bh,
+ 				   &sinfo->de) >= 0) {
++		/* skip files marked as having no 8.3 short name  */
++		if (sinfo->de->lcase & FAT_NO_83NAME)
++			continue;
++
+ 		if (!strncmp(sinfo->de->name, name, MSDOS_NAME)) {
+ 			sinfo->slot_off -= sizeof(*sinfo->de);
+ 			sinfo->nr_slots = 1;
+diff --git a/include/linux/msdos_fs.h b/include/linux/msdos_fs.h
+index f950921..2094ca6 100644
+--- a/include/linux/msdos_fs.h
++++ b/include/linux/msdos_fs.h
+@@ -42,6 +42,7 @@
+ 
+ #define CASE_LOWER_BASE	8	/* base is lower case */
+ #define CASE_LOWER_EXT	16	/* extension is lower case */
++#define FAT_NO_83NAME	32	/* no 8.3 short filename for this file */
+ 
+ #define DELETED_FLAG	0xe5	/* marks file as deleted when in name[0] */
+ #define IS_FREE(n)	(!*(n) || *(n) == DELETED_FLAG)
+-- 
+1.6.0.6
+

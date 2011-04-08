@@ -1,0 +1,53 @@
+From 7eef2a1af3a2657bc3b12fcbec79c6d9ab30bf85 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Wed, 11 Feb 2009 13:35:30 +0000
+Subject: [PATCH] sh_stm: Add support for mb628 revision B
+
+The mb628 rev B adds a software enable bit to the EPLD for each of the
+MII interfaces. Previously these bits were unused, so we can set them
+unconditionally when configuring the appropriate interface.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/mb628/setup.c |    4 +++-
+ include/asm-sh/mb628/epld.h     |    2 ++
+ 2 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index a83fa8f..24e45fd 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -447,7 +447,8 @@ static int __init device_init(void)
+ 
+ #ifdef ENABLE_GMAC0
+ 	/* Must disable ASC1 if using GMII0 */
+-	epld_write(epld_read(EPLD_ENABLE) | EPLD_ASC1_EN, EPLD_ENABLE);
++	epld_write(epld_read(EPLD_ENABLE) | EPLD_ASC1_EN | EPLD_ENABLE_MII0,
++		   EPLD_ENABLE);
+ 
+ 	/* Configure GMII0 MDINT for active low */
+ 	set_irq_type(ILC_IRQ(43), IRQ_TYPE_LEVEL_LOW);
+@@ -455,6 +456,7 @@ static int __init device_init(void)
+ 	stx7141_configure_ethernet(0, 0, 0, 0);
+ #endif
+ 
++	epld_write(epld_read(EPLD_ENABLE) | EPLD_ENABLE_MII1, EPLD_ENABLE);
+ 	stx7141_configure_ethernet(1, 0, 0, 1);
+ 	stx7141_configure_lirc(&lirc_scd);
+ 
+diff --git a/include/asm-sh/mb628/epld.h b/include/asm-sh/mb628/epld.h
+index 7a52e84..304e6ac 100644
+--- a/include/asm-sh/mb628/epld.h
++++ b/include/asm-sh/mb628/epld.h
+@@ -31,6 +31,8 @@
+ #define   EPLD_ENABLE_HBEAT		(1<<2)
+ #define   EPLD_ENABLE_SPI_NOTCS		(1<<3)
+ #define   EPLD_ENABLE_IFE_NOTCS		(1<<4)
++#define   EPLD_ENABLE_MII1		(1<<5)
++#define   EPLD_ENABLE_MII0		(1<<6)
+ #define EPLD_CCARDCTRL		0x080000
+ #define EPLD_CCARDCTRL2		0x090000
+ #define EPLD_CCARDIMDIMODE	0x0A0000
+-- 
+1.5.6.3
+

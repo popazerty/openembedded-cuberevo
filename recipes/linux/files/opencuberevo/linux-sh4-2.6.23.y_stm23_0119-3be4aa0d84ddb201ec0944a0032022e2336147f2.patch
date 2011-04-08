@@ -1,0 +1,203 @@
+From 3be4aa0d84ddb201ec0944a0032022e2336147f2 Mon Sep 17 00:00:00 2001
+From: David MCKAY <david.mckay@st.com>
+Date: Thu, 21 May 2009 15:09:41 +0100
+Subject: [PATCH] sh_stm: Support PCI reset via PIO pin
+
+Many STMicro boards use a PIO pin to control the PCI reset line. This
+patch adds support for this case, and also allows the user to provide a
+board specific PCI reset function in case the PCI reset is done via some
+other mechanism. The mb680 7105 board actually uses a PIO line, so this
+patch may fix some problems with some cards as the reset was never done
+on this board previously.
+
+Signed-off-by: David McKay  <david.mckay@st.com>
+---
+ arch/sh/boards/st/mb618/setup.c    |    3 +-
+ arch/sh/boards/st/mb680/setup.c    |    3 +-
+ arch/sh/drivers/pci/pci-synopsys.c |   60 +++++++++++++++++++++++++++++++----
+ include/linux/stm/soc.h            |   11 ++++++-
+ 4 files changed, 67 insertions(+), 10 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index f3eeb31..baba560 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -263,7 +263,8 @@ static struct pci_config_data  pci_config = {
+ 	.idsel_lo = 30,
+ 	.idsel_hi = 30,
+ 	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
+-	.pci_clk = 33333333
++	.pci_clk = 33333333,
++	.pci_reset_pio = -EINVAL, /* Reset done by EPLD on power on, not PIO */
+ };
+ 
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 0e0acdb..8dfdfe7 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -159,7 +159,8 @@ static struct pci_config_data  pci_config = {
+ 	.idsel_lo = 30,
+ 	.idsel_hi = 30,
+ 	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
+-	.pci_clk = 33333333
++	.pci_clk = 33333333,
++	.pci_reset_pio = stpio_to_gpio(15, 7)
+ };
+ 
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+diff --git a/arch/sh/drivers/pci/pci-synopsys.c b/arch/sh/drivers/pci/pci-synopsys.c
+index ef78756..2640593 100644
+--- a/arch/sh/drivers/pci/pci-synopsys.c
++++ b/arch/sh/drivers/pci/pci-synopsys.c
+@@ -19,8 +19,10 @@
+ #include <linux/errno.h>
+ #include <linux/io.h>
+ #include <linux/stm/soc.h>
++#include <linux/gpio.h>
+ #include <linux/cache.h>
+ #include <linux/clk.h>
++#include <linux/delay.h>
+ #include <asm/clock.h>
+ #include "pci-synopsys.h"
+ 
+@@ -34,6 +36,8 @@ static DEFINE_SPINLOCK(stm_pci_io_lock);
+ static void __iomem *emiss; /* pointer to emiss register area */
+ static void __iomem *ahb_pci; /* Ditto for AHB registers */
+ 
++static unsigned pci_reset_pin = -EINVAL;	/* Global for PCI reset */
++
+ /* Static lookup table to precompute byte enables for various
+  * transaction size. Stolen from Doug, as it is clearer than
+  * computing it:-)
+@@ -163,10 +167,12 @@ static inline void pci_csr_write(u32 addr, u32 cmd, u32 val)
+  */
+ static int idsel_lo, max_slot;
+ 
+-#define TYPE0_CONFIG_CYCLE(fn, where) ( ((fn)<<8) | ((where) &~3)
+-#define TYPE1_CONFIG_CYCLE(bus, devfn, where) (((bus) << 16) | ((devfn) << 8) | ((where) & ~3) | 1)
++#define TYPE0_CONFIG_CYCLE(fn, where) (((fn) << 8) | ((where) & ~3))
++#define TYPE1_CONFIG_CYCLE(bus, devfn, where) \
++	(((bus) << 16) | ((devfn) << 8) | ((where) & ~3) | 1)
+ 
+-static int pci_stm_config_read(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 *val)
++static int pci_stm_config_read(struct pci_bus *bus, unsigned int devfn,
++			       int where, int size, u32 *val)
+ {
+ 	int slot = PCI_SLOT(devfn);
+ 	int fn = PCI_FUNC(devfn);
+@@ -177,7 +183,7 @@ static int pci_stm_config_read(struct pci_bus *bus, unsigned int devfn, int wher
+ 			*val = SIZE_MASK(size);
+ 			return PCIBIOS_DEVICE_NOT_FOUND;
+ 		}
+-		addr = TYPE0_CONFIG_CYCLE(fn,where) | ( (1 << (idsel_lo + slot)) ));
++		addr = TYPE0_CONFIG_CYCLE(fn, where) | (1<<(idsel_lo + slot));
+ 	} else {
+ 		addr = TYPE1_CONFIG_CYCLE(bus->number, devfn, where);
+ 	}
+@@ -192,7 +198,8 @@ static int pci_stm_config_read(struct pci_bus *bus, unsigned int devfn, int wher
+ 	return PCIBIOS_SUCCESSFUL;
+ }
+ 
+-static int pci_stm_config_write(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 val)
++static int pci_stm_config_write(struct pci_bus *bus, unsigned int devfn,
++				int where, int size, u32 val)
+ {
+ 	int slot = PCI_SLOT(devfn);
+ 	int fn = PCI_FUNC(devfn);
+@@ -202,7 +209,7 @@ static int pci_stm_config_write(struct pci_bus *bus, unsigned int devfn, int whe
+ 		if(slot > max_slot) {
+ 			return PCIBIOS_DEVICE_NOT_FOUND;
+ 		}
+-		addr = TYPE0_CONFIG_CYCLE(fn,where) | ( (1 << (idsel_lo + slot)) ));
++		addr = TYPE0_CONFIG_CYCLE(fn, where) |  (1<<(idsel_lo + slot));
+ 	} else {
+ 		addr = TYPE1_CONFIG_CYCLE(bus->number, devfn, where);
+ 	}
+@@ -413,7 +420,30 @@ char * __devinit pcibios_setup(char *str)
+ 	return str;
+ }
+ 
+-static void __devinit pci_stm_setup(struct pci_config_data *pci_config, unsigned long pci_window_start, unsigned long pci_window_size)
++void pci_stm_pio_reset(void)
++{
++	/* Active low for PCI signals */
++	if (gpio_direction_output(pci_reset_pin, 0)) {
++		printk(KERN_ERR "pci_stm: cannot set PCI RST (gpio %u)"
++				"to output\n", pci_reset_pin);
++		return;
++	}
++
++	mdelay(1); /* From PCI spec */
++
++	gpio_set_value(pci_reset_pin, 1);
++
++	/* PCI spec says there should be a one second delay here. This seems a
++	 * tad excessive to me! If you really have something that needs a huge
++	 * reset time then you should supply your own reset function
++	 */
++
++	mdelay(10);
++}
++
++static void __devinit pci_stm_setup(struct pci_config_data *pci_config,
++				    unsigned long pci_window_start,
++				    unsigned long pci_window_size)
+ {
+ 	unsigned long lmi_base, lmi_end, mbar_size;
+ 	int fn;
+@@ -492,6 +522,8 @@ static void __devinit pci_stm_setup(struct pci_config_data *pci_config, unsigned
+ 	writel(PCI_BRIDGE_INT_DMA_ENABLE_INT_ENABLE | PCI_BRIDGE_INT_DMA_ENABLE_INT_UNDEF_FN_ENABLE,
+ 	       emiss + PCI_BRIDGE_INT_DMA_ENABLE);
+ 
++	/* Reset any pci peripherals that are connected to the board */
++	if (pci_config->pci_reset) pci_config->pci_reset();
+ }
+ 
+ /* Probe function for PCI data
+@@ -537,6 +569,20 @@ static int __devinit pci_stm_probe(struct platform_device *pdev)
+ 		printk(KERN_ERR "pci_stm: Unable to find pci clock\n");
+ 	}
+ 
++	if (!pci_config->pci_reset && pci_config->pci_reset_pio != -EINVAL) {
++		/* We have not been given a reset function by the board layer,
++		 * and the PIO is valid.  Assume it is done via PIO. Claim pins
++		 * specified in config and use default PIO reset function.
++		 */
++		if (!gpio_request(pci_config->pci_reset_pio, "PCI RST")) {
++			pci_reset_pin = pci_config->pci_reset_pio;
++			pci_config->pci_reset = pci_stm_pio_reset;
++		} else {
++			printk(KERN_ERR "pci_stm: PIO pin %d specified "
++					"for reset, cannot request\n",
++					pci_config->pci_reset_pio);
++		}
++	}
+ 
+ 	/* Set up the sh board channel stuff to point at the platform data we have passed in */
+ 	board_pci_channels[0].mem_resource = pdev->resource + 2;
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index e346f1d..3d21245 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -124,7 +124,16 @@ struct pci_config_data {
+ 	char idsel_lo;	/* Lowest address line connected to an idsel  - slot 0 */
+ 	char idsel_hi;	/* Highest address line connected to an idsel - slot n */
+ 	char req_gnt[4]; /* Set to PCI_PIN_DEFAULT if the corresponding req/gnt lines are in use */
+-	unsigned pci_clk; /* PCI clock rate in Hz. If zero will default to 33MHz*/
++	unsigned long pci_clk; /* PCI clock in Hz. If zero default to 33MHz */
++
++	/* If you supply a pci_reset() function, that will be used to reset the
++	 * PCI bus.  Otherwise it is assumed that the reset is done via PIO,
++	 * the number is specified here. Specify -EINVAL if no PIO reset is
++	 * required either, for example if the PCI reset is done as part of
++	 * power on reset.
++	 */
++	unsigned pci_reset_pio;
++	void (*pci_reset)(void);
+ 
+ 	/* Various PCI tuning parameters. Set by SOC layer. You don't have to specify
+ 	 * these as the defaults are usually fine. However, if you need to change them, you
+-- 
+1.6.0.6
+

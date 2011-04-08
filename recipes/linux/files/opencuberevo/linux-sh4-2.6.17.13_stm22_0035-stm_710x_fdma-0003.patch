@@ -1,0 +1,288 @@
+This patch addresses:- 
+
+1. make kernel buildable with dma subsystem disabled 
+   https://bugzilla.stlinux.com/show_bug.cgi?id=956
+
+2. make the Linux fdma interrupt handler deal with channel sharing correctly
+   https://bugzilla.stlinux.com/show_bug.cgi?id=967
+
+3. Adds an API access to allow new bus config values for paced channels
+
+4. fixes the registration of channel capabilities if the lowest channel != 0.
+   https://bugzilla.stlinux.com/show_bug.cgi?id=976
+
+5. Force a FW load when the fdma driver is probed instead of first usage.
+   This is for STAPI compatibility when they are running with no Linux DMA
+   channels allocated, but relying on the Linux driver for firmware loading.
+
+Signed off by Mark Glaisher <mark.glaisher@st.com>
+Index: linux/drivers/stm/710x_fdma2.c
+===================================================================
+--- linux.orig/drivers/stm/710x_fdma2.c
++++ linux/drivers/stm/710x_fdma2.c
+@@ -386,26 +386,31 @@ static inline void __handle_fdma_complet
+ static irqreturn_t fdma_irq(int irq, void *dev_id, struct pt_regs *regs)
+ {
+ 	int channel=chip.ch_min;
+-	/*we need a channnel mask to only clear interrupts on channels
+-	 *  assoc'd to this dmac*/
+-	u32 channel_mask =(0x1 << (channel*2));
+-
++	unsigned long clear_mask = ~((0x1 << (chip.ch_min*2))-1);
++	/*this gives us a bitmask of the channels in available range to clear*/
+ 	u32 int_stat_val = readl(chip.io_base + chip.regs.fdma_int_sta);
+-	writel(int_stat_val|channel_mask, chip.io_base +chip.regs.fdma_int_clr);
+-
+-	/*we need to shift down to our first channel*/
+-	int_stat_val >>= (channel*2);
++	u32 cur_val = int_stat_val >> (channel *2);
+ 
+-	for(;channel<chip.ch_max+1;channel++){
+-		if (int_stat_val & 1) {
+-			if (int_stat_val & 2)
++	writel(int_stat_val & clear_mask, chip.io_base +chip.regs.fdma_int_clr);
++	do{
++		/*error interrupts will raise boths bits, so check
++		 * the err bit first*/
++		if(unlikely(cur_val & 2))
+ 				__handle_fdma_err_irq(channel);
+-			else
++
++		else if (cur_val & 1)
+ 				__handle_fdma_completion_irq(channel);
+-		}
+-		int_stat_val = int_stat_val>>2;
+-	}
+-	return IRQ_HANDLED;
++
++		cur_val = cur_val>>2;
++	}while(channel++ < chip.ch_max);
++
++	/*here we check to see if there is still pending ints for the other dmac, if so
++	 * rely on it to signal IRQ_HANDLED once all vectors are cleared, we return IRQ_NONE.
++	 * otherwise we have handled everything so we can now safely returnd IRQ_HANDLED
++	 * to lower the IRQ.*/
++	return (cur_val == 0) && ((int_stat_val & (0x1 << ((chip.ch_min*2)-1)))==0)  ?
++			IRQ_HANDLED:
++			IRQ_NONE;
+ }
+ 
+ /*---------------------------------------------------------------------*
+@@ -515,21 +520,34 @@ static void fdma_reset_channels(void)
+ 		writel(0,CMD_STAT_REG(0));
+ }
+ 
+-static void fdma_initialise_req_ctl(void)
++static int stb710x_configure_pace_channel(struct fmdareq_RequestConfig_s * prq)
+ {
+ 	unsigned long ReqC=0;
+ 	unsigned long req_base_reg = chip.io_base+chip.regs.fdma_req_ctln;
+-	int i=0,index=0;;
+ 
++	if(prq->Index <0 || prq->Index > chip.num_req_lines)
++		return -EINVAL;
++
++	ReqC = (u32)(prq->HoldOff    & 0x0f) <<  0;/*Bits 3.0*/
++	ReqC |= (u32)(prq->OpCode    & 0x0f) <<  4;/*7..4*/
++	ReqC |= (u32)(prq->Access    & 0x01) << 14;/*14*/
++	ReqC |= (u32)(prq->Initiator & 0x03) << 22;/*23..22*/
++	ReqC |= (u32)((prq->Count-1) & 0x1F) << 24;/*28..24*/
++	ReqC |= (u32)(prq->Increment & 0x01) << 29;/*29*/
++
++	writel(ReqC,req_base_reg+(prq->Index *CMD_STAT_OFFSET));
++	return (readl(req_base_reg+(prq->Index *CMD_STAT_OFFSET)) == ReqC) ?
++		 0:
++		 -ENODEV;
++}
++
++static void fdma_initialise_req_ctl(void)
++{
++	int i=0;
+ 	for(;i < (chip.num_req_lines -1 );i++){
+-		ReqC = (u32)(chip.req_tbl[i].HoldOff    & 0x0f) <<  0;/*Bits 3.0*/
+-		ReqC |= (u32)(chip.req_tbl[i].OpCode    & 0x0f) <<  4;/*7..4*/
+-		ReqC |= (u32)(chip.req_tbl[i].Access    & 0x01) << 14;/*14*/
+-		ReqC |= (u32)(chip.req_tbl[i].Initiator & 0x03) << 22;/*23..22*/
+-		ReqC |= (u32)((chip.req_tbl[i].Count-1) & 0x1F) << 24;/*28..24*/
+-		ReqC |= (u32)(chip.req_tbl[i].Increment & 0x01) << 29;/*29*/
+-		index = chip.req_tbl[i].Index;/* Write to device */
+-		writel(ReqC,req_base_reg+(index *CMD_STAT_OFFSET));
++		if(stb710x_configure_pace_channel(&chip.req_tbl[i])<0)
++			fdma_log("%s Error programming FDMA_REQ %d\n",
++					__FUNCTION__, chip.req_tbl[i].Index);
+ 	}
+ }
+ 
+@@ -548,7 +566,7 @@ static int fdma_register_caps(void)
+ 		dmac_caps[channel-chip.ch_min].caplist =
+ 			(channel < 4) ? hb_caps : lb_caps;
+ 	}
+-	res= register_chan_caps(dmac_id,&dmac_caps[chip.ch_min]);
++	res= register_chan_caps(dmac_id,&dmac_caps[0]);
+ 
+ 	if(res!=0){
+ 		fdma_log("%s %s failed to register capabilities\n",
+@@ -814,6 +832,8 @@ static void stb710x_fdma_free(struct dma
+ 
+ 	if(!(IS_CHANNEL_IDLE(channel->chan))){
+ 		stb710x_fdma_stop(channel);
++		/*TODO :-should have some confirmation the cmd has been processed here before
++		 * continuing - either a wait, not always possible, or a spin ? */
+ 		if(handle_ch_busy(channel->chan)==-EBUSY){
+ 			fdma_log("%s Cant free memory on active channel %d sts %d\n",
+ 				__FUNCTION__,channel->chan,stb710x_get_engine_status(channel->chan));
+@@ -917,6 +937,8 @@ static int stb710x_fdma_extended_op(stru
+ 			return stb710x_get_engine_status(ch->chan);
+ 		case STM_DMA_OP_MEM_FREE:
+ 			return stb710x_list_mem_free((struct stm_dma_params *)parm);
++		case STM_DMA_OP_PACING:
++			return stb710x_configure_pace_channel((struct fmdareq_RequestConfig_s *)parm);
+ 		default:
+ 			return -ENOSYS;
+ 	}
+@@ -1016,7 +1038,7 @@ static void __exit deinitialise_710x_fdm
+ 	device_unregister(&chip.dev);
+ 	unregister_dmac(chip.info);
+ 	dma_pool_destroy(chip.llu_pool);
+-	free_irq(chip.irq_val,(void *)NULL);
++	free_irq(chip.irq_val,(void *)&chip);
+ }
+ 
+ static int __init initialise_710x_fdma2(void)
+@@ -1037,15 +1059,16 @@ static int __init initialise_710x_fdma2(
+ 	chip.info->nr_channels = (chip.ch_max+1) -chip.ch_min;
+ 
+ 	err =request_irq(chip.irq_val,fdma_irq,
+-			SA_INTERRUPT,
++			SA_INTERRUPT | SA_SHIRQ,
+ 			"STB710x FDMA",
+-			(void*)NULL );
++			(void*)&chip );
+ 	if(err <0)
+ 		panic(" Cant Register irq %d for FDMA engine err %d\n",
+ 					chip.irq_val,err);
+ 
+ 	register_dmac(chip.info,chip.ch_min);
+ 	fdma_register_caps();
++	fdma_check_firmware_state();
+ 	return 0;
+ }
+ module_init(initialise_710x_fdma2)
+Index: linux/arch/sh/drivers/dma/dma-api.c
+===================================================================
+--- linux.orig/arch/sh/drivers/dma/dma-api.c
++++ linux/arch/sh/drivers/dma/dma-api.c
+@@ -275,7 +275,7 @@ void dma_wait_for_completion(unsigned in
+ int register_chan_caps(const char *dmac,struct dma_chan_caps *  caps)
+ {
+ 	/*first get the dmac */
+-	int i,max_chans=0,assigned=0;
++	int i;
+ 	struct dma_channel* channel={0};
+ 	struct dma_info *info;
+ 	list_for_each_entry(info, &registered_dmac_list, list) {
+Index: linux/include/linux/stm/710x_fdma.h
+===================================================================
+--- linux.orig/include/linux/stm/710x_fdma.h
++++ linux/include/linux/stm/710x_fdma.h
+@@ -22,6 +22,10 @@
+ #ifndef STB7100_FDMA_H
+ #define STB7100_FDMA_H
+ 
++#if ! defined(CONFIG_STM_DMA)
++	#define CONFIG_MAX_STM_DMA_CHANNEL_NR 0
++	#define CONFIG_MIN_STM_DMA_CHANNEL_NR 0
++#endif
+ 
+ #include <linux/interrupt.h>
+ 
+@@ -200,20 +204,6 @@ typedef struct channel_status{
+ 	struct tasklet_struct fdma_error;
+ }channel_status;
+ 
+-typedef struct fmdareq_RequestConfig_s
+-{
+-    char Index;         /* Request line index number */
+-    char Access;        /* Access type: Read or Write */
+-    char OpCode;        /* Size of word access */
+-    char Count;         /* Number of transfers per request */
+-    char Increment;     /* Whether to increment. On 5517, number of bytes to increment per request */
+-    char HoldOff;       /* Holdoff value between req signal samples (clock cycles)*/
+-    char Initiator;     /* Use the default value */
+-}fdmareq_RequestConfig_t;
+-
+-
+-
+-
+ typedef struct fdma_regs_s
+ {
+ 	unsigned long fdma_id;
+@@ -288,6 +278,17 @@ typedef struct fdma_chip{
+ #define INCSIZE_8       8
+ #define INCSIZE_16      16
+ #define INCSIZE_32      32
++
++/*STBUS Initiator Target*/
++#define STBUS_INT1 1
++#define STBUS_INT0 0
++
++/*RQ sample holdoff time microseconds*/
++#define HOLDOFF_0US 0
++#define HOLDOFF_1US 1
++#define HOLDOFF_2US 2
++
++
+ /* Utility values */
+ #define UNUSED       	0xff
+ 
+Index: linux/include/linux/stm/stm-dma.h
+===================================================================
+--- linux.orig/include/linux/stm/stm-dma.h
++++ linux/include/linux/stm/stm-dma.h
+@@ -79,8 +79,8 @@ enum stm_dma_flags {
+ 
+ /*we only have the notion of two types of channels thus far*/
+ #define STM_DMA_CAP_HIGH_BW 	"STM_DMA_HIGH_BANDWIDTH"
+-#define STM_DMA_CAP_LOW_BW 	"STM_DMA_LOW_BANDWIDTH"
+-#define STM_DMAC_ID 		"ST40 STB710x FDMAC"
++#define STM_DMA_CAP_LOW_BW 		"STM_DMA_LOW_BANDWIDTH"
++#define STM_DMAC_ID 			"ST40 STB710x FDMAC"
+ 
+ 
+ /* dma_extend() operations */
+@@ -90,10 +90,21 @@ enum stm_dma_flags {
+ #define STM_DMA_OP_COMPILE			4
+ #define STM_DMA_OP_STATUS			5
+ #define STM_DMA_OP_MEM_FREE			6
++#define STM_DMA_OP_PACING			7
+ 
+ 
+ struct stm_dma_params;
+ 
++typedef struct fmdareq_RequestConfig_s
++{
++    char Index;         /* Request line index number */
++    char Access;        /* Access type: Read or Write */
++    char OpCode;        /* Size of word access */
++    char Count;         /* Number of transfers per request */
++    char Increment;     /* Whether to increment. On 5517, number of bytes to increment per request */
++    char HoldOff;       /* Holdoff value between req signal samples (clock cycles)*/
++    char Initiator;     /* Use the default value */
++}fdmareq_RequestConfig_t;
+ 
+ typedef struct llu_node{
+ 	struct fdma_llu_entry * virt_addr;
+@@ -219,6 +230,13 @@ static inline void declare_dma_parms(	st
+ 	}
+ };
+ 
++static inline int dma_manual_stbus_pacing(struct stm_dma_params *params,
++									struct fmdareq_RequestConfig_s * rq)
++{
++	struct dma_info * info =  get_dma_info_by_name(params->dmac_name);
++	return dma_extend(info->channels[0].chan,STM_DMA_OP_PACING,rq);
++}
++
+ static inline int dma_get_status(unsigned int chan)
+ {
+ 	return dma_extend(chan,STM_DMA_OP_STATUS,NULL);

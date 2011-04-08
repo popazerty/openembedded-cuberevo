@@ -1,0 +1,30 @@
+From 6ee593201d2e786a63dbe9a501850a3d6de6b83a Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 15 Oct 2008 11:01:38 +0200
+Subject: [PATCH] review the PHY interface mode definition in the mb628
+
+By default, in the MB628 board setup file, the PHY interface supports
+the GMII mode. In any case, this doesn't impact the MII operation mode.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/mb628/setup.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index 647b88e..ed42f41 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -308,7 +308,7 @@ static struct plat_stmmacphy_data phy_private_data[2] = {
+ 	.bus_id = 1,
+ 	.phy_addr = 1,
+ 	.phy_mask = 0,
+-	.interface = PHY_INTERFACE_MODE_MII,
++	.interface = PHY_INTERFACE_MODE_GMII,
+ 	.phy_reset = mb628_phy_reset,
+ } };
+ 
+-- 
+1.5.3.6
+

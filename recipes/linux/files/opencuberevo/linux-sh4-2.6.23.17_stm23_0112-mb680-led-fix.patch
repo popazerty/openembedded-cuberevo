@@ -1,0 +1,16 @@
+With the introduction of GPIO LEDs on the mb705, we must number the mb680 LED.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb680/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb680/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb680/setup.c
+@@ -70,7 +70,7 @@ static struct usb_init_data usb_init[2] 
+ 
+ static struct platform_device mb680_leds = {
+ 	.name = "leds-gpio",
+-	.id = -1,
++	.id = 0,
+ 	.dev.platform_data = &(struct gpio_led_platform_data) {
+ 		.num_leds = 2,
+ 		.leds = (struct gpio_led[]) {

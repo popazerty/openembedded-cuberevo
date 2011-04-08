@@ -1,0 +1,503 @@
+From 529fc1d0860787779b66cd57674aabcb747f2236 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 18 May 2009 15:29:12 +0200
+Subject: [PATCH] stm: pm: Register INTC as sysdev device
+
+This patch register the INTC as sysdev device to better
+support the resume from hibernation
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/irq/intc.c |  317 +++++++++++++++++++++++++++++++++++------
+ 1 files changed, 270 insertions(+), 47 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/irq/intc.c b/arch/sh/kernel/cpu/irq/intc.c
+index d41d0d7..8fbf8c6 100644
+--- a/arch/sh/kernel/cpu/irq/intc.c
++++ b/arch/sh/kernel/cpu/irq/intc.c
+@@ -1,7 +1,7 @@
+ /*
+  * Shared interrupt handling code for IPR and INTC2 types of IRQs.
+  *
+- * Copyright (C) 2007 Magnus Damm
++ * Copyright (C) 2007, 2008 Magnus Damm
+  *
+  * Based on intc2.c and ipr.c
+  *
+@@ -21,6 +21,8 @@
+ #include <linux/io.h>
+ #include <linux/interrupt.h>
+ #include <linux/bootmem.h>
++#include <linux/sysdev.h>
++#include <linux/list.h>
+ 
+ #define _INTC_MK(fn, mode, addr_e, addr_d, width, shift) \
+ 	((shift) | ((width) << 5) | ((fn) << 9) | ((mode) << 13) | \
+@@ -39,6 +41,9 @@ struct intc_handle_int {
+ };
+ 
+ struct intc_desc_int {
++	struct list_head list;
++	struct sys_device sysdev;
++	pm_message_t state;
+ 	unsigned long *reg;
+ #ifdef CONFIG_SMP
+ 	unsigned long *smp;
+@@ -51,6 +56,8 @@ struct intc_desc_int {
+ 	struct irq_chip chip;
+ };
+ 
++static LIST_HEAD(intc_list);
++
+ #ifdef CONFIG_SMP
+ #define IS_SMP(x) x.smp
+ #define INTC_REG(d, x, c) (d->reg[(x)] + ((d->smp[(x)] & 0xff) * c))
+@@ -62,11 +69,14 @@ struct intc_desc_int {
+ #endif
+ 
+ static unsigned int intc_prio_level[NR_IRQS]; /* for now */
++#if defined(CONFIG_CPU_SH3) || defined(CONFIG_CPU_SH4A)
++static unsigned long ack_handle[NR_IRQS];
++#endif
+ 
+ static inline struct intc_desc_int *get_intc_desc(unsigned int irq)
+ {
+ 	struct irq_chip *chip = get_irq_chip(irq);
+-	return container_of(chip, struct intc_desc_int, chip);
++	return (void *)((char *)chip - offsetof(struct intc_desc_int, chip));
+ }
+ 
+ static inline unsigned int set_field(unsigned int value,
+@@ -83,38 +93,41 @@ static inline unsigned int set_field(unsigned int value,
+ 
+ static void write_8(unsigned long addr, unsigned long h, unsigned long data)
+ {
+-	ctrl_outb(set_field(0, data, h), addr);
+-	(void)ctrl_inb(addr);	/* Defeat write posting */
++	__raw_writeb(set_field(0, data, h), addr);
+ }
+ 
+ static void write_16(unsigned long addr, unsigned long h, unsigned long data)
+ {
+-	ctrl_outw(set_field(0, data, h), addr);
+-	(void)ctrl_inw(addr);	/* Defeat write posting */
++	__raw_writew(set_field(0, data, h), addr);
+ }
+ 
+ static void write_32(unsigned long addr, unsigned long h, unsigned long data)
+ {
+-	ctrl_outl(set_field(0, data, h), addr);
+-	(void)ctrl_inl(addr);	/* Defeat write posting */
++	__raw_writel(set_field(0, data, h), addr);
+ }
+ 
+ static void modify_8(unsigned long addr, unsigned long h, unsigned long data)
+ {
+-	ctrl_outb(set_field(ctrl_inb(addr), data, h), addr);
+-	(void)ctrl_inb(addr);	/* Defeat write posting */
++	unsigned long flags;
++	local_irq_save(flags);
++	__raw_writeb(set_field(__raw_readb(addr), data, h), addr);
++	local_irq_restore(flags);
+ }
+ 
+ static void modify_16(unsigned long addr, unsigned long h, unsigned long data)
+ {
+-	ctrl_outw(set_field(ctrl_inw(addr), data, h), addr);
+-	(void)ctrl_inw(addr);	/* Defeat write posting */
++	unsigned long flags;
++	local_irq_save(flags);
++	__raw_writew(set_field(__raw_readw(addr), data, h), addr);
++	local_irq_restore(flags);
+ }
+ 
+ static void modify_32(unsigned long addr, unsigned long h, unsigned long data)
+ {
+-	ctrl_outl(set_field(ctrl_inl(addr), data, h), addr);
+-	(void)ctrl_inl(addr);	/* Defeat write posting */
++	unsigned long flags;
++	local_irq_save(flags);
++	__raw_writel(set_field(__raw_readl(addr), data, h), addr);
++	local_irq_restore(flags);
+ }
+ 
+ enum {	REG_FN_ERR = 0, REG_FN_WRITE_BASE = 1, REG_FN_MODIFY_BASE = 5 };
+@@ -225,6 +238,46 @@ static void intc_disable(unsigned int irq)
+ 	}
+ }
+ 
++static int intc_set_wake(unsigned int irq, unsigned int on)
++{
++	return 0; /* allow wakeup, but setup hardware in intc_suspend() */
++}
++
++#if defined(CONFIG_CPU_SH3) || defined(CONFIG_CPU_SH4A)
++static void intc_mask_ack(unsigned int irq)
++{
++	struct intc_desc_int *d = get_intc_desc(irq);
++	unsigned long handle = ack_handle[irq];
++	unsigned long addr;
++
++	intc_disable(irq);
++
++	/* read register and write zero only to the assocaited bit */
++
++	if (handle) {
++		addr = INTC_REG(d, _INTC_ADDR_D(handle), 0);
++		switch (_INTC_FN(handle)) {
++		case REG_FN_MODIFY_BASE + 0:	/* 8bit */
++			__raw_readb(addr);
++			__raw_writeb(0xff ^ set_field(0, 1, handle), addr);
++			break;
++		case REG_FN_MODIFY_BASE + 1:	/* 16bit */
++			__raw_readw(addr);
++			__raw_writew(0xffff ^ set_field(0, 1, handle), addr);
++			break;
++		case REG_FN_MODIFY_BASE + 3:	/* 32bit */
++			__raw_readl(addr);
++			__raw_writel(0xffffffff ^ set_field(0, 1, handle),
++				addr);
++			break;
++		default:
++			BUG();
++			break;
++		}
++	}
++}
++#endif
++
+ static struct intc_handle_int *intc_find_irq(struct intc_handle_int *hp,
+ 					     unsigned int nr_hp,
+ 					     unsigned int irq)
+@@ -286,7 +339,12 @@ static unsigned char intc_irq_sense_table[IRQ_TYPE_SENSE_MASK + 1] = {
+ 	[IRQ_TYPE_EDGE_FALLING] = VALID(0),
+ 	[IRQ_TYPE_EDGE_RISING] = VALID(1),
+ 	[IRQ_TYPE_LEVEL_LOW] = VALID(2),
++	/* SH7706, SH7707 and SH7709 do not support high level triggered */
++#if !defined(CONFIG_CPU_SUBTYPE_SH7706) && \
++    !defined(CONFIG_CPU_SUBTYPE_SH7707) && \
++    !defined(CONFIG_CPU_SUBTYPE_SH7709)
+ 	[IRQ_TYPE_LEVEL_HIGH] = VALID(3),
++#endif
+ };
+ 
+ static int intc_set_sense(unsigned int irq, unsigned int type)
+@@ -341,31 +399,6 @@ static intc_enum __init intc_grp_id(struct intc_desc *desc,
+ 	return 0;
+ }
+ 
+-static unsigned int __init intc_prio_value(struct intc_desc *desc,
+-					   intc_enum enum_id, int do_grps)
+-{
+-	struct intc_prio *p = desc->priorities;
+-	unsigned int i;
+-
+-	for (i = 0; p && enum_id && i < desc->nr_priorities; i++) {
+-		p = desc->priorities + i;
+-
+-		if (p->enum_id != enum_id)
+-			continue;
+-
+-		return p->priority;
+-	}
+-
+-	if (do_grps)
+-		return intc_prio_value(desc, intc_grp_id(desc, enum_id), 0);
+-
+-	/* default to the lowest priority possible if no priority is set
+-	 * - this needs to be at least 2 for 5-bit priorities on 7780
+-	 */
+-
+-	return 2;
+-}
+-
+ static unsigned int __init intc_mask_data(struct intc_desc *desc,
+ 					  struct intc_desc_int *d,
+ 					  intc_enum enum_id, int do_grps)
+@@ -444,9 +477,10 @@ static unsigned int __init intc_prio_data(struct intc_desc *desc,
+ 			}
+ 
+ 			fn += (pr->reg_width >> 3) - 1;
+-			bit = pr->reg_width - ((j + 1) * pr->field_width);
+ 
+-			BUG_ON(bit < 0);
++			BUG_ON((j + 1) * pr->field_width > pr->reg_width);
++
++			bit = pr->reg_width - ((j + 1) * pr->field_width);
+ 
+ 			return _INTC_MK(fn, mode,
+ 					intc_get_reg(d, reg_e),
+@@ -461,6 +495,40 @@ static unsigned int __init intc_prio_data(struct intc_desc *desc,
+ 	return 0;
+ }
+ 
++#if defined(CONFIG_CPU_SH3) || defined(CONFIG_CPU_SH4A)
++static unsigned int __init intc_ack_data(struct intc_desc *desc,
++					  struct intc_desc_int *d,
++					  intc_enum enum_id)
++{
++	struct intc_mask_reg *mr = desc->ack_regs;
++	unsigned int i, j, fn, mode;
++	unsigned long reg_e, reg_d;
++
++	for (i = 0; mr && enum_id && i < desc->nr_ack_regs; i++) {
++		mr = desc->ack_regs + i;
++
++		for (j = 0; j < ARRAY_SIZE(mr->enum_ids); j++) {
++			if (mr->enum_ids[j] != enum_id)
++				continue;
++
++			fn = REG_FN_MODIFY_BASE;
++			mode = MODE_ENABLE_REG;
++			reg_e = mr->set_reg;
++			reg_d = mr->set_reg;
++
++			fn += (mr->reg_width >> 3) - 1;
++			return _INTC_MK(fn, mode,
++					intc_get_reg(d, reg_e),
++					intc_get_reg(d, reg_d),
++					1,
++					(mr->reg_width - 1) - j);
++		}
++	}
++
++	return 0;
++}
++#endif
++
+ static unsigned int __init intc_sense_data(struct intc_desc *desc,
+ 					   struct intc_desc_int *d,
+ 					   intc_enum enum_id)
+@@ -477,9 +545,10 @@ static unsigned int __init intc_sense_data(struct intc_desc *desc,
+ 
+ 			fn = REG_FN_MODIFY_BASE;
+ 			fn += (sr->reg_width >> 3) - 1;
+-			bit = sr->reg_width - ((j + 1) * sr->field_width);
+ 
+-			BUG_ON(bit < 0);
++			BUG_ON((j + 1) * sr->field_width > sr->reg_width);
++
++			bit = sr->reg_width - ((j + 1) * sr->field_width);
+ 
+ 			return _INTC_MK(fn, 0, intc_get_reg(d, sr->reg),
+ 					0, sr->field_width, bit);
+@@ -511,6 +580,10 @@ static void __init intc_register_irq(struct intc_desc *desc,
+ 	if (!data[0] && data[1])
+ 		primary = 1;
+ 
++	if (!data[0] && !data[1])
++		pr_warning("intc: missing unique irq mask for "
++			   "irq %d (vect 0x%04x)\n", irq, irq2evt(irq));
++
+ 	data[0] = data[0] ? data[0] : intc_mask_data(desc, d, enum_id, 1);
+ 	data[1] = data[1] ? data[1] : intc_prio_data(desc, d, enum_id, 1);
+ 
+@@ -524,8 +597,10 @@ static void __init intc_register_irq(struct intc_desc *desc,
+ 				      handle_level_irq, "level");
+ 	set_irq_chip_data(irq, (void *)data[primary]);
+ 
+-	/* record the desired priority level */
+-	intc_prio_level[irq] = intc_prio_value(desc, enum_id, 1);
++	/* set priority level
++	 * - this needs to be at least 2 for 5-bit priorities on 7780
++	 */
++	intc_prio_level[irq] = 2;
+ 
+ 	/* enable secondary masking method if present */
+ 	if (data[!primary])
+@@ -559,6 +634,11 @@ static void __init intc_register_irq(struct intc_desc *desc,
+ 
+ 	/* irq should be disabled by default */
+ 	d->chip.mask(irq);
++
++#if defined(CONFIG_CPU_SH3) || defined(CONFIG_CPU_SH4A)
++	if (desc->ack_regs)
++		ack_handle[irq] = intc_ack_data(desc, d, enum_id);
++#endif
+ }
+ 
+ static unsigned int __init save_reg(struct intc_desc_int *d,
+@@ -577,6 +657,17 @@ static unsigned int __init save_reg(struct intc_desc_int *d,
+ 	return 0;
+ }
+ 
++static unsigned char *intc_evt2irq_table;
++
++unsigned int intc_evt2irq(unsigned int vector)
++{
++	unsigned int irq = evt2irq(vector);
++
++	if (intc_evt2irq_table && intc_evt2irq_table[irq])
++		irq = intc_evt2irq_table[irq];
++
++	return irq;
++}
+ 
+ void __init register_intc_controller(struct intc_desc *desc)
+ {
+@@ -585,10 +676,16 @@ void __init register_intc_controller(struct intc_desc *desc)
+ 
+ 	d = alloc_bootmem(sizeof(*d));
+ 
++	INIT_LIST_HEAD(&d->list);
++	list_add(&d->list, &intc_list);
++
+ 	d->nr_reg = desc->mask_regs ? desc->nr_mask_regs * 2 : 0;
+ 	d->nr_reg += desc->prio_regs ? desc->nr_prio_regs * 2 : 0;
+ 	d->nr_reg += desc->sense_regs ? desc->nr_sense_regs : 0;
+ 
++#if defined(CONFIG_CPU_SH3) || defined(CONFIG_CPU_SH4A)
++	d->nr_reg += desc->ack_regs ? desc->nr_ack_regs : 0;
++#endif
+ 	d->reg = alloc_bootmem(d->nr_reg * sizeof(*d->reg));
+ #ifdef CONFIG_SMP
+ 	d->smp = alloc_bootmem(d->nr_reg * sizeof(*d->smp));
+@@ -621,17 +718,143 @@ void __init register_intc_controller(struct intc_desc *desc)
+ 		}
+ 	}
+ 
+-	BUG_ON(k > 256); /* _INTC_ADDR_E() and _INTC_ADDR_D() are 8 bits */
+-
+ 	d->chip.name = desc->name;
+ 	d->chip.mask = intc_disable;
+ 	d->chip.unmask = intc_enable;
+ 	d->chip.mask_ack = intc_disable;
++	d->chip.enable = intc_enable;
++	d->chip.disable = intc_disable;
++	d->chip.shutdown = intc_disable;
+ 	d->chip.set_type = intc_set_sense;
++	d->chip.set_wake = intc_set_wake;
++
++#if defined(CONFIG_CPU_SH3) || defined(CONFIG_CPU_SH4A)
++	if (desc->ack_regs) {
++		for (i = 0; i < desc->nr_ack_regs; i++)
++			k += save_reg(d, k, desc->ack_regs[i].set_reg, 0);
++
++		d->chip.mask_ack = intc_mask_ack;
++	}
++#endif
++
++	BUG_ON(k > 256); /* _INTC_ADDR_E() and _INTC_ADDR_D() are 8 bits */
++
++	/* keep the first vector only if same enum is used multiple times */
++	for (i = 0; i < desc->nr_vectors; i++) {
++		struct intc_vect *vect = desc->vectors + i;
++		int first_irq = evt2irq(vect->vect);
++
++		if (!vect->enum_id)
++			continue;
++
++		for (k = i + 1; k < desc->nr_vectors; k++) {
++			struct intc_vect *vect2 = desc->vectors + k;
++
++			if (vect->enum_id != vect2->enum_id)
++				continue;
++
++			vect2->enum_id = 0;
++
++			if (!intc_evt2irq_table)
++				intc_evt2irq_table = alloc_bootmem(NR_IRQS);
++
++			if (!intc_evt2irq_table) {
++				pr_warning("intc: cannot allocate evt2irq!\n");
++				continue;
++			}
++
++			intc_evt2irq_table[evt2irq(vect2->vect)] = first_irq;
++		}
++	}
+ 
++	/* register the vectors one by one */
+ 	for (i = 0; i < desc->nr_vectors; i++) {
+ 		struct intc_vect *vect = desc->vectors + i;
+ 
++		if (!vect->enum_id)
++			continue;
++
+ 		intc_register_irq(desc, d, vect->enum_id, evt2irq(vect->vect));
+ 	}
+ }
++
++#define irq_to_desc(irq)	(&irq_desc[irq])
++#define for_each_irq_desc(irq, desc)		\
++	for (irq = 0, desc = irq_to_desc(0);	\
++		irq < NR_IRQS; 			\
++		irq++, desc = irq_to_desc(irq))
++
++static int intc_suspend(struct sys_device *dev, pm_message_t state)
++{
++	struct intc_desc_int *d;
++	struct irq_desc *desc;
++	int irq;
++
++	/* get intc controller associated with this sysdev */
++	d = container_of(dev, struct intc_desc_int, sysdev);
++
++	switch (state.event) {
++	case PM_EVENT_ON:
++		if (d->state.event != PM_EVENT_FREEZE)
++			break;
++		for_each_irq_desc(irq, desc) {
++			if (desc->chip != &d->chip)
++				continue;
++			if (desc->status & IRQ_DISABLED)
++				intc_disable(irq);
++			else
++				intc_enable(irq);
++		}
++		break;
++	case PM_EVENT_FREEZE:
++		/* nothing has to be done */
++		break;
++	case PM_EVENT_SUSPEND:
++		/* enable wakeup irqs belonging to this intc controller */
++		for_each_irq_desc(irq, desc) {
++			if ((desc->status & IRQ_WAKEUP) &&
++			    (desc->chip == &d->chip))
++				intc_enable(irq);
++		}
++		break;
++	}
++	d->state = state;
++	return 0;
++}
++
++static int intc_resume(struct sys_device *dev)
++{
++	return intc_suspend(dev, PMSG_ON);
++}
++static struct sysdev_class intc_sysdev_class = {
++	set_kset_name("intc"),
++	.suspend = intc_suspend,
++	.resume = intc_resume,
++};
++
++/* register this intc as sysdev to allow suspend/resume */
++static int __init register_intc_sysdevs(void)
++{
++	struct intc_desc_int *d;
++	int error;
++	int id = 0;
++
++	error = sysdev_class_register(&intc_sysdev_class);
++	if (!error) {
++		list_for_each_entry(d, &intc_list, list) {
++			d->sysdev.id = id;
++			d->sysdev.cls = &intc_sysdev_class;
++			error = sysdev_register(&d->sysdev);
++			if (error)
++				break;
++			id++;
++		}
++	}
++
++	if (error)
++		pr_warning("intc: sysdev registration error\n");
++
++	return error;
++}
++
++device_initcall(register_intc_sysdevs);
+-- 
+1.6.0.6
+

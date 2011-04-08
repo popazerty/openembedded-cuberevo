@@ -1,0 +1,49 @@
+From f90b7cb606154cd056c87844c3dc80882ae14aa0 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Thu, 21 May 2009 12:16:13 +0100
+Subject: [PATCH] serial_stasc: Fix lockup when Rx buffer full
+
+Prior to this patch, a lockup could occur when the software Rx buffer
+became full. In this case any further received data would cause an
+interrupt, but the data wouldn't have been read from the FIFO, leaving
+the interrupt asserted.
+
+Removing the check for the buffer being full means that the FIFO is
+now read in all cases, and the data discarded by tty_insert_flip_char()
+if there is insufficient room. This now matches the behaviour of most
+other serial drivers.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/serial/stasc.c |    9 +--------
+ 1 files changed, 1 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index 0539a9d..ba016af 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -750,20 +750,13 @@ static inline void asc_receive_chars(struct uart_port *port)
+ 		} else if (status & ASC_STA_RBF) {
+ 			count = 1;
+ 		} else {
+-			count = 0;
++			break;
+ 		}
+ 
+ 		/* Check for overrun before reading any data from the
+ 		 * RX FIFO, as this clears the overflow error condition. */
+ 		overrun = status & ASC_STA_OE;
+ 
+-		/* Don't copy more bytes than there are room for in the buffer */
+-		count = tty_buffer_request_room(tty, count);
+-
+-		/* If for any reason we can't copy more data, we're done! */
+-		if (count == 0)
+-			break;
+-
+ 		for ( ; count != 0; count--) {
+ 			c = asc_in(port, RXBUF);
+ 			flag = TTY_NORMAL;
+-- 
+1.6.0.6
+

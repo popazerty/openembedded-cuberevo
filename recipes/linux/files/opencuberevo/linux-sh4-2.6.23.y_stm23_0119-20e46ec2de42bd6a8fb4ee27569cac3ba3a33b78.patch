@@ -1,0 +1,32 @@
+From 20e46ec2de42bd6a8fb4ee27569cac3ba3a33b78 Mon Sep 17 00:00:00 2001
+From: Carl Shaw <car.shaw@st.com>
+Date: Thu, 21 May 2009 17:43:54 +0100
+Subject: [PATCH] sh_stm: Fix SSC setup in STi7141
+
+This patch fixes the SSC setup code for the STi7141 caused by a previous
+change in the number of bits required to store the capability.
+
+See Bugzilla #6212
+
+Signed-off-by: Alok Agarwal <alok.agarwal@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 0832d9c..ddd0bfd 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -418,7 +418,7 @@ void __init stx7141_configure_ssc(struct plat_ssc_data *data)
+ 	int capability = data->capability;
+ 	int pin;
+ 
+-	for (i = 0; i < ARRAY_SIZE(stssc_devices); i++, capability >>= 2) {
++	for (i = 0; i < ARRAY_SIZE(stssc_devices); i++, capability >>= SSC_BITS_SIZE) {
+ 		struct ssc_pio_t *ssc_pio = stssc_devices[i].dev.platform_data;
+ 
+ 		if (capability & SSC_UNCONFIGURED)
+-- 
+1.6.0.6
+

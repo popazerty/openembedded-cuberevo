@@ -1,0 +1,109 @@
+This adds the TMU 1 support in the timer-tmu.c function. It is a backport
+of a patch by Paul Mundt 
+(X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Ftorvalds%2Flinux-2.6.git;a=commitdiff_plain;h=57be2b484a417bffae66359b9b89e7239480b729;hp=1ce7ddd5f4cc754b6afe9eec5cee89ede75348ea)
+
+Signed-off by Giuseppe Cavallaro <peppe.cavallaro@st.com>:
+
+Index: linux/arch/sh/kernel/timers/timer-tmu.c
+===================================================================
+--- linux.orig/arch/sh/kernel/timers/timer-tmu.c	2007-05-04 12:22:41.829509000 +0100
++++ linux/arch/sh/kernel/timers/timer-tmu.c	2007-07-16 17:09:56.962093000 +0100
+@@ -26,9 +26,13 @@
+ #include <asm/clock.h>
+ 
+ #define TMU_TOCR_INIT	0x00
+-#define TMU0_TCR_INIT	0x0020
+-#define TMU_TSTR_INIT	1
+-
++#define TMU_TCR_INIT	0x0020
++#ifndef CONFIG_LTT
++#define TMU_TSTR_INIT	0x1
++#else
++/* Start the TMU channel 1 only if LTTng is configured! */
++#define TMU_TSTR_INIT	0x3
++#endif
+ #define TMU0_TCR_CALIB	0x0000
+ 
+ /* LATCH, which is derived from CLOCK_TICK_RATE is an approximation
+@@ -171,8 +175,8 @@
+ 
+ static void tmu_clk_init(struct clk *clk)
+ {
+-	u8 divisor = TMU0_TCR_INIT & 0x7;
+-	ctrl_outw(TMU0_TCR_INIT, TMU0_TCR);
++	u8 divisor = TMU_TCR_INIT & 0x7;
++	ctrl_outw(TMU_TCR_INIT, TMU0_TCR);
+ 	clk->rate = clk->parent->rate / (4 << (divisor << 1));
+ }
+ 
+@@ -182,19 +186,42 @@
+ 	clk->rate = clk->parent->rate / (4 << (divisor << 1));
+ }
+ 
++static void tmu1_clk_init(struct clk *clk)
++{
++        u8 divisor = TMU_TCR_INIT & 0x7;
++        ctrl_outw(divisor, TMU1_TCR);
++        clk->rate = clk->parent->rate / (4 << (divisor << 1));
++}
++
++static void tmu1_clk_recalc(struct clk *clk)
++{
++        u8 divisor = ctrl_inw(TMU1_TCR) & 0x7;
++        clk->rate = clk->parent->rate / (4 << (divisor << 1));
++}
++
+ static struct clk_ops tmu_clk_ops = {
+ 	.init		= tmu_clk_init,
+ 	.recalc		= tmu_clk_recalc,
+ };
+ 
++static struct clk_ops tmu1_clk_ops = {
++        .init           = tmu1_clk_init,
++        .recalc         = tmu1_clk_recalc,
++};
++
+ static struct clk tmu0_clk = {
+ 	.name		= "tmu0_clk",
+ 	.ops		= &tmu_clk_ops,
+ };
+ 
++static struct clk tmu1_clk = {
++        .name           = "tmu1_clk",
++        .ops            = &tmu1_clk_ops,
++};
++
+ static int tmu_timer_start(void)
+ {
+-	ctrl_outb(TMU_TSTR_INIT, TMU_TSTR);
++	ctrl_outb(ctrl_inb(TMU_TSTR) | TMU_TSTR_INIT, TMU_TSTR);
+ 	return 0;
+ }
+ 
+@@ -209,6 +236,7 @@
+ 	setup_irq(TIMER_IRQ, &tmu_irq);
+ 
+ 	tmu0_clk.parent = clk_get("module_clk");
++	tmu1_clk.parent = clk_get("module_clk");
+ 
+ 	/* Start TMU0 */
+ 	tmu_timer_stop();
+@@ -218,13 +246,17 @@
+ 
+ 	clk_register(&tmu0_clk);
+ 	clk_enable(&tmu0_clk);
+-
++	clk_register(&tmu1_clk);
++	clk_enable(&tmu1_clk);
+ 	actual_latch = (clk_get_rate(&tmu0_clk) + HZ / 2) / HZ;
+ 	printk(KERN_DEBUG "TMU0: ticks per jiffy = %ld\n", actual_latch);
+ 
+ 	ctrl_outl(actual_latch, TMU0_TCOR);
+ 	ctrl_outl(actual_latch, TMU0_TCNT);
+ 
++	ctrl_outl(~0, TMU1_TCOR);
++	ctrl_outl(~0, TMU1_TCNT);
++
+ 	tmu_timer_start();
+ 
+ 	return 0;

@@ -1,0 +1,521 @@
+From f5a6466b1fb453141b551808f0751ccef7a61912 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Tue, 29 Sep 2009 18:36:39 +0100
+Subject: [PATCH] sh: Minor optimisations to FPU handling
+
+A number of small optimisations to FPU handling, in particular:
+
+ - move the task USEDFPU flag from the thread_info flags field (which
+   is accessed asynchronously to the thread) to a new status field,
+   which is only accessed by the thread itself. This allows locking to
+   be removed in most cases, or can be reduced to a preempt_lock().
+   This mimics the i386 behaviour.
+
+ - move the modification of regs->sr and thread_info->status flags out
+   of save_fpu() to __unlazy_fpu(). This gives the compiler a better
+   chance to optimise things, as well as making save_fpu() symmetrical
+   with restore_fpu() and init_fpu().
+
+ - wrap do_fpu_state_restore (called from exception handler) around a
+   new fpu_state_restore() function, which can be called from
+   __switch_to() and so correctly updates the status register and
+   avoids a useless structure copy.
+
+ - implement prepare_to_copy(), so that when creating a thread, we can
+   unlazy the FPU prior to copying the thread data structures.
+
+Also make sure that the FPU is disabled while in the kernel, in
+particular while booting, and for newly created kernel threads,
+
+In a very artificial benchmark, the execution time for 2500000
+context switches was reduced from 50 to 45 seconds.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/init.c    |    5 ++-
+ arch/sh/kernel/cpu/sh4/fpu.c |   30 ++++++++++--------
+ arch/sh/kernel/process.c     |   36 ++++++++++++---------
+ arch/sh/kernel/signal.c      |    1 +
+ arch/sh/kernel/traps.c       |    3 ++
+ include/asm-sh/fpu.h         |   70 ++++++++++++++++++++++++++++++++++++++++++
+ include/asm-sh/processor.h   |   56 +--------------------------------
+ include/asm-sh/system.h      |    6 ---
+ include/asm-sh/thread_info.h |   13 ++++++-
+ 9 files changed, 128 insertions(+), 92 deletions(-)
+ create mode 100644 include/asm-sh/fpu.h
+
+diff --git a/arch/sh/kernel/cpu/init.c b/arch/sh/kernel/cpu/init.c
+index 0a537fa..cacce4e 100644
+--- a/arch/sh/kernel/cpu/init.c
++++ b/arch/sh/kernel/cpu/init.c
+@@ -23,6 +23,7 @@
+ #include <asm/io.h>
+ #include <asm/ubc.h>
+ #include <asm/smp.h>
++#include <asm/fpu.h>
+ 
+ /*
+  * Generic wrapper for command line arguments to disable on-chip
+@@ -244,12 +245,12 @@ asmlinkage void __cpuinit sh_cpu_init(void)
+ 	if (fpu_disabled) {
+ 		printk("FPU Disabled\n");
+ 		current_cpu_data.flags &= ~CPU_HAS_FPU;
+-		disable_fpu();
+ 	}
+ 
+ 	/* FPU initialization */
++	disable_fpu();
+ 	if ((current_cpu_data.flags & CPU_HAS_FPU)) {
+-		clear_thread_flag(TIF_USEDFPU);
++		current_thread_info()->status &= ~TS_USEDFPU;
+ 		clear_used_math();
+ 	}
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/fpu.c b/arch/sh/kernel/cpu/sh4/fpu.c
+index ed0783d..92d5425 100644
+--- a/arch/sh/kernel/cpu/sh4/fpu.c
++++ b/arch/sh/kernel/cpu/sh4/fpu.c
+@@ -19,6 +19,7 @@
+ #include <asm/processor.h>
+ #include <asm/system.h>
+ #include <asm/io.h>
++#include <asm/fpu.h>
+ #include "sh4_fpu.h"
+ 
+ /* The PR (precision) bit in the FP Status Register must be clear when
+@@ -44,13 +45,11 @@ static unsigned int fpu_exception_flags;
+ 
+ /*
+  * Save FPU registers onto task structure.
+- * Assume called with FPU enabled (SR.FD=0).
+  */
+-void save_fpu(struct task_struct *tsk, struct pt_regs *regs)
++void save_fpu(struct task_struct *tsk)
+ {
+ 	unsigned long dummy;
+ 
+-	clear_tsk_thread_flag(tsk, TIF_USEDFPU);
+ 	enable_fpu();
+ 	asm volatile ("sts.l	fpul, @-%0\n\t"
+ 		      "sts.l	fpscr, @-%0\n\t"
+@@ -95,7 +94,6 @@ void save_fpu(struct task_struct *tsk, struct pt_regs *regs)
+ 		      :"memory");
+ 
+ 	disable_fpu();
+-	release_fpu(regs);
+ }
+ 
+ static void restore_fpu(struct task_struct *tsk)
+@@ -465,7 +463,7 @@ do_fpu_error(unsigned long r4, unsigned long r5, unsigned long r6,
+ 	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	struct task_struct *tsk = current;
+ 
+-	save_fpu(tsk, regs);
++	__unlazy_fpu(tsk, regs);
+ 	fpu_exception_flags = 0;
+ 	if (ieee_fpe_handler(regs)) {
+ 		tsk->thread.fpu.hard.fpscr &=
+@@ -475,7 +473,7 @@ do_fpu_error(unsigned long r4, unsigned long r5, unsigned long r6,
+ 		tsk->thread.fpu.hard.fpscr |= (fpu_exception_flags >> 10);
+ 		grab_fpu(regs);
+ 		restore_fpu(tsk);
+-		set_tsk_thread_flag(tsk, TIF_USEDFPU);
++		task_thread_info(tsk)->status |= TS_USEDFPU;
+ 		if ((((tsk->thread.fpu.hard.fpscr & FPSCR_ENABLE_MASK) >> 7) &
+ 		     (fpu_exception_flags >> 2)) == 0) {
+ 			return;
+@@ -485,20 +483,17 @@ do_fpu_error(unsigned long r4, unsigned long r5, unsigned long r6,
+ 	force_sig(SIGFPE, tsk);
+ }
+ 
+-asmlinkage void
+-do_fpu_state_restore(unsigned long r4, unsigned long r5, unsigned long r6,
+-		     unsigned long r7, struct pt_regs __regs)
++void fpu_state_restore(struct pt_regs *regs)
+ {
+-	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	struct task_struct *tsk = current;
+ 
+ 	grab_fpu(regs);
+ 	if (unlikely(!user_mode(regs))) {
+-		printk(KERN_ERR "BUG: FPU is used in kernel mode.\n");
++		BUG();
+ 		return;
+ 	}
+ 
+-	if (used_math()) {
++	if (likely(used_math())) {
+ 		/* Using the FPU again.  */
+ 		restore_fpu(tsk);
+ 	} else {
+@@ -506,6 +501,15 @@ do_fpu_state_restore(unsigned long r4, unsigned long r5, unsigned long r6,
+ 		fpu_init();
+ 		set_used_math();
+ 	}
+-	set_tsk_thread_flag(tsk, TIF_USEDFPU);
++	task_thread_info(tsk)->status |= TS_USEDFPU;
+ 	tsk->fpu_counter++;
+ }
++
++asmlinkage void
++do_fpu_state_restore(unsigned long r4, unsigned long r5, unsigned long r6,
++		     unsigned long r7, struct pt_regs __regs)
++{
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
++
++	fpu_state_restore(regs);
++}
+diff --git a/arch/sh/kernel/process.c b/arch/sh/kernel/process.c
+index eb849e1..c6f6188 100644
+--- a/arch/sh/kernel/process.c
++++ b/arch/sh/kernel/process.c
+@@ -26,6 +26,7 @@
+ #include <asm/system.h>
+ #include <asm/ubc.h>
+ #include <asm/watchdog.h>
++#include <asm/fpu.h>
+ 
+ static int hlt_counter;
+ int ubc_usercnt = 0;
+@@ -184,7 +185,10 @@ int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
+ 	regs.regs[5] = (unsigned long)fn;
+ 
+ 	regs.pc = (unsigned long)kernel_thread_helper;
+-	regs.sr = (1 << 30);
++	regs.sr = SR_MD;
++#if defined(CONFIG_SH_FPU)
++	regs.sr |= SR_FD;
++#endif
+ 
+ 	/* Ok, create the new process.. */
+ 	pid =  do_fork(flags | CLONE_VM | CLONE_UNTRACED, 0,
+@@ -265,6 +269,15 @@ int dump_task_fpu(struct task_struct *tsk, elf_fpregset_t *fpu)
+ 	return fpvalid;
+ }
+ 
++/*
++ * This gets called before we allocate a new thread and copy
++ * the current task into it.
++ */
++void prepare_to_copy(struct task_struct *tsk)
++{
++	unlazy_fpu(tsk, task_pt_regs(tsk));
++}
++
+ asmlinkage void ret_from_fork(void);
+ 
+ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
+@@ -273,13 +286,6 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
+ {
+ 	struct thread_info *ti = task_thread_info(p);
+ 	struct pt_regs *childregs;
+-#if defined(CONFIG_SH_FPU)
+-	struct task_struct *tsk = current;
+-
+-	unlazy_fpu(tsk, regs);
+-	p->thread.fpu = tsk->thread.fpu;
+-	copy_to_stopped_child_used_math(p);
+-#endif
+ 
+ 	childregs = task_pt_regs(p);
+ 	*childregs = *regs;
+@@ -290,7 +296,7 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
+ 	} else {
+ 		childregs->regs[15] = (unsigned long)childregs;
+ 		ti->addr_limit = KERNEL_DS;
+-		clear_thread_flag(TIF_USEDFPU);
++		ti->status &= ~TS_USEDFPU;
+ 		p->fpu_counter = 0;
+ 	}
+ 
+@@ -359,10 +365,11 @@ struct task_struct *__switch_to(struct task_struct *prev,
+ 
+ #if defined(CONFIG_SH_FPU)
+ 	unlazy_fpu(prev, task_pt_regs(prev));
+-#endif
++
+ 	/* we're going to use this soon, after a few expensive things */
+ 	if (next->fpu_counter > 5)
+ 		prefetch(&next_t->fpu.hard);
++#endif
+ 
+ #ifdef CONFIG_MMU
+ 	/*
+@@ -392,17 +399,16 @@ struct task_struct *__switch_to(struct task_struct *prev,
+ 		ctrl_outw(0, UBC_BBRB);
+ #endif
+ 	}
++
++#if defined(CONFIG_SH_FPU)
+ 	/* If the task has used fpu the last 5 timeslices, just do a full
+ 	 * restore of the math state immediately to avoid the trap; the
+ 	 * chances of needing FPU soon are obviously high now
+ 	 */
+ 	if (next->fpu_counter > 5) {
+-		/* pass ptregs because the do_fpu_state_restore
+-		   checks if the FPU is used in Kernel space. */
+-		do_fpu_state_restore(0, 0, 0, 0, *task_pt_regs(next));
+-		/* we have to re-grab the fpu for the "next" tsk. */
+-		task_pt_regs(next)->sr &= ~SR_FD;
++		fpu_state_restore(task_pt_regs(next));
+ 	}
++#endif
+ 
+ 	return prev;
+ }
+diff --git a/arch/sh/kernel/signal.c b/arch/sh/kernel/signal.c
+index a8d04ae..a4d0d8a 100644
+--- a/arch/sh/kernel/signal.c
++++ b/arch/sh/kernel/signal.c
+@@ -29,6 +29,7 @@
+ #include <asm/uaccess.h>
+ #include <asm/pgtable.h>
+ #include <asm/cacheflush.h>
++#include <asm/fpu.h>
+ 
+ #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
+ 
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index 2a503d9..8237b67 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -785,7 +785,10 @@ asmlinkage void do_divide_error(unsigned long r4, unsigned long r5,
+ }
+ #endif
+ 
++/* arch/sh/kernel/cpu/sh4/fpu.c */
+ extern int do_fpu_inst(unsigned short, struct pt_regs *);
++extern asmlinkage void do_fpu_state_restore(unsigned long r4, unsigned long r5,
++		unsigned long r6, unsigned long r7, struct pt_regs __regs);
+ 
+ asmlinkage void do_reserved_inst(unsigned long r4, unsigned long r5,
+ 				unsigned long r6, unsigned long r7,
+diff --git a/include/asm-sh/fpu.h b/include/asm-sh/fpu.h
+new file mode 100644
+index 0000000..88cf011
+--- /dev/null
++++ b/include/asm-sh/fpu.h
+@@ -0,0 +1,70 @@
++#ifndef __ASM_SH_FPU_H
++#define __ASM_SH_FPU_H
++
++/*
++ * FPU lazy state save handling.
++ */
++
++static __inline__ void disable_fpu(void)
++{
++	unsigned long __dummy;
++
++	/* Set FD flag in SR */
++	__asm__ __volatile__("stc	sr, %0\n\t"
++			     "or	%1, %0\n\t"
++			     "ldc	%0, sr"
++			     : "=&r" (__dummy)
++			     : "r" (SR_FD));
++}
++
++static __inline__ void enable_fpu(void)
++{
++	unsigned long __dummy;
++
++	/* Clear out FD flag in SR */
++	__asm__ __volatile__("stc	sr, %0\n\t"
++			     "and	%1, %0\n\t"
++			     "ldc	%0, sr"
++			     : "=&r" (__dummy)
++			     : "r" (~SR_FD));
++}
++
++static __inline__ void release_fpu(struct pt_regs *regs)
++{
++	regs->sr |= SR_FD;
++}
++
++static __inline__ void grab_fpu(struct pt_regs *regs)
++{
++	regs->sr &= ~SR_FD;
++}
++
++void save_fpu(struct task_struct *tsk);
++void fpu_state_restore(struct pt_regs *regs);
++
++static inline void __unlazy_fpu(struct task_struct *tsk, struct pt_regs *regs)
++{
++	if (task_thread_info(tsk)->status & TS_USEDFPU) {
++		task_thread_info(tsk)->status &= ~TS_USEDFPU;
++		save_fpu(tsk);
++		release_fpu(regs);
++	} else
++		tsk->fpu_counter = 0;
++}
++
++static inline void clear_fpu(struct task_struct *tsk, struct pt_regs *regs)
++{
++	if (task_thread_info(tsk)->status & TS_USEDFPU) {
++		task_thread_info(tsk)->status &= ~TS_USEDFPU;
++		release_fpu(regs);
++	}
++}
++
++static inline void unlazy_fpu(struct task_struct *tsk, struct pt_regs *regs)
++{
++	preempt_disable();
++	__unlazy_fpu(tsk, regs);
++	preempt_enable();
++}
++
++#endif /* __ASM_SH_FPU_H */
+diff --git a/include/asm-sh/processor.h b/include/asm-sh/processor.h
+index eb9aaac..328aa74 100644
+--- a/include/asm-sh/processor.h
++++ b/include/asm-sh/processor.h
+@@ -106,6 +106,7 @@ extern struct sh_cpuinfo cpu_data[];
+  * IMASK-bit:
+  *     Interrupt level mask
+  */
++#define SR_MD		0x40000000
+ #define SR_FD		0x00008000
+ #define SR_DSP		0x00001000
+ #define SR_IMASK	0x000000f0
+@@ -180,7 +181,7 @@ struct mm_struct;
+ extern void release_thread(struct task_struct *);
+ 
+ /* Prepare to copy thread state - unlazy all lazy status */
+-#define prepare_to_copy(tsk)	do { } while (0)
++void prepare_to_copy(struct task_struct *tsk);
+ 
+ /*
+  * create a kernel thread without removing it from tasklists
+@@ -191,59 +192,6 @@ extern int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
+ #define copy_segments(p, mm)	do { } while(0)
+ #define release_segments(mm)	do { } while(0)
+ 
+-/*
+- * FPU lazy state save handling.
+- */
+-
+-static __inline__ void disable_fpu(void)
+-{
+-	unsigned long __dummy;
+-
+-	/* Set FD flag in SR */
+-	__asm__ __volatile__("stc	sr, %0\n\t"
+-			     "or	%1, %0\n\t"
+-			     "ldc	%0, sr"
+-			     : "=&r" (__dummy)
+-			     : "r" (SR_FD));
+-}
+-
+-static __inline__ void enable_fpu(void)
+-{
+-	unsigned long __dummy;
+-
+-	/* Clear out FD flag in SR */
+-	__asm__ __volatile__("stc	sr, %0\n\t"
+-			     "and	%1, %0\n\t"
+-			     "ldc	%0, sr"
+-			     : "=&r" (__dummy)
+-			     : "r" (~SR_FD));
+-}
+-
+-static __inline__ void release_fpu(struct pt_regs *regs)
+-{
+-	regs->sr |= SR_FD;
+-}
+-
+-static __inline__ void grab_fpu(struct pt_regs *regs)
+-{
+-	regs->sr &= ~SR_FD;
+-}
+-
+-extern void save_fpu(struct task_struct *__tsk, struct pt_regs *regs);
+-
+-#define unlazy_fpu(tsk, regs) do {			\
+-	if (test_tsk_thread_flag(tsk, TIF_USEDFPU))	\
+-		save_fpu(tsk, regs);			\
+-	else						\
+-		tsk->fpu_counter = 0;			\
+-} while (0)
+-
+-#define clear_fpu(tsk, regs) do {				\
+-	if (test_tsk_thread_flag(tsk, TIF_USEDFPU)) {		\
+-		clear_tsk_thread_flag(tsk, TIF_USEDFPU);	\
+-		release_fpu(regs);				\
+-	}							\
+-} while (0)
+ 
+ /* Double presision, NANS as NANS, rounding to nearest, no exceptions */
+ #define FPSCR_INIT  0x00080000
+diff --git a/include/asm-sh/system.h b/include/asm-sh/system.h
+index 615d711..d68e8a9 100644
+--- a/include/asm-sh/system.h
++++ b/include/asm-sh/system.h
+@@ -364,12 +364,6 @@ asmlinkage void bug_trap_handler(unsigned long r4, unsigned long r5,
+ 				 unsigned long r6, unsigned long r7,
+ 				 struct pt_regs __regs);
+ 
+-#if defined(CONFIG_CPU_SH4) && defined(CONFIG_CPU_SUBTYPE_SHX3) || \
+-	defined(CONFIG_SH_FPU)
+-asmlinkage void do_fpu_state_restore(unsigned long r4, unsigned long r5,
+-	unsigned long r6, unsigned long r7, struct pt_regs __regs);
+-#endif
+-
+ #define arch_align_stack(x) (x)
+ 
+ #endif
+diff --git a/include/asm-sh/thread_info.h b/include/asm-sh/thread_info.h
+index 2cf209b..93eb61b 100644
+--- a/include/asm-sh/thread_info.h
++++ b/include/asm-sh/thread_info.h
+@@ -19,6 +19,7 @@ struct thread_info {
+ 	struct task_struct	*task;		/* main task structure */
+ 	struct exec_domain	*exec_domain;	/* execution domain */
+ 	unsigned long		flags;		/* low level flags */
++	__u32			status;		/* thread synchronous flags */
+ 	__u32			cpu;
+ 	int			preempt_count; /* 0 => preemptable, <0 => BUG */
+ 	mm_segment_t		addr_limit;	/* thread address space */
+@@ -56,6 +57,7 @@ struct thread_info {
+ 	.task		= &tsk,			\
+ 	.exec_domain	= &default_exec_domain,	\
+ 	.flags		= 0,			\
++	.status		= 0,			\
+ 	.cpu		= 0,			\
+ 	.preempt_count	= 1,			\
+ 	.addr_limit	= KERNEL_DS,		\
+@@ -112,7 +114,6 @@ static inline struct thread_info *current_thread_info(void)
+ #define TIF_RESTORE_SIGMASK	3	/* restore signal mask in do_signal() */
+ #define TIF_SINGLESTEP		4	/* singlestepping active */
+ #define TIF_KERNEL_TRACE	5	/* kernel trace active */
+-#define TIF_USEDFPU		16	/* FPU was used by this task this quantum (SMP) */
+ #define TIF_POLLING_NRFLAG	17	/* true if poll_idle() is polling TIF_NEED_RESCHED */
+ #define TIF_MEMDIE		18
+ #define TIF_FREEZE		19
+@@ -126,7 +127,6 @@ static inline struct thread_info *current_thread_info(void)
+ #define _TIF_RESTORE_SIGMASK	(1<<TIF_RESTORE_SIGMASK)
+ #define _TIF_SINGLESTEP		(1<<TIF_SINGLESTEP)
+ #define _TIF_KERNEL_TRACE	(1<<TIF_KERNEL_TRACE)
+-#define _TIF_USEDFPU		(1<<TIF_USEDFPU)
+ #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
+ #define _TIF_FREEZE		(1<<TIF_FREEZE)
+ #define _TIF_UAC_NOPRINT	(1<<TIF_UAC_NOPRINT)
+@@ -154,6 +154,15 @@ static inline struct thread_info *current_thread_info(void)
+ 	(int __user *) (addr));	\
+ })
+ 
++/*
++ * Thread-synchronous status.
++ *
++ * This is different from the flags in that nobody else
++ * ever touches our thread-synchronous status, so we don't
++ * have to worry about atomic accesses.
++ */
++#define TS_USEDFPU		0x0001	/* FPU used by this task this quantum */
++
+ #endif /* __KERNEL__ */
+ 
+ #endif /* __ASM_SH_THREAD_INFO_H */
+-- 
+1.6.0.6
+

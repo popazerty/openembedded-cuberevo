@@ -1,0 +1,1291 @@
+From 9b8127a16b66aeeda78b7170b3ee3c254b54ed3e Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 22 Apr 2009 09:41:21 +0100
+Subject: [PATCH] stm_nand_emi: First release of STM_NAND_EMI driver
+
+This is the first release of the STMicroelectronics NAND 'EMI bit-banging'
+driver.  Previously, NAND support was provided using the generic plat_nand
+driver.  This required a large amount of duplicated configuration code across
+the different SoC setup files.  This code has now been moved to the dedicated
+STM_NAND_EMI driver.
+
+Support has also been added for FDMA transfers, and cache-line transfers (still
+experimental!)
+
+Currently supports stx7200.  Others SoCs will be supported in subsequent patches.
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/common/mb588.c       |   79 +++-
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |  133 +-----
+ drivers/mtd/nand/Kconfig               |   44 ++
+ drivers/mtd/nand/Makefile              |    1 +
+ drivers/mtd/nand/stm_nand_emi.c        |  783 ++++++++++++++++++++++++++++++++
+ drivers/stm/emi.c                      |   13 +-
+ include/linux/stm/emi.h                |    1 +
+ include/linux/stm/nand.h               |   31 ++
+ include/linux/stm/soc.h                |    2 +-
+ 9 files changed, 954 insertions(+), 133 deletions(-)
+ create mode 100644 drivers/mtd/nand/stm_nand_emi.c
+ create mode 100644 include/linux/stm/nand.h
+
+diff --git a/arch/sh/boards/st/common/mb588.c b/arch/sh/boards/st/common/mb588.c
+index 4df5528..5ba2455 100644
+--- a/arch/sh/boards/st/common/mb588.c
++++ b/arch/sh/boards/st/common/mb588.c
+@@ -23,6 +23,8 @@
+ #include <linux/init.h>
+ #include <linux/platform_device.h>
+ #include <linux/mtd/partitions.h>
++#include <linux/mtd/nand.h>
++#include <linux/stm/nand.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/emi.h>
+ #include <asm/mach/stem.h>
+@@ -42,8 +44,26 @@ static struct mtd_partition nand_partitions[] = {
+ static struct plat_stmnand_data nand_config = {
+ 	.emi_bank		= STEM_CS0_BANK,
+ 	.emi_withinbankoffset	= STEM_CS0_OFFSET,
++	.chip_delay		= 30,
++	.mtd_parts		= nand_partitions,
++	.nr_parts		= ARRAY_SIZE(nand_partitions),
++	.rbn_port		= -1,
++	.rbn_pin		= -1,
+ 
+-	/* Timing data for ST-NAND512W3A2C */
++#if defined(CONFIG_CPU_SUBTYPE_STX7200)
++	/* Timing data for SoCs using STM_NAND_EMI/FLEX/AFM drivers */
++	.timing_data = &(struct nand_timing_data) {
++		.sig_setup	= 50,		/* times in ns */
++		.sig_hold	= 50,
++		.CE_deassert	= 0,
++		.WE_to_RBn	= 100,
++		.wr_on		= 10,
++		.wr_off		= 40,
++		.rd_on		= 10,
++		.rd_off		= 40,
++	},
++#else
++	/* Legacy Timing data for generic plat_nand driver */
+ 	.emi_timing_data = &(struct emi_timing_data) {
+ 		.rd_cycle_time	 = 50,		 /* times in ns */
+ 		.rd_oee_start	 = 0,
+@@ -56,14 +76,59 @@ static struct plat_stmnand_data nand_config = {
+ 		.wr_oee_end	 = 10,
+ 		.wait_active_low = 0,
+ 	},
++#endif
++};
+ 
+-	.chip_delay		= 30,
+-	.mtd_parts		= nand_partitions,
+-	.nr_parts		= ARRAY_SIZE(nand_partitions),
+-	.rbn_port		= -1,
+-	.rbn_pin		= -1,
++#if defined(CONFIG_CPU_SUBTYPE_STX7200)
++/* For SoCs migrated to STM_NAND_EMI/FLEX/AFM drivers, setup template platform
++ * device structure.  SoC setup will configure SoC specific data.
++ */
++static const char *nand_part_probes[] = { "cmdlinepart", NULL };
++
++static struct platform_device nand_device = {
++	.name		= "stm-nand",
++	.id		= STEM_CS0_BANK,
++	.num_resources	= 2,	/* Note: EMI mem configured by driver */
++	.resource	= (struct resource[]) {
++		[0] = {
++			/* NAND controller base address (FLEX/AFM) */
++			.name		= "flex_mem",
++			.flags		= IORESOURCE_MEM,
++		},
++		[1] = {
++			/* NAND controller IRQ (FLEX/AFM) */
++			.name		= "flex_irq",
++			.flags		= IORESOURCE_IRQ,
++		},
++		[2] = {
++			/* EMI Bank base address */
++			.name		= "emi_mem",
++			.flags		= IORESOURCE_MEM,
++		},
++
++	},
++
++	.dev		= {
++		.platform_data = &(struct platform_nand_data) {
++			.chip =
++			{
++				.chip_delay	= 30,
++				.partitions	= nand_partitions,
++				.nr_partitions	= ARRAY_SIZE(nand_partitions),
++				.part_probe_types = nand_part_probes,
++			},
++			.ctrl =
++			{
++				.priv = &nand_config,
++			},
++		},
++	},
+ };
+ 
++
++
++#endif
++
+ static int __init mb588_init(void)
+ {
+ #if defined(CONFIG_CPU_SUBTYPE_STX7105)
+@@ -71,7 +136,7 @@ static int __init mb588_init(void)
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7111)
+ 	stx7111_configure_nand(&nand_config);
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7200)
+-	stx7200_configure_nand(&nand_config);
++	stx7200_configure_nand(&nand_device);
+ #else
+ #	error Unsupported SOC.
+ #endif
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index d9fec29..0fccacb 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -869,134 +869,29 @@ void __init stx7200_configure_lirc(lirc_scd_t *scd)
+ 	platform_device_register(&lirc_device);
+ }
+ 
+-/* NAND Resources ---------------------------------------------------------- */
+-
+-static void nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
+-{
+-	struct nand_chip *this = mtd->priv;
+-
+-	if (ctrl & NAND_CTRL_CHANGE) {
+-
+-		if (ctrl & NAND_CLE) {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
+-						   (unsigned int)(1 << 17));
+-		}
+-		else {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
+-						   ~(unsigned int)(1 << 17));
+-		}
+-
+-		if (ctrl & NAND_ALE) {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
+-						   (unsigned int)(1 << 18));
+-		}
+-		else {
+-			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
+-						   ~(unsigned int)(1 << 18));
+-		}
+-	}
+-
+-	if (cmd != NAND_CMD_NONE) {
+-		writeb(cmd, this->IO_ADDR_W);
+-	}
+-}
+-
+-static void nand_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
+-{
+-	int i;
+-	struct nand_chip *chip = mtd->priv;
+-
+-	/* write buf up to 4-byte boundary */
+-	while ((unsigned int)buf & 0x3) {
+-		writeb(*buf++, chip->IO_ADDR_W);
+-		len--;
+-	}
+-
+-	writesl(chip->IO_ADDR_W, buf, len/4);
+-
+-	/* mop up trailing bytes */
+-	for (i = (len & ~0x3); i < len; i++) {
+-		writeb(buf[i], chip->IO_ADDR_W);
+-	}
+-}
+-
+-static void nand_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
+-{
+-	int i;
+-	struct nand_chip *chip = mtd->priv;
+-
+-	/* read buf up to 4-byte boundary */
+-	while ((unsigned int)buf & 0x3) {
+-		*buf++ = readb(chip->IO_ADDR_R);
+-		len--;
+-	}
+-
+-	readsl(chip->IO_ADDR_R, buf, len/4);
+-
+-	/* mop up trailing bytes */
+-	for (i = (len & ~0x3); i < len; i++) {
+-		buf[i] = readb(chip->IO_ADDR_R);
+-	}
+-}
+-
+-static struct stpio_pin *nand_RBn_pio = NULL;
+-
+-static int nand_device_ready(struct mtd_info *mtd) {
+-
+-	return stpio_get_pin(nand_RBn_pio);
+-}
+-
+-static const char *nand_part_probes[] = { "cmdlinepart", NULL };
+-
+-static struct platform_device nand_flash[] = {
+-	EMI_NAND_DEVICE(0),
+-	EMI_NAND_DEVICE(1),
+-	EMI_NAND_DEVICE(2),
+-	EMI_NAND_DEVICE(3),
+-	EMI_NAND_DEVICE(4),
+- };
+-
++/* NAND setup -------------------------------------------------------------- */
+ 
+ /*
+- * stx7200_configure_nand - Configures NAND support for the STx7200
+- *
+- * Requires generic platform NAND driver (CONFIG_MTD_NAND_PLATFORM).
+- * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
+- * command line.
++ * Requires STMicroelectonics NAND driver (CONFIG_MTD_NAND_STM_EMI).  Use
++ * 'stm-nand.x' as ID for specifying MTD partitions on the kernel command line.
+  */
+-void __init stx7200_configure_nand(struct plat_stmnand_data *data)
++void __init stx7200_configure_nand(struct platform_device *pdev)
+ {
+-	unsigned int bank_base;
+-	unsigned int emi_bank = data->emi_bank;
++	/* EMI Bank base address */
++	/*  - setup done in stm_nand_emi probe */
+ 
+-	struct platform_nand_data *nand_private_data =
+-		nand_flash[emi_bank].dev.platform_data;
++	/* NAND Controller base address */
++	pdev->resource[0].start	= 0xFDF01000;
++	pdev->resource[0].end	= 0xFDF01FFF;
+ 
+-	if (data->rbn_port >= 0) {
+-		if (nand_RBn_pio == NULL) {
+-			nand_RBn_pio = stpio_request_pin(data->rbn_port, data->rbn_pin,
+-					 "nand_RBn", STPIO_IN);
+-		}
+-		if (nand_RBn_pio) {
+-			nand_private_data->ctrl.dev_ready = nand_device_ready;
+-		}
+-	}
++	/* NAND Controller IRQ */
++	pdev->resource[1].start	= ILC_IRQ(123);
++	pdev->resource[1].end	= ILC_IRQ(123);
+ 
+-	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
+-
+-	printk("Configuring EMI Bank%d for NAND device\n", emi_bank);
+-	emi_config_nand(data->emi_bank, data->emi_timing_data);
+-
+-	nand_flash[emi_bank].resource[0].start = bank_base;
+-	nand_flash[emi_bank].resource[0].end = bank_base + (1 << 18);
+-
+-	nand_private_data->chip.chip_delay = data->chip_delay;
+-	nand_private_data->chip.partitions = data->mtd_parts;
+-	nand_private_data->chip.nr_partitions = data->nr_parts;
+-
+-	platform_device_register(&nand_flash[emi_bank]);
++	platform_device_register(pdev);
+ }
+ 
++
+ /* Hardware RNG resources -------------------------------------------------- */
+ 
+ static struct platform_device hwrandom_rng_device = {
+diff --git a/drivers/mtd/nand/Kconfig b/drivers/mtd/nand/Kconfig
+index f1d60b6..f338d2b 100644
+--- a/drivers/mtd/nand/Kconfig
++++ b/drivers/mtd/nand/Kconfig
+@@ -280,5 +280,49 @@ config MTD_NAND_PLATFORM
+ 	  devices. You will need to provide platform-specific functions
+ 	  via platform_data.
+ 
++config MTD_NAND_STM_EMI
++       tristate "STMicroelectronics NAND support: EMI 'bit-banging'"
++       depends on MTD_NAND
++       depends on (CPU_SUBTYPE_STX7111 || \
++       	       	  	CPU_SUBTYPE_STX7200 || \
++			CPU_SUBTYPE_STX7105 || \
++			CPU_SUBTYPE_STX7141)
++       help
++         Enables the STMicroelectronics NAND driver for platforms in which the
++         device is connected via an EMI bank.
++
++choice
++	prompt "Data Transfer"
++	depends on MTD_NAND_STM_EMI
++	default STM_NAND_EMI_LONGSL
++
++config STM_NAND_EMI_BYTE
++       bool "Legacy byte access"
++       help
++         Use legacy byte-wise access for page transfers.
++
++config STM_NAND_EMI_LONGSL
++	bool "Standard"
++	help
++	  Use optimised multi-byte routines for page transfers.
++	
++config STM_NAND_EMI_FDMA
++	bool "FDMA Transfers"
++	depends on STM_DMA
++	help
++	  Use FDMA trasfers for page transfers.  Reduces CPU load during page
++	  read/writes.  Setup overheads may outweigh gains for small-page
++	  devices.
++
++config STM_NAND_EMI_CACHED
++       	depends on EXPERIMENTAL	
++	bool "Cached Transfers [EXPERIMENTAL]"
++	help
++	  Perform page transers via the cache-line.  Reduces the impact of STBus
++	  latencies at the expence of an incresed IRQ latency.
++
++endchoice
++
++
+ 
+ endif # MTD_NAND
+diff --git a/drivers/mtd/nand/Makefile b/drivers/mtd/nand/Makefile
+index edba1db..e3b220b 100644
+--- a/drivers/mtd/nand/Makefile
++++ b/drivers/mtd/nand/Makefile
+@@ -27,5 +27,6 @@ obj-$(CONFIG_MTD_NAND_AT91)		+= at91_nand.o
+ obj-$(CONFIG_MTD_NAND_CM_X270)		+= cmx270_nand.o
+ obj-$(CONFIG_MTD_NAND_BASLER_EXCITE)	+= excite_nandflash.o
+ obj-$(CONFIG_MTD_NAND_PLATFORM)		+= plat_nand.o
++obj-$(CONFIG_MTD_NAND_STM_EMI)		+= stm_nand_emi.o
+ 
+ nand-objs := nand_base.o nand_bbt.o
+diff --git a/drivers/mtd/nand/stm_nand_emi.c b/drivers/mtd/nand/stm_nand_emi.c
+new file mode 100644
+index 0000000..d17f698
+--- /dev/null
++++ b/drivers/mtd/nand/stm_nand_emi.c
+@@ -0,0 +1,783 @@
++/*
++ *  ------------------------------------------------------------------------
++ *  stm_nand_emi.c STMicroelectronics NAND Flash driver: "EMI bit-banging"
++ *  ------------------------------------------------------------------------
++ *
++ *  Copyright (c) 2008-2009 STMicroelectronics Limited
++ *  Author: Angus Clark <Angus.Clark@st.com>
++ *
++ *  ------------------------------------------------------------------------
++ *  May be copied or modified under the terms of the GNU General Public
++ *  License Version 2.0 only.  See linux/COPYING for more information.
++ *  ------------------------------------------------------------------------
++ *
++ *  Changelog:
++ *      2009-03-09 Angus Clark <Angus.Clark@st.com>
++ *              - moved EMI configuration from SoC setup to device probe
++ *              - updated timing specification
++ *	2008-02-19 Angus Clark <Angus.Clark@st.com>
++ *		- Added FDMA support for Data IO
++ *	2008-03-04 Angus Clark <Angus.Clark@st.com>
++ *		- Support for Data IO though cache line to minimise impact
++ *                of STBus latency
++ */
++
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/slab.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/nand.h>
++#include <linux/mtd/partitions.h>
++#include <linux/dma-mapping.h>
++#include <linux/clk.h>
++#include <asm/dma.h>
++#include <linux/stm/stm-dma.h>
++#include <linux/stm/emi.h>
++#include <linux/stm/pio.h>
++#include <linux/stm/fdma-reqs.h>
++#include <linux/completion.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/nand.h>
++
++#define NAME	"stm-nand"
++
++/*
++ * Private data for stm_emi_nand driver.  Concurrency and device locking
++ * handled by MTD layers.
++ */
++struct stm_nand_emi {
++	struct nand_chip	chip;
++	struct mtd_info		mtd;
++
++	unsigned int		emi_bank;
++	unsigned int		emi_base;
++	unsigned int		emi_size;
++
++	struct stpio_pin	*rbn;		/* Ready not busy pin         */
++
++	void __iomem		*io_base;	/* EMI base for NAND chip     */
++	void __iomem		*io_data;	/* Address for data IO        */
++						/*        (possibly cached)   */
++	void __iomem		*io_cmd;	/* CMD output (emi_addr(17))  */
++	void __iomem		*io_addr;	/* ADDR output (emi_addr(17)) */
++
++#ifdef CONFIG_MTD_PARTITIONS
++	int			nr_parts;	/* Partition Table	      */
++	struct mtd_partition	*parts;
++#endif
++
++#ifdef CONFIG_STM_NAND_EMI_FDMA
++	unsigned long		nand_phys_addr;
++	unsigned long		init_fdma_jiffies;	/* Rate limit init    */
++	int			dma_chan;		/* FDMA channel	      */
++	struct stm_dma_params	dma_params[2];		/* FDMA params        */
++#endif
++};
++
++
++/*
++ * Routines for FDMA transfers.
++ */
++#if defined(CONFIG_STM_NAND_EMI_FDMA)
++static void fdma_err(unsigned long dummy)
++{
++	printk(KERN_ERR NAME ": DMA error!\n");
++}
++
++static int init_fdma_nand(struct stm_nand_emi *data)
++{
++	const char *dmac_id[] = {STM_DMAC_ID, NULL};
++	const char *cap_channel[] = {STM_DMA_CAP_LOW_BW,
++				     STM_DMA_CAP_HIGH_BW, NULL};
++	int i;
++
++	/* Request DMA channel for NAND transactions */
++	data->dma_chan = request_dma_bycap(dmac_id, cap_channel, NAME);
++	if (data->dma_chan < 0) {
++		printk(KERN_ERR NAME ": request_dma_bycap failed!\n");
++		return -EBUSY;
++	}
++
++	/* Initialise DMA paramters */
++	for (i = 0; i < 2; i++) {
++		dma_params_init(&data->dma_params[i], MODE_FREERUNNING,
++				STM_DMA_LIST_OPEN);
++		dma_params_DIM_1_x_1(&data->dma_params[i]);
++		dma_params_err_cb(&data->dma_params[i], fdma_err, 0,
++				  STM_DMA_CB_CONTEXT_TASKLET);
++	}
++
++	printk(KERN_INFO NAME ": %s assigned %s(%d)\n",
++	       data->mtd.name, get_dma_info(data->dma_chan)->name,
++	       data->dma_chan);
++
++	return 0;
++}
++
++/* Ratelimit attempts to initialise FDMA */
++static int init_fdma_nand_ratelimit(struct stm_nand_emi *data)
++{
++	if (printk_timed_ratelimit(&data->init_fdma_jiffies,  500))
++		return init_fdma_nand(data);
++	return -EBUSY;
++}
++
++static void exit_fdma_nand(struct stm_nand_emi *data)
++{
++	int i;
++	if (data->dma_chan < 0)
++		return;
++
++	/* Release DMA channel */
++	free_dma(data->dma_chan);
++
++	/* Free DMA paramters (if they have actually been allocated) */
++	for (i = 0; i < 2; i++) {
++		if (data->dma_params[i].params_ops)
++			dma_params_free(&data->dma_params[i]);
++	}
++}
++
++/*
++ * Setup FDMA transfer. Add 'oob' to list, if present.  Assumes FDMA channel
++ * has been initialised, and data areas are suitably aligned.
++ */
++static int nand_read_dma(struct mtd_info *mtd, uint8_t *buf, int buf_len,
++			      uint8_t *oob, int oob_len)
++{
++	struct nand_chip *chip = mtd->priv;
++	struct stm_nand_emi *data = chip->priv;
++	unsigned long	nand_dma;
++	dma_addr_t	buf_dma;
++	dma_addr_t	oob_dma;
++	unsigned long res = 0;
++
++	/* Check channel is ready for use */
++	if (dma_get_status(data->dma_chan) != DMA_CHANNEL_STATUS_IDLE) {
++		printk(KERN_ERR NAME ": requested channel not idle\n");
++		return 1;
++	}
++
++	/* Set up and map DMA addresses */
++	nand_dma = data->nand_phys_addr;
++	buf_dma = dma_map_single(NULL, buf, buf_len, DMA_FROM_DEVICE);
++	dma_params_addrs(&data->dma_params[0], nand_dma, buf_dma, buf_len);
++
++	/* Are we doing data+oob linked transfer? */
++	if (oob) {
++		oob_dma = dma_map_single(NULL, oob, oob_len, DMA_FROM_DEVICE);
++		dma_params_link(&data->dma_params[0], &data->dma_params[1]);
++		dma_params_addrs(&data->dma_params[1], nand_dma,
++				 oob_dma, oob_len);
++	} else {
++		data->dma_params[0].next = NULL;
++	}
++
++	/* Compile transfer list */
++	res = dma_compile_list(data->dma_chan, &data->dma_params[0],
++			       GFP_ATOMIC);
++	if (res != 0) {
++		printk(KERN_ERR NAME
++		       ": DMA compile list failed (err_code = %ld)\n", res);
++		return 1;
++	}
++
++	/* Initiate transfer */
++	res = dma_xfer_list(data->dma_chan, &data->dma_params[0]);
++	if (res != 0) {
++		printk(KERN_ERR NAME
++		       ": transfer failed (err_code = %ld)\n", res);
++		return 1;
++	}
++
++	/* Wait for completion... */
++	dma_wait_for_completion(data->dma_chan);
++
++	/* Unmap DMA memory */
++	dma_unmap_single(NULL, buf_dma, buf_len, DMA_FROM_DEVICE);
++	if (oob)
++		dma_unmap_single(NULL, oob_dma, oob_len, DMA_FROM_DEVICE);
++
++	return 0;
++}
++
++/*
++ * Setup FDMA transfer. Add 'oob' to list, if present.  Assumes FDMA channel
++ * has been initialised, and data areas are suitably aligned.
++ */
++static int nand_write_dma(struct mtd_info *mtd, const uint8_t *buf, int buf_len,
++			  uint8_t *oob, int oob_len)
++{
++	struct nand_chip *chip = mtd->priv;
++	struct stm_nand_emi *data = chip->priv;
++	unsigned long	nand_dma;
++	dma_addr_t	buf_dma;
++	dma_addr_t	oob_dma;
++	unsigned long res = 0;
++
++	/* Check channel is ready for use */
++	if (dma_get_status(data->dma_chan) != DMA_CHANNEL_STATUS_IDLE) {
++		printk(KERN_ERR NAME ": requested channel not idle\n");
++		return 1;
++	}
++
++	/* Set up and map DMA addresses */
++	nand_dma = data->nand_phys_addr;
++	buf_dma = dma_map_single(NULL, buf, buf_len, DMA_TO_DEVICE);
++	dma_params_addrs(&data->dma_params[0], buf_dma, nand_dma, buf_len);
++
++	/* Are we doing data+oob linked transfer? */
++	if (oob) {
++		oob_dma = dma_map_single(NULL, oob, oob_len, DMA_TO_DEVICE);
++		dma_params_link(&data->dma_params[0], &data->dma_params[1]);
++		dma_params_addrs(&data->dma_params[1], oob_dma,
++				 nand_dma, oob_len);
++	} else {
++		data->dma_params[0].next = NULL;
++	}
++
++	/* Compile transfer list */
++	res = dma_compile_list(data->dma_chan, &data->dma_params[0],
++			       GFP_ATOMIC);
++	if (res != 0) {
++		printk(KERN_ERR NAME
++		       ": DMA compile list failed (err_code = %ld)\n", res);
++		return 1;
++	}
++
++	/* Initiate transfer */
++	res = dma_xfer_list(data->dma_chan, &data->dma_params[0]);
++	if (res != 0) {
++		printk(KERN_ERR NAME
++		       ": transfer failed (err_code = %ld)\n", res);
++		return 1;
++	}
++
++	/* Wait for completion... */
++	dma_wait_for_completion(data->dma_chan);
++
++	/* Unmap DMA memory */
++	dma_unmap_single(NULL, buf_dma, buf_len, DMA_TO_DEVICE);
++	if (oob)
++		dma_unmap_single(NULL, oob_dma, oob_len, DMA_TO_DEVICE);
++
++	return 0;
++}
++
++/*
++ * Write buf to NAND chip.  Attempt DMA write for 'large' bufs.  Fall-back to
++ * writesl for small bufs and if FDMA fails to initialise.
++ */
++static void nand_write_buf_dma(struct mtd_info *mtd,
++			       const uint8_t *buf, int len)
++{
++	struct nand_chip *chip = mtd->priv;
++	struct stm_nand_emi *data = chip->priv;
++	unsigned long dma_align = dma_get_cache_alignment() - 1UL;
++	int i;
++
++	if (len >= 512 &&
++	    (data->dma_chan >= 0 || init_fdma_nand_ratelimit(data) == 0)) {
++
++		/* Read up to cache line boundary */
++		while ((unsigned long)buf & dma_align) {
++			writeb(*buf++, chip->IO_ADDR_W);
++			len--;
++		}
++
++		/* Do DMA transfer, fall-back to writesl if fail */
++		if (nand_write_dma(mtd, buf, len & ~dma_align, NULL, 0) != 0)
++			writesl(chip->IO_ADDR_W, buf, (len & ~dma_align)/4);
++
++		/* Mop up trailing bytes */
++		for (i = (len & ~dma_align); i < len; i++)
++			writeb(buf[i], chip->IO_ADDR_W);
++	} else {
++		/* write buf up to 4-byte boundary */
++		while ((unsigned int)buf & 0x3) {
++			writeb(*buf++, chip->IO_ADDR_W);
++			len--;
++		}
++
++		writesl(chip->IO_ADDR_W, buf, len/4);
++
++		/* mop up trailing bytes */
++		for (i = (len & ~0x3); i < len; i++)
++			writeb(buf[i], chip->IO_ADDR_W);
++	}
++}
++
++/*
++ * Read NAND chip to buf.  Attempt DMA read for 'large' bufs.  Fall-back to
++ * readsl for small bufs and if FDMA fails to initialise.
++ */
++static void nand_read_buf_dma(struct mtd_info *mtd, uint8_t *buf, int len)
++{
++	struct nand_chip *chip = mtd->priv;
++	struct stm_nand_emi *data = chip->priv;
++	unsigned long dma_align = dma_get_cache_alignment() - 1UL;
++	int i;
++
++	if (len >= 512 &&
++	    (data->dma_chan >= 0 || init_fdma_nand_ratelimit(data) == 0)) {
++
++		/* Read up to cache-line boundary */
++		while ((unsigned long)buf & dma_align) {
++			*buf++ = readb(chip->IO_ADDR_R);
++			len--;
++		}
++
++		/* Do DMA transfer, fall-back to readsl if fail */
++		if (nand_read_dma(mtd, buf, len & ~dma_align, NULL, 0) != 0)
++			readsl(chip->IO_ADDR_R, buf, (len & ~dma_align)/4);
++
++		/* Mop up trailing bytes */
++		for (i = (len & ~dma_align); i < len; i++)
++			buf[i] = readb(chip->IO_ADDR_R);
++	} else {
++
++		/* Read buf up to 4-byte boundary */
++		while ((unsigned int)buf & 0x3) {
++			*buf++ = readb(chip->IO_ADDR_R);
++			len--;
++		}
++
++		readsl(chip->IO_ADDR_R, buf, len/4);
++
++		/* Mop up trailing bytes */
++		for (i = (len & ~0x3); i < len; i++)
++			buf[i] = readb(chip->IO_ADDR_R);
++	}
++}
++#endif /* CONFIG_STM_NAND_EMI_FDMA */
++
++#if defined(CONFIG_STM_NAND_EMI_LONGSL)
++static void nand_writesl_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* write buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		writeb(*buf++, chip->IO_ADDR_W);
++		len--;
++	}
++
++	writesl(chip->IO_ADDR_W, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++)
++		writeb(buf[i], chip->IO_ADDR_W);
++}
++
++static void nand_readsl_buf(struct mtd_info *mtd, uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* read buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		*buf++ = readb(chip->IO_ADDR_R);
++		len--;
++	}
++
++	readsl(chip->IO_ADDR_R, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++)
++		buf[i] = readb(chip->IO_ADDR_R);
++}
++#endif /* CONFIG_STM_NAND_EMI_LONGSL */
++
++#if defined(CONFIG_STM_NAND_EMI_CACHED)
++/*
++ * Routines for page transfers via cache. Interupts are disabled to preserve
++ * cache line. Introduces IRQ latency of CACHEDIO_BLOCK_SIZE*nand_access_cycle +
++ * STBus_latency.
++ */
++#define CACHEDIO_BLOCK_SIZE 128
++static void nand_write_buf_cached_block(struct mtd_info *mtd,
++					const uint8_t *buf, int len)
++{
++	struct nand_chip *chip = mtd->priv;
++	struct stm_nand_emi *data = chip->priv;
++	unsigned long irq_flags;
++
++	while (len > 0) {
++		local_irq_save(irq_flags);
++		memcpy_toio(data->io_data, buf, min(len, CACHEDIO_BLOCK_SIZE));
++		__flush_purge_region(data->io_data, CACHEDIO_BLOCK_SIZE);
++		local_irq_restore(irq_flags);
++
++		buf += CACHEDIO_BLOCK_SIZE;
++		len -= CACHEDIO_BLOCK_SIZE;
++	}
++}
++
++static void nand_read_buf_cached_block(struct mtd_info *mtd,
++				       uint8_t *buf, int len)
++{
++	struct nand_chip *chip = mtd->priv;
++	struct stm_nand_emi *data = chip->priv;
++	unsigned long irq_flags;
++
++	while (len > 0) {
++		local_irq_save(irq_flags);
++		__flush_invalidate_region(data->io_data, CACHEDIO_BLOCK_SIZE);
++		memcpy_fromio(buf, data->io_data,
++			      min(len, CACHEDIO_BLOCK_SIZE));
++		local_irq_restore(irq_flags);
++
++		buf += CACHEDIO_BLOCK_SIZE;
++		len -= CACHEDIO_BLOCK_SIZE;
++	}
++}
++#endif /* CONFIG_STM_NAND_EMI_CACHED */
++
++/* Command control function for EMI 'bit-banging'.  AL and CL signals are
++ * toggled via EMI address lines emi_addr_17, emi_addr_18.
++ */
++static void nand_cmd_ctrl_emi(struct mtd_info *mtd, int cmd, unsigned int ctrl)
++{
++	struct nand_chip *this = mtd->priv;
++	struct stm_nand_emi *data = this->priv;
++
++	if (ctrl & NAND_CTRL_CHANGE) {
++		if (ctrl & NAND_CLE) {
++			this->IO_ADDR_W = data->io_cmd;
++		} else if (ctrl & NAND_ALE) {
++			this->IO_ADDR_W = data->io_addr;
++		} else {
++			this->IO_ADDR_W = data->io_base;
++		}
++	}
++
++	if (cmd != NAND_CMD_NONE)
++		writeb(cmd, this->IO_ADDR_W);
++}
++
++/* Device ready functio, for boards where nand_rbn is available via GPIO pin */
++static int nand_device_ready(struct mtd_info *mtd)
++{
++	struct nand_chip *this = mtd->priv;
++	struct stm_nand_emi *data = this->priv;
++
++	return stpio_get_pin(data->rbn);
++}
++
++#define GET_CLK_CYCLES(X, T)	(((X) + (T) - 1) / (T))
++/* Configure EMI Bank for NAND access */
++static int nand_config_emi(int bank, struct nand_timing_data *td)
++{
++	uint32_t emi_clk;
++	uint32_t emi_t_ns;
++	uint32_t emi_p_ns;
++
++	unsigned long config[4];
++
++	uint32_t rd_cycle, wr_cycle;
++	uint32_t iord_start, iord_end;
++	uint32_t iowr_start, iowr_end;
++	uint32_t rd_latch;
++	uint32_t bus_release;
++	uint32_t wait_active_low;
++
++	printk(KERN_INFO NAME "Configuring EMI Bank %d for NAND access\n",
++	       bank);
++
++	if (!td) {
++		printk(KERN_ERR NAME "No timing data specified in platform "
++		       "data\n");
++		return 1;
++	}
++
++	/* Timings set in number of clock cycles */
++	emi_clk = clk_get_rate(clk_get(NULL, "emi_master"));
++	emi_t_ns = 1000000000UL / emi_clk;
++	emi_p_ns = emi_t_ns / 2;
++
++	/* Convert nand timings to EMI compatible values */
++	rd_cycle = GET_CLK_CYCLES(td->rd_on + td->rd_off, emi_t_ns);
++	iord_start = 0;
++	iord_end = GET_CLK_CYCLES(td->rd_on, emi_p_ns);
++	rd_latch = GET_CLK_CYCLES(td->rd_on, emi_t_ns);
++	bus_release = GET_CLK_CYCLES(10, emi_t_ns);
++	wait_active_low = 0;
++	wr_cycle = GET_CLK_CYCLES(td->wr_on + td->wr_off, emi_t_ns);
++	iowr_start = 0;
++	iowr_end = GET_CLK_CYCLES(td->wr_on, emi_p_ns);
++
++	/* Set up EMI configuration data */
++	config[0] = 0x04000699 |
++		((bus_release & 0xf) << 11) |
++		((rd_latch & 0x1f) << 20) |
++		((wait_active_low & 0x1) << 25);
++
++	config[1] =
++		((rd_cycle & 0x7f) << 24) |
++		((iord_start & 0xf) << 12) |
++		((iord_end & 0xf) << 8);
++
++	config[2] =
++		((wr_cycle & 0x7f) << 24) |
++		((iowr_start & 0xf) << 12) |
++		((iowr_end & 0xf) << 8);
++
++	config[3] = 0x00;
++
++	/* Configure Bank */
++	emi_bank_configure(bank, config);
++
++	/* Disable PC mode */
++	emi_config_pcmode(bank, 0);
++
++	return 0;
++}
++
++/*
++ * Probe for the NAND device.
++ */
++static int __init stm_nand_emi_probe(struct platform_device *pdev)
++{
++	struct platform_nand_data *pdata = pdev->dev.platform_data;
++	struct plat_stmnand_data *stmdata = pdata->ctrl.priv;
++
++	struct stm_nand_emi *data;
++	int res = 0;
++
++	/* Allocate memory for the driver structure (and zero it) */
++	data = kzalloc(sizeof(struct stm_nand_emi), GFP_KERNEL);
++	if (!data) {
++		printk(KERN_ERR NAME
++		       ": Failed to allocate device structure.\n");
++		return -ENOMEM;
++	}
++
++	/* Get EMI Bank base address */
++	data->emi_bank = pdev->id;
++	data->emi_base = emi_bank_base(data->emi_bank) +
++		stmdata->emi_withinbankoffset;
++	data->emi_size = (1 << 18) + 1;
++
++	/* Configure EMI Bank */
++	printk(KERN_INFO NAME ": Configuring EMI Bank%d for NAND device\n",
++	       data->emi_bank);
++
++	if (nand_config_emi(data->emi_bank, stmdata->timing_data) != 0) {
++		printk(KERN_ERR NAME ": Failed to configure EMI bank "
++		       "for NAND device\n");
++		goto out1;
++	}
++
++	/* Request IO Memory */
++	if (!request_mem_region(data->emi_base, data->emi_size, pdev->name)) {
++		printk(KERN_ERR NAME ": Request mem 0x%x region failed\n",
++		       data->emi_base);
++		res = -ENODEV;
++		goto out1;
++	}
++
++	/* Map base address */
++	data->io_base = ioremap_nocache(data->emi_base, 4096);
++	if (!data->io_base) {
++		printk(KERN_ERR NAME ": ioremap failed for io_base 0x%08x\n",
++		       data->emi_base);
++		res = -ENODEV;
++		goto out2;
++	}
++
++#ifdef CONFIG_STM_NAND_EMI_CACHED
++	/* Map data address through cache line */
++	data->io_data = ioremap_cache(data->emi_base + 4096, 4096);
++	if (!data->io_data) {
++		printk(KERN_ERR NAME ": ioremap failed for io_data 0x%08x\n",
++		       data->emi_base + 4096);
++		res = -ENOMEM;
++		goto out3;
++	}
++#else
++	data->io_data = data->io_base;
++#endif
++	/* Map cmd and addr addresses (emi_addr_17 and emi_addr_18) */
++	data->io_cmd = ioremap_nocache(data->emi_base | (1 << 17), 1);
++	if (!data->io_cmd) {
++		printk(KERN_ERR NAME ": ioremap failed for io_cmd 0x%08x\n",
++		       data->emi_base | (1 << 17));
++		res = -ENOMEM;
++		goto out4;
++	}
++
++	data->io_addr = ioremap_nocache(data->emi_base | (1 << 18), 1);
++	if (!data->io_addr) {
++		printk(KERN_ERR NAME ": ioremap failed for io_addr 0x%08x\n",
++		       data->emi_base | (1 << 18));
++		res = -ENOMEM;
++		goto out5;
++	}
++
++	data->chip.priv = data;
++	data->mtd.priv = &data->chip;
++	data->mtd.owner = THIS_MODULE;
++
++	/* Assign more sensible name (default is string from nand_ids.c!) */
++	data->mtd.name = pdev->dev.bus_id;
++
++	data->chip.IO_ADDR_R = data->io_base;
++	data->chip.IO_ADDR_W = data->io_base;
++	data->chip.chip_delay = pdata->chip.chip_delay;
++	data->chip.cmd_ctrl = nand_cmd_ctrl_emi;
++
++	/* Do we have access to NAND_RBn? */
++	if (stmdata->rbn_port >= 0) {
++		data->rbn = stpio_request_pin(stmdata->rbn_port,
++					      stmdata->rbn_pin,
++					      "nand_RBn", STPIO_IN);
++		if (data->rbn) {
++			data->chip.dev_ready = nand_device_ready;
++		} else {
++			printk(KERN_INFO NAME ": nand_rbn unavailable. "
++			       "Falling back to chip_delay\n");
++			/* Set a default delay if not previosuly specified */
++			if (data->chip.chip_delay == 0)
++				data->chip.chip_delay = 30;
++		}
++	}
++
++	/* Set IO routines for acessing NAND pages */
++#if defined(CONFIG_STM_NAND_EMI_FDMA)
++	data->chip.read_buf = nand_read_buf_dma;
++	data->chip.write_buf = nand_write_buf_dma;
++	data->dma_chan = -1;
++	data->init_fdma_jiffies = 0;
++	init_fdma_nand_ratelimit(data);
++	data->nand_phys_addr = data->emi_base;
++
++#elif defined(CONFIG_STM_NAND_EMI_LONGSL)
++	data->chip.read_buf = nand_readsl_buf;
++	data->chip.write_buf = nand_writesl_buf;
++
++#elif defined(CONFIG_STM_NAND_EMI_CACHED)
++	data->chip.read_buf = nand_read_buf_cached_block;
++	data->chip.write_buf = nand_write_buf_cached_block;
++
++#elif defined(CONFIG_STM_NAND_EMI_BYTE)
++	/* Default byte orientated routines */
++#else
++#error "Must specify CONFIG_STM_NAND_EMI_xxxx mode"
++#endif
++
++	data->chip.ecc.mode = NAND_ECC_SOFT;
++
++	platform_set_drvdata(pdev, data);
++
++	/* Scan to find existance of the device */
++	if (nand_scan(&data->mtd, 1)) {
++		printk(KERN_ERR NAME ": nand_scan failed\n");
++		res = -ENXIO;
++		goto out6;
++	}
++
++	/* Force options which may not have been set during scan() */
++	data->chip.options |= pdata->chip.options;
++
++#ifdef CONFIG_MTD_PARTITIONS
++	if (pdata->chip.part_probe_types) {
++		res = parse_mtd_partitions(&data->mtd,
++					   pdata->chip.part_probe_types,
++					   &data->parts, 0);
++		if (res > 0) {
++			add_mtd_partitions(&data->mtd, data->parts, res);
++			return 0;
++		}
++	}
++	if (pdata->chip.partitions) {
++		data->parts = pdata->chip.partitions;
++		res = add_mtd_partitions(&data->mtd, data->parts,
++					 pdata->chip.nr_partitions);
++	} else
++#endif
++		res = add_mtd_device(&data->mtd);
++	if (!res)
++		return res;
++
++	/* Release resources on error */
++ out6:
++
++	nand_release(&data->mtd);
++	stpio_free_pin(data->rbn);
++	platform_set_drvdata(pdev, NULL);
++	iounmap(data->io_addr);
++ out5:
++	iounmap(data->io_cmd);
++ out4:
++#ifdef CONFIG_STM_NAND_EMI_CACHED
++	iounmap(data->io_data);
++ out3:
++#endif
++	iounmap(data->io_base);
++ out2:
++	release_mem_region(data->emi_base, data->emi_size);
++ out1:
++	kfree(data);
++	return res;
++}
++
++/*
++ * Remove a NAND device.
++ */
++static int __devexit stm_nand_emi_remove(struct platform_device *pdev)
++{
++	struct stm_nand_emi *data = platform_get_drvdata(pdev);
++	struct platform_nand_data *pdata = pdev->dev.platform_data;
++
++	nand_release(&data->mtd);
++
++	if (data->rbn)
++		stpio_free_pin(data->rbn);
++
++#ifdef CONFIG_MTD_PARTITIONS
++	if (data->parts && data->parts != pdata->chip.partitions)
++		kfree(data->parts);
++#endif
++	platform_set_drvdata(pdev, NULL);
++	iounmap(data->io_addr);
++	iounmap(data->io_cmd);
++#ifdef CONFIG_STM_NAND_EMI_CACHED
++	iounmap(data->io_data);
++#endif
++	iounmap(data->io_base);
++	release_mem_region(data->emi_base, data->emi_size);
++#ifdef CONFIG_STM_NAND_EMI_FDMA
++	exit_fdma_nand(data);
++#endif
++	kfree(data);
++
++	return 0;
++}
++
++static struct platform_driver plat_nand_driver = {
++	.probe		= stm_nand_emi_probe,
++	.remove		= stm_nand_emi_remove,
++	.driver		= {
++		.name	= NAME,
++		.owner	= THIS_MODULE,
++	},
++};
++
++static int __init stm_nand_emi_init(void)
++{
++	return platform_driver_register(&plat_nand_driver);
++}
++
++static void __exit stm_nand_emi_exit(void)
++{
++	platform_driver_unregister(&plat_nand_driver);
++}
++
++module_init(stm_nand_emi_init);
++module_exit(stm_nand_emi_exit);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Angus Clark");
++MODULE_DESCRIPTION("STMicroelectronics NAND driver: 'EMI bit-banging'");
+diff --git a/drivers/stm/emi.c b/drivers/stm/emi.c
+index de8e050..6b25737 100644
+--- a/drivers/stm/emi.c
++++ b/drivers/stm/emi.c
+@@ -54,6 +54,7 @@ unsigned long emi_bank_base(int bank)
+ 
+ 	return emi_memory_base + (reg << 22);
+ }
++EXPORT_SYMBOL_GPL(emi_bank_base);
+ 
+ void emi_bank_configure(int bank, unsigned long data[4])
+ {
+@@ -64,6 +65,7 @@ void emi_bank_configure(int bank, unsigned long data[4])
+ 	for (i = 0; i < 4; i++)
+ 		writel(data[i], emi_control + BANK_EMICONFIGDATA(bank, i));
+ }
++EXPORT_SYMBOL_GPL(emi_bank_configure);
+ 
+ void emi_config_pcmode(int bank, int pc_mode)
+ {
+@@ -92,7 +94,7 @@ void emi_config_pcmode(int bank, int pc_mode)
+ 		writel(val, emi_control + EMI_GEN_CFG);
+ 	}
+ }
+-
++EXPORT_SYMBOL_GPL(emi_config_pcmode);
+ 
+ /*
+  *                ______________________________
+@@ -166,8 +168,6 @@ static void __init set_pata_write_timings(int bank, int cycle_time,
+ 
+ void __init emi_config_pata(int bank, int pc_mode)
+ {
+-	int mask;
+-
+ 	BUG_ON(!emi_initialised);
+ 
+ 	/* Set timings for PIO4 */
+@@ -178,7 +178,7 @@ void __init emi_config_pata(int bank, int pc_mode)
+ 
+ }
+ 
+-static void __init set_nand_read_timings(int bank, int cycle_time,
++static void set_nand_read_timings(int bank, int cycle_time,
+ 		int IORD_start, int IORD_end,
+ 		int RD_latch, int busreleasetime,
+ 		int wait_active_low )
+@@ -196,7 +196,7 @@ static void __init set_nand_read_timings(int bank, int cycle_time,
+ 			emi_control + BANK_EMICONFIGDATA(bank, 1));
+ }
+ 
+-static void __init set_nand_write_timings(int bank, int cycle_time,
++static void set_nand_write_timings(int bank, int cycle_time,
+ 		int IOWR_start, int IOWR_end)
+ {
+ 	cycle_time = cycle_time / 10;		/* cycles */
+@@ -207,7 +207,7 @@ static void __init set_nand_write_timings(int bank, int cycle_time,
+ 			emi_control + BANK_EMICONFIGDATA(bank, 2));
+ }
+ 
+-void __init emi_config_nand(int bank, struct emi_timing_data *timing_data)
++void emi_config_nand(int bank, struct emi_timing_data *timing_data)
+ {
+ 	BUG_ON(!emi_initialised);
+ 
+@@ -227,6 +227,7 @@ void __init emi_config_nand(int bank, struct emi_timing_data *timing_data)
+ 	/* Disable PC mode */
+ 	emi_config_pcmode(bank, 0);
+ }
++EXPORT_SYMBOL_GPL(emi_config_nand);
+ 
+ #ifdef CONFIG_PM
+ /*
+diff --git a/include/linux/stm/emi.h b/include/linux/stm/emi.h
+index a64143c..ffcffd9 100644
+--- a/include/linux/stm/emi.h
++++ b/include/linux/stm/emi.h
+@@ -26,6 +26,7 @@ struct emi_timing_data {
+ int emi_init(unsigned long memory_base, unsigned long control_base);
+ unsigned long emi_bank_base(int bank);
+ void emi_bank_configure(int bank, unsigned long data[4]);
++void emi_config_pcmode(int bank, int pc_mode);
+ 
+ void emi_config_pata(int bank, int pc_mode);
+ void emi_config_nand(int bank, struct emi_timing_data *timing_data);
+diff --git a/include/linux/stm/nand.h b/include/linux/stm/nand.h
+new file mode 100644
+index 0000000..c001fd0
+--- /dev/null
++++ b/include/linux/stm/nand.h
+@@ -0,0 +1,31 @@
++/*
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Angus Clark <angus.clark@st.com
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ */
++
++#ifndef __LINUX_STM_NAND_H
++#define __LINUX_STM_NAND_H
++
++/* Timing Paramters for NAND Controller.  See ADCS #7864584: "NAND Flash support
++ * upgrades for FMI Functional Secification".
++ */
++struct nand_timing_data {
++	/* Times specified in ns.  (Will be rounded up to nearest multiple of
++	   EMI clock period.) */
++	int sig_setup;
++	int sig_hold;
++	int CE_deassert;
++	int WE_to_RBn;
++
++	int wr_on;
++	int wr_off;
++
++	int rd_on;
++	int rd_off;
++};
++
++
++#endif /* __LINUX_STM_NAND_H */
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 8fe7601..e8c63e4 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -523,7 +523,7 @@ void stx7200_configure_sata(unsigned int port);
+ void stx7200_configure_ethernet(int mac, int rmii_mode, int ext_clk,
+ 				int phy_bus);
+ void stx7200_configure_lirc(lirc_scd_t *scd);
+-void stx7200_configure_nand(struct plat_stmnand_data *data);
++void stx7200_configure_nand(struct platform_device *pdev);
+ void stx7200_configure_pata(int bank, int pc_mode, int irq);
+ 
+ void stm_sata_miphy_init(void);
+-- 
+1.6.0.6
+

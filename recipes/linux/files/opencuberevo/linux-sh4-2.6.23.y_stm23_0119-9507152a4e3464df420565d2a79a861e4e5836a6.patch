@@ -1,0 +1,187 @@
+From 9507152a4e3464df420565d2a79a861e4e5836a6 Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Mon, 11 May 2009 14:27:02 +0100
+Subject: [PATCH] sh: Lindent kptrace.c to avoid unexpected future checkpatch failures.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+---
+ arch/sh/kernel/kptrace.c |   53 +++++++++++++++++++++++----------------------
+ 1 files changed, 27 insertions(+), 26 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index 7ef0ba2..1a6a26c 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -446,10 +446,12 @@ static struct sys_device kptrace_device = {
+ struct sysfs_ops tracepoint_sysfs_ops = {
+ 	&tracepoint_show_attrs, &tracepoint_store_attrs
+ };
++
+ struct sysfs_ops tracepoint_set_sysfs_ops = {
+ 	&tracepoint_set_show_attrs, &tracepoint_set_store_attrs
+ };
+ struct sysfs_ops user_sysfs_ops = { &user_show_attrs, &user_store_attrs };
++
+ struct sysfs_ops userspace_sysfs_ops = {
+ 	&userspace_show_attrs, &userspace_store_attrs
+ };
+@@ -458,10 +460,12 @@ struct sysfs_ops userspace_sysfs_ops = {
+ struct kobj_type tracepoint_type = {
+ 	NULL, &tracepoint_sysfs_ops, tracepoint_attribs
+ };
++
+ struct kobj_type tracepoint_set_type = { NULL, &tracepoint_set_sysfs_ops,
+ 	tracepoint_set_attribs
+ };
+ struct kobj_type user_type = { NULL, &user_sysfs_ops, user_tp_attribs };
++
+ struct kobj_type userspace_type = {
+ 	NULL, &userspace_sysfs_ops, userspace_attribs
+ };
+@@ -513,7 +517,7 @@ static tracepoint_t *create_tracepoint(tracepoint_set_t * set, const char *name,
+ 			tp->rp.kp.addr = tp->kp.addr;
+ 		else
+ 			tp->rp.kp.addr = (kprobe_opcode_t *)
+-						kallsyms_lookup_name(name);
++			    kallsyms_lookup_name(name);
+ 
+ 		tp->rp.handler = return_handler;
+ 		tp->rp.maxactive = 128;
+@@ -856,7 +860,7 @@ static int irq_rp_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
+ }
+ 
+ static int irq_exit_rp_handler(struct kretprobe_instance *ri,
+-				struct pt_regs *regs)
++			       struct pt_regs *regs)
+ {
+ 	write_trace_record_no_callstack("Ix");
+ 	return 0;
+@@ -883,7 +887,7 @@ static int daemonize_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ 	char name[KPTRACE_SMALL_BUF];
+ 
+ 	if (strncpy_from_user(name, (char *)regs->regs[4],
+-		KPTRACE_SMALL_BUF) < 0)
++			      KPTRACE_SMALL_BUF) < 0)
+ 		snprintf(name, KPTRACE_SMALL_BUF, "<copy_from_user failed>");
+ 
+ 	snprintf(tbuf, KPTRACE_SMALL_BUF, "KD %s\n", name);
+@@ -908,7 +912,7 @@ static int kthread_create_rp_handler(struct kretprobe_instance *ri,
+ 	struct task_struct *new_task = (struct task_struct *)regs->regs[0];
+ 
+ 	if (strncpy_from_user(name, (char *)new_task->comm,
+-		KPTRACE_SMALL_BUF) < 0)
++			      KPTRACE_SMALL_BUF) < 0)
+ 		snprintf(name, KPTRACE_SMALL_BUF, "<copy_from_user failed>");
+ 
+ 	snprintf(tbuf, KPTRACE_SMALL_BUF, "Kc %d %s\n", new_task->pid, name);
+@@ -945,24 +949,23 @@ static int syscall_prctl_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ 	char static_buf[KPTRACE_SMALL_BUF];
+ 
+ 	if ((unsigned)regs->regs[4] == PR_SET_NAME) {
+-	    if (strncpy_from_user(static_buf, (char *)regs->regs[5],
+-			KPTRACE_SMALL_BUF) < 0)
+-		snprintf(static_buf, KPTRACE_SMALL_BUF,
+-				"<copy_from_user failed>");
++		if (strncpy_from_user(static_buf, (char *)regs->regs[5],
++				      KPTRACE_SMALL_BUF) < 0)
++			snprintf(static_buf, KPTRACE_SMALL_BUF,
++				 "<copy_from_user failed>");
+ 
+-	    snprintf(tbuf, KPTRACE_SMALL_BUF, "E %.8x %d %s",
+-		     (int)regs->pc, (unsigned)regs->regs[4], static_buf);
++		snprintf(tbuf, KPTRACE_SMALL_BUF, "E %.8x %d %s",
++			 (int)regs->pc, (unsigned)regs->regs[4], static_buf);
+ 	} else {
+-	    snprintf(tbuf, KPTRACE_SMALL_BUF, "E %.8x %d %.8x %.8x %.8x",
+-		     (int)regs->pc, (unsigned)regs->regs[4],
+-		     (unsigned)regs->regs[5], (unsigned)regs->regs[6],
+-		     (unsigned)regs->regs[7]);
++		snprintf(tbuf, KPTRACE_SMALL_BUF, "E %.8x %d %.8x %.8x %.8x",
++			 (int)regs->pc, (unsigned)regs->regs[4],
++			 (unsigned)regs->regs[5], (unsigned)regs->regs[6],
++			 (unsigned)regs->regs[7]);
+ 	}
+ 	write_trace_record(p, regs, tbuf);
+ 	return 0;
+ }
+ 
+-
+ /* Output syscall arguments in int, hex, hex, hex format */
+ static int syscall_ihhh_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ {
+@@ -1031,7 +1034,7 @@ static int syscall_shhh_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ 		/* Don't need to strncpy_from_user in this case */
+ 		snprintf(filename, KPTRACE_SMALL_BUF, (char *)regs->regs[4]);
+ 	} else if (strncpy_from_user(filename, (char *)regs->regs[4],
+-			KPTRACE_SMALL_BUF) != 0)
++				     KPTRACE_SMALL_BUF) != 0)
+ 		snprintf(filename, KPTRACE_SMALL_BUF,
+ 			 "<copy_from_user failed>");
+ 
+@@ -1062,7 +1065,7 @@ static int syscall_sihh_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ 	int len = 0;
+ 
+ 	if (strncpy_from_user(filename, (char *)regs->regs[4],
+-		KPTRACE_SMALL_BUF) < 0)
++			      KPTRACE_SMALL_BUF) < 0)
+ 		snprintf(filename, KPTRACE_SMALL_BUF,
+ 			 "<copy_from_user failed>");
+ 
+@@ -1089,7 +1092,7 @@ static int hash_futex_handler(struct kprobe *p, struct pt_regs *regs)
+ 	char tbuf[KPTRACE_SMALL_BUF];
+ 	union futex_key *key = (union futex_key *)regs->regs[4];
+ 	snprintf(tbuf, KPTRACE_SMALL_BUF, "HF %.8lx %p %.8x",
+-		key->both.word, key->both.ptr, key->both.offset);
++		 key->both.word, key->both.ptr, key->both.offset);
+ 	write_trace_record(p, regs, tbuf);
+ 	return 0;
+ }
+@@ -1447,8 +1450,7 @@ static int down_trylock_rp_handler(struct kretprobe_instance *ri,
+ 				   struct pt_regs *regs)
+ {
+ 	char tbuf[KPTRACE_SMALL_BUF];
+-	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zt %d",
+-		 (unsigned int)regs->regs[0]);
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zt %d", (unsigned int)regs->regs[0]);
+ 	write_trace_record_no_callstack(tbuf);
+ 
+ 	return 0;
+@@ -1501,8 +1503,7 @@ static int down_read_trylock_rp_handler(struct kretprobe_instance *ri,
+ 					struct pt_regs *regs)
+ {
+ 	char tbuf[KPTRACE_SMALL_BUF];
+-	snprintf(tbuf, KPTRACE_SMALL_BUF, "Za %d",
+-		 (unsigned int)regs->regs[0]);
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Za %d", (unsigned int)regs->regs[0]);
+ 	write_trace_record_no_callstack(tbuf);
+ 
+ 	return 0;
+@@ -1546,12 +1547,12 @@ static int down_write_trylock_rp_handler(struct kretprobe_instance *ri,
+ 					 struct pt_regs *regs)
+ {
+ 	char tbuf[KPTRACE_SMALL_BUF];
+-	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zb %d",
+-		 (unsigned int)regs->regs[0]);
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zb %d", (unsigned int)regs->regs[0]);
+ 	write_trace_record_no_callstack(tbuf);
+ 
+ 	return 0;
+ }
++
+ static int up_write_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ {
+ 	char tbuf[KPTRACE_SMALL_BUF];
+@@ -2011,8 +2012,8 @@ static void init_synchronization_logging(void)
+ 	tracepoint_set_t *set = create_tracepoint_set("synchronization_events");
+ 	if (!set) {
+ 		printk(KERN_WARNING
+-			"kptrace: unable to create synchronization tracepoint "
+-			"set.\n");
++		       "kptrace: unable to create synchronization tracepoint "
++		       "set.\n");
+ 		return;
+ 	}
+ 
+-- 
+1.6.0.6
+

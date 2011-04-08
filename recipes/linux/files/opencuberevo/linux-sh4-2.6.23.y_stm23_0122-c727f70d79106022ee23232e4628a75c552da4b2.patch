@@ -1,0 +1,39 @@
+From c727f70d79106022ee23232e4628a75c552da4b2 Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Mon, 9 Nov 2009 18:30:10 +0100
+Subject: [PATCH] kbuild: Allow to use depmod from a non default path
+
+This patch allow to specify the directory where to find the
+depmod tool other than being forced to use the module-init-tools
+installed on the host. The reason for this is explained below.
+When doing cross-compilation, it not guaranteed that the
+module-init-tools installed on the host (and used during kernel build)
+are exactly the same and compatible with those used on the target at runtime.
+For example, recent changes in how depmod writes modules.dep using
+root-less path, make older modprobe unusable on the target.
+User in ths case could install in a different path the module-init-tools
+compatible with the version used on the target and specify the path on the
+command line.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ Makefile |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 708993f..d386122 100644
+--- a/Makefile
++++ b/Makefile
+@@ -290,7 +290,8 @@ OBJCOPY		= $(CROSS_COMPILE)objcopy
+ OBJDUMP		= $(CROSS_COMPILE)objdump
+ AWK		= awk
+ GENKSYMS	= scripts/genksyms/genksyms
+-DEPMOD		= /sbin/depmod
++DEPMOD_PATH	?= /sbin
++DEPMOD		= $(DEPMOD_PATH)/depmod
+ KALLSYMS	= scripts/kallsyms
+ PERL		= perl
+ CHECK		= sparse
+-- 
+1.6.0.6
+

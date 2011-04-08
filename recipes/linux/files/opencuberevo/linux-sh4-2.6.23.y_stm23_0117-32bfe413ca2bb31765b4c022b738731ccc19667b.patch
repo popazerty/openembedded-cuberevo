@@ -1,0 +1,238 @@
+From 32bfe413ca2bb31765b4c022b738731ccc19667b Mon Sep 17 00:00:00 2001
+From: Andre DRASZIK <andre.draszik@st.com>
+Date: Thu, 8 Jan 2009 17:52:53 +0000
+Subject: [PATCH] sh: Allow user control over misaligned fixup handling
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This patch brings the SH4 misaligned trap handler in line with what
+happens on ARM:
+Add a /proc/cpu/alignment which can be read from to get alignment
+trap statistics and written to to influence the behaviour of the
+alignment trap handling. The value to write is a bitfield, which
+has the following meaning: 1 warn, 2 fixup, 4 signal
+In addition, we add a /proc/cpu/kernel_alignment, to enable or
+disable warnings in case of kernel code causing alignment errors.
+
+Signed-off by: AndrÃ© Draszik <andre.draszik@st.com>
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/traps.c |  161 +++++++++++++++++++++++++++++++++++++++++++++---
+ 1 files changed, 153 insertions(+), 8 deletions(-)
+
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index da5806d..d393544 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -26,6 +26,7 @@
+ #include <asm/system.h>
+ #include <asm/uaccess.h>
+ #include <linux/kgdb.h>
++#include <linux/proc_fs.h>
+ 
+ #ifdef CONFIG_KGDB
+ extern void kgdb_exception_handler(struct pt_regs *regs);
+@@ -48,6 +49,87 @@ extern int kprobe_handle_illslot(unsigned long pc);
+ #define TRAP_ILLEGAL_SLOT_INST	13
+ #endif
+ 
++static unsigned long se_user;
++static unsigned long se_sys;
++static unsigned long se_skipped;
++static unsigned long se_half;
++static unsigned long se_word;
++static unsigned long se_dword;
++static unsigned long se_multi;
++/* bitfield: 1: warn 2: fixup 4: signal -> combinations 2|4 && 1|2|4 are not
++   valid! */
++static int se_usermode = 3;
++/* 0: no warning 1: print a warning message */
++static int se_kernmode_warn = 1;
++
++#ifdef CONFIG_PROC_FS
++static const char *se_usermode_action[] = {
++	"ignored",
++	"warn",
++	"fixup",
++	"fixup+warn",
++	"signal",
++	"signal+warn"
++};
++
++static int
++proc_alignment_read(char *page, char **start, off_t off, int count, int *eof,
++		    void *data)
++{
++	char *p = page;
++	int len;
++
++	p += sprintf(p, "User:\t\t%lu\n", se_user);
++	p += sprintf(p, "System:\t\t%lu\n", se_sys);
++	p += sprintf(p, "Skipped:\t%lu\n", se_skipped);
++	p += sprintf(p, "Half:\t\t%lu\n", se_half);
++	p += sprintf(p, "Word:\t\t%lu\n", se_word);
++	p += sprintf(p, "DWord:\t\t%lu\n", se_dword);
++	p += sprintf(p, "Multi:\t\t%lu\n", se_multi);
++	p += sprintf(p, "User faults:\t%i (%s)\n", se_usermode,
++			se_usermode_action[se_usermode]);
++	p += sprintf(p, "Kernel faults:\t%i (fixup%s)\n", se_kernmode_warn,
++			se_kernmode_warn ? "+warn" : "");
++
++	len = (p - page) - off;
++	if (len < 0)
++		len = 0;
++
++	*eof = (len <= count) ? 1 : 0;
++	*start = page + off;
++
++	return len;
++}
++
++static int proc_alignment_write(struct file *file, const char __user *buffer,
++				unsigned long count, void *data)
++{
++	char mode;
++
++	if (count > 0) {
++		if (get_user(mode, buffer))
++			return -EFAULT;
++		if (mode >= '0' && mode <= '5')
++			se_usermode = mode - '0';
++	}
++	return count;
++}
++
++static int proc_alignment_kern_write(struct file *file, const char __user *buffer,
++				     unsigned long count, void *data)
++{
++	char mode;
++
++	if (count > 0) {
++		if (get_user(mode, buffer))
++			return -EFAULT;
++		if (mode >= '0' && mode <= '1')
++			se_kernmode_warn = mode - '0';
++	}
++	return count;
++}
++#endif
++
+ static void dump_mem(const char *str, unsigned long bottom, unsigned long top)
+ {
+ 	unsigned long p;
+@@ -171,6 +253,13 @@ static int handle_unaligned_ins(u16 instruction, struct pt_regs *regs)
+ 
+ 	count = 1<<(instruction&3);
+ 
++	switch (count) {
++	case 1: se_half  += 1; break;
++	case 2: se_word  += 1; break;
++	case 4: se_dword += 1; break;
++	case 8: se_multi += 1; break; /* ??? */
++	}
++
+ 	ret = -EFAULT;
+ 	switch (instruction>>12) {
+ 	case 0: /* mov.[bwl] to/from memory via r0+rn */
+@@ -384,14 +473,6 @@ static int handle_unaligned_access(u16 instruction, struct pt_regs *regs)
+ 	index = (instruction>>8)&15;	/* 0x0F00 */
+ 	rm = regs->regs[index];
+ 
+-	/* shout about userspace fixups */
+-	if (printk_ratelimit ()) {
+-		printk(KERN_NOTICE "Fixing up unaligned %s access "
+-		       "in \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
+-		       user_mode(regs) ? "userspace" : "kernel",
+-		       current->comm,current->pid,(u16*)regs->pc,instruction);
+-	}
+-
+ 	ret = -EFAULT;
+ 	switch (instruction&0xF000) {
+ 	case 0x0000:
+@@ -560,6 +641,27 @@ asmlinkage void do_address_error(struct pt_regs *regs,
+ 
+ 		local_irq_enable();
+ 
++		se_user += 1;
++
++		/* shout about userspace fixups */
++		if (se_usermode & 1)
++			printk("Unaligned userspace access "
++			       "in \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
++			       current->comm,current->pid,(u16*)regs->pc,
++			       instruction);
++
++		if (se_usermode & 2)
++			goto fixup;
++
++		if (se_usermode & 4)
++			goto uspace_segv;
++		else {
++			/* ignore */
++			trace_mark(kernel_arch_trap_exit, MARK_NOARGS);
++			return;
++		}
++
++fixup:
+ 		/* bad PC is not something we can fix */
+ 		if (regs->pc & 1) {
+ 			si_code = BUS_ADRALN;
+@@ -596,6 +698,14 @@ uspace_segv:
+ 		info.si_addr = (void __user *)address;
+ 		force_sig_info(SIGBUS, &info, current);
+ 	} else {
++		se_sys += 1;
++
++		if (se_kernmode_warn)
++			printk("Unaligned kernel access "
++			       "on behalf of \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
++			       current->comm,current->pid,(u16*)regs->pc,
++			       instruction);
++
+ 		if (regs->pc & 1)
+ 			die("unaligned program counter", regs, error_code);
+ 
+@@ -1010,3 +1120,38 @@ void dump_stack(void)
+ 	show_stack(NULL, NULL);
+ }
+ EXPORT_SYMBOL(dump_stack);
++
++#ifdef CONFIG_PROC_FS
++/*
++ * This needs to be done after sysctl_init, otherwise sys/ will be
++ * overwritten.  Actually, this shouldn't be in sys/ at all since
++ * it isn't a sysctl, and it doesn't contain sysctl information.
++ * We now locate it in /proc/cpu/alignment instead.
++ */
++static int __init alignment_init(void)
++{
++	struct proc_dir_entry *dir, *res;
++
++	dir = proc_mkdir("cpu", NULL);
++	if (!dir)
++		return -ENOMEM;
++
++	res = create_proc_entry("alignment", S_IWUSR | S_IRUGO, dir);
++	if (!res)
++		return -ENOMEM;
++
++	res->read_proc = proc_alignment_read;
++	res->write_proc = proc_alignment_write;
++
++        res = create_proc_entry("kernel_alignment", S_IWUSR | S_IRUGO, dir);
++        if (!res)
++                return -ENOMEM;
++
++        res->read_proc = proc_alignment_read;
++        res->write_proc = proc_alignment_kern_write;
++
++	return 0;
++}
++
++fs_initcall(alignment_init);
++#endif
+-- 
+1.5.3.6
+

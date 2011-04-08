@@ -1,0 +1,14 @@
+Signed-off-by:  Marek Skuczynski <M.Skuczynski@adbglobal.com>
+Index: linux/arch/sh/kernel/cpu/sh4/fpu.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/fpu.c	2008-03-05 13:57:37.000000000 +0000
++++ linux/arch/sh/kernel/cpu/sh4/fpu.c	2008-03-05 13:57:46.000000000 +0000
+@@ -451,7 +451,7 @@
+ 		tsk->thread.fpu.hard.fpscr |= fpu_exception_flags;
+ 		/* Set the FPSCR flag as well as cause bits - simply replicate the cause */
+ 		tsk->thread.fpu.hard.fpscr |= (fpu_exception_flags >> 10);
+-		grab_fpu(&regs);
++		grab_fpu(regs);
+ 		restore_fpu(tsk);
+ 		set_tsk_thread_flag(tsk, TIF_USEDFPU);
+ 		if ((((tsk->thread.fpu.hard.fpscr & FPSCR_ENABLE_MASK) >> 7) &

@@ -1,0 +1,78 @@
+From a905870d68575cbf77d74508441f9bc363540242 Mon Sep 17 00:00:00 2001
+From: Carl Shaw <car.shaw@st.com>
+Date: Thu, 21 May 2009 17:34:08 +0100
+Subject: [PATCH] sh_usb: Fix USB bridge settings for STi7200C2 and later
+
+On 7200c2 and later the AMBA2STBus bridge needs to be configured to work
+in threshold-triggered mode.
+
+We have experienced some reset issues on the USB IP due to this wrong
+configuration using the bonnie++ tool with a USB 2.0 storage mass device
+on mb671.
+
+See bugzilla: #5995.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso at st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |   20 ++++++++++++++------
+ 1 files changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 923fcff..9d89719 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -41,22 +41,20 @@ static unsigned long chip_revision;
+ 
+ static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
++
+ static struct plat_usb_data usb_wrapper[3] = {
+ 	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE(0),
+ 		    AHB2STBUS_PROTOCOL_BASE(0),
+ 		    USB_FLAGS_STRAP_8BIT		|
+-		    USB_FLAGS_STRAP_PLL			|
+-		    USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE),
++		    USB_FLAGS_STRAP_PLL),
+ 	USB_WRAPPER(1, AHB2STBUS_WRAPPER_GLUE_BASE(1),
+ 		    AHB2STBUS_PROTOCOL_BASE(1),
+ 		    USB_FLAGS_STRAP_8BIT		|
+-		    USB_FLAGS_STRAP_PLL			|
+-		    USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE),
++		    USB_FLAGS_STRAP_PLL),
+ 	USB_WRAPPER(2, AHB2STBUS_WRAPPER_GLUE_BASE(2),
+ 		    AHB2STBUS_PROTOCOL_BASE(2),
+ 		    USB_FLAGS_STRAP_8BIT		|
+-		    USB_FLAGS_STRAP_PLL			|
+-		    USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE),
++		    USB_FLAGS_STRAP_PLL),
+ };
+ 
+ static struct platform_device st_usb[3] = {
+@@ -338,6 +336,7 @@ void __init stx7200_configure_usb(int port)
+ 	const unsigned char oc_pins[3] = {0, 2, 5};
+ 	struct stpio_pin *pio;
+ 	struct sysconf_field *sc;
++	unsigned long trigger_mode;
+ 
+ 	if (first) {
+ 		/* route USB and parts of MAFE instead of DVO.
+@@ -383,6 +382,15 @@ void __init stx7200_configure_usb(int port)
+ 		pio = stpio_request_pin(7, oc_pins[port], "USB oc",
+ 					STPIO_IN);
+ 
++	/*
++	 * On 7200c1 the AMBA-to-STBus bridge cannot be configured to work in
++	 * "threshold-triggered" mode.
++	 */
++	trigger_mode = (cpu_data->cut_major >= 2) ? 
++				USB_FLAGS_STBUS_CONFIG_THRESHOLD256 :
++				USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE;
++
++	usb_wrapper[port].flags |= trigger_mode;
+ 	platform_device_register(&st_usb[port]);
+ }
+ 
+-- 
+1.6.0.6
+

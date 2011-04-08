@@ -1,0 +1,111 @@
+Index: linux/drivers/i2c/busses/i2c-stm.c
+===================================================================
+--- linux.orig/drivers/i2c/busses/i2c-stm.c
++++ linux/drivers/i2c/busses/i2c-stm.c
+@@ -24,6 +24,7 @@
+ #include <linux/module.h>
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
++#include <linux/mutex.h>
+ #include <linux/errno.h>
+ #include <linux/preempt.h>
+ #include <asm/processor.h>
+@@ -545,21 +546,19 @@ static int __init iic_stm_bus_init()
+ 		iic_stm = &(st_adapter->iic_adap);
+ 		iic_stm->virtual_configuration &= ~IIC_STM_CONFIG_SPEED_MASK;
+ 		memset(&(iic_stm->adapter), 0, sizeof(struct i2c_adapter));
+-		iic_stm->adapter.nr = idx;
+ 		iic_stm->adapter.owner = THIS_MODULE;
+ 		iic_stm->adapter.id = idx ;
+ 		iic_stm->adapter.timeout = 4;
+ 		iic_stm->adapter.retries = 0;
++		iic_stm->adapter.class   = I2C_CLASS_ALL;
+ 		sprintf(iic_stm->adapter.name,"i2c-ssc-%d",idx);
+ 		iic_stm->adapter.algo = &iic_stm_algo;
+ 		iic_stm->adapter.dev.bus = &i2c_bus_type;
+ 		iic_stm->adapter.dev.parent = &(ssc_device_request(idx)->dev);
+ 		iic_algo_stm_setup_timing(iic_stm);
+-		init_MUTEX(&(iic_stm->adapter.bus_lock));
+-		init_MUTEX(&(iic_stm->adapter.clist_lock));
+ 
+ 		if (i2c_add_adapter(&(iic_stm->adapter)) < 0) {
+-			printk(KERN_ERR,
++			printk(KERN_ERR
+ 			       "i2c/stm: The I2C Core refuses the i2c/stm adapter\n");
+ 			kfree(st_adapter);
+ 			return -ENODEV;
+Index: linux/drivers/stm/stm_spi.c
+===================================================================
+--- linux.orig/drivers/stm/stm_spi.c
++++ linux/drivers/stm/stm_spi.c
+@@ -536,7 +536,7 @@ static int spi_cdev_open(struct inode *i
+ 		return -ENODEV;
+         if (!spi_busses_array[minor])
+                 return -ENODEV;
+-        spi = (struct spi_client_t *)kmalloc(GFP_KERNEL,sizeof(struct spi_client_t));
++        spi = (struct spi_client_t *)kmalloc(sizeof(struct spi_client_t),GFP_KERNEL);
+ 	spi->dev = spi_busses_array[minor];
+ 	spi->timeout = 5;	/* 5 seconds */
+ 	spi->msg_length = 0;
+@@ -613,7 +613,7 @@ static int spi_bus_driver_probe(struct d
+    struct spi_device_t *spi_dev;
+ 
+    dgb_print("\n");
+-   spi_dev = container_of(spi_dev,struct spi_device_t,dev);
++   spi_dev = container_of(dev,struct spi_device_t,dev);
+ 
+    return spi_dev->dev_type == SPI_DEV_BUS_ADAPTER;
+ };
+Index: linux/drivers/stm/stm_ssc.c
+===================================================================
+--- linux.orig/drivers/stm/stm_ssc.c
++++ linux/drivers/stm/stm_ssc.c
+@@ -92,7 +92,7 @@ void ssc_request_bus(struct ssc_t *ssc_b
+ 		     void *irq_data)
+ {
+ 	dgb_print("\n");
+-	down(&(ssc_bus->sem_bus));
++	mutex_lock(&(ssc_bus->mutex_bus));
+ 	ssc_bus->irq_function = irq_function;
+ 	ssc_bus->irq_private_data = irq_data;
+ }
+@@ -102,7 +102,7 @@ void ssc_release_bus(struct ssc_t *ssc_b
+    dgb_print("\n");
+ 	ssc_bus->irq_function = NULL;
+ 	ssc_bus->irq_private_data = NULL;
+-	up(&(ssc_bus->sem_bus));
++	mutex_unlock(&(ssc_bus->mutex_bus));
+ }
+ 
+ static irqreturn_t ssc_handler(int this_irq, void *dev_id, struct pt_regs *regs)
+@@ -313,7 +313,7 @@ static int __init ssc_bus_init(void)
+ 	for (index = 0; index < (ssc_device_data->num_resources) / 2; ++index) {
+ 		pssc_bus = &(ssc_device[index]);
+ 		pssc_bus->ssc_id = index;
+-		init_MUTEX(&(pssc_bus->sem_bus));
++		mutex_init(&(pssc_bus->mutex_bus));
+ 		init_waitqueue_head(&(pssc_bus->wait_queue));
+ 		ssc_hw_resrc_init(pssc_bus);
+ 	}
+Index: linux/drivers/stm/stm_ssc.h
+===================================================================
+--- linux.orig/drivers/stm/stm_ssc.h
++++ linux/drivers/stm/stm_ssc.h
+@@ -34,7 +34,7 @@
+ #include <linux/device.h>
+ #include <linux/wait.h>
+ #include <linux/stpio.h>
+-#include <asm/semaphore.h>
++#include <linux/mutex.h>
+ #include <asm/io.h>
+ 
+ 
+@@ -146,7 +146,7 @@ struct ssc_t {
+ 	struct stpio_pin *pio_data;
+ 	struct stpio_pin *pio_data_in;
+ 	wait_queue_head_t wait_queue;
+-	struct semaphore sem_bus;
++	struct mutex	  mutex_bus;
+ 	void *base;
+ 	void (*irq_function) (void *);
+ 	void *irq_private_data;

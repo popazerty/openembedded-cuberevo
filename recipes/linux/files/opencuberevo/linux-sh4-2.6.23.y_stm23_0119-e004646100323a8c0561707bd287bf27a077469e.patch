@@ -1,0 +1,488 @@
+From e004646100323a8c0561707bd287bf27a077469e Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Tue, 19 May 2009 08:26:36 +0200
+Subject: [PATCH] stm: pm: Registered EMI as platform_device
+
+This patch add an EMI platform_device on every SOCs.
+Moreover
+ - it changes the EMI pm-platform specific operation
+   due to the new device.
+ - it removes the platform-pm operation based on string (now useless)
+    if every device has a platform_device.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c |    2 +-
+ arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c |    2 +-
+ arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c |    2 +-
+ arch/sh/kernel/cpu/sh4/platform-pm-stx7111.c |    2 +-
+ arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c |    2 +-
+ arch/sh/kernel/cpu/sh4/platform-pm-stx7200.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c       |    2 +
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c       |    3 +
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c       |    3 +
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c       |    3 +
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c       |    3 +
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c       |    3 +
+ drivers/stm/emi.c                            |   36 +++++++++++++++--
+ drivers/stm/platform-pm.c                    |   53 +++++---------------------
+ include/linux/stm/pm.h                       |   20 +---------
+ include/linux/stm/soc_init.h                 |    6 +++
+ 16 files changed, 71 insertions(+), 73 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c b/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c
+index 65cb8a9..7cd1f4b 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c
+@@ -82,7 +82,7 @@ emi_pwd_dwn_ack(struct platform_device *pdev, int host_phy, int ack)
+ static struct platform_device_pm stx710x_pm_devices[] = {
+ pm_plat_dev(&st_usb_device, NULL, usb_pm_pwd_dwn, usb_pm_pwd_ack,
+ 	usb_pm_sw_reset),
+-pm_plat_name("emi", NULL, emi_pwd_dwn_req, emi_pwd_dwn_ack, NULL),
++pm_plat_dev(&emi, NULL, emi_pwd_dwn_req, emi_pwd_dwn_ack, NULL),
+ };
+ 
+ #endif
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
+index 80d3c01..3a9e50c 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
+@@ -89,7 +89,7 @@ emi_pwr_dwn_ack(struct platform_device *dev, int host_phy, int ack)
+ 
+ 
+ static struct platform_device_pm stx5197_pm_devices[] = {
+-pm_plat_name("emi", NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
++pm_plat_dev(&emi, NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
+ pm_plat_dev(&st_usb, NULL, usb_pwr_dwn, usb_pwr_ack, NULL),
+ };
+ #endif
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
+index 70ad555..78ecab9 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
+@@ -71,7 +71,7 @@ usb_pwr_ack(struct platform_device *dev, int host_phy, int ack)
+ }
+ 
+ static struct platform_device_pm stx7105_pm_devices[] = {
+-pm_plat_name("emi", NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
++pm_plat_dev(&emi, NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
+ pm_plat_dev(&usb_device[0], NULL, usb_pwr_req, usb_pwr_ack, NULL),
+ pm_plat_dev(&usb_device[1], NULL, usb_pwr_req, usb_pwr_ack, NULL),
+ /*
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx7111.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx7111.c
+index 2981f66..b31f936 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx7111.c
+@@ -88,7 +88,7 @@ emi_pwr_dwn_ack(struct platform_device *dev, int host_phy, int ack)
+ 
+ 
+ static struct platform_device_pm stx7111_pm_devices[] = {
+-pm_plat_name("emi", NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
++pm_plat_dev(&emi, NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
+ pm_plat_dev(&st_usb, NULL, usb_pwr_dwn, usb_pwr_ack, usb_sw_reset),
+ };
+ #endif
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c
+index 4516f7c..b4fc1c6 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c
+@@ -67,7 +67,7 @@ emi_pwr_dwn_ack(struct platform_device *dev, int host_phy, int ack)
+ }
+ 
+ static struct platform_device_pm stx7141_pm_devices[] = {
+-pm_plat_name("emi", NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
++pm_plat_dev(&emi, NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
+ pm_plat_dev(&st_usb_device[0], NULL, usb_pwr_req, usb_pwr_ack, NULL),
+ pm_plat_dev(&st_usb_device[1], NULL, usb_pwr_req, usb_pwr_ack, NULL),
+ pm_plat_dev(&st_usb_device[2], NULL, usb_pwr_req, usb_pwr_ack, NULL),
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx7200.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx7200.c
+index 0f6070e..60bd706 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx7200.c
+@@ -107,7 +107,7 @@ sata_pwd_dwn_ack(struct platform_device *pdev, int host_phy, int ack)
+ }
+ 
+ static struct platform_device_pm stx7200_pm_devices[] = {
+-pm_plat_name("emi", NULL, emi_pwd_dwn_req, emi_pwd_dwn_ack, NULL),
++pm_plat_dev(&emi, NULL, emi_pwd_dwn_req, emi_pwd_dwn_ack, NULL),
+ pm_plat_dev(&st_usb[0], NULL, usb_pwr_dwn, usb_pwr_ack, usb_sw_reset),
+ pm_plat_dev(&st_usb[1], NULL, usb_pwr_dwn, usb_pwr_ack, usb_sw_reset),
+ pm_plat_dev(&st_usb[2], NULL, usb_pwr_dwn, usb_pwr_ack, usb_sw_reset),
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index d9635ef..e8be309 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -894,6 +894,7 @@ static int __init stx7100_postcore_setup(void)
+ }
+ postcore_initcall(stx7100_postcore_setup);
+ 
++static struct platform_device emi = STEMI();
+ /* Late resources ---------------------------------------------------------- */
+ 
+ static struct platform_device *stx7100_devices[] __initdata = {
+@@ -905,6 +906,7 @@ static struct platform_device *stx7100_devices[] __initdata = {
+ 	&rtc_device,
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
++	&emi,
+ };
+ 
+ #include "./platform-pm-stb7100.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index 170812f..3a2d984 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -742,11 +742,14 @@ static int __init stx5197_subsys_setup(void)
+ }
+ subsys_initcall(stx5197_subsys_setup);
+ 
++static struct platform_device emi = STEMI();
++
+ static struct platform_device *stx5197_devices[] __initdata = {
+ 	&stx5197_fdma_device,
+ 	&stx5197_sysconf_devices[0],
+ 	&stx5197_sysconf_devices[1],
+ 	&ilc3_device,
++	&emi,
+ };
+ 
+ #include "./platform-pm-stx5197.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 489bdaa..67e11c8 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1228,6 +1228,8 @@ static int __init stx7105_subsys_setup(void)
+ }
+ subsys_initcall(stx7105_subsys_setup);
+ 
++static struct platform_device emi = STEMI();
++
+ static struct platform_device *stx7105_devices[] __initdata = {
+ 	&stx7105_fdma_devices[0],
+ 	&stx7105_fdma_devices[1],
+@@ -1237,6 +1239,7 @@ static struct platform_device *stx7105_devices[] __initdata = {
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
+ 	&stx7105_temp_device,
++	&emi,
+ };
+ 
+ #include "./platform-pm-stx7105.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 1c81c44..54f46e2 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -890,6 +890,8 @@ static int __init stx7111_subsys_setup(void)
+ }
+ subsys_initcall(stx7111_subsys_setup);
+ 
++static struct platform_device emi = STEMI();
++
+ static struct platform_device *stx7111_devices[] __initdata = {
+ 	&stx7111_fdma_devices[0],
+ 	&stx7111_fdma_devices[1],
+@@ -899,6 +901,7 @@ static struct platform_device *stx7111_devices[] __initdata = {
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
+ 	&stx7111_temp_device,
++	&emi,
+ };
+ 
+ #include "./platform-pm-stx7111.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 8f4eb92..05dfd17 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -1302,6 +1302,8 @@ static int __init stx7141_subsys_setup(void)
+ }
+ subsys_initcall(stx7141_subsys_setup);
+ 
++static struct platform_device emi = STEMI();
++
+ static struct platform_device *stx7141_devices[] __initdata = {
+ 	&stx7141_fdma_devices[0],
+ 	&stx7141_fdma_devices[1],
+@@ -1313,6 +1315,7 @@ static struct platform_device *stx7141_devices[] __initdata = {
+ 	&stx7141_temp_devices[0],
+ 	&stx7141_temp_devices[1],
+ 	&stx7141_temp_devices[2],
++	&emi,
+ };
+ 
+ #include "./platform-pm-stx7141.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 6b863db..6ebddc7 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -1139,6 +1139,8 @@ postcore_initcall(stx7200_postcore_setup);
+ 
+ /* Late resources ---------------------------------------------------------- */
+ 
++static struct platform_device emi = STEMI();
++
+ static struct platform_device *stx7200_devices[] __initdata = {
+ 	&stx7200_fdma_devices[0],
+ 	/* &stx7200_fdma_devices[1], */
+@@ -1148,6 +1150,7 @@ static struct platform_device *stx7200_devices[] __initdata = {
+         &rtc_device,
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
++	&emi,
+ };
+ 
+ #include "./platform-pm-stx7200.c"
+diff --git a/drivers/stm/emi.c b/drivers/stm/emi.c
+index 4ea15d1..0d330f8 100644
+--- a/drivers/stm/emi.c
++++ b/drivers/stm/emi.c
+@@ -9,6 +9,7 @@
+ #include <linux/kernel.h>
+ #include <linux/sysdev.h>
+ #include <linux/device.h>
++#include <linux/platform_device.h>
+ #include <linux/delay.h>
+ #include <linux/io.h>
+ #include <linux/stm/emi.h>
+@@ -232,6 +233,16 @@ EXPORT_SYMBOL_GPL(emi_config_nand);
+ 
+ #ifdef CONFIG_PM
+ /*
++ * Note on Power Management of EMI device
++ * ======================================
++ * The EMI is registered twice on different view:
++ * 1. as platform_device to acquire the platform specific
++ *    capability (via sysconf)
++ * 2. as sysdev_device to really manage the suspend/resume
++ *    operation on standby and hibernation
++ */
++
++/*
+  * emi_num_common_cfg = 12 common config	+
+  * 			emi_bank_enable(0x280)	+
+  *			emi_bank_number(0x860)
+@@ -250,12 +261,26 @@ struct emi_pm {
+ 	struct emi_pm_bank bank[emi_num_bank];
+ };
+ 
++static struct platform_device *emi;
++
++static int __init emi_driver_probe(struct platform_device *pdev)
++{
++	emi = pdev;
++	return 0;
++}
++
++static struct platform_driver emi_driver = {
++	.driver.name = "emi",
++	.driver.owner = THIS_MODULE,
++	.probe = emi_driver_probe,
++};
++
+ static int emi_sysdev_suspend(struct sys_device *dev, pm_message_t state)
+ {
+ 	int idx;
+ 	int bank, data;
+ 	static struct emi_pm *emi_saved_data;
+-	static char _emi_name[] = "emi";
++
+ 	switch (state.event) {
+ 	case PM_EVENT_ON:
+ 		if (emi_saved_data) {
+@@ -277,12 +302,12 @@ static int emi_sysdev_suspend(struct sys_device *dev, pm_message_t state)
+ 			kfree(emi_saved_data);
+ 			emi_saved_data = NULL;
+ 		}
+-		platform_pm_pwdn_req_n(_emi_name, HOST_PM, 0);
+-		platform_pm_pwdn_ack_n(_emi_name, HOST_PM, 0);
++		platform_pm_pwdn_req(emi, HOST_PM, 0);
++		platform_pm_pwdn_ack(emi, HOST_PM, 0);
+ 		break;
+ 	case PM_EVENT_SUSPEND:
+-		platform_pm_pwdn_req_n(_emi_name, HOST_PM, 1);
+-		platform_pm_pwdn_ack_n(_emi_name, HOST_PM, 1);
++		platform_pm_pwdn_req(emi, HOST_PM, 1);
++		platform_pm_pwdn_ack(emi, HOST_PM, 1);
+ 		break;
+ 	case PM_EVENT_FREEZE:
+ 		emi_saved_data = kmalloc(sizeof(struct emi_pm), GFP_NOWAIT);
+@@ -332,6 +357,7 @@ struct sys_device emi_sysdev_dev = {
+ 
+ static int __init emi_sysdev_init(void)
+ {
++	platform_driver_register(&emi_driver);
+ 	sysdev_class_register(&emi_sysdev_class);
+ 	sysdev_driver_register(&emi_sysdev_class, &emi_sysdev_driver);
+ 	sysdev_register(&emi_sysdev_dev);
+diff --git a/drivers/stm/platform-pm.c b/drivers/stm/platform-pm.c
+index 2e7a5d2..2baca9f 100644
+--- a/drivers/stm/platform-pm.c
++++ b/drivers/stm/platform-pm.c
+@@ -55,38 +55,29 @@ enum {
+ 	RAW_RESET,
+ };
+ 
+-enum {
+-	TYPE_PDEV = 0,
+-	TYPE_NAME,
+-};
+-
+ static struct platform_device_pm *pm_devices;
+ static unsigned long pm_devices_size;
+ 
+-static struct platform_device_pm*
+-platform_pm_idx(int type, void *owner)
++static struct platform_device_pm
++*platform_pm_idx(struct platform_device *owner)
+ {
+ 	int i;
+ 	if (!pm_devices || !pm_devices_size)
+ 		return NULL;
+ 
+ 	for (i = 0; i < pm_devices_size; ++i)
+-		if (type == TYPE_PDEV) {
+-			if (pm_devices[i].owner == owner)
+-				return &(pm_devices[i]);
+-		} else /* uses the name only if pdev is NULL */
+-		      if (!strcmp((char *)owner, (char *)pm_devices[i].owner))
+-				return &(pm_devices[i]);
++		if (pm_devices[i].owner == owner)
++			return &(pm_devices[i]);
+ 	return NULL;
+ }
+ 
+-static int _platform_pm(int id_operation, int type, void *owner,
++static int _platform_pm(int id_operation, void *owner,
+ 	int host_phy, int data)
+ {
+ 	struct platform_device_pm *pm_info;
+ 	int (*fns)(struct platform_device *pdev, int host_phy, int data);
+ 	long *pfns;
+-	pm_info = platform_pm_idx(type, owner);
++	pm_info = platform_pm_idx(owner);
+ 	if (!pm_info) /* no pm capability for this device */
+ 		return 0;
+ 	pfns = (long *)pm_info;
+@@ -98,52 +89,28 @@ static int _platform_pm(int id_operation, int type, void *owner,
+ 
+ int platform_pm_init(struct platform_device *pdev, int phy)
+ {
+-	return _platform_pm(RAW_INIT, TYPE_PDEV, (void *)pdev, phy, 0);
++	return _platform_pm(RAW_INIT, (void *)pdev, phy, 0);
+ }
+ EXPORT_SYMBOL(platform_pm_init);
+ 
+ int platform_pm_pwdn_req(struct platform_device *pdev, int phy, int pwd)
+ {
+-	return _platform_pm(RAW_PWD_REQ, TYPE_PDEV, (void *)pdev, phy, pwd);
++	return _platform_pm(RAW_PWD_REQ, (void *)pdev, phy, pwd);
+ }
+ EXPORT_SYMBOL(platform_pm_pwdn_req);
+ 
+ int platform_pm_pwdn_ack(struct platform_device *pdev, int phy, int ack)
+ {
+-	return _platform_pm(RAW_PWD_ACK, TYPE_PDEV, (void *)pdev, phy, ack);
++	return _platform_pm(RAW_PWD_ACK, (void *)pdev, phy, ack);
+ }
+ EXPORT_SYMBOL(platform_pm_pwdn_ack);
+ 
+ int platform_pm_reset(struct platform_device *pdev, int phy)
+ {
+-	return _platform_pm(RAW_RESET, TYPE_PDEV, (void *)pdev, 0, 0);
++	return _platform_pm(RAW_RESET, (void *)pdev, 0, 0);
+ }
+ EXPORT_SYMBOL(platform_pm_reset);
+ 
+-int platform_pm_init_n(char *name, int phy)
+-{
+-	return _platform_pm(RAW_INIT, TYPE_NAME, (void *)name, phy, 0);
+-}
+-EXPORT_SYMBOL(platform_pm_init_n);
+-
+-int platform_pm_pwdn_req_n(char *name, int phy, int pwd)
+-{
+-	return _platform_pm(RAW_PWD_REQ, TYPE_NAME, (void *)name, phy, pwd);
+-}
+-EXPORT_SYMBOL(platform_pm_pwdn_req_n);
+-
+-int platform_pm_pwdn_ack_n(char *name, int phy, int ack)
+-{
+-	return _platform_pm(RAW_PWD_ACK, TYPE_NAME, (void *)name, phy, ack);
+-}
+-EXPORT_SYMBOL(platform_pm_pwdn_ack_n);
+-
+-int platform_pm_reset_n(char *name, int phy)
+-{
+-	return _platform_pm(RAW_RESET, TYPE_NAME, (void *)name, phy, 0);
+-}
+-EXPORT_SYMBOL(platform_pm_reset_n);
+-
+ int platform_add_pm_devices(struct platform_device_pm *pm, unsigned long size)
+ {
+ 	if (!pm || !size)
+diff --git a/include/linux/stm/pm.h b/include/linux/stm/pm.h
+index fb3b876..1577532 100644
+--- a/include/linux/stm/pm.h
++++ b/include/linux/stm/pm.h
+@@ -34,7 +34,7 @@ struct platform_device_pm {
+ /* pwdn_req:	to raise a power down request */
+ /* pwdn_ack: 	to check the status of pwdn request */
+ /* reset:	to reset the device (i.e: USB) */
+-	void *owner;
++	struct platform_device *owner;
+ /* owner is (most of the time) the platform_device but
+  * unfortunatelly some device (i.e.: EMI) has no
+  * platform device... In this case I will do a serch by name
+@@ -55,11 +55,6 @@ int platform_pm_pwdn_req(struct platform_device *pdev, int phy, int pwd);
+ int platform_pm_pwdn_ack(struct platform_device *pdev, int phy, int ack);
+ int platform_pm_reset(struct platform_device *pdev, int phy);
+ 
+-int platform_pm_init_n(char *name, int phy);
+-int platform_pm_pwdn_req_n(char *name, int phy, int pwd);
+-int platform_pm_pwdn_ack_n(char *name, int phy, int ack);
+-int platform_pm_reset_n(char *name, int phy);
+-
+ int platform_add_pm_devices(struct platform_device_pm *pm, unsigned long size);
+ 
+ #define pm_plat_dev(_pdev, _p_init, _p_req, _p_ack, _p_reset)	\
+@@ -71,24 +66,11 @@ int platform_add_pm_devices(struct platform_device_pm *pm, unsigned long size);
+ 	.reset = _p_reset,					\
+ }
+ 
+-#define pm_plat_name(_pname, _p_init, _p_req, _p_ack, _p_reset)	\
+-{								\
+-	.owner = (void *)_pname,				\
+-	.pwdn_init = _p_init,					\
+-	.pwdn_req = _p_req,					\
+-	.pwdn_ack = _p_ack,					\
+-	.reset = _p_reset,					\
+-}
+-
+ #else
+ #define platform_pm_init(pdev, phy)		do { } while (0)
+ #define platform_pm_pwdn_req(pdev, phy, pwd)	do { } while (0)
+ #define platform_pm_pwdn_ack(pdev, phy, ack)	do { } while (0)
+ #define platform_pm_reset(pdev, phy)		do { } while (0)
+-#define platform_pm_init_n(pdev, phy)		do { } while (0)
+-#define platform_pm_pwdn_req_n(pdev, phy, pwd)	do { } while (0)
+-#define platform_pm_pwdn_ack_n(pdev, phy, ack)	do { } while (0)
+-#define platform_pm_reset_n(pdev, phy)		do { } while (0)
+ #define platform_add_pm_devices(pm, size)	do { } while (0)
+ #endif
+ 
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index e1c7f4d..4192129 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -1,3 +1,9 @@
++#define STEMI()						\
++{							\
++	.name = "emi",					\
++	.id = -1,					\
++}
++
+ #define STLIRC_DEVICE(_mem_start, _irq, _wake_irq)	\
+ {							\
+ 	.name = "lirc",					\
+-- 
+1.6.0.6
+

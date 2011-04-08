@@ -1,0 +1,49 @@
+From ddd9ca205ccb1719c96728757985470060298a4c Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Thu, 20 Aug 2009 19:08:34 +0100
+Subject: [PATCH] sh_stm: Fix PHY reset timings for mb680 MII
+
+The previous PHY reset timings were correct for the SMSC LAN8700, but
+too short for the NatSemi DP83865. Extend the timings accordingly.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/mb680/setup.c |   12 ++++++++++--
+ 1 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 2cf2f86..f2b4ffe 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -100,18 +100,26 @@ static struct stpio_pin *phy_reset, *switch_en;
+  * When connected to the mb705, MII reset is controlled by an EPLD register
+  * on the mb705.
+  * When used standalone a PIO pin is used, and J47-C must be fitted.
++ *
++ * Timings:
++ *    PHY         | Reset low | Post reset stabilisation
++ *    ------------+-----------+-------------------------
++ *    DB83865     |   150uS   |         20mS
++ *    LAN8700     |   100uS   |         800nS
+  */
+ #ifdef CONFIG_SH_ST_MB705
+ static void ll_phy_reset(void)
+ {
+-	mb705_reset(EPLD_EMI_RESET_SW0, 100);
++	mb705_reset(EPLD_EMI_RESET_SW0, 150);
++	mdelay(20);
+ }
+ #else
+ static void ll_phy_reset(void)
+ {
+ 	stpio_set_pin(phy_reset, 0);
+-	udelay(100);
++	udelay(150);
+ 	stpio_set_pin(phy_reset, 1);
++	mdelay(20);
+ }
+ #endif
+ 
+-- 
+1.6.0.6
+

@@ -1,0 +1,106 @@
+From 916f97b0e408fdb50ed58beb9daa3b2d347f1daf Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Fri, 28 Nov 2008 12:41:20 +0000
+Subject: [PATCH] stm_fdma: Fix reading of addresses from hardware in stb710x_fdma_get_residue
+
+While reviewing the code I came across a couple of problems with the
+stb710x_fdma_get_residue() function:
+
+ - the code assumes that FDMA nodes are allocated at ascending
+   addresses, and so in the case of a circular list the 'final'
+   pointer will point back to a lower address. However the code now
+   uses a dma_pool for allocating FDMA nodes, so this may not be true.
+
+ - the code uses phys_to_virt() to work back from an address in the
+   FDMA's STAT register to a node which the CPU can read. This isn't a
+   safe assumption, although will work on current hardware. However it
+   results in a cached view of the node, which isn't what the rest of
+   the code is using, and so potentially gives a stale view.
+
+To fix these problems convert the code to use the list of nodes which
+the software already maintains, and scan for a matching physical/dma
+address.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Acked-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/stm/710x_fdma2.c |   41 +++++++++++++++++++++++------------------
+ 1 files changed, 23 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/stm/710x_fdma2.c b/drivers/stm/710x_fdma2.c
+index 5393077..ac058fa 100644
+--- a/drivers/stm/710x_fdma2.c
++++ b/drivers/stm/710x_fdma2.c
+@@ -869,30 +869,38 @@ static int fdma_check_firmware_state(struct fdma_dev * fd)
+  *---------------------------------------------------------------------*/
+ 
+ /*returns the number of bytes left to transfer for the current node*/
+-static int stb710x_fdma_get_residue(struct dma_channel *chan)
++static int stb710x_fdma_get_residue(struct dma_channel *channel)
+ {
+-	struct fdma_dev *fd = FDMA_DEV(chan);
++	struct fdma_dev *fd = FDMA_DEV(channel);
++	struct channel_status *chan = FDMA_CHAN(channel);
++	struct stm_dma_params *params = chan->params;
++	struct dma_xfer_descriptor *desc =
++		(struct dma_xfer_descriptor*)params->priv;
+ 	unsigned long irqflags;
+ 	u32 count = 0;
+ 
+ 	spin_lock_irqsave(&fd->channel_lock, irqflags);
+ 
+-	if (likely(FDMA_CHAN(chan)->sw_state != FDMA_IDLE)) {
++	if (likely(chan->sw_state != FDMA_IDLE)) {
+ 		void __iomem *chan_base = fd->io_base +
+-				(chan->chan * NODE_DATA_OFFSET);
+-		unsigned long current_node_phys, next_node_phys;
++				(channel->chan * NODE_DATA_OFFSET);
++		unsigned long current_node_phys;
+ 		unsigned long stat1, stat2;
+-		fdma_llu_entry *current_node;
++		struct llu_node *current_node;
++		int node_num;
+ 
+ 		/* Get info about current node */
+ 		do {
+-			stat1 = readl(CMD_STAT_REG(chan->chan));
++			stat1 = readl(CMD_STAT_REG(channel->chan));
+ 			count = readl(chan_base + fd->regs.fdma_cntn);
+-			stat2 = readl(CMD_STAT_REG(chan->chan));
++			stat2 = readl(CMD_STAT_REG(channel->chan));
+ 		} while (stat1 != stat2);
+ 
+ 		current_node_phys = stat1 & ~0x1f;
+-		current_node = phys_to_virt(current_node_phys);
++		for (node_num=0, current_node = desc->llu_nodes;
++		     current_node->dma_addr != current_node_phys;
++		     node_num++, current_node++)
++			BUG_ON(node_num == desc->alloced_nodes);
+ 
+ 		switch (stat1 & 3) {
+ 		case FDMA_CHANNEL_IDLE:
+@@ -928,15 +936,12 @@ static int stb710x_fdma_get_residue(struct dma_channel *chan)
+ 			break;
+ 		}
+ 
+-		next_node_phys = current_node->next_item;
+-
+-		/* Accumulate the bytes remaining in the list */
+-		while (next_node_phys && next_node_phys > current_node_phys) {
+-			fdma_llu_entry *next_node;
+-
+-			next_node = phys_to_virt(next_node_phys);
+-			count += next_node->size_bytes;
+-			next_node_phys = next_node->next_item;
++		if (current_node->virt_addr->next_item) {
++			do {
++				BUG_ON(node_num++ == desc->alloced_nodes);
++				current_node++;
++				count += current_node->virt_addr->size_bytes;
++			} while (current_node->virt_addr->next_item);
+ 		}
+ 	}
+ 
+-- 
+1.5.3.6
+

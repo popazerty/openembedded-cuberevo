@@ -1,0 +1,15 @@
+Index: linux-2.6.23.1-stm/drivers/serial/stasc.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/drivers/serial/stasc.c
++++ linux-2.6.23.1-stm/drivers/serial/stasc.c
+@@ -886,10 +886,8 @@ asc_console_setup (struct console *co, c
+ 	int     flow = 'n';
+ 	int ret;
+ 
+-#if 0
+ 	if (ascport->port.membase == 0)	/* Port not initialized yet - delay setup */
+ 		return -ENODEV;
+-#endif
+ 
+ 	if ((ret = asc_remap_port(ascport, 0)) != 0)
+ 		return ret;

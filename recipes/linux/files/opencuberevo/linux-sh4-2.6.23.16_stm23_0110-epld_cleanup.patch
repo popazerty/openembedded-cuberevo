@@ -1,0 +1,752 @@
+commit add00b562d49502c197a8a2e874ae686e9433d9b
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Fri May 9 15:58:09 2008 +0100
+
+    EPLD infrastructure cleanup.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/common/common.h b/arch/sh/boards/st/common/common.h
+new file mode 100644
+index 0000000..3df5a0b
+--- /dev/null
++++ b/arch/sh/boards/st/common/common.h
+@@ -0,0 +1,18 @@
++#ifndef __ARCH_SH_BOARDS_ST_COMMON_COMMON_H
++#define __ARCH_SH_BOARDS_ST_COMMON_COMMON_H
++
++/* epld.c */
++
++struct plat_epld_data {
++	int opsize;
++};
++
++void epld_write(unsigned long value, unsigned long offset);
++unsigned long epld_read(unsigned long offset);
++void epld_early_init(struct platform_device *device);
++
++/* harp.c */
++
++void harp_init_irq(void);
++
++#endif
+diff --git a/arch/sh/boards/st/common/epld.c b/arch/sh/boards/st/common/epld.c
+index e09f900..45bf79e 100644
+--- a/arch/sh/boards/st/common/epld.c
++++ b/arch/sh/boards/st/common/epld.c
+@@ -9,7 +9,7 @@
+ #include <linux/kernel.h>
+ #include <linux/platform_device.h>
+ #include <linux/io.h>
+-#include "epld.h"
++#include "common.h"
+ 
+ #define DRIVER_NAME "epld"
+ 
+diff --git a/arch/sh/boards/st/common/epld.h b/arch/sh/boards/st/common/epld.h
+deleted file mode 100644
+index a8faf45..0000000
+--- a/arch/sh/boards/st/common/epld.h
++++ /dev/null
+@@ -1,9 +0,0 @@
+-void epld_write(unsigned long value, unsigned long offset);
+-unsigned long epld_read(unsigned long offset);
+-void epld_early_init(struct platform_device *device);
+-
+-void harp_init_irq(void);
+-
+-struct plat_epld_data {
+-	int opsize;
+-};
+diff --git a/arch/sh/boards/st/common/harp-irq.c b/arch/sh/boards/st/common/harp-irq.c
+index 6ccc7df..2e42106 100644
+--- a/arch/sh/boards/st/common/harp-irq.c
++++ b/arch/sh/boards/st/common/harp-irq.c
+@@ -16,8 +16,8 @@
+ #include <linux/interrupt.h>
+ #include <linux/io.h>
+ #include <asm/system.h>
+-#include <asm/mach/harp.h>
+-#include "epld.h"
++#include <asm/mach/epld.h>
++#include "common.h"
+ 
+ #define NUM_EXTERNAL_IRQS 16
+ 
+diff --git a/arch/sh/boards/st/mb360/led.c b/arch/sh/boards/st/mb360/led.c
+index cf32449..1c839f4 100644
+--- a/arch/sh/boards/st/mb360/led.c
++++ b/arch/sh/boards/st/mb360/led.c
+@@ -12,7 +12,7 @@
+ #include <linux/stm/pio.h>
+ #include <asm/io.h>
+ #include <asm/led.h>
+-#include <asm/mb360/harp.h>
++#include <asm/mb360/epld.h>
+ 
+ /* ST40 Eval: Flash LD9 (PIO LED) connected to PIO1 bit 3 */
+ void mach_led(int position, int value)
+diff --git a/arch/sh/boards/st/mb360/mach.c b/arch/sh/boards/st/mb360/mach.c
+index 08d801e..5f4dff2 100644
+--- a/arch/sh/boards/st/mb360/mach.c
++++ b/arch/sh/boards/st/mb360/mach.c
+@@ -19,7 +19,7 @@
+ #include <asm/machvec.h>
+ #include <asm/led.h>
+ #include <asm/io_generic.h>
+-#include <asm/mb360/harp.h>
++#include <asm/mb360/epld.h>
+ #include "../../../drivers/pci/pci-st40.h"
+ 
+ unsigned long stb1eval_isa_port2addr(unsigned long offset)
+diff --git a/arch/sh/boards/st/mb360/setup.c b/arch/sh/boards/st/mb360/setup.c
+index ac32b96..16dfeba 100644
+--- a/arch/sh/boards/st/mb360/setup.c
++++ b/arch/sh/boards/st/mb360/setup.c
+@@ -15,7 +15,7 @@
+ #include <linux/pci.h>
+ 
+ #include <asm/io.h>
+-#include <asm/mb360/harp.h>
++#include <asm/mb360/epld.h>
+ #include "../../../drivers/pci/pci-st40.h"
+ 
+ /*
+diff --git a/arch/sh/boards/st/mb374/mach.c b/arch/sh/boards/st/mb374/mach.c
+index ad26bc6..13bce08 100644
+--- a/arch/sh/boards/st/mb374/mach.c
++++ b/arch/sh/boards/st/mb374/mach.c
+@@ -14,7 +14,7 @@
+ #include <linux/irq.h>
+ 
+ #include <asm/io.h>
+-#include <asm/mb374/harp.h>
++#include <asm/mb374/epld.h>
+ #include "../../../drivers/pci/pci-st40.h"
+ 
+ static void __iomem *mb374_ioport_map(unsigned long port, unsigned int size)
+diff --git a/arch/sh/boards/st/mb374/setup.c b/arch/sh/boards/st/mb374/setup.c
+index abdc501..13a8248 100644
+--- a/arch/sh/boards/st/mb374/setup.c
++++ b/arch/sh/boards/st/mb374/setup.c
+@@ -15,7 +15,7 @@
+ #include <linux/pci.h>
+ 
+ #include <asm/io.h>
+-#include <asm/mb374/harp.h>
++#include <asm/mb374/epld.h>
+ #include "../../../drivers/pci/pci-st40.h"
+ 
+ /*
+diff --git a/arch/sh/boards/st/mb411/mach.c b/arch/sh/boards/st/mb411/mach.c
+index 3c5ed3b..e96effb 100644
+--- a/arch/sh/boards/st/mb411/mach.c
++++ b/arch/sh/boards/st/mb411/mach.c
+@@ -16,7 +16,7 @@
+ #include <asm/io.h>
+ #include <asm/machvec.h>
+ #include <asm/irq-stb7100.h>
+-#include <asm/mb411/harp.h>
++#include <asm/mb411/epld.h>
+ 
+ static void __iomem *mb411_ioport_map(unsigned long port, unsigned int size)
+ {
+diff --git a/arch/sh/boards/st/mb411/setup.c b/arch/sh/boards/st/mb411/setup.c
+index e048750..247d540 100644
+--- a/arch/sh/boards/st/mb411/setup.c
++++ b/arch/sh/boards/st/mb411/setup.c
+@@ -21,9 +21,9 @@
+ #include <linux/phy.h>
+ #include <sound/stm.h>
+ #include <asm/io.h>
+-#include <asm/mach/harp.h>
++#include <asm/mb411/epld.h>
+ #include <asm/irq-stb7100.h>
+-#include "../common/epld.h"
++#include "../common/common.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+diff --git a/arch/sh/boards/st/mb519/epld.h b/arch/sh/boards/st/mb519/epld.h
+deleted file mode 100644
+index 68341b9..0000000
+--- a/arch/sh/boards/st/mb519/epld.h
++++ /dev/null
+@@ -1,24 +0,0 @@
+-#define EPLD_BASE 0x05000000
+-#define EPLD_SIZE 0x01000000
+-
+-#define EPLD_ver		0x000000
+-#define EPLD_cpcbver		0x020000
+-#define EPLD_stem		0x040000
+-#define EPLD_driver		0x060000
+-#define EPLD_reset		0x080000
+-#define EPLD_IntStat0		0x0A0000
+-#define EPLD_IntStat1		0x0C0000
+-#define EPLD_IntMask0		0x0E0000
+-#define EPLD_IntMask0Set	0x100000
+-#define EPLD_IntMask0Clear	0x120000
+-#define EPLD_IntMask1		0x140000
+-#define EPLD_IntMask1Set	0x160000
+-#define EPLD_IntMask1Clear	0x180000
+-#define EPLD_LedStdAddr		0x1A0000
+-
+-#define EPLD_Flash		0x400000
+-#define EPLD_Stem		0x500000
+-#define EPLD_StemSet		0x600000
+-#define EPLD_StemClr		0x700000
+-#define EPLD_DACSPMux		0xD00000
+-
+diff --git a/arch/sh/boards/st/mb519/setup.c b/arch/sh/boards/st/mb519/setup.c
+index 9659cc4..39749ce 100644
+--- a/arch/sh/boards/st/mb519/setup.c
++++ b/arch/sh/boards/st/mb519/setup.c
+@@ -22,8 +22,8 @@
+ #include <linux/phy.h>
+ #include <linux/io.h>
+ #include <asm/irq-ilc.h>
+-#include <asm/mach/harp.h>
+-#include "../common/epld.h"
++#include <asm/mb519/epld.h>
++#include "../common/common.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index 0f18125..284e110 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -25,7 +25,7 @@
+ #include <asm/irq-ilc.h>
+ #include <asm/irl.h>
+ #include <asm/io.h>
+-#include "../common/epld.h"
++#include "../common/common.h"
+ 
+ /* Whether the hardware supports NOR or NAND Flash depends on J34.
+  * In position 1-2 CSA selects NAND, in position 2-3 is selects NOR.
+diff --git a/arch/sh/boards/st/mb671/epld.h b/arch/sh/boards/st/mb671/epld.h
+deleted file mode 100644
+index 68341b9..0000000
+--- a/arch/sh/boards/st/mb671/epld.h
++++ /dev/null
+@@ -1,24 +0,0 @@
+-#define EPLD_BASE 0x05000000
+-#define EPLD_SIZE 0x01000000
+-
+-#define EPLD_ver		0x000000
+-#define EPLD_cpcbver		0x020000
+-#define EPLD_stem		0x040000
+-#define EPLD_driver		0x060000
+-#define EPLD_reset		0x080000
+-#define EPLD_IntStat0		0x0A0000
+-#define EPLD_IntStat1		0x0C0000
+-#define EPLD_IntMask0		0x0E0000
+-#define EPLD_IntMask0Set	0x100000
+-#define EPLD_IntMask0Clear	0x120000
+-#define EPLD_IntMask1		0x140000
+-#define EPLD_IntMask1Set	0x160000
+-#define EPLD_IntMask1Clear	0x180000
+-#define EPLD_LedStdAddr		0x1A0000
+-
+-#define EPLD_Flash		0x400000
+-#define EPLD_Stem		0x500000
+-#define EPLD_StemSet		0x600000
+-#define EPLD_StemClr		0x700000
+-#define EPLD_DACSPMux		0xD00000
+-
+diff --git a/arch/sh/boards/st/mb671/setup.c b/arch/sh/boards/st/mb671/setup.c
+index d1da9ac..13ede2d 100644
+--- a/arch/sh/boards/st/mb671/setup.c
++++ b/arch/sh/boards/st/mb671/setup.c
+@@ -21,8 +21,8 @@
+ #include <linux/phy.h>
+ #include <linux/io.h>
+ #include <asm/irq-ilc.h>
+-#include <asm/mach/harp.h>
+-#include "../common/epld.h"
++#include <asm/mb671/epld.h>
++#include "../common/common.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 97af7dd..0f1a986 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -25,7 +25,7 @@
+ #include <asm/irq-ilc.h>
+ #include <asm/irl.h>
+ #include <asm/io.h>
+-#include "../common/epld.h"
++#include "../common/common.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+diff --git a/drivers/leds/leds-mb374.c b/drivers/leds/leds-mb374.c
+index 02e2329..da8666a 100644
+--- a/drivers/leds/leds-mb374.c
++++ b/drivers/leds/leds-mb374.c
+@@ -16,7 +16,7 @@
+ #include <linux/leds.h>
+ #include <linux/stm/pio.h>
+ #include <asm/io.h>
+-#include <asm/mb374/harp.h>
++#include <asm/mb374/epld.h>
+ 
+ struct mb374_led {
+ 	struct led_classdev	cdev;
+diff --git a/drivers/leds/leds-mb411.c b/drivers/leds/leds-mb411.c
+index 0e8d363..a7749cb 100644
+--- a/drivers/leds/leds-mb411.c
++++ b/drivers/leds/leds-mb411.c
+@@ -15,7 +15,7 @@
+ #include <linux/device.h>
+ #include <linux/leds.h>
+ #include <asm/io.h>
+-#include <asm/mb411/harp.h>
++#include <asm/mb411/epld.h>
+ 
+ static void mb411_led_set(struct led_classdev *led_cdev, enum led_brightness brightness)
+ {
+diff --git a/include/asm-sh/mb360/epld.h b/include/asm-sh/mb360/epld.h
+new file mode 100644
+index 0000000..ad30906
+--- /dev/null
++++ b/include/asm-sh/mb360/epld.h
+@@ -0,0 +1,37 @@
++/*
++ * Copyright (C) 2001 David J. Mckay (david.mckay@st.com)
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Defintions applicable to the STMicroelectronics ST40RA Eval board.
++ */
++
++#ifndef __ASM_SH_MB360_EPLD_H
++#define __ASM_SH_MB360_EPLD_H
++
++#define EPLD_BASE		0xa6000000
++#define EPLD_SIZE		0x40
++
++#define EPLD_REVID_PLD		(EPLD_BASE+0x00000000)
++#define EPLD_REVID_BOARD	(EPLD_BASE+0x00000004)
++#define EPLD_GPCR		(EPLD_BASE+0x00000018)
++#define EPLD_INTSTAT0		(EPLD_BASE+0x00000020)
++#define EPLD_INTSTAT1		(EPLD_BASE+0x00000024)
++#define EPLD_INTMASK0		(EPLD_BASE+0x00000028)
++#define EPLD_INTMASK0SET	(EPLD_BASE+0x0000002c)
++#define EPLD_INTMASK0CLR	(EPLD_BASE+0x00000030)
++#define EPLD_INTMASK1		(EPLD_BASE+0x00000034)
++#define EPLD_INTMASK1SET	(EPLD_BASE+0x00000038)
++#define EPLD_INTMASK1CLR	(EPLD_BASE+0x0000003c)
++
++#ifndef __ASSEMBLY__
++extern inline int harp_has_intmask_setclr(void)
++{
++	return 1;
++}
++
++void harp_init_irq(void);
++#endif /* !__ASSEMBLY__ */
++
++#endif
+diff --git a/include/asm-sh/mb360/harp.h b/include/asm-sh/mb360/harp.h
+deleted file mode 100644
+index 094190b..0000000
+--- a/include/asm-sh/mb360/harp.h
++++ /dev/null
+@@ -1,32 +0,0 @@
+-/*
+- * Copyright (C) 2001 David J. Mckay (david.mckay@st.com)
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- *
+- * Defintions applicable to the STMicroelectronics ST40RA Eval board.
+- */
+-
+-#define EPLD_BASE		0xa6000000
+-#define EPLD_SIZE		0x40
+-
+-#define EPLD_REVID_PLD		(EPLD_BASE+0x00000000)
+-#define EPLD_REVID_BOARD	(EPLD_BASE+0x00000004)
+-#define EPLD_GPCR		(EPLD_BASE+0x00000018)
+-#define EPLD_INTSTAT0		(EPLD_BASE+0x00000020)
+-#define EPLD_INTSTAT1		(EPLD_BASE+0x00000024)
+-#define EPLD_INTMASK0		(EPLD_BASE+0x00000028)
+-#define EPLD_INTMASK0SET	(EPLD_BASE+0x0000002c)
+-#define EPLD_INTMASK0CLR	(EPLD_BASE+0x00000030)
+-#define EPLD_INTMASK1		(EPLD_BASE+0x00000034)
+-#define EPLD_INTMASK1SET	(EPLD_BASE+0x00000038)
+-#define EPLD_INTMASK1CLR	(EPLD_BASE+0x0000003c)
+-
+-#ifndef __ASSEMBLY__
+-extern inline int harp_has_intmask_setclr(void)
+-{
+-	return 1;
+-}
+-
+-void harp_init_irq(void);
+-#endif /* !__ASSEMBLY__ */
+diff --git a/include/asm-sh/mb374/epld.h b/include/asm-sh/mb374/epld.h
+new file mode 100644
+index 0000000..ee7ba64
+--- /dev/null
++++ b/include/asm-sh/mb374/epld.h
+@@ -0,0 +1,52 @@
++/*
++ * Copyright (C) 2001 David J. Mckay (david.mckay@st.com)
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Defintions applicable to the STMicroelectronics ST40RA Starter Board.
++ */
++
++#ifndef __ASM_SH_MB374_EPLD_H
++#define __ASM_SH_MB374_EPLD_H
++
++#define EPLD_BASE		0xa7000000
++#define EPLD_SIZE		0x34
++
++#define EPLD_REVID		(EPLD_BASE+0x00000000)
++#define EPLD_RESET		(EPLD_BASE+0x00000004)
++#define EPLD_LED_SET		(EPLD_BASE+0x00000008)
++#define EPLD_LED_CLR		(EPLD_BASE+0x0000000c)
++#define EPLD_VPP		(EPLD_BASE+0x00000010)
++#define EPLD_INTMASK0		(EPLD_BASE+0x00000014)
++#define EPLD_INTMASK0SET	(EPLD_BASE+0x00000018)
++#define EPLD_INTMASK0CLR	(EPLD_BASE+0x0000001c)
++#define EPLD_INTMASK1		(EPLD_BASE+0x00000020)
++#define EPLD_INTMASK1SET	(EPLD_BASE+0x00000024)
++#define EPLD_INTMASK1CLR	(EPLD_BASE+0x00000028)
++#define EPLD_INTSTAT0		(EPLD_BASE+0x0000002c)
++#define EPLD_INTSTAT1		(EPLD_BASE+0x00000030)
++
++#define EPLD_LED_ON   1
++#define EPLD_LED_OFF  0
++
++#ifndef __ASSEMBLY__
++extern inline int harp_has_intmask_setclr(void)
++{
++	return 1;
++}
++
++extern inline void harp_set_vpp_on(void)
++{
++	ctrl_outl(1, EPLD_VPP);
++}
++
++extern inline void harp_set_vpp_off(void)
++{
++	ctrl_outl(0, EPLD_VPP);
++}
++
++void harp_init_irq(void);
++#endif /* !__ASSEMBLY__ */
++
++#endif
+diff --git a/include/asm-sh/mb374/harp.h b/include/asm-sh/mb374/harp.h
+deleted file mode 100644
+index 76b7f7c..0000000
+--- a/include/asm-sh/mb374/harp.h
++++ /dev/null
+@@ -1,47 +0,0 @@
+-/*
+- * Copyright (C) 2001 David J. Mckay (david.mckay@st.com)
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- *
+- * Defintions applicable to the STMicroelectronics ST40RA Starter Board.
+- */
+-
+-#define EPLD_BASE		0xa7000000
+-#define EPLD_SIZE		0x34
+-
+-#define EPLD_REVID		(EPLD_BASE+0x00000000)
+-#define EPLD_RESET		(EPLD_BASE+0x00000004)
+-#define EPLD_LED_SET		(EPLD_BASE+0x00000008)
+-#define EPLD_LED_CLR		(EPLD_BASE+0x0000000c)
+-#define EPLD_VPP		(EPLD_BASE+0x00000010)
+-#define EPLD_INTMASK0		(EPLD_BASE+0x00000014)
+-#define EPLD_INTMASK0SET	(EPLD_BASE+0x00000018)
+-#define EPLD_INTMASK0CLR	(EPLD_BASE+0x0000001c)
+-#define EPLD_INTMASK1		(EPLD_BASE+0x00000020)
+-#define EPLD_INTMASK1SET	(EPLD_BASE+0x00000024)
+-#define EPLD_INTMASK1CLR	(EPLD_BASE+0x00000028)
+-#define EPLD_INTSTAT0		(EPLD_BASE+0x0000002c)
+-#define EPLD_INTSTAT1		(EPLD_BASE+0x00000030)
+-
+-#define EPLD_LED_ON   1
+-#define EPLD_LED_OFF  0
+-
+-#ifndef __ASSEMBLY__
+-extern inline int harp_has_intmask_setclr(void)
+-{
+-	return 1;
+-}
+-
+-extern inline void harp_set_vpp_on(void)
+-{
+-	ctrl_outl(1, EPLD_VPP);
+-}
+-
+-extern inline void harp_set_vpp_off(void)
+-{
+-	ctrl_outl(0, EPLD_VPP);
+-}
+-
+-void harp_init_irq(void);
+-#endif /* !__ASSEMBLY__ */
+diff --git a/include/asm-sh/mb411/epld.h b/include/asm-sh/mb411/epld.h
+new file mode 100644
+index 0000000..bd6e22b
+--- /dev/null
++++ b/include/asm-sh/mb411/epld.h
+@@ -0,0 +1,48 @@
++/*
++ * Copyright (C) 2005 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Definitions applicable to the STMicroelectronics STb7100 Validation board.
++ */
++
++#ifndef __ASM_SH_MB411_EPLD_H
++#define __ASM_SH_MB411_EPLD_H
++
++#define EPLD_BASE		0x03000000
++#define EPLD_SIZE		0x00E00000
++
++#define EPLD_EPLDVER		0x000000
++#define EPLD_PCBVER		0x020000
++#define EPLD_STEM		0x040000
++#define EPLD_DRIVER		0x060000
++#define EPLD_RESET		0x080000
++#define EPLD_INTSTAT0		0x0a0000
++#define EPLD_INTSTAT1		0x0c0000
++#define EPLD_INTMASK0		0x0e0000
++#define EPLD_INTMASK0SET	0x100000
++#define EPLD_INTMASK0CLR	0x120000
++#define EPLD_INTMASK1		0x140000
++#define EPLD_INTMASK1SET	0x160000
++#define EPLD_INTMASK1CLR	0x180000
++#define EPLD_TEST		0x1e0000
++
++#define EPLD_FLASH		0x400000
++#define EPLD_ATAPI		0x900000
++
++#define EPLD_DAC_CTRL		0xa00000
++#define EPLD_DAC_PNOTS		0xb00000
++#define EPLD_DAC_SPMUX		0xd00000
++
++/* Some registers are also available in the POD EPLD */
++#define EPLD_POD_BASE		0x02100000
++#define EPLD_POD_REVID		0x00
++#define EPLD_POD_LED		0x10
++#define EPLD_POD_DEVID		0x1c
++
++#define EPLD_LED_ON     1
++#define EPLD_LED_OFF    0
++
++#endif
+diff --git a/include/asm-sh/mb411/harp.h b/include/asm-sh/mb411/harp.h
+deleted file mode 100644
+index a22cdb3..0000000
+--- a/include/asm-sh/mb411/harp.h
++++ /dev/null
+@@ -1,43 +0,0 @@
+-/*
+- * Copyright (C) 2005 STMicroelectronics Limited
+- * Author: Stuart Menefy <stuart.menefy@st.com>
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- *
+- * Definitions applicable to the STMicroelectronics STb7100 Validation board.
+- */
+-
+-#define EPLD_BASE		0x03000000
+-#define EPLD_SIZE		0x00E00000
+-
+-#define EPLD_EPLDVER		0x000000
+-#define EPLD_PCBVER		0x020000
+-#define EPLD_STEM		0x040000
+-#define EPLD_DRIVER		0x060000
+-#define EPLD_RESET		0x080000
+-#define EPLD_INTSTAT0		0x0a0000
+-#define EPLD_INTSTAT1		0x0c0000
+-#define EPLD_INTMASK0		0x0e0000
+-#define EPLD_INTMASK0SET	0x100000
+-#define EPLD_INTMASK0CLR	0x120000
+-#define EPLD_INTMASK1		0x140000
+-#define EPLD_INTMASK1SET	0x160000
+-#define EPLD_INTMASK1CLR	0x180000
+-#define EPLD_TEST		0x1e0000
+-
+-#define EPLD_FLASH		0x400000
+-#define EPLD_ATAPI		0x900000
+-
+-#define EPLD_DAC_CTRL		0xa00000
+-#define EPLD_DAC_PNOTS		0xb00000
+-#define EPLD_DAC_SPMUX		0xd00000
+-
+-/* Some registers are also available in the POD EPLD */
+-#define EPLD_POD_BASE		0x02100000
+-#define EPLD_POD_REVID		0x00
+-#define EPLD_POD_LED		0x10
+-#define EPLD_POD_DEVID		0x1c
+-
+-#define EPLD_LED_ON     1
+-#define EPLD_LED_OFF    0
+diff --git a/include/asm-sh/mb519/epld.h b/include/asm-sh/mb519/epld.h
+new file mode 100644
+index 0000000..67af18b
+--- /dev/null
++++ b/include/asm-sh/mb519/epld.h
+@@ -0,0 +1,38 @@
++/*
++ * Copyright (C) 2007 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Definitions applicable to the STMicroelectronics STb7100 Validation board.
++ */
++
++#ifndef __ASM_SH_MB519_EPLD_H
++#define __ASM_SH_MB519_EPLD_H
++
++#define EPLD_BASE	0x05000000
++#define EPLD_SIZE	0x01000000
++
++#define EPLD_EPLDVER		0x000000
++#define EPLD_PCBVER		0x020000
++#define EPLD_STEM		0x040000
++#define EPLD_DRIVER		0x060000
++#define EPLD_RESET		0x080000
++#define EPLD_INTSTAT0		0x0A0000
++#define EPLD_INTSTAT1		0x0C0000
++#define EPLD_INTMASK0		0x0E0000
++#define EPLD_INTMASK0SET	0x100000
++#define EPLD_INTMASK0CLR	0x120000
++#define EPLD_INTMASK1		0x140000
++#define EPLD_INTMASK1SET	0x160000
++#define EPLD_INTMASK1CLR	0x180000
++#define EPLD_LEDSTDADDR		0x1A0000
++
++#define EPLD_FLASH		0x400000
++#define EPLD_STEM2		0x500000
++#define EPLD_STEMSET		0x600000
++#define EPLD_STEMCLR		0x700000
++#define EPLD_DACSPMUX		0xD00000
++
++#endif
+diff --git a/include/asm-sh/mb519/harp.h b/include/asm-sh/mb519/harp.h
+deleted file mode 100644
+index bf16615..0000000
+--- a/include/asm-sh/mb519/harp.h
++++ /dev/null
+@@ -1,23 +0,0 @@
+-#define EPLD_BASE	0x05000000
+-#define EPLD_SIZE	0x01000000
+-
+-#define EPLD_EPLDVER		0x000000
+-#define EPLD_PCBVER		0x020000
+-#define EPLD_STEM		0x040000
+-#define EPLD_DRIVER		0x060000
+-#define EPLD_RESET		0x080000
+-#define EPLD_INTSTAT0		0x0A0000
+-#define EPLD_INTSTAT1		0x0C0000
+-#define EPLD_INTMASK0		0x0E0000
+-#define EPLD_INTMASK0SET	0x100000
+-#define EPLD_INTMASK0CLR	0x120000
+-#define EPLD_INTMASK1		0x140000
+-#define EPLD_INTMASK1SET	0x160000
+-#define EPLD_INTMASK1CLR	0x180000
+-#define EPLD_LEDSTDADDR		0x1A0000
+-
+-#define EPLD_FLASH		0x400000
+-#define EPLD_STEM2		0x500000
+-#define EPLD_STEMSET		0x600000
+-#define EPLD_STEMCLR		0x700000
+-#define EPLD_DACSPMUX		0xD00000
+diff --git a/include/asm-sh/mb671/epld.h b/include/asm-sh/mb671/epld.h
+new file mode 100644
+index 0000000..4866706
+--- /dev/null
++++ b/include/asm-sh/mb671/epld.h
+@@ -0,0 +1,38 @@
++/*
++ * Copyright (C) 2007 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Definitions applicable to the STMicroelectronics STb7100 Validation board.
++ */
++
++#ifndef __ASM_SH_MB671_EPLD_H
++#define __ASM_SH_MB671_EPLD_H
++
++#define EPLD_BASE	0x05000000
++#define EPLD_SIZE	0x01000000
++
++#define EPLD_EPLDVER		0x000000
++#define EPLD_PCBVER		0x020000
++#define EPLD_STEM		0x040000
++#define EPLD_DRIVER		0x060000
++#define EPLD_RESET		0x080000
++#define EPLD_INTSTAT0		0x0A0000
++#define EPLD_INTSTAT1		0x0C0000
++#define EPLD_INTMASK0		0x0E0000
++#define EPLD_INTMASK0SET	0x100000
++#define EPLD_INTMASK0CLR	0x120000
++#define EPLD_INTMASK1		0x140000
++#define EPLD_INTMASK1SET	0x160000
++#define EPLD_INTMASK1CLR	0x180000
++#define EPLD_LEDSTDADDR		0x1A0000
++
++#define EPLD_FLASH		0x400000
++#define EPLD_STEM2		0x500000
++#define EPLD_STEMSET		0x600000
++#define EPLD_STEMCLR		0x700000
++#define EPLD_DACSPMUX		0xD00000
++
++#endif
+diff --git a/include/asm-sh/mb671/harp.h b/include/asm-sh/mb671/harp.h
+deleted file mode 100644
+index bf16615..0000000
+--- a/include/asm-sh/mb671/harp.h
++++ /dev/null
+@@ -1,23 +0,0 @@
+-#define EPLD_BASE	0x05000000
+-#define EPLD_SIZE	0x01000000
+-
+-#define EPLD_EPLDVER		0x000000
+-#define EPLD_PCBVER		0x020000
+-#define EPLD_STEM		0x040000
+-#define EPLD_DRIVER		0x060000
+-#define EPLD_RESET		0x080000
+-#define EPLD_INTSTAT0		0x0A0000
+-#define EPLD_INTSTAT1		0x0C0000
+-#define EPLD_INTMASK0		0x0E0000
+-#define EPLD_INTMASK0SET	0x100000
+-#define EPLD_INTMASK0CLR	0x120000
+-#define EPLD_INTMASK1		0x140000
+-#define EPLD_INTMASK1SET	0x160000
+-#define EPLD_INTMASK1CLR	0x180000
+-#define EPLD_LEDSTDADDR		0x1A0000
+-
+-#define EPLD_FLASH		0x400000
+-#define EPLD_STEM2		0x500000
+-#define EPLD_STEMSET		0x600000
+-#define EPLD_STEMCLR		0x700000
+-#define EPLD_DACSPMUX		0xD00000

@@ -1,0 +1,21 @@
+sh: remove unnecessary memset after alloc_bootmem_low_pages
+
+Because alloc_bootmem functions return the allocated memory always 
+zeroed, an additional call of memset on allocated memory is
+unnecessary.
+
+Signed-off-by: Marek Skuczynski <M.Skuczynski@adbglobal.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux/arch/sh/mm/init.c
+===================================================================
+--- linux.orig/arch/sh/mm/init.c	2008-08-06 09:48:29.000000000 +0100
++++ linux/arch/sh/mm/init.c	2008-08-06 09:49:15.000000000 +0100
+@@ -164,7 +164,6 @@
+ 		if (!pmd_present(*pmd)) {
+ 			pte_t *pte_table;
+ 			pte_table = (pte_t *)alloc_bootmem_low_pages(PAGE_SIZE);
+-			memset(pte_table, 0, PAGE_SIZE);
+ 			pmd_populate_kernel(&init_mm, pmd, pte_table);
+ 		}
+ 		vaddr += PMD_SIZE;

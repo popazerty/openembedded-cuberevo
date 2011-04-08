@@ -1,0 +1,28 @@
+From 07b8ac9c795afcc9eedc040c66b4dc8c5839ba48 Mon Sep 17 00:00:00 2001
+From: Giuseppe CONDORELLI <giuseppe.condorelli@st.com>
+Date: Thu, 28 May 2009 03:59:53 -0400
+Subject: [PATCH] wireless: remove unnecessary restrictions on rt73 usage
+
+No need to restrict which platforms can use STM RT73 wireless support.
+
+Signed-off-by: Giuseppe Condorelli <giuseppe.condorelli@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/wireless/rt73/Kconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/wireless/rt73/Kconfig b/drivers/net/wireless/rt73/Kconfig
+index aca9bcd..0c5f3af 100644
+--- a/drivers/net/wireless/rt73/Kconfig
++++ b/drivers/net/wireless/rt73/Kconfig
+@@ -1,6 +1,6 @@
+ config STM_RT73_WIRELESS
+   tristate "STMicroelectronics rt73 wireless usb device"
+-  depends on USB && (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200) && MAC80211 && WLAN_80211
++  depends on USB && MAC80211 && WLAN_80211
+ 	select FW_LOADER
+   default n
+  	---help---
+-- 
+1.6.0.6
+

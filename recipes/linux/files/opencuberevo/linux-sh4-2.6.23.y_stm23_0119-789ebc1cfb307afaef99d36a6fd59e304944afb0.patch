@@ -1,0 +1,365 @@
+From 789ebc1cfb307afaef99d36a6fd59e304944afb0 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 4 Mar 2009 09:16:15 +0100
+Subject: [PATCH] stmmac: fix vlan support for the gmac.
+
+This patch fixes the vlan support for the GMAC core.
+Only the VLAN tag extraction is supported.
+
+Note:
+Synopsys have bug in GMAC IP, the core is not able to perform 12-Bit VLAN
+Tag comparison.
+Currently the driver doesn't use any Rx filtering for VLAN, by default.
+At any rate, this patch also adds a first untested code to start supporting
+this.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/common.h         |    6 ++-
+ drivers/net/stmmac/descs.h          |    4 +-
+ drivers/net/stmmac/gmac.c           |   44 +++++++++++++++++++++++----
+ drivers/net/stmmac/gmac.h           |    2 +-
+ drivers/net/stmmac/mac100.c         |    6 ++--
+ drivers/net/stmmac/stmmac.h         |    4 ++-
+ drivers/net/stmmac/stmmac_ethtool.c |    4 ++-
+ drivers/net/stmmac/stmmac_main.c    |   56 ++++++++++++++++++++++++++++++----
+ 8 files changed, 102 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/net/stmmac/common.h b/drivers/net/stmmac/common.h
+index 5525861..54a1e37 100644
+--- a/drivers/net/stmmac/common.h
++++ b/drivers/net/stmmac/common.h
+@@ -137,6 +137,7 @@ struct stmmac_extra_stats {
+ 	unsigned long tx_heartbeat;
+ 	unsigned long tx_deferred;
+ 	unsigned long tx_vlan;
++	unsigned long rx_vlan;
+ 	unsigned long tx_jabber;
+ 	unsigned long tx_frame_flushed;
+ 	unsigned long tx_payload_error;
+@@ -153,7 +154,8 @@ struct stmmac_extra_stats {
+ 	unsigned long rx_multicast;
+ 	unsigned long rx_gmac_overflow;
+ 	unsigned long rx_watchdog;
+-	unsigned long rx_filter;
++	unsigned long da_rx_filter_fail;
++	unsigned long sa_rx_filter_fail;
+ 	unsigned long rx_missed_cntr;
+ 	unsigned long rx_overflow_cntr;
+ 	/* Tx/Rx IRQ errors */
+@@ -178,7 +180,7 @@ struct stmmac_extra_stats {
+ 	unsigned long dma_tx_normal_irq; /* number of DMA normal TX irq */
+ 	unsigned long dma_rx_normal_irq; /* number of DMA normal RX irq */
+ };
+-#define EXTRA_STATS 42
++#define EXTRA_STATS 44
+ 
+ /* In case of GMAC, the device can compute the HW checksums and
+  * found if the frame is corrupted. It can also decide to let the
+diff --git a/drivers/net/stmmac/descs.h b/drivers/net/stmmac/descs.h
+index 80543f4..3b79c21 100644
+--- a/drivers/net/stmmac/descs.h
++++ b/drivers/net/stmmac/descs.h
+@@ -46,11 +46,11 @@ struct dma_desc {
+ 			u32 vlan_tag:1;
+ 			u32 overflow_error:1;
+ 			u32 length_error:1;
+-			u32 source_filter_fail:1;
++			u32 sa_filter_fail:1;
+ 			u32 descriptor_error:1;
+ 			u32 error_summary:1;
+ 			u32 frame_length:14;
+-			u32 filtering_fail:1;
++			u32 da_filter_fail:1;
+ 			u32 own:1;
+ 			/* RDES1 */
+ 			u32 buffer1_size:13;
+diff --git a/drivers/net/stmmac/gmac.c b/drivers/net/stmmac/gmac.c
+index 65daef9..f91d11a 100644
+--- a/drivers/net/stmmac/gmac.c
++++ b/drivers/net/stmmac/gmac.c
+@@ -20,7 +20,7 @@
+ #include <linux/ethtool.h>
+ #include <asm/io.h>
+ 
+-#include "common.h"
++#include "stmmac.h"
+ #include "gmac.h"
+ 
+ #undef GMAC_DEBUG
+@@ -338,9 +338,14 @@ static int gmac_get_rx_frame_status(void *data, struct stmmac_extra_stats *x,
+ 		DBG(KERN_ERR "GMAC RX: dribbling error\n");
+ 		ret = discard_frame;
+ 	}
+-	if (unlikely(p->des01.erx.filtering_fail)) {
+-		DBG(KERN_ERR "GMAC RX : filtering_fail error\n");
+-		x->rx_filter++;
++	if (unlikely(p->des01.erx.sa_filter_fail)) {
++		DBG(KERN_ERR "GMAC RX : Source Address filter fail\n");
++		x->sa_rx_filter_fail++;
++		ret = discard_frame;
++	}
++	if (unlikely(p->des01.erx.da_filter_fail)) {
++		DBG(KERN_ERR "GMAC RX : Destination Address filter fail\n");
++		x->da_rx_filter_fail++;
+ 		ret = discard_frame;
+ 	}
+ 	if (unlikely(p->des01.erx.length_error)) {
+@@ -387,9 +392,6 @@ static void gmac_core_init(unsigned long ioaddr)
+ 	value |= GMAC_CORE_INIT;
+ 	writel(value, ioaddr + GMAC_CONTROL);
+ 
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	writel(ETH_P_8021Q, ioaddr + GMAC_VLAN);
+-#endif
+ 	/* STBus Bridge Configuration */
+ 	/*writel(0xc5608, ioaddr + 0x00007000);*/
+ 
+@@ -398,14 +400,41 @@ static void gmac_core_init(unsigned long ioaddr)
+ 	/* Mask GMAC interrupts */
+ 	writel(0x207, ioaddr + GMAC_INT_MASK);
+ 
++#ifdef STMMAC_VLAN_TAG_USED
++	/* Tag detection without filtering */
++	writel(0x0, ioaddr + GMAC_VLAN_TAG);
++#endif
++	return;
++}
++
++#ifdef STMMAC_VLAN_TAG_USED
++static void gmac_vlan_filter(struct net_device *dev)
++{
++	struct stmmac_priv *priv = netdev_priv(dev);
++	unsigned long ioaddr = dev->base_addr;
++
++	if ((priv->vlan_rx_filter) && (priv->vlgrp)) {
++		int vid;
++
++		for (vid = 0; vid < VLAN_VID_MASK; vid++)
++			if (vlan_group_get_device(priv->vlgrp, vid))
++				DBG(KERN_INFO "GMAC: VLAN RX filter: vid: %d"
++					"Reg7: 0x%x\n", vid, value);
++			/*FIXME*/
++	}
+ 	return;
+ }
++#endif
+ 
+ static void gmac_set_filter(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+ 	unsigned int value = 0;
+ 
++#ifdef STMMAC_VLAN_TAG_USED
++	gmac_vlan_filter(dev);
++#endif
++
+ 	if (dev->flags & IFF_PROMISC) {
+ 		value = GMAC_FRAME_FILTER_PR;
+ 	} else if ((dev->mc_count > HASH_TABLE_SIZE)
+@@ -451,6 +480,7 @@ static void gmac_set_filter(struct net_device *dev)
+ 	    "HI 0x%08x, LO 0x%08x\n",
+ 	    __FUNCTION__, readl(ioaddr + GMAC_FRAME_FILTER),
+ 	    readl(ioaddr + GMAC_HASH_HIGH), readl(ioaddr + GMAC_HASH_LOW));
++
+ 	return;
+ }
+ 
+diff --git a/drivers/net/stmmac/gmac.h b/drivers/net/stmmac/gmac.h
+index 8e8bbd1..b97d46d 100644
+--- a/drivers/net/stmmac/gmac.h
++++ b/drivers/net/stmmac/gmac.h
+@@ -11,7 +11,7 @@
+ #define GMAC_MII_ADDR		0x00000010	/* MII Address */
+ #define GMAC_MII_DATA		0x00000014	/* MII Data */
+ #define GMAC_FLOW_CTRL		0x00000018	/* Flow Control */
+-#define GMAC_VLAN		0x0000001c	/* VLAN Tag */
++#define GMAC_VLAN_TAG		0x0000001c	/* VLAN Tag */
+ 
+ /* GMAC ID */
+ #define GMAC_VERSION	0x00000020	/* GMAC CORE Version */
+diff --git a/drivers/net/stmmac/mac100.c b/drivers/net/stmmac/mac100.c
+index 8032508..17da883 100644
+--- a/drivers/net/stmmac/mac100.c
++++ b/drivers/net/stmmac/mac100.c
+@@ -30,14 +30,14 @@
+ #else
+ #define DBG(fmt, args...)  do { } while(0)
+ #endif
++
+ static void mac100_core_init(unsigned long ioaddr)
+ {
+ 	u32 value = readl(ioaddr + MAC_CONTROL);
++
+ 	writel((value | MAC_CORE_INIT), ioaddr + MAC_CONTROL);
+ 
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	/* VLAN1 Tag identifier register is programmed to 
+-	 * the 802.1Q VLAN Extended Header (0x8100). */
++#ifdef STMMAC_VLAN_TAG_USED
+ 	writel(ETH_P_8021Q, ioaddr + MAC_VLAN1);
+ #endif
+ 	return;
+diff --git a/drivers/net/stmmac/stmmac.h b/drivers/net/stmmac/stmmac.h
+index 836e4f9..7aef946 100644
+--- a/drivers/net/stmmac/stmmac.h
++++ b/drivers/net/stmmac/stmmac.h
+@@ -1,9 +1,10 @@
+ #define ETH_RESOURCE_NAME	"stmmaceth"
+ #define PHY_RESOURCE_NAME	"stmmacphy"
+-#define DRV_MODULE_VERSION	"Nov_08"
++#define DRV_MODULE_VERSION	"March_09"
+ 
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+ #define STMMAC_VLAN_TAG_USED
++#include <linux/if_vlan.h>
+ #endif
+ 
+ #include "common.h"
+@@ -69,4 +70,5 @@ struct stmmac_priv {
+ #ifdef STMMAC_VLAN_TAG_USED
+ 	struct vlan_group *vlgrp;
+ #endif
++	int vlan_rx_filter;
+ };
+diff --git a/drivers/net/stmmac/stmmac_ethtool.c b/drivers/net/stmmac/stmmac_ethtool.c
+index afe5be6..3506166 100644
+--- a/drivers/net/stmmac/stmmac_ethtool.c
++++ b/drivers/net/stmmac/stmmac_ethtool.c
+@@ -221,6 +221,7 @@ static struct {
+ 	"tx_heartbeat"}, {
+ 	"tx_deferred"}, {
+ 	"tx_vlan"}, {
++	"rx_vlan"}, {
+ 	"tx_jabber"}, {
+ 	"tx_frame_flushed"}, {
+ 	"tx_payload_error"}, {
+@@ -236,7 +237,8 @@ static struct {
+ 	"rx_multicast"}, {
+ 	"rx_gmac_overflow"}, {
+ 	"rx_watchdog"}, {
+-	"rx_filter"}, {
++	"da_rx_filter_fail"}, {
++	"sa_rx_filter_fail"}, {
+ 	"rx_missed_cntr"}, {
+ 	"rx_overflow_cntr"}, {
+ 	"tx_undeflow_irq"}, {
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index ca5127a..071517c 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -33,7 +33,6 @@
+ #include <linux/mii.h>
+ #include <linux/phy.h>
+ #include <linux/stm/soc.h>
+-#include <linux/if_vlan.h>
+ #include <linux/dma-mapping.h>
+ #include "stmmac.h"
+ 
+@@ -1179,6 +1178,7 @@ static int stmmac_open(struct net_device *dev)
+ 
+ 	/* Initialize the MAC Core */
+ 	priv->mac_type->ops->core_init(ioaddr);
++
+ 	priv->tx_coalesce = 0;
+ 	priv->shutdown = 0;
+ 
+@@ -1545,6 +1545,14 @@ static int stmmac_rx(struct net_device *dev, int limit)
+ 			else
+ 				skb->ip_summed = CHECKSUM_UNNECESSARY;
+ 
++#ifdef STMMAC_VLAN_TAG_USED
++			if ((priv->vlgrp != NULL) && (priv->is_gmac) &&
++				(p->des01.erx.vlan_tag)) {
++				RX_DBG(KERN_INFO "GMAC RX: VLAN frame tagged"
++					" by the core\n");
++				priv->xstats.rx_vlan++;
++			} /*FIXME*/
++#endif
+ 			netif_receive_skb(skb);
+ 
+ 			dev->stats.rx_packets++;
+@@ -1666,9 +1674,9 @@ static void stmmac_multicast_list(struct net_device *dev)
+ {
+ 	struct stmmac_priv *priv = netdev_priv(dev);
+ 
+-	/* Calling the hw function. */
++	spin_lock(&priv->lock);
+ 	priv->mac_type->ops->set_filter(dev);
+-
++	spin_unlock(&priv->lock);
+ 	return;
+ }
+ 
+@@ -1781,11 +1789,39 @@ static void stmmac_vlan_rx_register(struct net_device *dev,
+ {
+ 	struct stmmac_priv *priv = netdev_priv(dev);
+ 
++	DBG(probe, INFO, "%s: Setting vlgrp to %p\n", dev->name, grp);
++
+ 	spin_lock(&priv->lock);
+-	/* VLAN Tag identifier register already contains the VLAN tag ID. 
+-	   (see hw mac initialization). */
+ 	priv->vlgrp = grp;
+ 	spin_unlock(&priv->lock);
++
++	return;
++}
++
++static void stmmac_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
++{
++	struct stmmac_priv *priv = netdev_priv(dev);
++
++	DBG(probe, INFO, "%s: Adding vlanid %d to vlan filter\n", dev->name,
++								  vid);
++	spin_lock(&priv->lock);
++	priv->mac_type->ops->set_filter(dev);
++	spin_unlock(&priv->lock);
++	return;
++}
++
++static void stmmac_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
++{
++	struct stmmac_priv *priv = netdev_priv(dev);
++
++	DBG(probe, INFO, "%s: removing vlanid %d from vlan filter\n",
++		dev->name, vid);
++
++	spin_lock(&priv->lock);
++	vlan_group_set_device(priv->vlgrp, vid, NULL);
++	priv->mac_type->ops->set_filter(dev);
++	spin_unlock(&priv->lock);
++	return;
+ }
+ #endif
+ 
+@@ -1820,11 +1856,16 @@ static int stmmac_probe(struct net_device *dev)
+ 	dev->poll_controller = stmmac_poll_controller;
+ #endif
+ #ifdef STMMAC_VLAN_TAG_USED
+-	/* Supports IEEE 802.1Q VLAN tag detection for reception frames */
++	/* Both mac100 and gmac support receive VLAN tag detection */
+ 	dev->features |= NETIF_F_HW_VLAN_RX;
+ 	dev->vlan_rx_register = stmmac_vlan_rx_register;
+-#endif
+ 
++	if (priv->vlan_rx_filter) {
++		dev->features |= NETIF_F_HW_VLAN_FILTER;
++		dev->vlan_rx_add_vid = stmmac_vlan_rx_add_vid;
++		dev->vlan_rx_kill_vid = stmmac_vlan_rx_kill_vid;
++	}
++#endif
+ 	priv->msg_enable = netif_msg_init(debug, default_msg_level);
+ 
+ 	if (priv->is_gmac)
+@@ -2028,6 +2069,7 @@ static int stmmac_dvr_probe(struct platform_device *pdev)
+ 	priv->bus_id = plat_dat->bus_id;
+ 	priv->pbl = plat_dat->pbl;	/* TLI */
+ 	priv->is_gmac = plat_dat->has_gmac;	/* GMAC is on board */
++	priv->vlan_rx_filter = 0; /*plat_dat->vlan_rx_filter;*/
+ 
+ 	platform_set_drvdata(pdev, ndev);
+ 
+-- 
+1.6.0.6
+

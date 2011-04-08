@@ -1,0 +1,160 @@
+From 346036c88afaa14abc81536fbc4d45b47c45551c Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Tue, 8 Sep 2009 13:55:19 +0200
+Subject: [PATCH] stm: clk: Fixed LLA clock on stx7141
+
+This patch fixes
+ - a wrong code based on float (not present in
+   platform like 7111 and 7105) now updated to use integer.
+ - several flag of clocks
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx7141.c |   94 ++++++++++++++------------------
+ 1 files changed, 40 insertions(+), 54 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7141.c b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+index 6ce60c8..ae69735 100755
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+@@ -66,6 +66,35 @@ static int clkgene_init(clk_t *clk_p);
+ /* Per boards top input clocks. mb618 & mb636 currently identical */
+ static U32 OSC_CLKOSC = 30;	/* USB/lp osc */
+ 
++typedef struct fsyn_regs {
++	unsigned long md, pe, sdiv, prog;
++} fsyn_regs_t;
++
++static U32 clkgena_offset_regs[] = {
++	CKGA_OSC_DIV0_CFG,
++	CKGA_PLL0HS_DIV0_CFG,
++	CKGA_PLL0LS_DIV0_CFG,
++	CKGA_PLL1_DIV0_CFG
++};
++
++static struct fsyn_regs clkgenb_regs[] = {
++	{CKGB_FS0_MD1, CKGB_FS0_PE1, CKGB_FS0_SDIV1, CKGB_FS0_EN_PRG1},
++	{CKGB_FS0_MD2, CKGB_FS0_PE2, CKGB_FS0_SDIV2, CKGB_FS0_EN_PRG2},
++	{CKGB_FS0_MD3, CKGB_FS0_PE3, CKGB_FS0_SDIV3, CKGB_FS0_EN_PRG3},
++	{CKGB_FS0_MD4, CKGB_FS0_PE4, CKGB_FS0_SDIV4, CKGB_FS0_EN_PRG4},
++	{CKGB_FS1_MD1, CKGB_FS1_PE1, CKGB_FS1_SDIV1, CKGB_FS1_EN_PRG1},
++	{CKGB_FS1_MD2, CKGB_FS1_PE2, CKGB_FS1_SDIV2, CKGB_FS1_EN_PRG2},
++	{CKGB_FS1_MD3, CKGB_FS1_PE3, CKGB_FS1_SDIV3, CKGB_FS1_EN_PRG3},
++	{CKGB_FS1_MD4, CKGB_FS1_PE4, CKGB_FS1_SDIV4, CKGB_FS1_EN_PRG4},
++};
++
++static struct fsyn_regs clkgenc_regs[] = {
++	{CKGC_FS0_MD1, CKGC_FS0_PE1, CKGC_FS0_SDIV1, CKGC_FS0_EN_PRG1},
++	{CKGC_FS0_MD2, CKGC_FS0_PE2, CKGC_FS0_SDIV2, CKGC_FS0_EN_PRG2},
++	{CKGC_FS0_MD3, CKGC_FS0_PE3, CKGC_FS0_SDIV3, CKGC_FS0_EN_PRG3},
++	{CKGC_FS0_MD4, CKGC_FS0_PE4, CKGC_FS0_SDIV4, CKGC_FS0_EN_PRG4}
++};
++
+ /* Possible operations registration.
+    Operations are usually grouped by clockgens due to specific HW implementation
+ 
+@@ -198,14 +227,14 @@ clk_t clk_clocks[] = {
+ 	/* Clockgen B */
+ 	REGISTER_CLK(CLKB_REF, &ClockGenB, 0,
+ 		     CLK_RATE_PROPAGATES | CLK_ALWAYS_ENABLED),
+-	REGISTER_CLK(CLKB_FS0_CH1, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_FS0_CH2, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_FS0_CH3, &ClockGenB, 0, 0),
+-	/*   REGISTER_CLK( CLKB_FS0_CH4,       &ClockGenB, 0,	    0 ),*/
+-	REGISTER_CLK(CLKB_FS1_CH1, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_FS1_CH2, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_FS1_CH3, &ClockGenB, 0, 0),
+-	REGISTER_CLK(CLKB_FS1_CH4, &ClockGenB, 0, 0),
++	REGISTER_CLK(CLKB_FS0_CH1, &ClockGenB, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS0_CH2, &ClockGenB, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS0_CH3, &ClockGenB, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS0_CH4, &ClockGenB, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH1, &ClockGenB, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH2, &ClockGenB, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH3, &ClockGenB, 0, CLK_RATE_PROPAGATES),
++	REGISTER_CLK(CLKB_FS1_CH4, &ClockGenB, 0, CLK_RATE_PROPAGATES),
+ 
+ 	REGISTER_CLK(CLKB_TMDS_HDMI, &ClockGenB, 0, 0),
+ 	REGISTER_CLK(CLKB_PIX_HD, &ClockGenB, 0, 0),
+@@ -235,39 +264,6 @@ clk_t clk_clocks[] = {
+ 
+ 	/* Clockgen E (USB), not really a clockgen */
+ 	REGISTER_CLK(CLKE_REF, &ClockGenE, 30000000, CLK_ALWAYS_ENABLED),
+-/*
+- * Not required in Linux
+-	REGISTER_CLK(CLK_LAST, NULL, 0, 0)	* Always keep this last item
+- */
+-};
+-
+-typedef struct fsyn_regs {
+-	unsigned long md, pe, sdiv, prog;
+-} fsyn_regs_t;
+-
+-static U32 clkgena_offset_regs[] = {
+-	CKGA_OSC_DIV0_CFG,
+-	CKGA_PLL0HS_DIV0_CFG,
+-	CKGA_PLL0LS_DIV0_CFG,
+-	CKGA_PLL1_DIV0_CFG
+-};
+-
+-static struct fsyn_regs clkgenb_regs[] = {
+-	{CKGB_FS0_MD1, CKGB_FS0_PE1, CKGB_FS0_SDIV1, CKGB_FS0_EN_PRG1},
+-	{CKGB_FS0_MD2, CKGB_FS0_PE2, CKGB_FS0_SDIV2, CKGB_FS0_EN_PRG2},
+-	{CKGB_FS0_MD3, CKGB_FS0_PE3, CKGB_FS0_SDIV3, CKGB_FS0_EN_PRG3},
+-	{CKGB_FS0_MD4, CKGB_FS0_PE4, CKGB_FS0_SDIV4, CKGB_FS0_EN_PRG4},
+-	{CKGB_FS1_MD1, CKGB_FS1_PE1, CKGB_FS1_SDIV1, CKGB_FS1_EN_PRG1},
+-	{CKGB_FS1_MD2, CKGB_FS1_PE2, CKGB_FS1_SDIV2, CKGB_FS1_EN_PRG2},
+-	{CKGB_FS1_MD3, CKGB_FS1_PE3, CKGB_FS1_SDIV3, CKGB_FS1_EN_PRG3},
+-	{CKGB_FS1_MD4, CKGB_FS1_PE4, CKGB_FS1_SDIV4, CKGB_FS1_EN_PRG4},
+-};
+-
+-static struct fsyn_regs clkgenc_regs[] = {
+-	{CKGC_FS0_MD1, CKGC_FS0_PE1, CKGC_FS0_SDIV1, CKGC_FS0_EN_PRG1},
+-	{CKGC_FS0_MD2, CKGC_FS0_PE2, CKGC_FS0_SDIV2, CKGC_FS0_EN_PRG2},
+-	{CKGC_FS0_MD3, CKGC_FS0_PE3, CKGC_FS0_SDIV3, CKGC_FS0_EN_PRG3},
+-	{CKGC_FS0_MD4, CKGC_FS0_PE4, CKGC_FS0_SDIV4, CKGC_FS0_EN_PRG4}
+ };
+ 
+ GENERIC_LINUX_CLKS(clk_clocks[CLKA_SH4_ICK],	/* sh4_clk parent    */
+@@ -530,7 +526,7 @@ static int clkgena_disable(clk_t *clk_p)
+    Description: Set divider ratio for clockgenA when possible
+    ======================================================================== */
+ 
+-static int clkgena_set_div(clk_t *clk_p, U32 * div_p)
++static int clkgena_set_div(clk_t *clk_p, U32 *div_p)
+ {
+ 	int idx;
+ 	U32 div_cfg = 0;
+@@ -543,17 +539,8 @@ static int clkgena_set_div(clk_t *clk_p, U32 * div_p)
+ 	/* Computing divider config */
+ 	if (*div_p == 1)
+ 		div_cfg = 0x00;
+-	else {
+-		float split;
++	else
+ 		div_cfg = (*div_p - 1) & 0x1F;
+-		if ((*div_p % 2) == 0) {	/* even */
+-			split = (*div_p / 2) - 1;
+-		} else {	/* odd */
+-
+-			split = ((float)*div_p / 2) - (float)0.5;
+-		}
+-		div_cfg = div_cfg | ((U32) split << 8);
+-	}
+ 
+ 	/* Which divider to setup ? */
+ 	idx = clkgena_get_index(clk_p->id, &srcreg, &shift);
+@@ -561,9 +548,8 @@ static int clkgena_set_div(clk_t *clk_p, U32 * div_p)
+ 		return CLK_ERR_BAD_PARAMETER;
+ 
+ 	/* Now according to parent, let's write divider ratio */
+-	offset = clkgena_offset_regs[clk_p->parent->id - CLKA_OSC];
++	offset = clkgena_offset_regs[clk_p->parent->id - CLKA_REF];
+ 	CLK_WRITE(CKGA_BASE_ADDRESS + offset + (4 * idx), div_cfg);
+-
+ 	return (0);
+ }
+ 
+-- 
+1.6.0.6
+

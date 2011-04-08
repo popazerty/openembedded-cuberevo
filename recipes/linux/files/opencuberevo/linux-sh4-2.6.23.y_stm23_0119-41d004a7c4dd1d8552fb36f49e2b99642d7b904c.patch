@@ -1,0 +1,243 @@
+From 41d004a7c4dd1d8552fb36f49e2b99642d7b904c Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 22 Apr 2009 09:41:20 +0100
+Subject: [PATCH] stm_nand: Updates to the NAND configuration data
+
+This patch updates the NAND configuration data and is intended to ease the
+migration from the existing plat_nand driver to the imminent STM_NAND_EMI driver
+- the same configuration data can be used to initialise both NAND drivers.  This
+allows SoC setup files to be updated as and when required (paricularly useful
+for the NAND STEM module, mb588, which must be supported on several platforms).
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/cb101/setup.c        |    2 +-
+ arch/sh/boards/st/common/mb588.c       |    8 +++---
+ arch/sh/boards/st/common/mb705.c       |    2 +-
+ arch/sh/boards/st/mb618/setup.c        |    2 +-
+ arch/sh/boards/st/mb628/setup.c        |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |    2 +-
+ include/linux/stm/soc.h                |   43 ++++++++++++++++++++------------
+ 10 files changed, 39 insertions(+), 28 deletions(-)
+
+diff --git a/arch/sh/boards/st/cb101/setup.c b/arch/sh/boards/st/cb101/setup.c
+index e9ac5e0..f810f79 100644
+--- a/arch/sh/boards/st/cb101/setup.c
++++ b/arch/sh/boards/st/cb101/setup.c
+@@ -160,7 +160,7 @@ static struct emi_timing_data nand_timing_data = {
+ 
+ };
+ 
+-static struct nand_config_data cb101_nand_config[] = {
++static struct plat_stmnand_data cb101_nand_config[] = {
+ {
+ 	.emi_bank		= 1,
+ 	.emi_withinbankoffset	= 0,
+diff --git a/arch/sh/boards/st/common/mb588.c b/arch/sh/boards/st/common/mb588.c
+index b1f72d4..4df5528 100644
+--- a/arch/sh/boards/st/common/mb588.c
++++ b/arch/sh/boards/st/common/mb588.c
+@@ -39,25 +39,25 @@ static struct mtd_partition nand_partitions[] = {
+ 	},
+ };
+ 
+-static struct nand_config_data nand_config = {
++static struct plat_stmnand_data nand_config = {
+ 	.emi_bank		= STEM_CS0_BANK,
+ 	.emi_withinbankoffset	= STEM_CS0_OFFSET,
+ 
+ 	/* Timing data for ST-NAND512W3A2C */
+ 	.emi_timing_data = &(struct emi_timing_data) {
+-		.rd_cycle_time	 = 40,		 /* times in ns */
++		.rd_cycle_time	 = 50,		 /* times in ns */
+ 		.rd_oee_start	 = 0,
+ 		.rd_oee_end	 = 10,
+ 		.rd_latchpoint	 = 10,
+ 		.busreleasetime  = 10,
+ 
+-		.wr_cycle_time	 = 40,
++		.wr_cycle_time	 = 50,
+ 		.wr_oee_start	 = 0,
+ 		.wr_oee_end	 = 10,
+ 		.wait_active_low = 0,
+ 	},
+ 
+-	.chip_delay		= 20,
++	.chip_delay		= 30,
+ 	.mtd_parts		= nand_partitions,
+ 	.nr_parts		= ARRAY_SIZE(nand_partitions),
+ 	.rbn_port		= -1,
+diff --git a/arch/sh/boards/st/common/mb705.c b/arch/sh/boards/st/common/mb705.c
+index 5a6b851..c938a59 100644
+--- a/arch/sh/boards/st/common/mb705.c
++++ b/arch/sh/boards/st/common/mb705.c
+@@ -222,7 +222,7 @@ static struct mtd_partition nand_partitions[] = {
+ 	},
+ };
+ 
+-static struct nand_config_data nand_config = {
++static struct plat_stmnand_data nand_config = {
+ 	.emi_bank		= 1,	/* Can be overridden */
+ 	.emi_withinbankoffset	= 0,
+ 
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index 929b499..f3eeb31 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -229,7 +229,7 @@ static struct mtd_partition nand_partitions[] = {
+ 	},
+ };
+ 
+-static struct nand_config_data mb618_nand_config = {
++static struct plat_stmnand_data mb618_nand_config = {
+ 	.emi_bank		= 0,
+ 	.emi_withinbankoffset	= 0,
+ 
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index 1b8576a..c0ebee0 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -206,7 +206,7 @@ static struct mtd_partition nand_partitions[] = {
+ 	},
+ };
+ 
+-static struct nand_config_data mb628_nand_config = {
++static struct plat_stmnand_data mb628_nand_config = {
+ 	.emi_bank		= 0,
+ 	.emi_withinbankoffset	= 0,
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 5845646..dae7760 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1015,7 +1015,7 @@ static struct platform_device nand_flash[] = {
+  * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
+  * command line.
+  */
+-void __init stx7105_configure_nand(struct nand_config_data *data)
++void __init stx7105_configure_nand(struct plat_stmnand_data *data)
+ {
+ 	unsigned int bank_base, bank_end;
+ 	unsigned int emi_bank = data->emi_bank;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 196de4a..fc27334 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -633,7 +633,7 @@ static struct platform_device nand_flash[] = {
+  * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
+  * command line.
+  */
+-void __init stx7111_configure_nand(struct nand_config_data *data)
++void __init stx7111_configure_nand(struct plat_stmnand_data *data)
+ {
+ 	unsigned int bank_base, bank_end;
+ 	unsigned int emi_bank = data->emi_bank;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 2c8be89..36e951b 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -1108,7 +1108,7 @@ static struct platform_device nand_flash[] = {
+  * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
+  * command line.
+  */
+-void __init stx7141_configure_nand(struct nand_config_data *data)
++void __init stx7141_configure_nand(struct plat_stmnand_data *data)
+ {
+ 	unsigned int bank_base, bank_end;
+ 	unsigned int emi_bank = data->emi_bank;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index fb8cd86..d9fec29 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -964,7 +964,7 @@ static struct platform_device nand_flash[] = {
+  * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
+  * command line.
+  */
+-void __init stx7200_configure_nand(struct nand_config_data *data)
++void __init stx7200_configure_nand(struct plat_stmnand_data *data)
+ {
+ 	unsigned int bank_base;
+ 	unsigned int emi_bank = data->emi_bank;
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 569a907..8fe7601 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -430,21 +430,32 @@ struct plat_sysconf_data {
+ 
+ 
+ 
+-/* NAND configuration data */
+-struct nand_config_data {
+-	unsigned int emi_bank;			/* EMI Bank#			*/
+-	unsigned int emi_withinbankoffset;	/* Offset within EMI Bank	*/
+-	void *emi_timing_data;			/* Timing data for EMI config   */
+-	void *mtd_parts;			/* MTD partition table		*/
+-	unsigned int chip_delay;		/* Read busy time for NAND chip */
+-	int nr_parts;				/* Number of partitions		*/
+-	int rbn_port;				/*  # : 'nand_RBn' PIO port #   */
+-						/* -1 : if unconnected		*/
+-	int rbn_pin;			        /*      'nand_RBn' PIO pin      */
+-						/* (assumes shared RBn signal   */
+-						/*  for multiple chips)		*/
++/* STM NAND configuration data (plat_nand/STM_NAND_EMI/FLEX/AFM) */
++struct plat_stmnand_data {
++	/* plat_nand/STM_NAND_EMI paramters */
++	unsigned int	emi_withinbankoffset;  /* Offset within EMI Bank      */
++	int		rbn_port;		/*  # : 'nand_RBn' PIO port   */
++						/* -1 : if unconnected	      */
++	int		rbn_pin;	        /*      'nand_RBn' PIO pin    */
++						/* (assumes shared RBn signal */
++						/*  for multiple chips)	      */
++
++	/* STM_NAND_EMI/FLEX/AFM paramters */
++	void		*timing_data;		/* Timings for EMI/NandC      */
++	unsigned char	flex_rbn_connected;	/* RBn signal connected?      */
++						/* (Required for NAND_AFM)    */
++
++	/* Legacy data for backwards compatibility with plat_nand driver      */
++	/*   will be removed once all platforms updated to use STM_NAND_EMI!  */
++	unsigned int	emi_bank;		/* EMI bank                   */
++	void		*emi_timing_data;	/* Timing data for EMI config */
++	void		*mtd_parts;		/* MTD partition table	      */
++	int		nr_parts;		/* Numer of partitions	      */
++	unsigned int	chip_delay;		/* Read-busy delay	      */
++
+ };
+ 
++
+ void stx5197_early_device_init(void);
+ void stx5197_configure_asc(const int *ascs, int num_ascs, int console);
+ void stx5197_configure_usb(void);
+@@ -474,7 +485,7 @@ void stx7105_configure_ssc(struct plat_ssc_data *data);
+ void stx7105_configure_usb(int port, struct usb_init_data *data);
+ void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
+ 				int ext_mdio, int ext_clk, int phy_bus);
+-void stx7105_configure_nand(struct nand_config_data *data);
++void stx7105_configure_nand(struct plat_stmnand_data *data);
+ void stx7105_configure_lirc(lirc_scd_t *scd);
+ void stx7105_configure_pata(int bank, int pc_mode, int irq);
+ void stx7105_configure_audio_pins(int pcmout, int spdif, int pcmin);
+@@ -487,7 +498,7 @@ void stx7111_configure_pwm(struct plat_stm_pwm_data *data);
+ void stx7111_configure_ssc(struct plat_ssc_data *data);
+ void stx7111_configure_usb(int inv_enable);
+ void stx7111_configure_ethernet(int en_mii, int sel, int ext_clk, int phy_bus);
+-void stx7111_configure_nand(struct nand_config_data *data);
++void stx7111_configure_nand(struct plat_stmnand_data *data);
+ void stx7111_configure_lirc(lirc_scd_t *scd);
+ void stx7111_configure_pci(struct pci_config_data *pci_config);
+ int  stx7111_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin);
+@@ -512,7 +523,7 @@ void stx7200_configure_sata(unsigned int port);
+ void stx7200_configure_ethernet(int mac, int rmii_mode, int ext_clk,
+ 				int phy_bus);
+ void stx7200_configure_lirc(lirc_scd_t *scd);
+-void stx7200_configure_nand(struct nand_config_data *data);
++void stx7200_configure_nand(struct plat_stmnand_data *data);
+ void stx7200_configure_pata(int bank, int pc_mode, int irq);
+ 
+ void stm_sata_miphy_init(void);
+-- 
+1.6.0.6
+

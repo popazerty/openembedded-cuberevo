@@ -1,0 +1,33 @@
+From a2428725518a326abfe4ac236298f1a778b7c823 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Tue, 14 Oct 2008 19:46:11 +0100
+Subject: [PATCH] sh_stm: Fix incorrect sysconf registers for STx7105 PIO alt functions
+
+PIO[5] and PIO[7] were using the wrong sysconfig registers to perform
+alternate function selection.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index e701306..88b9eb6 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -39,9 +39,9 @@ static struct {
+ 	[2] = { 21, 3, 2},
+ 	[3] = { 25, 4, 2},
+ 	[4] = { 34, 4, 2},
+-	[5] = { 37, 4, 2},
++	[5] = { 35, 4, 2},
+ 	[6] = { 36, 6, 2},
+-	[7] = { 25, 5, 2},
++	[7] = { 37, 5, 2},
+ 	[8] = { 46, 3, 2},
+ 	[9] = { 47, 3, 2},
+ 	[10] = { 0, 1, 0 },
+-- 
+1.5.3.6
+

@@ -1,0 +1,48 @@
+From 68baaa3e1640acd75b004b87f8e650df29690543 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 13 May 2009 12:05:34 +0200
+Subject: [PATCH] stmmac: add the option to use dual gmac.
+
+Some boards, like the mb628, have integrated two Ethernet controllers
+(GMAC0 and GMAC1).
+This patch only adds a new option to select/use the secondary device.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/Kconfig |   12 ++++++++++--
+ 1 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/stmmac/Kconfig b/drivers/net/stmmac/Kconfig
+index ac960a8..6f9f719 100644
+--- a/drivers/net/stmmac/Kconfig
++++ b/drivers/net/stmmac/Kconfig
+@@ -18,8 +18,16 @@ config STMMAC_DA
+ 	  By default, the DMA arbitration scheme is based on Round-robin
+ 	  (rx:tx priority is 1:1).
+ 
++config STMMAC_DUAL_MAC
++	bool "STMMAC: dual mac support (EXPERIMENTAL)"
++	default n
++        depends on EXPERIMENTAL && STMMAC_ETH && !STMMAC_TIMER
++	help
++	  This option enables the dual MAC support.
++	  Some ST board have two Ethernet Drivers.
++
+ config STMMAC_TIMER
+-	bool "STMMAC Timer optimization (EXPERIMENTAL)"
++	bool "STMMAC Timer optimisation"
+ 	default n
+ 	help
+ 	  Use an external timer to drive ethernet transmission and
+@@ -28,7 +36,7 @@ config STMMAC_TIMER
+ 
+ choice
+         prompt "Select Timer device"
+-        depends on STMMAC_TIMER && EXPERIMENTAL
++        depends on STMMAC_TIMER
+ 
+ config STMMAC_TMU_TIMER
+         bool "TMU channel 2"
+-- 
+1.6.0.6
+

@@ -1,0 +1,389 @@
+commit f6332343d3d68015f8d8db3ce5124df209992acf
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Wed Jul 2 09:41:55 2008 +0100
+
+    sound_stm: Fix for PCM Reader #1 support on 7200 cut 2.
+    
+    As PCM Reader #1 shares pins with MII1 and PCM Player #1,
+    its inputs must be explicitly enabled in audio glue
+    IOMUX register.
+    
+    Additionally fixed stupid typo in two function names.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 426da53..4cda26d 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -92,7 +92,7 @@ static void dummy_release(struct device *dev)
+ {
+ }
+ 
+-int snd_stm_add_plaform_devices(struct platform_device **devices,
++int snd_stm_add_platform_devices(struct platform_device **devices,
+ 		int cnt)
+ {
+ 	int result = 0;
+@@ -110,9 +110,9 @@ int snd_stm_add_plaform_devices(struct platform_device **devices,
+ 
+ 	return result;
+ }
+-EXPORT_SYMBOL(snd_stm_add_plaform_devices);
++EXPORT_SYMBOL(snd_stm_add_platform_devices);
+ 
+-void snd_stm_remove_plaform_devices(struct platform_device **devices,
++void snd_stm_remove_platform_devices(struct platform_device **devices,
+ 		int cnt)
+ {
+ 	int i;
+@@ -120,7 +120,7 @@ void snd_stm_remove_plaform_devices(struct platform_device **devices,
+ 	for (i = 0; i < cnt; i++)
+ 		platform_device_unregister(devices[i]);
+ }
+-EXPORT_SYMBOL(snd_stm_remove_plaform_devices);
++EXPORT_SYMBOL(snd_stm_remove_platform_devices);
+ 
+ 
+ 
+diff --git a/sound/stm/common.h b/sound/stm/common.h
+index f4d3a70..b4f3d3b 100644
+--- a/sound/stm/common.h
++++ b/sound/stm/common.h
+@@ -220,9 +220,9 @@ int snd_stm_pcm_hw_constraint_transfer_bytes(struct snd_pcm_runtime *runtime,
+  */
+ 
+ /* Add/remove a list of platform devices */
+-int snd_stm_add_plaform_devices(struct platform_device **devices,
++int snd_stm_add_platform_devices(struct platform_device **devices,
+ 		int cnt);
+-void snd_stm_remove_plaform_devices(struct platform_device **devices,
++void snd_stm_remove_platform_devices(struct platform_device **devices,
+ 		int cnt);
+ 
+ 
+diff --git a/sound/stm/reg_7200_audcfg.h b/sound/stm/reg_7200_audcfg.h
+index 25d765e..64b9fcf 100644
+--- a/sound/stm/reg_7200_audcfg.h
++++ b/sound/stm/reg_7200_audcfg.h
+@@ -1,6 +1,16 @@
+ #ifndef __SND_STM_7200_AUDCFG_H
+ #define __SND_STM_7200_AUDCFG_H
+ 
++/*
++ * IP versions
++ */
++
++/* 7200 1.0 */
++#define ver__7200_AUDCFG__1 1
++
++/* 7200 2.0 */
++#define ver__7200_AUDCFG__2 2
++
+ 
+ 
+ /*
+@@ -173,6 +183,42 @@
+ 	set__7200_AUDCFG_IOMUX_CTRL__SPDIF_EN(ip, \
+ 	value__7200_AUDCFG_IOMUX_CTRL__SPDIF_EN__ENABLE(ip))
+ 
++/* PCMRDR1_EN */
++
++#define shift__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip) (ip->ver < \
++	ver__7200_AUDCFG__2 ? -1 : 5)
++#define mask__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip) (ip->ver < \
++	ver__7200_AUDCFG__2 ? -1 : 0x1)
++#define get__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip) ((readl(ip->base + \
++	offset__7200_AUDCFG_IOMUX_CTRL(ip)) >> \
++	shift__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip)) & \
++	mask__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip))
++#define set__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip, value) \
++	writel((readl(ip->base + offset__7200_AUDCFG_IOMUX_CTRL(ip)) & \
++	~(mask__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip) << \
++	shift__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip))) | (((value) & \
++	mask__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip)) << \
++	shift__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip)), ip->base + \
++	offset__7200_AUDCFG_IOMUX_CTRL(ip))
++
++#define value__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__DISABLE(ip) \
++	(ip->ver < ver__7200_AUDCFG__2 ? -1 : 0x0)
++#define mask__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__DISABLE(ip) \
++	(value__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__DISABLE(ip) << \
++	shift__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip))
++#define set__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__DISABLE(ip) \
++	set__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip, \
++	value__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__DISABLE(ip))
++
++#define value__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__ENABLE(ip) (ip->ver \
++	< ver__7200_AUDCFG__2 ? -1 : 0x1)
++#define mask__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__ENABLE(ip) \
++	(value__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__ENABLE(ip) << \
++	shift__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip))
++#define set__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__ENABLE(ip) \
++	set__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN(ip, \
++	value__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__ENABLE(ip))
++
+ 
+ 
+ /*
+diff --git a/sound/stm/reg_aud_pcmin.h b/sound/stm/reg_aud_pcmin.h
+index cb4c113..e2175de 100644
+--- a/sound/stm/reg_aud_pcmin.h
++++ b/sound/stm/reg_aud_pcmin.h
+@@ -484,8 +484,10 @@
+ 
+ /* NUM_FRAMES */
+ 
+-#define shift__AUD_PCMIN_CTRL__NUM_FRAMES(ip) 4
+-#define mask__AUD_PCMIN_CTRL__NUM_FRAMES(ip) 0xfffffff
++#define shift__AUD_PCMIN_CTRL__NUM_FRAMES(ip) (ip->ver < \
++	ver__AUD_PCMIN__65_3_1 ? 4 : -1)
++#define mask__AUD_PCMIN_CTRL__NUM_FRAMES(ip) (ip->ver < \
++	ver__AUD_PCMIN__65_3_1 ? 0xfffffff : -1)
+ #define get__AUD_PCMIN_CTRL__NUM_FRAMES(ip) ((readl(ip->base + \
+ 	offset__AUD_PCMIN_CTRL(ip)) >> shift__AUD_PCMIN_CTRL__NUM_FRAMES(ip)) \
+ 	& mask__AUD_PCMIN_CTRL__NUM_FRAMES(ip))
+@@ -497,6 +499,24 @@
+ 	shift__AUD_PCMIN_CTRL__NUM_FRAMES(ip)), ip->base + \
+ 	offset__AUD_PCMIN_CTRL(ip))
+ 
++/* MASTER_CLK_DIV */
++
++#define shift__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip) (ip->ver < \
++	ver__AUD_PCMIN__65_3_1 ? -1 : 4)
++#define mask__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip) (ip->ver < \
++	ver__AUD_PCMIN__65_3_1 ? -1 : 0xf)
++#define get__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip) ((readl(ip->base + \
++	offset__AUD_PCMIN_CTRL(ip)) >> \
++	shift__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip)) & \
++	mask__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip))
++#define set__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip, value) \
++	writel((readl(ip->base + offset__AUD_PCMIN_CTRL(ip)) & \
++	~(mask__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip) << \
++	shift__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip))) | (((value) & \
++	mask__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip)) << \
++	shift__AUD_PCMIN_CTRL__MASTER_CLK_DIV(ip)), ip->base + \
++	offset__AUD_PCMIN_CTRL(ip))
++
+ 
+ 
+ /*
+diff --git a/sound/stm/stx710x.c b/sound/stm/stx710x.c
+index b9d3329..652f43b 100644
+--- a/sound/stm/stx710x.c
++++ b/sound/stm/stx710x.c
+@@ -516,7 +516,7 @@ static int __init snd_stm_stx710x_init(void)
+ 			"audio subsystem", soc_type, cpu_data->cut_major,
+ 			cpu_data->cut_minor);
+ 
+-	result = snd_stm_add_plaform_devices(snd_stm_stx710x_devices,
++	result = snd_stm_add_platform_devices(snd_stm_stx710x_devices,
+ 			ARRAY_SIZE(snd_stm_stx710x_devices));
+ 	if (result != 0) {
+ 		snd_stm_printe("Failed to add platform devices!\n");
+@@ -532,7 +532,7 @@ static int __init snd_stm_stx710x_init(void)
+ 	return 0;
+ 
+ error_card_register:
+-	snd_stm_remove_plaform_devices(snd_stm_stx710x_devices,
++	snd_stm_remove_platform_devices(snd_stm_stx710x_devices,
+ 			ARRAY_SIZE(snd_stm_stx710x_devices));
+ error_add_devices:
+ 	snd_stm_card_free();
+@@ -549,7 +549,7 @@ static void __exit snd_stm_stx710x_exit(void)
+ 
+ 	snd_stm_card_free();
+ 
+-	snd_stm_remove_plaform_devices(snd_stm_stx710x_devices,
++	snd_stm_remove_platform_devices(snd_stm_stx710x_devices,
+ 			ARRAY_SIZE(snd_stm_stx710x_devices));
+ 
+ 	platform_driver_unregister(&snd_stm_stx710x_glue_driver);
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index 261c4a9..9cff347 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -538,7 +538,7 @@ static int __init snd_stm_stx7111_init(void)
+ 	snprintf(card->longname, 79, "STMicroelectronics STx7111 cut %d "
+ 			"SOC audio subsystem", cpu_data->cut_major);
+ 
+-	result = snd_stm_add_plaform_devices(snd_stm_stx7111_devices,
++	result = snd_stm_add_platform_devices(snd_stm_stx7111_devices,
+ 			ARRAY_SIZE(snd_stm_stx7111_devices));
+ 	if (result != 0) {
+ 		snd_stm_printe("Failed to add platform devices!\n");
+@@ -554,7 +554,7 @@ static int __init snd_stm_stx7111_init(void)
+ 	return 0;
+ 
+ error_card_register:
+-	snd_stm_remove_plaform_devices(snd_stm_stx7111_devices,
++	snd_stm_remove_platform_devices(snd_stm_stx7111_devices,
+ 			ARRAY_SIZE(snd_stm_stx7111_devices));
+ error_add_devices:
+ 	snd_stm_card_free();
+@@ -571,7 +571,7 @@ static void __exit snd_stm_stx7111_exit(void)
+ 
+ 	snd_stm_card_free();
+ 
+-	snd_stm_remove_plaform_devices(snd_stm_stx7111_devices,
++	snd_stm_remove_platform_devices(snd_stm_stx7111_devices,
+ 			ARRAY_SIZE(snd_stm_stx7111_devices));
+ 
+ 	platform_driver_unregister(&snd_stm_stx7111_glue_driver);
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index 90b74f1..3b27a7f 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -41,10 +41,18 @@
+ static int index = -1; /* First available index */
+ static char *id = "STx7200"; /* Default card ID */
+ 
++/* CUT 2+ ONLY! As PCM Reader #1 shares pins with MII1 it may receive
++ * unwanted traffic if MII1 is actually used to networking,
++ * or when PCM Player #1 is configured to use these pins. In such
++ * case one may disable the reader input using this module parameter. */
++static int pcm_reader_1_enabled = 1;
++
+ module_param(index, int, 0444);
+ MODULE_PARM_DESC(index, "Index value for STx7200 audio subsystem card.");
+ module_param(id, charp, 0444);
+ MODULE_PARM_DESC(id, "ID string for STx7200 audio subsystem card.");
++module_param(pcm_reader_1_enabled, int, 0444);
++MODULE_PARM_DESC(id, "PCM Reader #1 control (not valid for STx7200 cut 1).");
+ 
+ 
+ 
+@@ -520,15 +528,16 @@ static struct platform_device *snd_stm_stx7200_devices[] = {
+ 	&pcm_reader_0,
+ };
+ 
+-static struct platform_device *snd_stm_stx7200c2_devices[] = {
++static struct platform_device *snd_stm_stx7200_i2sspdif_devices[] = {
+ 	&hdmi_conv_i2sspdif_0,
+ 	&hdmi_conv_i2sspdif_1,
+ 	&hdmi_conv_i2sspdif_2,
+ 	&hdmi_conv_i2sspdif_3,
+-	&pcm_reader_1,
+ };
+ 
+-
++static struct platform_device *snd_stm_stx7200_pcm_reader_1_device[] = {
++	&pcm_reader_1,
++};
+ 
+ /*
+  * Audio glue driver implementation
+@@ -577,6 +586,11 @@ static int __init snd_stm_stx7200_glue_register(struct snd_device *snd_device)
+ 		mask__7200_AUDCFG_IOMUX_CTRL__DATA0_EN__OUTPUT(stx7200_glue) |
+ 		mask__7200_AUDCFG_IOMUX_CTRL__PCM_CLK_EN__OUTPUT(stx7200_glue));
+ 
++	/* Enable PCM Reader #1 (well, in some cases) */
++
++	if (cpu_data->cut_major > 1 && pcm_reader_1_enabled)
++		set__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__ENABLE(stx7200_glue);
++
+ 	/* Additional procfs info */
+ 
+ 	snd_stm_info_register(&stx7200_glue->proc_entry, "stx7200_glue",
+@@ -605,6 +619,11 @@ static int __exit snd_stm_stx7200_glue_disconnect(struct snd_device *snd_device)
+ 		mask__7200_AUDCFG_IOMUX_CTRL__DATA0_EN__INPUT(stx7200_glue) |
+ 		mask__7200_AUDCFG_IOMUX_CTRL__PCM_CLK_EN__INPUT(stx7200_glue));
+ 
++	/* Disable PCM Reader #1 (well, in some cases) */
++
++	if (cpu_data->cut_major > 1 && pcm_reader_1_enabled)
++		set__7200_AUDCFG_IOMUX_CTRL__PCMRDR1_EN__DISABLE(stx7200_glue);
++
+ 	return 0;
+ }
+ 
+@@ -628,6 +647,7 @@ static int __init snd_stm_stx7200_glue_probe(struct platform_device *pdev)
+ 		goto error_alloc;
+ 	}
+ 	snd_stm_magic_set(stx7200_glue);
++	stx7200_glue->ver = cpu_data->cut_major;
+ 
+ 	result = snd_stm_memory_request(pdev, &stx7200_glue->mem_region,
+ 			&stx7200_glue->base);
+@@ -814,20 +834,31 @@ static int __init snd_stm_stx7200_init(void)
+ 	snprintf(card->longname, 79, "STMicroelectronics STx7200 cut %d "
+ 			"SOC audio subsystem", cpu_data->cut_major);
+ 
+-	result = snd_stm_add_plaform_devices(snd_stm_stx7200_devices,
++	result = snd_stm_add_platform_devices(snd_stm_stx7200_devices,
+ 			ARRAY_SIZE(snd_stm_stx7200_devices));
+ 	if (result != 0) {
+ 		snd_stm_printe("Failed to add platform devices!\n");
+ 		goto error_add_devices;
+ 	}
+ 
+-	if (cpu_data->cut_major == 2) {
+-		result = snd_stm_add_plaform_devices(snd_stm_stx7200c2_devices,
+-				ARRAY_SIZE(snd_stm_stx7200c2_devices));
++	if (cpu_data->cut_major > 1) {
++		result = snd_stm_add_platform_devices(
++				snd_stm_stx7200_i2sspdif_devices,
++				ARRAY_SIZE(snd_stm_stx7200_i2sspdif_devices));
+ 		if (result != 0) {
+-			snd_stm_printe("Failed to add cut 2 platform "
+-					"devices!\n");
+-			goto error_add_devices_c2;
++			snd_stm_printe("Failed to add I2S-SPDIF converters "
++					"platform devices!\n");
++			goto error_add_i2sspdif_devices;
++		}
++	}
++
++	if (cpu_data->cut_major > 1 && pcm_reader_1_enabled) {
++		result = snd_stm_add_platform_devices(
++				snd_stm_stx7200_pcm_reader_1_device, 1);
++		if (result != 0) {
++			snd_stm_printe("Failed to add PCM Reader #1 "
++					"platform device!\n");
++			goto error_add_pcm_reader_1_device;;
+ 		}
+ 	}
+ 
+@@ -840,11 +871,16 @@ static int __init snd_stm_stx7200_init(void)
+ 	return 0;
+ 
+ error_card_register:
+-	if (cpu_data->cut_major == 2)
+-		snd_stm_remove_plaform_devices(snd_stm_stx7200c2_devices,
+-				ARRAY_SIZE(snd_stm_stx7200c2_devices));
+-error_add_devices_c2:
+-	snd_stm_remove_plaform_devices(snd_stm_stx7200_devices,
++	if (cpu_data->cut_major > 1 && pcm_reader_1_enabled)
++		snd_stm_remove_platform_devices(
++				snd_stm_stx7200_pcm_reader_1_device, 1);
++error_add_pcm_reader_1_device:
++	if (cpu_data->cut_major > 1)
++		snd_stm_remove_platform_devices(
++				snd_stm_stx7200_i2sspdif_devices,
++				ARRAY_SIZE(snd_stm_stx7200_i2sspdif_devices));
++error_add_i2sspdif_devices:
++	snd_stm_remove_platform_devices(snd_stm_stx7200_devices,
+ 			ARRAY_SIZE(snd_stm_stx7200_devices));
+ error_add_devices:
+ 	snd_stm_card_free();
+@@ -861,11 +897,16 @@ static void __exit snd_stm_stx7200_exit(void)
+ 
+ 	snd_stm_card_free();
+ 
+-	if (cpu_data->cut_major == 2)
+-		snd_stm_remove_plaform_devices(snd_stm_stx7200c2_devices,
+-				ARRAY_SIZE(snd_stm_stx7200c2_devices));
++	if (cpu_data->cut_major > 1 && pcm_reader_1_enabled)
++		snd_stm_remove_platform_devices(
++				snd_stm_stx7200_pcm_reader_1_device, 1);
++
++	if (cpu_data->cut_major > 1)
++		snd_stm_remove_platform_devices(
++				snd_stm_stx7200_i2sspdif_devices,
++				ARRAY_SIZE(snd_stm_stx7200_i2sspdif_devices));
+ 
+-	snd_stm_remove_plaform_devices(snd_stm_stx7200_devices,
++	snd_stm_remove_platform_devices(snd_stm_stx7200_devices,
+ 			ARRAY_SIZE(snd_stm_stx7200_devices));
+ 
+ 	platform_driver_unregister(&snd_stm_stx7200_glue_driver);

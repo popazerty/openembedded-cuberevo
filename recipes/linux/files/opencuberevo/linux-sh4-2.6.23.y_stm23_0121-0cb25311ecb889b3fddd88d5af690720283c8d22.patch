@@ -1,0 +1,33 @@
+From 0cb25311ecb889b3fddd88d5af690720283c8d22 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 7 Aug 2009 15:02:12 +0200
+Subject: [PATCH] stmmac: generate a random MAC address when invalid
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |    8 ++++++--
+ 1 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 9fe76d8..40dffdb 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -1101,8 +1101,12 @@ static int stmmac_open(struct net_device *dev)
+ 	 * address using the following linux command:
+ 	 *      ifconfig eth0 hw ether xx:xx:xx:xx:xx:xx  */
+ 	if (!is_valid_ether_addr(dev->dev_addr)) {
+-		printk(KERN_ERR "%s: no valid eth hw addr\n", __FUNCTION__);
+-		return -EINVAL;
++		random_ether_addr(dev->dev_addr);
++		printk(KERN_WARNING "%s: generated random MAC address "
++			"%.2x:%.2x:%.2x:%.2x:%.2x:%.2x.\n", dev->name,
++			dev->dev_addr[0], dev->dev_addr[1],
++			dev->dev_addr[2], dev->dev_addr[3],
++			dev->dev_addr[4], dev->dev_addr[5]);
+ 	}
+ 
+ 	stmmac_verify_args();
+-- 
+1.6.0.6
+

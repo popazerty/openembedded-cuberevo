@@ -1,0 +1,102 @@
+From c12f93aa81037e37d51980a54564e627a16d7134 Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Tue, 7 Oct 2008 09:17:50 +0200
+Subject: [PATCH] sh: SH kernel code tidy-up
+
+Fix compiler warnings in sh specific code by:
+- adding missing cast
+- removing unused varialbles
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |    6 +++---
+ arch/sh/kernel/io.c                    |    6 +++---
+ arch/sh/kernel/ptrace.c                |    2 +-
+ arch/sh/kernel/setup.c                 |    2 +-
+ arch/sh/kernel/traps.c                 |    1 -
+ 5 files changed, 8 insertions(+), 9 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index 2eaa4f1..81da12b 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -1120,10 +1120,10 @@ void __init plat_irq_setup(void)
+ 	ilc_early_init(&ilc3_device);
+ 
+ 	for (i=4; i<=6; i++)
+-		prio_registers[i].set_reg += intc2_base;
++		prio_registers[i].set_reg += (unsigned long) intc2_base;
+ 	for (i=0; i<=2; i++) {
+-		mask_registers[i].set_reg += intc2_base;
+-		mask_registers[i].clr_reg += intc2_base;
++		mask_registers[i].set_reg += (unsigned long) intc2_base;
++		mask_registers[i].clr_reg += (unsigned long) intc2_base;
+ 	}
+ 
+ 	/* Configure the external interrupt pins as inputs */
+diff --git a/arch/sh/kernel/io.c b/arch/sh/kernel/io.c
+index 4aa2568..7de0bdc 100644
+--- a/arch/sh/kernel/io.c
++++ b/arch/sh/kernel/io.c
+@@ -119,7 +119,7 @@ void __raw_readsw(const void __iomem *addrp, void *datap, int len)
+ 	u16 *data;
+ 
+ 	for (data = datap; len != 0; len--)
+-		*data++ = ctrl_inw(addrp);
++		*data++ = ctrl_inw((unsigned long) addrp);
+ 
+ }
+ EXPORT_SYMBOL(__raw_readsw);
+@@ -178,8 +178,8 @@ void __raw_writesw(void __iomem *addrp, const void *datap, int len)
+ {
+ 	u16 *data;
+ 
+-	for (data = datap; len != 0; len--)
+-		ctrl_outw(*data++, addrp);
++	for (data = (u16 *) datap; len != 0; len--)
++		ctrl_outw(*data++, (unsigned long) addrp);
+ 
+ }
+ EXPORT_SYMBOL(__raw_writesw);
+diff --git a/arch/sh/kernel/ptrace.c b/arch/sh/kernel/ptrace.c
+index 8dd5b9c..166fec5 100644
+--- a/arch/sh/kernel/ptrace.c
++++ b/arch/sh/kernel/ptrace.c
+@@ -268,7 +268,7 @@ asmlinkage void do_syscall_trace(struct pt_regs *regs, int entryexit)
+ 	struct task_struct *tsk = current;
+ 
+ 	if (entryexit)
+-		trace_mark(kernel_arch_syscall_entry, "syscall_id %d ip #p%ld",
++		trace_mark(kernel_arch_syscall_entry, "syscall_id %lu ip #p%ld",
+ 			regs->regs[3], instruction_pointer(regs));
+ 	else
+ 		trace_mark(kernel_arch_syscall_exit, MARK_NOARGS);
+diff --git a/arch/sh/kernel/setup.c b/arch/sh/kernel/setup.c
+index 55358e1..8ee22a4 100644
+--- a/arch/sh/kernel/setup.c
++++ b/arch/sh/kernel/setup.c
+@@ -192,7 +192,7 @@ void __init setup_bootmem_allocator(unsigned long free_pfn)
+ 
+ 		if (initrd_start_phys + INITRD_SIZE <= PFN_PHYS(max_low_pfn)) {
+ 			reserve_bootmem(initrd_start_phys, INITRD_SIZE);
+-			initrd_start = __va(initrd_start_phys);
++			initrd_start = (unsigned long) __va(initrd_start_phys);
+ 			initrd_end = initrd_start + INITRD_SIZE;
+ 		} else {
+ 			printk("initrd extends beyond end of memory "
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index 91276a2..55debf1 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -162,7 +162,6 @@ static int handle_unaligned_ins(u16 instruction, struct pt_regs *regs)
+ 	int ret, index, count;
+ 	unsigned long *rm, *rn;
+ 	unsigned char *src, *dst;
+-	const struct exception_table_entry *fixup;
+ 
+ 	index = (instruction>>8)&15;	/* 0x0F00 */
+ 	rn = &regs->regs[index];
+-- 
+1.5.3.6
+

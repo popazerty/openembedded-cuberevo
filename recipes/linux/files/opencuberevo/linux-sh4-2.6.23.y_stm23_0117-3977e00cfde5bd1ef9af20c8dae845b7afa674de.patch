@@ -1,0 +1,41 @@
+From 3977e00cfde5bd1ef9af20c8dae845b7afa674de Mon Sep 17 00:00:00 2001
+From: Christopher TOMLINSON <christopher.tomlinson@st.com>
+Date: Thu, 8 Jan 2009 17:52:53 +0000
+Subject: [PATCH] sound_stm: Correct 7105 clockgen C input clock selection
+
+Correct 7105 Clockgen C input clock selection.
+
+When trying to select 30Mhz clock for clockgen C SYSCLKINALT is
+selected by mistake
+
+Signed-off-by: Chris Tomlinson <christopher.tomlinson@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ sound/stm/reg_audcfg_fsyn.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/stm/reg_audcfg_fsyn.h b/sound/stm/reg_audcfg_fsyn.h
+index 86b03d9..0217965 100644
+--- a/sound/stm/reg_audcfg_fsyn.h
++++ b/sound/stm/reg_audcfg_fsyn.h
+@@ -276,7 +276,7 @@
+ 
+ #define shift__AUDCFG_FSYN_CFG__REF_CLK_IN(ip) (ip->ver < \
+ 	ver__AUDCFG_FSYN__65_2_1_2 ? 23 : (ip->ver < ver__AUDCFG_FSYN__65_3_1 \
+-	? 24 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 ? 23 : 24)))
++	? 24 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 ? 22 : 24)))
+ #define mask__AUDCFG_FSYN_CFG__REF_CLK_IN(ip) (ip->ver < \
+ 	ver__AUDCFG_FSYN__65_2_1_2 ? 0x1 : (ip->ver < ver__AUDCFG_FSYN__65_3_1 \
+ 	? 0x1 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 ? 0x3 : 0x1)))
+@@ -304,7 +304,7 @@
+ 
+ #define value__AUDCFG_FSYN_CFG__REF_CLK_IN__30_MHZ_CLOCK(ip) (ip->ver \
+ 	< ver__AUDCFG_FSYN__65_3_1 ? 0x0 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 \
+-	? 0x1 : 0x0))
++	? 0x1 : 0x1))
+ #define mask__AUDCFG_FSYN_CFG__REF_CLK_IN__30_MHZ_CLOCK(ip) \
+ 	(value__AUDCFG_FSYN_CFG__REF_CLK_IN__30_MHZ_CLOCK(ip) << \
+ 	shift__AUDCFG_FSYN_CFG__REF_CLK_IN(ip))
+-- 
+1.5.3.6
+

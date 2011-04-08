@@ -1,0 +1,97 @@
+From 77ffded36d4c7fea9107023df29d0a8a2edf92e9 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Thu, 4 Sep 2008 17:36:33 +0100
+Subject: [PATCH] arch_sh: CAPITALISED names Normalised.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/common/db641.c |    2 +-
+ arch/sh/boards/st/common/db679.c |    2 +-
+ arch/sh/boards/st/common/mb520.c |    2 +-
+ arch/sh/boards/st/common/mb562.c |    2 +-
+ arch/sh/boards/st/common/mb588.c |    2 +-
+ drivers/serial/stasc-fdma.c      |    2 +-
+ 6 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/db641.c b/arch/sh/boards/st/common/db641.c
+index 8215ae5..ea092cb 100644
+--- a/arch/sh/boards/st/common/db641.c
++++ b/arch/sh/boards/st/common/db641.c
+@@ -2,7 +2,7 @@
+  * arch/sh/boards/st/common/db641.c
+  *
+  * Copyright (C) 2007 STMicroelectronics Limited
+- * Author: Pawel MOLL <pawel.moll@st.com>
++ * Author: Pawel Moll <pawel.moll@st.com>
+  *
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+diff --git a/arch/sh/boards/st/common/db679.c b/arch/sh/boards/st/common/db679.c
+index fddaca5..3f19aaa 100644
+--- a/arch/sh/boards/st/common/db679.c
++++ b/arch/sh/boards/st/common/db679.c
+@@ -2,7 +2,7 @@
+  * arch/sh/boards/st/common/db679.c
+  *
+  * Copyright (C) 2007 STMicroelectronics Limited
+- * Author: Pawel MOLL <pawel.moll@st.com>
++ * Author: Pawel Moll <pawel.moll@st.com>
+  *
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+diff --git a/arch/sh/boards/st/common/mb520.c b/arch/sh/boards/st/common/mb520.c
+index 95d07fe..0e6e0fb 100644
+--- a/arch/sh/boards/st/common/mb520.c
++++ b/arch/sh/boards/st/common/mb520.c
+@@ -2,7 +2,7 @@
+  * arch/sh/boards/st/common/mb520.c
+  *
+  * Copyright (C) 2007 STMicroelectronics Limited
+- * Author: Pawel MOLL <pawel.moll@st.com>
++ * Author: Pawel Moll <pawel.moll@st.com>
+  *
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+diff --git a/arch/sh/boards/st/common/mb562.c b/arch/sh/boards/st/common/mb562.c
+index a45c3e6..49bcd5b 100644
+--- a/arch/sh/boards/st/common/mb562.c
++++ b/arch/sh/boards/st/common/mb562.c
+@@ -2,7 +2,7 @@
+  * arch/sh/boards/st/common/mb562.c
+  *
+  * Copyright (C) 2007 STMicroelectronics Limited
+- * Author: Pawel MOLL <pawel.moll@st.com>
++ * Author: Pawel Moll <pawel.moll@st.com>
+  *
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+diff --git a/arch/sh/boards/st/common/mb588.c b/arch/sh/boards/st/common/mb588.c
+index fe84b5a..83b9d11 100644
+--- a/arch/sh/boards/st/common/mb588.c
++++ b/arch/sh/boards/st/common/mb588.c
+@@ -2,7 +2,7 @@
+  * arch/sh/boards/st/common/mb588.c
+  *
+  * Copyright (C) 2007 STMicroelectronics Limited
+- * Author: Pawel MOLL <pawel.moll@st.com>
++ * Author: Pawel Moll <pawel.moll@st.com>
+  *
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+diff --git a/drivers/serial/stasc-fdma.c b/drivers/serial/stasc-fdma.c
+index e7bff6e..dc77dc9 100644
+--- a/drivers/serial/stasc-fdma.c
++++ b/drivers/serial/stasc-fdma.c
+@@ -3,7 +3,7 @@
+  * FDMA extension
+  *
+  * Copyright (C) 2007 STMicroelectronics Limited
+- * Author: Pawel MOLL <pawel.moll@st.com>
++ * Author: Pawel Moll <pawel.moll@st.com>
+  *
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+-- 
+1.5.3.6
+

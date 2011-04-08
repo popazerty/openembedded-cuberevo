@@ -1,0 +1,97 @@
+From: Thago Galesi <thiagogalesi@gmail.com>
+Date: Mon, 17 Apr 2006 16:38:15 +0000 (+0100)
+Subject: [PATCH] Remove unnecessary kmalloc/kfree calls in mtdchar
+X-Git-Tag: v2.6.18~1807^2~149
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Fdwmw2%2Fmtd-2.6.git;a=commitdiff_plain;h=b802c0741103aa92251d536c115874d51f802ec8
+
+[PATCH] Remove unnecessary kmalloc/kfree calls in mtdchar
+
+This patch removes repeated calls to kmalloc / kfree in mtd_write /
+mtd_read functions, replacing them by a single kmalloc / kfree pair.
+
+Signed-off-by: Thiago Galesi <thiagogalesi@gmail.com>
+Signed-off-by: David Woodhouse <dwmw2@infradead.org>
+---
+
+Index: linux/drivers/mtd/mtdchar.c
+===================================================================
+--- linux.orig/drivers/mtd/mtdchar.c	2007-08-31 12:44:56.519906000 +0100
++++ linux/drivers/mtd/mtdchar.c	2007-08-31 14:52:27.015046000 +0100
+@@ -170,16 +170,22 @@
+ 
+ 	/* FIXME: Use kiovec in 2.5 to lock down the user's buffers
+ 	   and pass them directly to the MTD functions */
++
++	if (count > MAX_KMALLOC_SIZE)
++		kbuf=kmalloc(MAX_KMALLOC_SIZE, GFP_KERNEL);
++	else
++		kbuf=kmalloc(count, GFP_KERNEL);
++
++	if (!kbuf)
++		return -ENOMEM;
++
+ 	while (count) {
++
+ 		if (count > MAX_KMALLOC_SIZE)
+ 			len = MAX_KMALLOC_SIZE;
+ 		else
+ 			len = count;
+ 
+-		kbuf=kmalloc(len,GFP_KERNEL);
+-		if (!kbuf)
+-			return -ENOMEM;
+-
+ 		switch (MTD_MODE(file)) {
+ 		case MTD_MODE_OTP_FACT:
+ 			ret = mtd->read_fact_prot_reg(mtd, *ppos, len, &retlen, kbuf);
+@@ -215,9 +221,9 @@
+ 			return ret;
+ 		}
+ 
+-		kfree(kbuf);
+ 	}
+ 
++	kfree(kbuf);
+ 	return total_retlen;
+ } /* mtd_read */
+ 
+@@ -241,18 +247,21 @@
+ 	if (!count)
+ 		return 0;
+ 
++	if (count > MAX_KMALLOC_SIZE)
++		kbuf=kmalloc(MAX_KMALLOC_SIZE, GFP_KERNEL);
++	else
++		kbuf=kmalloc(count, GFP_KERNEL);
++
++	if (!kbuf)
++		return -ENOMEM;
++
+ 	while (count) {
++
+ 		if (count > MAX_KMALLOC_SIZE)
+ 			len = MAX_KMALLOC_SIZE;
+ 		else
+ 			len = count;
+ 
+-		kbuf=kmalloc(len,GFP_KERNEL);
+-		if (!kbuf) {
+-			printk("kmalloc is null\n");
+-			return -ENOMEM;
+-		}
+-
+ 		if (copy_from_user(kbuf, buf, len)) {
+ 			kfree(kbuf);
+ 			return -EFAULT;
+@@ -282,10 +291,9 @@
+ 			kfree(kbuf);
+ 			return ret;
+ 		}
+-
+-		kfree(kbuf);
+ 	}
+ 
++	kfree(kbuf);
+ 	return total_retlen;
+ } /* mtd_write */
+ 

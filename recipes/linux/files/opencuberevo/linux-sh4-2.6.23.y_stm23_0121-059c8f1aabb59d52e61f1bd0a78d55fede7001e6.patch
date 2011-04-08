@@ -1,0 +1,48 @@
+From 059c8f1aabb59d52e61f1bd0a78d55fede7001e6 Mon Sep 17 00:00:00 2001
+From: Peter BENNETT <peter.bennett@st.com>
+Date: Mon, 3 Aug 2009 13:35:24 +0100
+Subject: [PATCH] stm_i2c: Stop the bit-banging driver from glitching the i2c lines at startup
+
+Signed-off-by: Peter Bennett <peter.bennett@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/i2c/busses/i2c-st40-pio.c |   11 ++++-------
+ 1 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-st40-pio.c b/drivers/i2c/busses/i2c-st40-pio.c
+index 98c1574..5d3be45 100644
+--- a/drivers/i2c/busses/i2c-st40-pio.c
++++ b/drivers/i2c/busses/i2c-st40-pio.c
+@@ -87,25 +87,22 @@ static int __init i2c_st40_probe(struct platform_device *pdev)
+ 	if (!algo)
+ 		return -1;
+ 
+-	pio_info->clk = stpio_request_pin(pio_info->pio[0].pio_port,
++	pio_info->clk = stpio_request_set_pin(pio_info->pio[0].pio_port,
+ 			pio_info->pio[0].pio_pin,
+-			"I2C Clock", STPIO_BIDIR);
++			"I2C Clock", STPIO_BIDIR, 1);
+ 
+ 	if (!pio_info->clk) {
+ 		printk(KERN_ERR NAME"Failed to clk pin allocation\n");
+ 		return -1;
+ 	}
+-	pio_info->sdout = stpio_request_pin(pio_info->pio[1].pio_port,
++	pio_info->sdout = stpio_request_set_pin(pio_info->pio[1].pio_port,
+ 			pio_info->pio[1].pio_pin,
+-			"I2C Data", STPIO_BIDIR);
++			"I2C Data", STPIO_BIDIR, 1);
+ 	if (!pio_info->sdout){
+ 		printk(KERN_ERR NAME"Failed to sda pin allocation\n");
+ 		return -1;
+ 	}
+ 
+-	stpio_set_pin(pio_info->clk, 1);
+-	stpio_set_pin(pio_info->sdout, 1);
+-
+ 	printk(KERN_INFO NAME": allocated pin (%d,%d) for scl (0x%p)\n",
+ 			pio_info->pio[0].pio_port,
+ 			pio_info->pio[0].pio_pin,
+-- 
+1.6.0.6
+

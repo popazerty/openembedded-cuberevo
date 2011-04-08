@@ -1,0 +1,237 @@
+From 93b37004254063709411d75cc9a9bf1a9b90ca11 Mon Sep 17 00:00:00 2001
+From: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Date: Thu, 17 Jul 2008 16:13:09 +0200
+Subject: [PATCH 1/1] TMU channel 2 support
+This patch:
+
+o adds the TMU2 support into the timer code. TMU channel 2
+  is programmed to handle periodic interrupts. These can
+  be used by devices. An example is the 71xx Embedded MAC.
+  It can use the TMU channel 2 for mitigating network interrupts.
+  Note: TMU 2 irq number is not provided through configuration.
+  It is fixed in the header file.
+o changes the TMU2 interrupt priority for 7109 and 7111 platforms.
+o moves the clk initialization from clk_enable to clk_register
+  function. This allows to invoke the set_freq before calling
+  the enable although it could be overcome invoking the latter twice times.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+
+Index: linux/arch/sh/kernel/cpu/clock.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/clock.c	2008-07-24 14:47:15.000000000 +0100
++++ linux/arch/sh/kernel/cpu/clock.c	2008-07-24 14:47:24.000000000 +0100
+@@ -47,17 +47,6 @@
+ 
+ int __clk_enable(struct clk *clk)
+ {
+-	/*
+-	 * See if this is the first time we're enabling the clock, some
+-	 * clocks that are always enabled still require "special"
+-	 * initialization. This is especially true if the clock mode
+-	 * changes and the clock needs to hunt for the proper set of
+-	 * divisors to use before it can effectively recalc.
+-	 */
+-	if (unlikely(atomic_read(&clk->kref.refcount) == 1))
+-		if (clk->ops && clk->ops->init)
+-			clk->ops->init(clk);
+-
+ 	kref_get(&clk->kref);
+ 
+ 	if (clk->flags & CLK_ALWAYS_ENABLED)
+@@ -121,10 +110,11 @@
+ 
+ 	mutex_unlock(&clock_list_sem);
+ 
++	if (clk->ops && clk->ops->init)
++		clk->ops->init(clk);
++
+ 	if (clk->flags & CLK_ALWAYS_ENABLED) {
+ 		pr_debug( "Clock '%s' is ALWAYS_ENABLED\n", clk->name);
+-		if (clk->ops && clk->ops->init)
+-			clk->ops->init(clk);
+ 		if (clk->ops && clk->ops->enable)
+ 			clk->ops->enable(clk);
+ 		pr_debug( "Enabled.");
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2008-07-24 14:47:15.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2008-07-24 14:47:24.000000000 +0100
+@@ -1026,7 +1026,7 @@
+ static struct intc_prio priorities[] = {
+ /* INTC */
+ 	INTC_PRIO(RTC,        4),
+-	INTC_PRIO(TMU2,      15),
++	INTC_PRIO(TMU2,       4),
+ 	INTC_PRIO(TMU1,      15),
+ 	INTC_PRIO(TMU0,       1),
+ 	INTC_PRIO(WDT,       15),
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c	2008-07-24 14:47:15.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/setup-stx7111.c	2008-07-24 14:47:24.000000000 +0100
+@@ -953,7 +953,7 @@
+ static struct intc_prio priorities[] = {
+ /* INTC */
+ 	INTC_PRIO(RTC,        4),
+-	INTC_PRIO(TMU2,      15),
++	INTC_PRIO(TMU2,       4),
+ 	INTC_PRIO(TMU1,      15),
+ 	INTC_PRIO(TMU0,       1),
+ 	INTC_PRIO(WDT,       15),
+Index: linux/include/asm-sh/cpu-sh4/timer.h
+===================================================================
+--- linux.orig/include/asm-sh/cpu-sh4/timer.h	2008-07-24 14:47:15.000000000 +0100
++++ linux/include/asm-sh/cpu-sh4/timer.h	2008-07-24 14:47:24.000000000 +0100
+@@ -44,6 +44,7 @@
+ #define TMU2_TCNT       (TMU_012_BASE + 0x24)
+ #define TMU2_TCR	(TMU_012_BASE + 0x28)
+ #define TMU2_TCPR	(TMU_012_BASE + 0x2c)
++#define TMU2_IRQ	18
+ 
+ #define TMU3_TCOR	(TMU_345_BASE + 0x08)
+ #define TMU3_TCNT	(TMU_345_BASE + 0x0c)
+Index: linux/arch/sh/kernel/timers/timer-tmu.c
+===================================================================
+--- linux.orig/arch/sh/kernel/timers/timer-tmu.c	2008-07-24 14:47:15.000000000 +0100
++++ linux/arch/sh/kernel/timers/timer-tmu.c	2008-07-24 14:47:24.000000000 +0100
+@@ -30,6 +30,7 @@
+ 
+ #define TMU0		(0)
+ #define TMU1		(1)
++#define TMU2		(2)
+ 
+ 
+ static inline void _tmu_start(int tmu_num)
+@@ -57,7 +58,7 @@
+ 
+ static inline unsigned long _tmu_read(int tmu_num)
+ {
+-        return ctrl_inl(TMU0_TCNT+0xC*tmu_num);
++	return ctrl_inl(TMU0_TCNT+0xC*tmu_num);
+ }
+ 
+ static int tmu_timer_start(void)
+@@ -203,6 +204,14 @@
+ 
+ 	_tmu_start(TMU0);
+ 
++	_tmu_stop(TMU2);
++	if(tmus_are_scaled)
++		tmu_latest_interval[TMU2] >>= 1;
++	else 	tmu_latest_interval[TMU2] <<= 1;
++
++	tmu_timer_set_interval(TMU2, tmu_latest_interval[TMU2], 1);
++	_tmu_start(TMU2);
++
+ 	local_irq_restore(flags);
+ }
+ 
+@@ -221,15 +230,97 @@
+ 	.ops		= &tmu_clk_ops,
+ };
+ 
++static void (*tmu2_interrupt_fnt) (void *);
++static void *tmu2_interrupt_data;
++static irqreturn_t tmu2_timer_interrupt(int irq, void *dummy)
++{
++	_tmu_clear_status(TMU2);
++	if (tmu2_interrupt_fnt != NULL)
++		tmu2_interrupt_fnt(tmu2_interrupt_data);
++
++	return IRQ_HANDLED;
++}
++
++int tmu2_register_user(void *fnt, void *data)
++{
++	if (tmu2_interrupt_fnt != NULL)
++		return -1;
++
++	tmu2_interrupt_fnt = fnt;
++	tmu2_interrupt_data = data;
++
++	return 0;
++}
++
++void tmu2_unregister_user(void)
++{
++	tmu2_interrupt_fnt = NULL;
++	tmu2_interrupt_data = NULL;
++
++	return;
++}
++
++static struct irqaction tmu2_irq = {
++	.name		= "TMU2 periodic timer",
++	.handler	= tmu2_timer_interrupt,
++	.flags		= IRQF_DISABLED | IRQF_TIMER | IRQF_IRQPOLL,
++	.mask		= CPU_MASK_NONE,
++};
++
++static void tmu2_enable(struct clk *clk)
++{
++	_tmu_start(TMU2);
++	_tmu_set_irq(TMU2,1);
++
++	return;
++}
++
++static void tmu2_disable(struct clk *clk)
++{
++	_tmu_stop(TMU2);
++	_tmu_set_irq(TMU2,0);
++	_tmu_clear_status(TMU2);
++
++	return;
++}
++
++static int tmu2_set_rate(struct clk *clk, unsigned long freq, int algo_id)
++{
++	unsigned long interval;
++
++	if (freq == 0)
++		return -1;
++
++	interval = clk->rate / freq;
++	tmu_timer_set_interval(TMU2, interval, 1);
++
++	return interval;
++}
++
++static struct clk_ops tmu2_clk_ops = {
++	.init		= tmu_clk_init,
++	.enable		= tmu2_enable,
++	.disable	= tmu2_disable,
++	.recalc		= tmu_clk_recalc,
++	.set_rate	= tmu2_set_rate,
++};
++
++static struct clk tmu2_clk = {
++	.name		= "tmu2_clk",
++	.ops		= &tmu2_clk_ops,
++};
++
+ static int tmu_timer_init(void)
+ {
+ 	unsigned long interval;
+ 	unsigned long frequency;
+ 
+ 	setup_irq(CONFIG_SH_TIMER_IRQ, &tmu0_irq);
++	setup_irq(TMU2_IRQ, &tmu2_irq);
+ 
+ 	tmu0_clk.parent = clk_get(NULL, "module_clk");
+ 	tmu1_clk.parent = clk_get(NULL, "module_clk");
++	tmu2_clk.parent = clk_get(NULL, "module_clk");
+ 
+ 	tmu_timer_stop();
+ 
+@@ -242,6 +333,7 @@
+ 
+ 	clk_register(&tmu0_clk);
+ 	clk_register(&tmu1_clk);
++	clk_register(&tmu2_clk);
+ 	clk_enable(&tmu0_clk);
+ 	clk_enable(&tmu1_clk);
+ 

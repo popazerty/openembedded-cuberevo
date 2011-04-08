@@ -1,0 +1,34 @@
+Improve fb_find_mode() best match logic when interlaced modes exist.
+
+Currently the code will consider the first mode that matches resolution
+and refresh rate as a perfect match, ignoring the interlace flag. This means
+that if the requested mode is for example "720x576@50" but the mode
+"720x576@50i" is first in the mode database, the interlaced mode will be
+chosen without the code even getting to the progressive mode that was really
+wanted. This patch modifies the logic so that if the interlace flag is not
+a match the mode is just marked as the best match so far and the search
+continues.
+
+Signed-off-by: Stephen Gallimore <stephen.gallimore@st.com>
+Index: linux-sh4-2.6.23.17_stm23_0115/drivers/video/modedb.c
+===================================================================
+--- linux-sh4-2.6.23.17_stm23_0115.orig/drivers/video/modedb.c
++++ linux-sh4-2.6.23.17_stm23_0115/drivers/video/modedb.c
+@@ -609,12 +609,15 @@ done:
+ 	diff = refresh;
+ 	best = -1;
+ 	for (i = 0; i < dbsize; i++) {
++		int mode_interlace = (db[i].vmode & FB_VMODE_INTERLACED)?1:0;
++
+ 		if (name_matches(db[i], name, namelen) ||
+ 		    (res_specified && res_matches(db[i], xres, yres))) {
+ 			if(!fb_try_mode(var, info, &db[i], bpp)) {
+-				if(!refresh_specified || db[i].refresh == refresh)
++				if((!refresh_specified || db[i].refresh == refresh) &&
++				   (interlace == mode_interlace)) {
+ 					return 1;
+-				else {
++				} else {
+ 					if(diff > abs(db[i].refresh - refresh)) {
+ 						diff = abs(db[i].refresh - refresh);
+ 						best = i;

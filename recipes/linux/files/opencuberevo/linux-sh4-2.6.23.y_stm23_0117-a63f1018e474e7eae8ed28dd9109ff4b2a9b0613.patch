@@ -1,0 +1,425 @@
+From a63f1018e474e7eae8ed28dd9109ff4b2a9b0613 Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Thu, 11 Dec 2008 14:37:27 +0100
+Subject: [PATCH] LKM: Remove config option for simple LKM hash loader.
+
+This patch remove the possibility to enable the older
+and simpler LKM fast loader based on hash values comparisons.
+The only one fast strategy available will that one based
+on ELF hash table.
+ksymhash tool provided initially with the simpler hash strategy
+is still used by the new one, so nothing of the previous implementation
+has been lost.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ include/linux/module.h    |    4 +-
+ init/Kconfig              |   22 +-------
+ kernel/module.c           |  125 +++++++++++++++------------------------------
+ scripts/Makefile          |    2 +-
+ scripts/ksymhash/Makefile |    2 +-
+ scripts/mod/Makefile      |   12 +----
+ scripts/mod/ksymtable.h   |    2 +-
+ scripts/mod/ktablehash.c  |    2 +-
+ scripts/mod/modpost.c     |    6 +--
+ scripts/mod/modpost.h     |    4 +-
+ 10 files changed, 56 insertions(+), 125 deletions(-)
+
+diff --git a/include/linux/module.h b/include/linux/module.h
+index ea47a08..16efbbf 100644
+--- a/include/linux/module.h
++++ b/include/linux/module.h
+@@ -35,7 +35,7 @@ struct kernel_symbol
+ {
+ 	unsigned long value;
+ 	const char *name;
+-#if defined CONFIG_LKM_HASH || defined CONFIG_LKM_ELF_HASH
++#ifdef CONFIG_LKM_ELF_HASH
+ 	unsigned long hash_value;
+ #endif
+ };
+@@ -207,7 +207,7 @@ void *__symbol_get_gpl(const char *symbol);
+ #define __CRC_SYMBOL(sym, sec)
+ #endif
+ 
+-#ifdef CONFIG_LKM_HASH
++#ifdef CONFIG_LKM_ELF_HASH
+ #define MAGIC_HASH_VALUE 0x13121973
+ #define KERNEL_SYMBOL_EXTRA_FIELD , MAGIC_HASH_VALUE
+ #else
+diff --git a/init/Kconfig b/init/Kconfig
+index c3fc015..7f7b905 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -681,33 +681,17 @@ config KMOD
+ 	  runs modprobe with the appropriate arguments, thereby
+ 	  loading the module if it is available.  If unsure, say Y.
+ 
+-config LKM_HASH
+-	bool "Enable hash support for fast loading"
+-	depends on MODULES
+-	default n
+-	help
+-	  Enable a new feature to extend kernel symbol tables structure
+-	  adding a new field for hash values that can be used at module
+-	  load time to resolve undefined symbols against kernel and modules
+-	  exported ones. This will avoid to perform string comparisons
+-	  for each exported symbols by using hash value to discard not matching
+-	  symbols. This feature will improve kernel module loading time.
+-	  An ad hoc host application will analyse kernel image and kernel
+-	  modules once linked, modifying their kernel symbol tables and
+-	  computing at build time GNU hash values.
+-
+ config LKM_ELF_HASH
+ 	bool "Enable ELF hash support for fast loading"
+ 	depends on MODULES
+-	select LKM_HASH
+ 	default n
+ 	help
+-	  Extend the modules and vmlinu ELF file by adding a new section
++	  Extend the modules and vmlinux ELF file by adding a new section
+ 	  to implement the ELF hash table to be used for symbol lookup.
+ 	  When inserting a module, the symbol lookup process will use the
+-	  ELF hash table for finding symbols. It also rely upon the support
++	  ELF hash table for finding symbols. It also relies upon the support
+ 	  provided by the ksymhash tool to avoiding further computation at
+-	  runtime.
++	  runtime of the hash values (of both exported and undefined symbols).
+ 
+ config STOP_MACHINE
+ 	bool
+diff --git a/kernel/module.c b/kernel/module.c
+index 6e5bad9..a14a0a0 100644
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -62,9 +62,7 @@ extern int module_sysfs_initialized;
+ #undef LKM_LOAD_BENCH
+ #ifdef LKM_LOAD_BENCH
+ 
+-#if defined CONFIG_LKM_HASH && !defined CONFIG_LKM_ELF_HASH
+-const char lkm_loader[] = "Simple hash";
+-#elif defined CONFIG_LKM_ELF_HASH
++#ifdef CONFIG_LKM_ELF_HASH
+ const char lkm_loader[] = "ELF hash";
+ #else
+ const char lkm_loader[] = "Standard";
+@@ -183,7 +181,7 @@ extern const unsigned long __start___kcrctab_unused_gpl[];
+ #define symversion(base, idx) ((base != NULL) ? ((base) + (idx)) : NULL)
+ #endif
+ 
+-#if defined CONFIG_LKM_HASH || defined CONFIG_LKM_ELF_HASH
++#ifdef CONFIG_LKM_ELF_HASH
+ 
+ #define HASH_VALUE_PARAM const unsigned long gnu_hash_value,
+ #define HASH_VALUE_DEF(__name) \
+@@ -195,6 +193,14 @@ extern const unsigned long __start___kcrctab_unused_gpl[];
+ #define SYMHASH_INDEX_PARAM unsigned int symhashindex,
+ #define	SYM_HASH(__sym) gnu_hash(__sym),
+ #define KSYM_HASH(__sym) __sym.hash_value,
++#define HTABLE_DECL const uint32_t *htable
++#define HTABLE_SET(__tab) htable = __tab##_htable
++#define HTABLE_ARG , htable
++#define MOD_HTABLE_SET(__syms) htable = __syms##_htable
++
++/* Symbol lookup is done by using ELF hash table */
++#define LOOKUP_SYMBOL(_name, _start, _stop) \
++	elf_hash_lookup_symbol(_name, HASH_VALUE_ARG _start, _stop HTABLE_ARG)
+ 
+ static unsigned long gnu_hash(const unsigned char *name)
+ {
+@@ -206,69 +212,6 @@ static unsigned long gnu_hash(const unsigned char *name)
+ }
+ 
+ /* lookup symbol on given range of kernel_symbols
+- * It uses simply symbol's hash value for discarding not
+- * matching symbols and avoid pointless string comparison.
+- */
+-static const struct kernel_symbol *hash_lookup_symbol(const char *name,
+-	const unsigned long hash_value,
+-	const struct kernel_symbol *start,
+-	const struct kernel_symbol *stop)
+-{
+-	const struct kernel_symbol *ks = start;
+-
+-	for (; ks < stop; ks++) {
+-
+-	/*
+-	 * If hash values don't match, we are sure symbols are different,
+-	 * otherwise we need to explicitely do string comparison.
+-	 */
+-
+-	if ((ks->hash_value == hash_value) && (strcmp(ks->name, name) == 0))
+-		return ks;
+-	}
+-	return NULL;
+-}
+-
+-#else /* neither defined CONFIG_LKM_HASH or defined CONFIG_LKM_ELF_HASH */
+-
+-#define HASH_VALUE_PARAM
+-#define HASH_VALUE_DEF(__name)
+-#define HASH_VALUE_ARG
+-#define SYMHASH_INDEX_DEF
+-#define SYMHASH_INDEX_ARG
+-#define SYMHASH_INDEX_PARAM
+-#define	SYM_HASH(__sym)
+-#define KSYM_HASH(__sym)
+-#define LOOKUP_SYMBOL(__name, __start, __stop) \
+-	lookup_symbol(__name, __start, __stop)
+-
+-/* lookup symbol on given range of kernel_symbols
+- * It use simply a string comparison for finding the matching symbol.
+- */
+-static const struct kernel_symbol *lookup_symbol(const char *name,
+-	const struct kernel_symbol *start,
+-	const struct kernel_symbol *stop)
+-{
+-	const struct kernel_symbol *ks = start;
+-	for (; ks < stop; ks++)
+-		if (strcmp(ks->name, name) == 0)
+-			return ks;
+-	return NULL;
+-}
+-#endif
+-
+-#ifdef CONFIG_LKM_ELF_HASH
+-
+-#define HTABLE_DECL const uint32_t *htable
+-#define HTABLE_SET(__tab) htable = __tab##_htable
+-#define HTABLE_ARG , htable
+-#define MOD_HTABLE_SET(__syms) htable = __syms##_htable
+-
+-#define LOOKUP_SYMBOL(_name, _start, _stop) \
+-	elf_hash_lookup_symbol(_name, HASH_VALUE_ARG _start, _stop HTABLE_ARG)
+-
+-
+-/* lookup symbol on given range of kernel_symbols
+  * It uses an ELF hash table to perform symbol lookup.
+  * Symbol's hash value are already computed at build time and
+  * available in the .undef.hash ELF section
+@@ -288,9 +231,9 @@ static const struct kernel_symbol *elf_hash_lookup_symbol(const char *name,
+ 	if (start == stop)
+ 		return NULL;
+ 
++	/* Sanity check: htable must be not NULL */
+ 	if (htable == NULL)
+-		/* fall back to simpler implementation */
+-		return hash_lookup_symbol(name, hash_value, start, stop);
++		return NULL;
+ 
+ 	/* Get hash field from the ELF section */
+ 	ht.nbucket = *htable++;
+@@ -323,21 +266,37 @@ static const struct kernel_symbol *elf_hash_lookup_symbol(const char *name,
+ 	return NULL;
+ }
+ 
+-#elif defined CONFIG_LKM_HASH && !defined CONFIG_LKM_ELF_HASH
+-#define LOOKUP_SYMBOL(__name, __start, __stop) \
+-	hash_lookup_symbol(__name, HASH_VALUE_ARG __start, __stop)
+-#define HTABLE_DECL
+-#define HTABLE_SET(__val)
+-#define HTABLE_ARG
+-#define MOD_HTABLE_SET(__syms)
+-
+ #else
+-
++/* All hash macros are no ops */
++#define HASH_VALUE_PARAM
++#define HASH_VALUE_DEF(__name)
++#define HASH_VALUE_ARG
++#define SYMHASH_INDEX_DEF
++#define SYMHASH_INDEX_ARG
++#define SYMHASH_INDEX_PARAM
++#define	SYM_HASH(__sym)
++#define KSYM_HASH(__sym)
+ #define HTABLE_DECL
+ #define HTABLE_SET(__val)
+ #define HTABLE_ARG
+ #define MOD_HTABLE_SET(__syms)
++/* Symbol lookup is done by standard algorithm */
++#define LOOKUP_SYMBOL(__name, __start, __stop) \
++	lookup_symbol(__name, __start, __stop)
+ 
++/* lookup symbol on given range of kernel_symbols
++ * It use simply a string comparison for finding the matching symbol.
++ */
++static const struct kernel_symbol *lookup_symbol(const char *name,
++	const struct kernel_symbol *start,
++	const struct kernel_symbol *stop)
++{
++	const struct kernel_symbol *ks = start;
++	for (; ks < stop; ks++)
++		if (strcmp(ks->name, name) == 0)
++			return ks;
++	return NULL;
++}
+ #endif
+ 
+ static void printk_unused_warning(const char *name)
+@@ -1506,7 +1465,7 @@ static int simplify_symbols(Elf_Shdr *sechdrs,
+ 	unsigned long secbase;
+ 	unsigned int i, n = sechdrs[symindex].sh_size / sizeof(Elf_Sym);
+ 	int ret = 0;
+-#ifdef CONFIG_LKM_HASH
++#ifdef CONFIG_LKM_ELF_HASH
+ #define HASH_VALUE hash_values[u++],
+ 	unsigned long *hash_values = (void *)sechdrs[symhashindex].sh_addr;
+ 	unsigned int u = 0;
+@@ -1817,9 +1776,6 @@ static struct module *load_module(void __user *umod,
+ 	unsigned int i;
+ 	unsigned int symindex = 0;
+ 	unsigned int strindex = 0;
+-#ifdef CONFIG_LKM_HASH
+-	unsigned int symhashindex = 0;
+-#endif
+ 	unsigned int setupindex;
+ 	unsigned int exindex;
+ 	unsigned int exportindex;
+@@ -1842,6 +1798,7 @@ static struct module *load_module(void __user *umod,
+ 	unsigned int markersindex;
+ 	unsigned int markersstringsindex;
+ #ifdef CONFIG_LKM_ELF_HASH
++	unsigned int symhashindex;
+ 	unsigned int export_hashindex;
+ 	unsigned int gpl_hashindex;
+ 	unsigned int gplfuture_hashindex;
+@@ -1930,7 +1887,8 @@ static struct module *load_module(void __user *umod,
+ 		goto free_hdr;
+ 	}
+ 
+-#ifdef CONFIG_LKM_HASH
++#ifdef CONFIG_LKM_ELF_HASH
++	/* FIXME: check if it required or not */
+ 	symhashindex = find_sec(hdr, sechdrs, secstrings, ".undef.hash");
+ 	if (symhashindex == 0) {
+ 		printk(KERN_WARNING "%s: module has no hash values for symbols \
+@@ -1949,6 +1907,7 @@ static struct module *load_module(void __user *umod,
+ 	unusedgplindex = find_sec(hdr, sechdrs, secstrings, "__ksymtab_unused_gpl");
+ 
+ #ifdef CONFIG_LKM_ELF_HASH
++	/* Optional sections as well */
+ 	/* ELF hash tables for exported symbols sections */
+ 	export_hashindex = find_sec(hdr, sechdrs, secstrings,
+ 				"__ksymtab.htable");
+diff --git a/scripts/Makefile b/scripts/Makefile
+index 91a7df8..99afa51 100644
+--- a/scripts/Makefile
++++ b/scripts/Makefile
+@@ -20,7 +20,7 @@ hostprogs-y += unifdef
+ 
+ subdir-$(CONFIG_MODVERSIONS) += genksyms
+ subdir-y                     += mod
+-subdir-$(CONFIG_LKM_HASH)    += ksymhash
++subdir-$(CONFIG_LKM_ELF_HASH)    += ksymhash
+ 
+ # Let clean descend into subdirs
+ subdir-	+= basic kconfig package
+diff --git a/scripts/ksymhash/Makefile b/scripts/ksymhash/Makefile
+index cfadc99..f4ac5a1 100644
+--- a/scripts/ksymhash/Makefile
++++ b/scripts/ksymhash/Makefile
+@@ -26,7 +26,7 @@ targets += elfconfig.h
+ quiet_cmd_ksymhash = SYMHASH
+       cmd_ksymhash = scripts/ksymhash/ksymhash
+ 
+-ifdef CONFIG_LKM_HASH
++ifdef CONFIG_LKM_ELF_HASH
+ define rule_ksymhash
+ 	$(Q)$(if $($(quiet)cmd_ksymhash),								\
+ 		echo '  $($(quiet)cmd_ksymhash) $@' &&)						\
+diff --git a/scripts/mod/Makefile b/scripts/mod/Makefile
+index 1a9dfc9..125655f 100644
+--- a/scripts/mod/Makefile
++++ b/scripts/mod/Makefile
+@@ -3,18 +3,10 @@ always		:= $(hostprogs-y) empty.o
+ 
+ modpost-objs	:= modpost.o file2alias.o sumversion.o
+ 
+-ifdef CONFIG_LKM_HASH
+-#CONFIG_LKM_EKF_HASH forces CONFIG_LKM_HASH to be defined
+-modpost-objs += ktablehash.o
+-$(obj)/ktablehash.o: $(obj)/elfconfig.h
+-endif
+-
+-ifdef CONFIG_LKM_HASH
+-HOSTCFLAGS_modpost.o += -DCONFIG_LKM_HASH
+-endif
+-
+ ifdef CONFIG_LKM_ELF_HASH
++modpost-objs += ktablehash.o
+ HOSTCFLAGS_modpost.o += -DCONFIG_LKM_ELF_HASH
++$(obj)/ktablehash.o: $(obj)/elfconfig.h
+ endif
+ 
+ # dependencies on generated files need to be listed explicitly
+diff --git a/scripts/mod/ksymtable.h b/scripts/mod/ksymtable.h
+index 65254cf..efe3606 100644
+--- a/scripts/mod/ksymtable.h
++++ b/scripts/mod/ksymtable.h
+@@ -30,7 +30,7 @@
+ 
+ /*
+  * It matches with struct kernel_symbol defined
+- * in include/linux/module.h when CONFIG_LKM_HASH
++ * in include/linux/module.h when CONFIG_LKM_ELF_HASH
+  * is configured
+  */
+ 
+diff --git a/scripts/mod/ktablehash.c b/scripts/mod/ktablehash.c
+index c5f8f0f..b890373 100644
+--- a/scripts/mod/ktablehash.c
++++ b/scripts/mod/ktablehash.c
+@@ -16,7 +16,7 @@ void add_undef_hash(struct buffer *b, struct module *mod)
+ {
+ 	struct symbol *s;
+ 
+-	buf_printf(b, "#ifdef CONFIG_LKM_HASH\n");
++	buf_printf(b, "#ifdef CONFIG_LKM_ELF_HASH\n");
+ 	buf_printf(b, "static unsigned long __symtab_hash[]\n");
+ 	buf_printf(b, "__attribute_used__\n");
+ 	buf_printf(b, "__attribute__((section(\".undef.hash\"))) = {\n");
+diff --git a/scripts/mod/modpost.c b/scripts/mod/modpost.c
+index 087d4cf..938d2b5 100644
+--- a/scripts/mod/modpost.c
++++ b/scripts/mod/modpost.c
+@@ -396,7 +396,7 @@ static int parse_elf(struct elf_info *info, const char *filename)
+ 			info->export_unused_gpl_sec = i;
+ 		else if (strcmp(secname, "__ksymtab_gpl_future") == 0)
+ 			info->export_gpl_future_sec = i;
+-#if defined CONFIG_LKM_HASH || defined CONFIG_LKM_ELF_HASH
++#ifdef CONFIG_LKM_ELF_HASH
+ 		else if (strcmp(secname, "__ksymtab_strings") == 0)
+ 			info->kstrings = (void *)hdr + sechdrs[i].sh_offset;
+ #endif
+@@ -1713,10 +1713,8 @@ int main(int argc, char **argv)
+ 		add_depends(&buf, mod, modules);
+ 		add_moddevtable(&buf, mod);
+ 		add_srcversion(&buf, mod);
+-#if defined CONFIG_LKM_HASH || defined CONFIG_LKM_ELF_HASH
+-		add_undef_hash(&buf, mod);
+-#endif
+ #ifdef CONFIG_LKM_ELF_HASH
++		add_undef_hash(&buf, mod);
+ 		add_ksymtable_hash(&buf, mod);
+ 		/* Now we have done so release resources */
+ 		parse_elf_finish(mod->info);
+diff --git a/scripts/mod/modpost.h b/scripts/mod/modpost.h
+index 5bf8317..be8ea2d 100644
+--- a/scripts/mod/modpost.h
++++ b/scripts/mod/modpost.h
+@@ -178,10 +178,8 @@ void warn(const char *fmt, ...);
+ void merror(const char *fmt, ...);
+ 
+ /* from ktablehash.c */
+-#if defined CONFIG_LKM_HASH || defined CONFIG_LKM_ELF_HASH
+-void add_undef_hash(struct buffer *b, struct module *mod);
+-#endif
+ #ifdef CONFIG_LKM_ELF_HASH
++void add_undef_hash(struct buffer *b, struct module *mod);
+ void add_ksymtable_hash(struct buffer *b, struct module *mod);
+ #endif
+ 
+-- 
+1.5.3.6
+

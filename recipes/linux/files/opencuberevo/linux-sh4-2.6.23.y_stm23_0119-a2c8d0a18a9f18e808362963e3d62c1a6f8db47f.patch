@@ -1,0 +1,35 @@
+From a2c8d0a18a9f18e808362963e3d62c1a6f8db47f Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Tue, 12 May 2009 06:24:13 +0200
+Subject: [PATCH] stm: usb: Fixed suspend code due regression on 7109
+
+Fixed code to avoid problem on 7109
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/usb/host/hcd-stm.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/host/hcd-stm.c b/drivers/usb/host/hcd-stm.c
+index f322e1e..d861e85 100644
+--- a/drivers/usb/host/hcd-stm.c
++++ b/drivers/usb/host/hcd-stm.c
+@@ -141,7 +141,6 @@ static int st_usb_suspend(struct platform_device *pdev, pm_message_t state)
+ 	struct plat_usb_data *pdata = pdev->dev.platform_data;
+ 	unsigned long wrapper_base = pdata->ahb2stbus_wrapper_glue_base;
+ 	void *protocol_base = pdata->ahb2stbus_protocol_base;
+-	struct usb_hcd *hcd = pdata->ehci_hcd;
+ 	long reg;
+ 	dgb_print("\n");
+ 
+@@ -152,7 +151,6 @@ static int st_usb_suspend(struct platform_device *pdev, pm_message_t state)
+ 			wrapper_base + AHB2STBUS_STRAP_OFFSET);
+ 	}
+ 
+-	writel(0, hcd->regs + AHB2STBUS_INSREG01_OFFSET);
+ 	writel(0, wrapper_base + AHB2STBUS_STRAP_OFFSET);
+ 	writel(0, protocol_base + AHB2STBUS_STBUS_OPC_OFFSET);
+ 	writel(0, protocol_base + AHB2STBUS_MSGSIZE_OFFSET);
+-- 
+1.6.0.6
+

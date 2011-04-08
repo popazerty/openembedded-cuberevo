@@ -1,0 +1,41 @@
+This patch makes the I2C PIO driver consistent with the SSC I2C driver
+in that on the MB442 CoCo ref board, only two I2C busses are usable.
+
+The third bus is permanently connected to a non I2C device and is 
+disabled by this patch.
+
+This mirrors the patch linux-sh4-2.6.11_stm20-31.i2c_7100ref_fix.patch,
+which fixes the SSC driver.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux/drivers/i2c/busses/i2c-st40-pio.c
+===================================================================
+--- linux.orig/drivers/i2c/busses/i2c-st40-pio.c
++++ linux/drivers/i2c/busses/i2c-st40-pio.c
+@@ -73,6 +73,16 @@ static pio_address i2c_address[NR_I2C_BU
+ 
+ #elif defined(CONFIG_CPU_SUBTYPE_STB7100)
+ 
++#if defined(CONFIG_SH_STB7100_REF)
++
++#define NR_I2C_BUSSES 2
++static pio_address i2c_address[NR_I2C_BUSSES] = {
++	{2,0,2,1},
++	{4,0,4,1}
++};
++
++#else
++
+ #define NR_I2C_BUSSES 3
+ static pio_address i2c_address[NR_I2C_BUSSES] = {
+ 	{2,0,2,1},
+@@ -80,6 +90,8 @@ static pio_address i2c_address[NR_I2C_BU
+ 	{4,0,4,1}
+ };
+ 
++#endif
++
+ #else
+ #error Need to configure the default I2C pins for this chip
+ #endif

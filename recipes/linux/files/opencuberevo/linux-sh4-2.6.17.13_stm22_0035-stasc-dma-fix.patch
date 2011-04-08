@@ -1,0 +1,28 @@
+Reorder code in drivers/serial/stasc-dma.c so that in the error case
+a channel is only freed if was successfully allocated.
+
+This resolves:
+https://bugzilla.stlinux.com/show_bug.cgi?id=972
+
+Signed-off-by: Nigel Hathaway <nigel.hathaway@st.com>
+Index: linux/drivers/serial/stasc-dma.c
+===================================================================
+--- linux.orig/drivers/serial/stasc-dma.c
++++ linux/drivers/serial/stasc-dma.c
+@@ -454,11 +454,13 @@ int asc_enable_fdma(struct uart_port *po
+ 	if (!ascport->dma_enabled) {
+ 		int i, err=0;
+ 		ascdmaport->rxdma_chid = request_dma_bycap(&fdmac_id,&lb_cap_channel, "ASC_RX");
++		if (ascdmaport->rxdma_chid < 0) {
++			return -EBUSY;
++		}
++
+ 		ascdmaport->txdma_chid = request_dma_bycap(&fdmac_id,&lb_cap_channel, "ASC_TX");
+-
+-		if ((ascdmaport->rxdma_chid < 0) || (ascdmaport->txdma_chid < 0)) {
++		if (ascdmaport->txdma_chid < 0) {
+ 			free_dma(ascdmaport->rxdma_chid);
+-			free_dma(ascdmaport->txdma_chid);
+ 			return -EBUSY;
+ 		}
+ 

@@ -1,0 +1,490 @@
+This patch updates the coprocessor device driver to allow
+the dynamic device node creation under /dev.
+
+See bugzilla 3398.
+
+Signed-off-by: Francesco M.Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/drivers/stm/stm-coprocessor.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm-coprocessor.c
++++ linux-2.6.23-stm/drivers/stm/stm-coprocessor.c
+@@ -116,8 +116,8 @@ static void __debug(coproc_t * cop, cons
+ 	if (cop->h2c_port)
+ 		printk
+ 		    ("    Channels : h->c 0x%08x (%08lx)    c->h 0x%08x (%08lx)\n",
+-		     cop->h2c_port, readl(cop->h2c_port), cop->c2h_port,
+-		     readl(cop->c2h_port));
++					cop->h2c_port, (long unsigned int)readl(cop->h2c_port), cop->c2h_port,
++					(long unsigned int)readl(cop->c2h_port));
+ 	else
+ #endif
+ 		printk("    Channels : Not defined\n");
+@@ -483,6 +483,7 @@ static struct platform_driver st_coproc_
+ #endif
+ };
+ 
++static struct class *coproc_dev_class;
+ static int __init st_coproc_init(void)
+ {
+ 	int i;
+@@ -503,6 +504,8 @@ static int __init st_coproc_init(void)
+ 		return (-EAGAIN);
+ 	}
+ 
++	coproc_dev_class = class_create(THIS_MODULE, "coproc-dev");
++
+ 	for (cop = &coproc[0], i = 0; i < coproc_info.max_coprs; i++, cop++) {
+ 		if (!cop->ram_offset) {
+ 			printk("st-coprocessor-%d: No RAM reserved\n", i);
+@@ -510,7 +513,7 @@ static int __init st_coproc_init(void)
+ 		} else {
+ 			cop->control |= COPROC_SPACE_ALLOCATE;
+ 			cop->vma_address =
+-				ioremap_nocache((unsigned long)cop->ram_offset, cop->ram_size);
++				(int)ioremap_nocache((unsigned long)cop->ram_offset, cop->ram_size);
+ 		}
+ 		/*
+ 		 ** Nodes:
+@@ -535,9 +538,14 @@ static int __init st_coproc_init(void)
+ 			       "Error on ST-Coprocessor device registration\n");
+ 		else {
+ 			/* Add the attributes on the device */
+-			device_create_file(&pdev->dev, &dev_attr_mem_base);
+-			device_create_file(&pdev->dev, &dev_attr_mem_size);
+-			device_create_file(&pdev->dev, &dev_attr_running);
++			if(device_create_file(&pdev->dev, &dev_attr_mem_base) |
++					device_create_file(&pdev->dev, &dev_attr_mem_size) |
++					device_create_file(&pdev->dev, &dev_attr_running))
++				printk(KERN_ERR "Error to add attribute to the coprocessor device\n");
++			/* Create the device file via Discovery System */
++			cop->class_dev = class_device_create(coproc_dev_class, NULL,
++						MKDEV(COPROCESSOR_MAJOR,pdev->id),
++						NULL,"st231-%d", pdev->id);
+ 		}
+ 
+ 		/* Now complete with the platform dependent init stage */
+Index: linux-2.6.23-stm/drivers/stm/stm-coprocessor_frmw.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm-coprocessor_frmw.c
++++ linux-2.6.23-stm/drivers/stm/stm-coprocessor_frmw.c
+@@ -90,7 +90,7 @@ static int st_coproc_open(struct inode *
+ 	unsigned long minor = MINOR((file)->f_dentry->d_inode->i_rdev);
+ 	unsigned long id_device = minor_2_device(minor);
+ 	unsigned long id_firmware = minor_2_firmware(minor);
+-	struct firmware *fw = NULL;
++	const struct firmware *fw = NULL;
+ 	int res;
+ 
+ 	coproc_t *cop = &coproc[id_device];
+@@ -120,18 +120,18 @@ static int st_coproc_open(struct inode *
+ 		/* move the firmware in the coprocessor memory */
+ 		dbg_print("Received firmware size %d bytes\n", fw->size - 4);
+ 		dbg_print("cop->ram_size    = 0x%x\n", cop->ram_size);
+-		dbg_print("cop->ram_offset  = 0x%x\n", cop->ram_offset);
++		dbg_print("cop->ram_offset  = 0x%x\n", (unsigned int)cop->ram_offset);
+ 		/*
+ 		 * The last 4 bytes in the fw->data buffer
+ 		 * aren't code.
+ 		 * They are the boot vma (relocated) address!
+ 		 */
+ 		memcpy(&boot_address, (fw->data) + (fw->size - 4), 4);
+-		dbg_print("boot address     = 0x%x\n", boot_address);
+-		memcpy(cop->vma_address, fw->data, fw->size - 4);
++		dbg_print("boot address     = 0x%x\n", (unsigned int)boot_address);
++		memcpy((int*)cop->vma_address, fw->data, fw->size - 4);
+ 		release_firmware(fw);
+ 		dbg_print("Run the Firmware code\n");
+-		coproc_cpu_grant(cop, boot_address);	//7100 only...
++		coproc_cpu_grant(cop, (unsigned int)boot_address);	//7100 only...
+ 		res = 0;
+ 	} else {
+ 		dbg_print("Error on Firmware Download\n");
+@@ -156,7 +156,7 @@ static struct file_operations coproc_fop
+ };
+ 
+ /* Start: ST-Coprocessor Device Attribute on SysFs*/
+-static ssize_t st_copro_show_running(struct device *dev, char *buf)
++static ssize_t st_copro_show_running(struct device *dev, struct device_attribute *attr, char *buf)
+ {
+ 	coproc_t *cop = container_of(dev, coproc_t, pdev.dev);
+ 	return sprintf(buf, "%d", cop->control & COPROC_IN_USE);
+@@ -164,7 +164,7 @@ static ssize_t st_copro_show_running(str
+ 
+ static DEVICE_ATTR(running, S_IRUGO, st_copro_show_running, NULL);
+ 
+-static ssize_t st_copro_show_mem_size(struct device *dev, char *buf)
++static ssize_t st_copro_show_mem_size(struct device *dev, struct device_attribute *attr, char *buf)
+ {
+ 	coproc_t *cop = container_of(dev, coproc_t, pdev.dev);
+ 	return sprintf(buf, "0x%x", cop->ram_size);
+@@ -172,7 +172,7 @@ static ssize_t st_copro_show_mem_size(st
+ 
+ static DEVICE_ATTR(mem_size, S_IRUGO, st_copro_show_mem_size, NULL);
+ 
+-static ssize_t st_copro_show_mem_base(struct device *dev, char *buf)
++static ssize_t st_copro_show_mem_base(struct device *dev, struct device_attribute *attr, char *buf)
+ {
+ 	coproc_t *cop = container_of(dev, coproc_t, pdev.dev);
+ 	return sprintf(buf, "0x%x", (int)COPR_ADDR(cop, 0));
+@@ -218,9 +218,11 @@ static struct platform_driver st_coproc_
+ #endif
+ };
+ 
++static struct class *coproc_dev_class;
+ static int __init st_coproc_init(void)
+ {
+ 	int i;
++	int frmw_idx;
+ 	coproc_t *cop;
+ 	struct platform_device *pdev;
+ 
+@@ -239,6 +241,8 @@ static int __init st_coproc_init(void)
+ 		return (-EAGAIN);
+ 	}
+ 
++	coproc_dev_class = class_create(THIS_MODULE, "coproc-dev");
++
+ 	for (cop = &coproc[0], i = 0; i < coproc_info.max_coprs; i++, cop++) {
+        /**
+         ** Nodes:
+@@ -272,9 +276,20 @@ static int __init st_coproc_init(void)
+ 			       "Error on ST-Coprocessor device registration\n");
+ 		else {
+ 			/* Add the attributes on the device */
+-			device_create_file(&pdev->dev, &dev_attr_mem_base);
+-			device_create_file(&pdev->dev, &dev_attr_mem_size);
+-			device_create_file(&pdev->dev, &dev_attr_running);
++			if(device_create_file(&pdev->dev, &dev_attr_mem_base) |
++					device_create_file(&pdev->dev, &dev_attr_mem_size) |
++					device_create_file(&pdev->dev, &dev_attr_running))
++				printk(KERN_ERR "Error to add attribute to the coprocessor device\n");
++			/*
++			 * Create the six device file [firmware]
++			 * for each coprocessor via Discovery System
++			 */
++			for(frmw_idx=0; frmw_idx < 10; ++frmw_idx)
++			/* Be carefull the '6' used in MKDEV(..) depends on
++			* minor number device file translation */
++			cop->class_dev = class_device_create(coproc_dev_class, NULL,
++						MKDEV(COPROCESSOR_MAJOR,pdev->id<<6 | frmw_idx),
++						NULL,"st231-%d-%d", pdev->id, frmw_idx);
+ 		}
+ 	}
+ 
+Index: linux-2.6.23-stm/include/linux/stm/coprocessor.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/coprocessor.h
++++ linux-2.6.23-stm/include/linux/stm/coprocessor.h
+@@ -91,6 +91,7 @@ typedef struct {
+ 	u_long	    mbox_entryp;	/* where to put the entry point...  */
+ 	u_long	    mbox_enable;	/* ... to trigger the CPU start     */
+ 	struct platform_device pdev;
++	struct class_device *class_dev;
+ } coproc_t;
+ 
+ struct coproc_board_info {
+Index: linux-2.6.23-stm/drivers/stm/copro-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/copro-stb7100.c
++++ /dev/null
+@@ -1,140 +0,0 @@
+-#include <linux/kernel.h>
+-#include <linux/module.h>
+-#include <linux/init.h>
+-#include <linux/delay.h>
+-#include <linux/seq_file.h>
+-#include <linux/stm/coprocessor.h>
+-#include <linux/stm/sysconf.h>
+-#include <asm-generic/sections.h>
+-#include <asm/io.h>
+-
+-struct coproc_board_info coproc_info = {
+-	.name = "st231",
+-	.max_coprs = CONFIG_STM_NUM_COPROCESSOR,
+-};
+-
+-coproc_t coproc[CONFIG_STM_NUM_COPROCESSOR];
+-
+-static struct sysconf_field* copro_reset_out;
+-
+-struct cpu_reg {
+-	struct sysconf_field* boot;
+-	struct sysconf_field* reset;
+-};
+-static struct cpu_reg cpu_regs[CONFIG_STM_NUM_COPROCESSOR];
+-
+-int coproc_cpu_open(coproc_t * cop)
+-{
+-	return (0);
+-}
+-
+-int __init coproc_cpu_init(coproc_t * cop)
+-{
+-	unsigned int id = cop->pdev.id;
+-
+-#if defined CONFIG_CPU_SUBTYPE_STB7100
+-	const unsigned int boot_lookup[] =   { 28, 26 };
+-	const unsigned int reset_lookup[]  = { 29, 27 };
+-#elif defined CONFIG_CPU_SUBTYPE_STX7200
+-	const unsigned int boot_lookup[] =   { 28, 36, 26, 34 };
+-	const unsigned int reset_lookup[]  = { 29, 37, 27, 35 };
+-#else
+-#error Need to define the sysconf configuration for this CPU subtype
+-#endif
+-
+-	BUG_ON(id >= ARRAY_SIZE(boot_lookup));
+-	BUG_ON(id >= coproc_info.max_coprs);
+-
+-	if(!copro_reset_out)
+-	if(!(copro_reset_out=sysconf_claim(SYS_CFG, 9, 27, 27, NULL))){
+-		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_9\n");
+-		return 1;
+-		}
+-
+-	if(!cpu_regs[id].boot)
+-	if(!(cpu_regs[id].boot = sysconf_claim(SYS_CFG, boot_lookup[id], 0, 31, NULL))){
+-		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n", boot_lookup[id]);
+-		return 1;
+-		}
+-
+-	if(!cpu_regs[id].reset)
+-	if(!(cpu_regs[id].reset = sysconf_claim(SYS_CFG, reset_lookup[id], 0,31, NULL))){
+-		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n", reset_lookup[id]);
+-		return 1;
+-		}
+-
+-	return 0;
+-}
+-
+-int coproc_cpu_grant(coproc_t * cop, unsigned long arg)
+-{
+-	u_long bootAddr;
+-	int id = cop->pdev.id;
+-
+-	BUG_ON(id >= coproc_info.max_coprs);
+-
+-	if (arg == 0)
+-		bootAddr = COPR_ADDR(cop, 0);
+-	else
+-		bootAddr = arg;
+-	/* Now set the less meaningful bit to trigger the ST231 start */
+-	bootAddr |= 1;
+-	DPRINTK(">>> platform: st231.%u start from 0x%x...\n",id, bootAddr);
+-	/* bypass the st40 to reset only the coprocessor */
+-	sysconf_write(copro_reset_out, 1);
+-
+-	sysconf_write(cpu_regs[id].boot, bootAddr);
+-
+-	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) | 1) ;
+-	msleep(5);
+-	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) & ~1);
+-
+-	msleep(10);
+-	/* remove the st40 bypass */
+-	sysconf_write(copro_reset_out, 0);
+-	cop->control |= COPROC_RUNNING;
+-	return (0);
+-}
+-
+-int coproc_cpu_release(coproc_t * cop)
+-{
+-	/* do nothing! */
+-	return (0);
+-}
+-
+-int coproc_cpu_reset(coproc_t * cop)
+-{
+- 	int id = cop->pdev.id;
+-
+- 	DPRINTK("\n");
+- 	/* bypass the st40 to reset only the coprocessor */
+- 	sysconf_write(copro_reset_out,  1);
+- 	msleep(5);
+- 	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) | 1);
+- 	msleep(5);
+- 	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) & ~1);
+- 	msleep(10);
+-
+- 	/* remove the st40 bypass */
+- 	sysconf_write(copro_reset_out, 0);
+-
+- 	return 0;
+-}
+-
+-void coproc_proc_other_info(coproc_t * cop_dump, struct seq_file *s_file)
+-{
+-	return;			/* Do nothing, doesn't delete it */
+-}
+-
+-int coproc_check_area(u_long addr, u_long size, int i, coproc_t * coproc)
+-{
+-       if (((addr >= CONFIG_MEMORY_START) && (addr < __pa(_end))) || \
+-           (((addr + size) > CONFIG_MEMORY_START) && \
+-            (addr < CONFIG_MEMORY_START)))
+-       {
+-           coproc[i].ram_offset = coproc[i].ram_size = 0;
+-           return 1;
+-       }
+-       return 0;
+-}
+-
+Index: linux-2.6.23-stm/drivers/stm/copro-st_socs.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/drivers/stm/copro-st_socs.c
+@@ -0,0 +1,141 @@
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/delay.h>
++#include <linux/seq_file.h>
++#include <linux/stm/coprocessor.h>
++#include <linux/stm/sysconf.h>
++#include <asm-generic/sections.h>
++#include <asm/io.h>
++
++struct coproc_board_info coproc_info = {
++	.name = "st231",
++	.max_coprs = CONFIG_STM_NUM_COPROCESSOR,
++};
++
++coproc_t coproc[CONFIG_STM_NUM_COPROCESSOR];
++
++static struct sysconf_field* copro_reset_out;
++
++struct cpu_reg {
++	struct sysconf_field* boot;
++	struct sysconf_field* reset;
++};
++static struct cpu_reg cpu_regs[CONFIG_STM_NUM_COPROCESSOR];
++
++int coproc_cpu_open(coproc_t * cop)
++{
++	return (0);
++}
++
++int __init coproc_cpu_init(coproc_t * cop)
++{
++	unsigned int id = cop->pdev.id;
++
++#if defined CONFIG_CPU_SUBTYPE_STB7100
++	const unsigned int boot_lookup[] =   { 28, 26 };
++	const unsigned int reset_lookup[]  = { 29, 27 };
++#elif defined CONFIG_CPU_SUBTYPE_STX7200
++	const unsigned int boot_lookup[] =   { 28, 36, 26, 34 };
++	const unsigned int reset_lookup[]  = { 29, 37, 27, 35 };
++#else
++#error Need to define the sysconf configuration for this CPU subtype
++#endif
++
++	BUG_ON(id >= ARRAY_SIZE(boot_lookup));
++	BUG_ON(id >= coproc_info.max_coprs);
++
++	if(!copro_reset_out)
++	if(!(copro_reset_out=sysconf_claim(SYS_CFG, 9, 27, 27, NULL))){
++		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_9\n");
++		return 1;
++		}
++
++	if(!cpu_regs[id].boot)
++	if(!(cpu_regs[id].boot = sysconf_claim(SYS_CFG, boot_lookup[id], 0, 31, NULL))){
++		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n", boot_lookup[id]);
++		return 1;
++		}
++
++	if(!cpu_regs[id].reset)
++	if(!(cpu_regs[id].reset = sysconf_claim(SYS_CFG, reset_lookup[id], 0,31, NULL))){
++		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n", reset_lookup[id]);
++		return 1;
++		}
++
++	return 0;
++}
++
++int coproc_cpu_grant(coproc_t * cop, unsigned long arg)
++{
++	u_long bootAddr;
++	int id = cop->pdev.id;
++
++	BUG_ON(id >= coproc_info.max_coprs);
++
++	if (arg == 0)
++		bootAddr = COPR_ADDR(cop, 0);
++	else
++		bootAddr = arg;
++	/* Now set the less meaningful bit to trigger the ST231 start */
++	bootAddr |= 1;
++	DPRINTK(">>> platform: st231.%u start from 0x%x...\n",
++					id, (unsigned int)bootAddr);
++	/* bypass the st40 to reset only the coprocessor */
++	sysconf_write(copro_reset_out, 1);
++
++	sysconf_write(cpu_regs[id].boot, bootAddr);
++
++	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) | 1) ;
++	msleep(5);
++	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) & ~1);
++
++	msleep(10);
++	/* remove the st40 bypass */
++	sysconf_write(copro_reset_out, 0);
++	cop->control |= COPROC_RUNNING;
++	return (0);
++}
++
++int coproc_cpu_release(coproc_t * cop)
++{
++	/* do nothing! */
++	return (0);
++}
++
++int coproc_cpu_reset(coproc_t * cop)
++{
++ 	int id = cop->pdev.id;
++
++ 	DPRINTK("\n");
++ 	/* bypass the st40 to reset only the coprocessor */
++ 	sysconf_write(copro_reset_out,  1);
++ 	msleep(5);
++ 	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) | 1);
++ 	msleep(5);
++ 	sysconf_write(cpu_regs[id].reset, sysconf_read(cpu_regs[id].reset) & ~1);
++ 	msleep(10);
++
++ 	/* remove the st40 bypass */
++ 	sysconf_write(copro_reset_out, 0);
++
++ 	return 0;
++}
++
++void coproc_proc_other_info(coproc_t * cop_dump, struct seq_file *s_file)
++{
++	return;			/* Do nothing, doesn't delete it */
++}
++
++int coproc_check_area(u_long addr, u_long size, int i, coproc_t * coproc)
++{
++       if (((addr >= CONFIG_MEMORY_START) && (addr < __pa(_end))) || \
++           (((addr + size) > CONFIG_MEMORY_START) && \
++            (addr < CONFIG_MEMORY_START)))
++       {
++           coproc[i].ram_offset = coproc[i].ram_size = 0;
++           return 1;
++       }
++       return 0;
++}
++
+Index: linux-2.6.23-stm/drivers/stm/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Makefile
++++ linux-2.6.23-stm/drivers/stm/Makefile
+@@ -6,7 +6,7 @@ obj-y				+= sysconf.o
+ obj-$(CONFIG_STM_DMA)		+= 710x_fdma2.o
+ obj-$(CONFIG_STM_PIO)		+= pio.o
+ obj-$(CONFIG_STM_SPI)		+= stm_spi.o
+-obj-$(CONFIG_STM_COPROCESSOR_SUPPORT)	+= copro-stb7100.o
++obj-$(CONFIG_STM_COPROCESSOR_SUPPORT)	+= copro-st_socs.o
+ obj-$(CONFIG_STM_COPROCESSOR)		+= stm-coprocessor.o
+ obj-$(CONFIG_STM_COPROCESSOR_FRMW)	+= stm-coprocessor_frmw.o
+ obj-y				+= emi.o

@@ -1,0 +1,135 @@
+From 6555a4a3b2e86dccd28a1d5577688ac3878faa11 Mon Sep 17 00:00:00 2001
+From: Gabor Juhos <juhosg@openwrt.org>
+Date: Wed, 18 Feb 2009 12:39:48 +0000
+Subject: [PATCH] net: Add support for Micrel KSZ8041 ethernet PHY
+
+This patch was based on Revision 11894 from OpenWRT submitted by
+Gabor Juhos <juhosg@openwrt.org> under GPLv2
+
+See https://dev.openwrt.org/changeset/11894
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ drivers/net/phy/Kconfig  |    5 +++
+ drivers/net/phy/Makefile |    1 +
+ drivers/net/phy/micrel.c |   82 ++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 88 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/net/phy/micrel.c
+
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+index a87d032..3c9f5a4 100644
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -75,6 +75,11 @@ config NATIONAL_PHY
+ 	---help---
+ 	  Currently supports the DP83865 PHY.
+ 
++config MICREL_PHY
++	tristate "Drivers for Micrel PHYs"
++	---help---
++	  Currently supports the KSZ8041 PHY.
++
+ config FIXED_PHY
+ 	tristate "Drivers for PHY emulation on fixed speed/link"
+ 	---help---
+diff --git a/drivers/net/phy/Makefile b/drivers/net/phy/Makefile
+index 96838f6..d2de783 100644
+--- a/drivers/net/phy/Makefile
++++ b/drivers/net/phy/Makefile
+@@ -14,4 +14,5 @@ obj-$(CONFIG_BROADCOM_PHY)	+= broadcom.o
+ obj-$(CONFIG_ICPLUS_PHY)	+= icplus.o
+ obj-$(CONFIG_STE10XP)		+= ste10Xp.o
+ obj-$(CONFIG_NATIONAL_PHY)	+= national.o
++obj-$(CONFIG_MICREL_PHY)        += micrel.o
+ obj-$(CONFIG_FIXED_PHY)		+= fixed.o
+diff --git a/drivers/net/phy/micrel.c b/drivers/net/phy/micrel.c
+new file mode 100644
+index 0000000..953dfb2
+--- /dev/null
++++ b/drivers/net/phy/micrel.c
+@@ -0,0 +1,82 @@
++/*
++ * Driver for Micrel/Kendin PHYs
++ *
++ * Copyright (c) 2008 Gabor Juhos <juhosg@openwrt.org>
++ * Copyright (C) 2008 Imre Kaloz <kaloz@openwrt.org>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 as published
++ * by the Free Software Foundation.
++ *
++ */
++
++#include <linux/delay.h>
++#include <linux/skbuff.h>
++#include <linux/phy.h>
++
++#define KSZ_REG_INT_CTRL	0x1b
++
++#define KSZ_INT_LU_EN	(1 << 8)	/* enable Link Up interrupt */
++#define KSZ_INT_RF_EN	(1 << 9)	/* enable Remote Fault interrupt */
++#define KSZ_INT_LD_EN	(1 << 10)	/* enable Link Down interrupt */
++
++#define KSZ_INT_INIT	(KSZ_INT_LU_EN | KSZ_INT_LD_EN)
++
++static int ksz8041_ack_interrupt(struct phy_device *phydev)
++{
++	int err;
++
++	err = phy_read(phydev, KSZ_REG_INT_CTRL);
++
++	return (err < 0) ? err : 0;
++}
++
++static int ksz8041_config_intr(struct phy_device *phydev)
++{
++	int err;
++
++	if (phydev->interrupts == PHY_INTERRUPT_ENABLED)
++		err = phy_write(phydev, KSZ_REG_INT_CTRL,
++				KSZ_INT_INIT);
++	else
++		err = phy_write(phydev, KSZ_REG_INT_CTRL, 0);
++
++	return err;
++}
++
++static struct phy_driver ksz8041_phy_driver = {
++	.phy_id		= 0x00221512,
++	.name		= "Micrel KSZ8041",
++	.phy_id_mask	= 0x01ffffff,
++	.features	= PHY_BASIC_FEATURES,
++	.flags		= PHY_HAS_INTERRUPT,
++	.config_aneg	= genphy_config_aneg,
++	.read_status	= genphy_read_status,
++	.ack_interrupt	= ksz8041_ack_interrupt,
++	.config_intr	= ksz8041_config_intr,
++	.driver = {
++		.owner	= THIS_MODULE,
++	},
++};
++
++static int __init micrel_phy_init(void)
++{
++	int ret;
++
++	ret = phy_driver_register(&ksz8041_phy_driver);
++
++	return ret;
++}
++
++static void __exit micrel_phy_exit(void)
++{
++	phy_driver_unregister(&ksz8041_phy_driver);
++}
++
++module_init(micrel_phy_init);
++module_exit(micrel_phy_exit);
++
++MODULE_DESCRIPTION("Micrel/Kendin PHY driver");
++MODULE_AUTHOR("Gabor Juhos <juhosg@openwrt.org>");
++MODULE_AUTHOR("Imre Kaloz <kaloz@openwrt.org>");
++MODULE_LICENSE("GPL v2");
+-- 
+1.5.6.3
+

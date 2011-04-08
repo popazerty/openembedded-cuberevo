@@ -1,0 +1,31 @@
+--- linux-2.6.17.14_stm22_0040/drivers/usb/host/Makefile.original	2008-01-30 07:56:56.329996000 +0000
++++ linux-2.6.17.14_stm22_0040/drivers/usb/host/Makefile	2008-01-30 07:57:36.869996000 +0000
+@@ -15,4 +15,4 @@
+ obj-$(CONFIG_USB_SL811_HCD)	+= sl811-hcd.o
+ obj-$(CONFIG_USB_SL811_CS)	+= sl811_cs.o
+ obj-$(CONFIG_ETRAX_ARCH_V10)	+= hc_crisv10.o
+-obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= stb7100-common.o
++obj-$(CONFIG_USB_STM_COMMON)	+= stb7100-common.o
+--- linux-2.6.17.14_stm22_0040/drivers/usb/host/Kconfig.original	2008-01-30 07:57:04.849996000 +0000
++++ linux-2.6.17.14_stm22_0040/drivers/usb/host/Kconfig	2008-01-30 07:57:58.639997000 +0000
+@@ -170,3 +170,9 @@
+ 	  should enable at least mass storage devices to function.
+           There will be a performance impact, as it involves stopping the
+ 	  controller and restarting it periodically.
++
++config USB_STM_COMMON
++       tristate
++       depends CPU_SUBTYPE_ST40
++       default y if USB_EHCI_HCD=y || USB_OHCI_HCD=y
++       default m if USB_EHCI_HCD=m || USB_OHCI_HCD=m
+--- linux-2.6.17.14_stm22_0040/drivers/usb/host/stb7100-common.original.c	2008-01-30 07:57:17.989996000 +0000
++++ linux-2.6.17.14_stm22_0040/drivers/usb/host/stb7100-common.c	2008-01-30 07:17:33.099999000 +0000
+@@ -55,3 +55,8 @@
+ 	/* Set bus wrapper packet IN/OUT threshold to 128 */
+ 	writel(AHB2STBUS_INOUT_THRESHOLD, AHB2STBUS_INSREG01);
+ }
++
++EXPORT_SYMBOL(ST40_start_host_control);
++MODULE_DESCRIPTION ("STM USB Host Controller wrapper driver");
++MODULE_AUTHOR ("Mark Glaisher <mark.glaisher@st.com>");
++MODULE_LICENSE ("GPL");

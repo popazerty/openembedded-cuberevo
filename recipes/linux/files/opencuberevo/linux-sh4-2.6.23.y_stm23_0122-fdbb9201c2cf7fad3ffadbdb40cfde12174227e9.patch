@@ -1,0 +1,49 @@
+From fdbb9201c2cf7fad3ffadbdb40cfde12174227e9 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:22 +0200
+Subject: [PATCH] stm: clk: Update the stx7100 to the new clk frmwk
+
+This patch updates the STX7100 clock implementation due to the new clock
+framework
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stb7100.c |    8 ++------
+ 1 files changed, 2 insertions(+), 6 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stb7100.c b/arch/sh/kernel/cpu/sh4/clock-stb7100.c
+index c4def60..12bbf68 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stb7100.c
+@@ -12,7 +12,7 @@
+ #include <linux/gfp.h>
+ #include <linux/slab.h>
+ #include <linux/pm.h>
+-#include <asm/clock.h>
++#include <linux/stm/clk.h>
+ #include <asm/freq.h>
+ #include <asm/io.h>
+ #include <asm-generic/div64.h>
+@@ -235,6 +235,7 @@ static void comms_clk_recalc(struct clk *clk)
+ }
+ 
+ static struct clk_ops comms_clk_ops = {
++	.init	= comms_clk_recalc,
+ 	.recalc	= comms_clk_recalc,
+ };
+ 
+@@ -273,11 +274,6 @@ int __init clk_init(void)
+ 	}
+ 	clk_register(&comms_clk);
+ 	clk_enable(&comms_clk);
+-	/* Propogate the PLL values down */
+-	clk_set_rate(&pll0_clk, clk_get_rate(&pll0_clk));
+-	clk_put(&pll0_clk);
+-	clk_set_rate(&pll1_clk, clk_get_rate(&pll1_clk));
+-	clk_put(&pll1_clk);
+ 
+ #ifdef CONFIG_CLK_LOW_LEVEL_DEBUG
+ 	iowrite32(0xc0de, clkgena_base);
+-- 
+1.6.0.6
+

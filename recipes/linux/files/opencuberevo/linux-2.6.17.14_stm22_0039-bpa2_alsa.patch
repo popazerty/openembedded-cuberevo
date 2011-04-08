@@ -1,0 +1,37 @@
+Allow ALSA to still use bigphysarea when the new BPA2 interface is configured.
+
+Signed off by: Stephen Gallimore <stephen.gallimore@st.com>
+Index: linux/sound/stm/st_pcm_core.c
+===================================================================
+--- linux.orig/sound/stm/st_pcm_core.c	2007-05-11 16:11:25.951645000 +0100
++++ linux/sound/stm/st_pcm_core.c	2007-06-27 11:10:12.000404000 +0100
+@@ -45,15 +45,23 @@
+ 
+ #include <sound/asoundef.h>
+ 
+-#ifdef CONFIG_BIGPHYS_AREA
++#if defined(CONFIG_BIGPHYS_AREA)
+ 
+ #include <linux/bigphysarea.h>
+-	#define STM_USE_BIGPHYS_AREA 1
++#define STM_USE_BIGPHYS_AREA 1
++
++#elif defined(CONFIG_BPA2)
++
++#include <linux/bpa2.h>
++#define STM_USE_BIGPHYS_AREA 1
++
+ #else
+-	/* Private dummy defines so we do not have to ifdef the code */
+-	static caddr_t  bigphysarea_alloc(int size) { return NULL; }
+-	static void     bigphysarea_free(caddr_t addr, int size) {}
+-	#define STM_USE_BIGPHYS_AREA 0
++
++/* Private dummy defines so we do not have to ifdef the code */
++static caddr_t  bigphysarea_alloc(int size) { return NULL; }
++static void     bigphysarea_free(caddr_t addr, int size) {}
++#define STM_USE_BIGPHYS_AREA 0
++
+ #endif /* CONFIG_BIGPHYS_AREA */
+ 
+ 

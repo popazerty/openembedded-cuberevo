@@ -1,0 +1,104 @@
+EMI PATA support for STx7200.
+    
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/mb519/setup.c b/arch/sh/boards/st/mb519/setup.c
+index 8d71de5..9659cc4 100644
+--- a/arch/sh/boards/st/mb519/setup.c
++++ b/arch/sh/boards/st/mb519/setup.c
+@@ -237,6 +237,7 @@ static int __init device_init(void)
+ #endif
+ 	stx7200_configure_lirc();
+ 	stx7200_configure_nand(&mb519_nand_config);
++//	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
+ 
+ 	return platform_add_devices(mb519_devices, ARRAY_SIZE(mb519_devices));
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 1083b3f..f6d4760 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -20,6 +20,7 @@
+ #include <linux/phy.h>
+ #include <linux/stm/sysconf.h>
+ #include <linux/stm/emi.h>
++#include <linux/pata_platform.h>
+ #include <asm/sci.h>
+ #include <asm/irq-ilc.h>
+ #include <linux/stm/fdma-plat.h>
+@@ -555,6 +556,63 @@ void __init stx7200_configure_ssc(struct plat_ssc_data *data)
+ #endif
+ }
+ 
++/* PATA resources ---------------------------------------------------------- */
++
++/*
++ * EMI A20 = CS1 (active low)
++ * EMI A21 = CS0 (active low)
++ * EMI A19 = DA2
++ * EMI A18 = DA1
++ * EMI A17 = DA0
++ */
++
++static struct resource pata_resources[] = {
++	[0] = {	/* I/O base: CS1=N, CS0=A */
++		.start	= (1<<20),
++		.end	= (1<<20) + (8<<17)-1,
++		.flags	= IORESOURCE_MEM,
++	},
++	[1] = {	/* CTL base: CS1=A, CS0=N, DA2=A, DA1=A, DA0=N */
++		.start	= (1<<21) + (6<<17),
++		.end	= (1<<21) + (6<<17) + 3,
++		.flags	= IORESOURCE_MEM,
++	},
++	[2] = {	/* IRQ */
++		.flags	= IORESOURCE_IRQ,
++	}
++};
++
++static struct pata_platform_info pata_info = {
++	.ioport_shift	= 17,
++};
++
++static struct platform_device pata_device = {
++	.name		= "pata_platform",
++	.id		= -1,
++	.num_resources	= ARRAY_SIZE(pata_resources),
++	.resource	= pata_resources,
++	.dev = {
++		.platform_data = &pata_info,
++	}
++};
++
++void __init stx7200_configure_pata(int bank, int irq)
++{
++	unsigned long bank_base;
++
++	bank_base = emi_bank_base(bank);
++	pata_resources[0].start += bank_base;
++	pata_resources[0].end   += bank_base;
++	pata_resources[1].start += bank_base;
++	pata_resources[1].end   += bank_base;
++	pata_resources[2].start = irq;
++	pata_resources[2].end   = irq;
++
++	emi_config_pata(bank);
++
++	platform_device_register(&pata_device);
++}
++
+ /* Ethernet MAC resources -------------------------------------------------- */
+ 
+ static struct sysconf_field *mac_speed_sc[2];
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 978b60b..ed29f4e 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -235,5 +235,6 @@ void stx7200_configure_ethernet(int mac, int rmii_mode, int ext_clk,
+ 				int phy_bus);
+ void stx7200_configure_lirc(void);
+ void stx7200_configure_nand(struct nand_config_data *data);
++void stx7200_configure_pata(int bank, int irq);
+ 
+ #endif /* __LINUX_ST_SOC_H */

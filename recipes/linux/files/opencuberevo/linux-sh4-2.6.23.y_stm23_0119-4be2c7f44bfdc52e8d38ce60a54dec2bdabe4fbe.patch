@@ -1,0 +1,93 @@
+From 4be2c7f44bfdc52e8d38ce60a54dec2bdabe4fbe Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 23 Feb 2009 07:02:52 +0100
+Subject: [PATCH] stm: Fixed missing clocks_ID for stx5197 SOC.
+
+Added clocks_ID define for stx5197 platform
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx5197.c |   18 ++++++++++++++++--
+ arch/sh/kernel/cpu/sh4/soc-stx5197.h   |   20 ++++++++++++++++++++
+ 2 files changed, 36 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx5197.c b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+index cdb22f3..bb96c5b 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+@@ -12,10 +12,10 @@
+ #include <linux/stm/sysconf.h>
+ #include <linux/errno.h>
+ #include <linux/io.h>
++#include <linux/pm.h>
+ #include <linux/delay.h>
+ #include <asm/clock.h>
+ #include <asm/freq.h>
+-#include <asm/mb704/clocks.h>
+ 
+ #include "./soc-stx5197.h"
+ 
+@@ -298,7 +298,6 @@ static int dividedpll_clk_set_rate(struct clk *clk, unsigned long rate)
+ {
+ 	int i;
+ 	unsigned long offset = CLKDIV_CONF0(clk->id - CLK_DDR_ID);
+-	unsigned long flag;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(divide_table); i++)
+ 		if ((clk_get_rate(clk->parent)*2) / divide_table[i].ratio2 == rate)
+@@ -384,6 +383,21 @@ static struct clk generic_comms_clk = {
+ 	.ops		= &generic_clk_ops,
+ };
+ 
++#ifdef CONFIG_PM
++int clk_pm_state(pm_message_t state)
++{
++	static int prev_state = PM_EVENT_ON;
++	switch (state.event) {
++	case PM_EVENT_ON:
++	case PM_EVENT_SUSPEND:
++	case PM_EVENT_FREEZE:
++		prev_state = state.event;
++		break;
++	}
++	return 0;
++}
++#endif
++
+ int __init clk_init(void)
+ {
+ 	int i, ret;
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stx5197.h b/arch/sh/kernel/cpu/sh4/soc-stx5197.h
+index ce132ea..360dce3 100644
+--- a/arch/sh/kernel/cpu/sh4/soc-stx5197.h
++++ b/arch/sh/kernel/cpu/sh4/soc-stx5197.h
+@@ -13,6 +13,26 @@
+ #ifndef __soc_stx5197_h__
+ #define __soc_stx5197_h__
+ 
++/*
++ *      STx5197 Platform
++ */
++enum clocks_ID {
++	CLK_XTAL_ID,
++	CLK_PLLA_ID,
++	CLK_PLLB_ID,
++	CLK_DDR_ID,     /* 0 */
++	CLK_LMI_ID,
++	CLK_BLT_ID,
++	CLK_SYS_ID,
++	CLK_FDMA_ID,
++	CLK_SPARE_ID,
++	CLK_AV_ID,      /* 6 */
++	CLK_SPARE2_ID,
++	CLK_ETH_ID,     /* 8 */
++	CLK_ST40_ID,
++	CLK_ST40P_ID,
++};
++
+ /* Values for mb704 */
+ #define XTAL	30000000
+ 
+-- 
+1.6.0.6
+

@@ -1,0 +1,1316 @@
+From ef94c338fbafd2afce6ac51fa55cf06e00e3ca11 Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Fri, 13 Feb 2009 08:42:27 +0100
+Subject: [PATCH] stm_usb: USB redesign
+
+STM USB redesign
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |   13 +-
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |   17 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |   21 +--
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |   17 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |   35 +---
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |   20 +--
+ drivers/usb/host/Makefile              |    1 -
+ drivers/usb/host/ehci-hcd.c            |    2 +-
+ drivers/usb/host/ehci-hub.c            |   20 ++-
+ drivers/usb/host/ehci-stcore.c         |  327 +++++++++++++++++++++++++++-----
+ drivers/usb/host/ohci-stcore.c         |  107 +++++++----
+ drivers/usb/host/ohci-stcore.h         |   49 -----
+ drivers/usb/host/stb7100-common.c      |  146 --------------
+ drivers/usb/host/stb7100-common.h      |   68 -------
+ include/linux/stm/soc.h                |    4 +-
+ include/linux/stm/soc_init.h           |   51 ++----
+ 16 files changed, 426 insertions(+), 472 deletions(-)
+ delete mode 100644 drivers/usb/host/ohci-stcore.h
+ delete mode 100644 drivers/usb/host/stb7100-common.c
+ delete mode 100644 drivers/usb/host/stb7100-common.h
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index f1887cd..7685ead 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -86,11 +86,10 @@ static struct plat_usb_data usb_wrapper =
+ 		    USB_FLAGS_STRAP_PLL		|
+ 		    USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE);
+ 
+-static struct platform_device  st40_ohci_device =
+-	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE, 168, &usb_wrapper);
+-
+-static struct platform_device  st40_ehci_device =
+-	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE, 169, &usb_wrapper);
++static struct platform_device st_usb_device =
++	USB_DEVICE(0, AHB2STBUS_EHCI_BASE, 169,
++		      AHB2STBUS_OHCI_BASE, 168,
++		      &usb_wrapper);
+ 
+ void __init stx7100_configure_usb(void)
+ {
+@@ -143,8 +142,8 @@ void __init stx7100_configure_usb(void)
+ 		mdelay(30);
+ 	}
+ 
+-	platform_device_register(&st40_ohci_device);
+-	platform_device_register(&st40_ehci_device);
++	platform_device_register(&st_usb_device);
++
+ }
+ 
+ /* FDMA resources ---------------------------------------------------------- */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index cc22fa8..51566ef 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -120,15 +120,10 @@ static struct plat_usb_data usb_wrapper =
+ 		    USB_FLAGS_STRAP_PLL		|
+ 		    USB_FLAGS_STBUS_CONFIG_THRESHOLD256);
+ 
+-static struct platform_device  st40_ohci_device =
+-	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE,
+-			ILC_IRQ(28),
+-			&usb_wrapper);
+-
+-static struct platform_device  st40_ehci_device =
+-	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE,
+-			ILC_IRQ(29),
+-			&usb_wrapper);
++static struct platform_device st_usb =
++	USB_DEVICE(0, AHB2STBUS_EHCI_BASE, ILC_IRQ(29),
++		      AHB2STBUS_OHCI_BASE, ILC_IRQ(28),
++		      &usb_wrapper);
+ 
+ void __init stx5197_configure_usb(void)
+ {
+@@ -142,8 +137,8 @@ void __init stx5197_configure_usb(void)
+ 	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_M, 12, 12, "USB");
+ 	sysconf_write(sc, 0);
+ 
+-	platform_device_register(&st40_ohci_device);
+-	platform_device_register(&st40_ehci_device);
++	platform_device_register(&st_usb);
++
+ }
+ 
+ /* FDMA resources ---------------------------------------------------------- */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 4846e60..964aca3 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -98,16 +98,13 @@ static struct plat_usb_data usb_wrapper[2] = {
+ 		    USB_FLAGS_STBUS_CONFIG_THRESHOLD128),
+ };
+ 
+-static struct platform_device st40_ohci_devices[2] = {
+-	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE(0), evt2irq(0x1700), &usb_wrapper[0]),
+-	USB_OHCI_DEVICE(1, AHB2STBUS_OHCI_BASE(1), evt2irq(0x13c0), &usb_wrapper[1]),
+-};
+-
+-static struct platform_device st40_ehci_devices[2] = {
+-	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE(0), evt2irq(0x1720), &usb_wrapper[0]),
+-	USB_EHCI_DEVICE(1, AHB2STBUS_EHCI_BASE(1), evt2irq(0x13e0), &usb_wrapper[1]),
+-};
+-
++static struct platform_device usb_device[2] = {
++	USB_DEVICE(0, AHB2STBUS_EHCI_BASE(0), evt2irq(0x1720),
++		      AHB2STBUS_OHCI_BASE(0), evt2irq(0x1700),
++		      &usb_wrapper[0]),
++	USB_DEVICE(1, AHB2STBUS_EHCI_BASE(1), evt2irq(0x13e0),
++		      AHB2STBUS_OHCI_BASE(1), evt2irq(0x13c0),
++		      &usb_wrapper[1]),
+ 
+ /**
+  * stx7105_configure_usb - Configure a USB port
+@@ -184,8 +181,8 @@ void __init stx7105_configure_usb(int port, struct usb_init_data *data)
+ 		pin = stpio_request_pin(pwr_portno, pwr_pinno, "USBPWR", STPIO_ALT_OUT);
+ 	}
+ 
+-	platform_device_register(&st40_ohci_devices[port]);
+-	platform_device_register(&st40_ehci_devices[port]);
++	platform_device_register(&usb_device[port]);
++
+ }
+ 
+ /* FDMA resources ---------------------------------------------------------- */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 1bdc883..a7dc146 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -45,15 +45,10 @@ static struct plat_usb_data usb_wrapper =
+ 		    USB_FLAGS_STRAP_PLL		|
+ 		    USB_FLAGS_STBUS_CONFIG_THRESHOLD256);
+ 
+-static struct platform_device  st40_ohci_device =
+-	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE,
+-			evt2irq(0x1700), /* 168 */
+-			&usb_wrapper);
+-
+-static struct platform_device  st40_ehci_device =
+-	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE,
+-			evt2irq(0x1720), /* 169 */
+-			&usb_wrapper);
++static struct platform_device st_usb =
++	USB_DEVICE(0, AHB2STBUS_EHCI_BASE, evt2irq(0x1720),
++		      AHB2STBUS_OHCI_BASE, evt2irq(0x1700),
++		      &usb_wrapper);
+ 
+ void __init stx7111_configure_usb(int inv_enable)
+ {
+@@ -75,8 +70,8 @@ void __init stx7111_configure_usb(int inv_enable)
+ 	pin = stpio_request_pin(5,6, "USBOC", STPIO_IN);
+ 	pin = stpio_request_pin(5,7, "USBPWR", STPIO_ALT_OUT);
+ 
+-	platform_device_register(&st40_ohci_device);
+-	platform_device_register(&st40_ehci_device);
++	platform_device_register(&st_usb);
++
+ }
+ 
+ /* FDMA resources ---------------------------------------------------------- */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index a6b8d31..b872056 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -224,28 +224,15 @@ static struct plat_usb_data usb_wrapper[4] = {
+ 		    USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE),
+ };
+ 
+-static struct platform_device st40_ohci_devices[4] = {
+-	/* USB2_0 */
+-	USB_OHCI_DEVICE(0, 0xfe100000 + AHB2STBUS_OHCI_OFFSET,
+-			ILC_IRQ(94), &usb_wrapper[0]),
+-	/* USB2_1 */
+-	USB_OHCI_DEVICE(1, 0xfea00000 + AHB2STBUS_OHCI_OFFSET,
+-			ILC_IRQ(96), &usb_wrapper[1]),
+-	/* USB1_0 */
+-	USB_OHCI_DEVICE(2, 0xfeb00000 + AHB2STBUS_OHCI_OFFSET,
+-			ILC_IRQ(97), &usb_wrapper[2]),
+-	/* USB1_1 */
+-	USB_OHCI_DEVICE(3, 0xfec00000 + AHB2STBUS_OHCI_OFFSET,
+-			ILC_IRQ(98), &usb_wrapper[3]),
+-};
+-
+-static struct platform_device st40_ehci_devices[2] = {
+-	/* USB2_0 */
+-	USB_EHCI_DEVICE(0, 0xfe100000 + AHB2STBUS_EHCI_OFFSET,
+-			ILC_IRQ(93), &usb_wrapper[0]),
+-	/* USB2_1 */
+-	USB_EHCI_DEVICE(1, 0xfea00000 + AHB2STBUS_EHCI_OFFSET,
+-			ILC_IRQ(95), &usb_wrapper[1]),
++static struct platform_device  st_usb_device[4] = {
++USB_DEVICE(0, 0xfe100000 + AHB2STBUS_EHCI_OFFSET, ILC_IRQ(93),
++	0xfe100000 + AHB2STBUS_OHCI_OFFSET, ILC_IRQ(94), &usb_wrapper[0]),
++USB_DEVICE(1, 0xfea00000 + AHB2STBUS_EHCI_OFFSET, ILC_IRQ(95),
++	0xfea00000 + AHB2STBUS_OHCI_OFFSET, ILC_IRQ(96), &usb_wrapper[1]),
++USB_DEVICE(2, NULL, NULL, 0xfeb00000 + AHB2STBUS_OHCI_OFFSET,
++	ILC_IRQ(97), &usb_wrapper[2]),
++USB_DEVICE(3, NULL, NULL, 0xfec00000 + AHB2STBUS_OHCI_OFFSET,
++	ILC_IRQ(98), &usb_wrapper[3])
+ };
+ 
+ void __init stx7141_configure_usb(int port)
+@@ -298,9 +285,7 @@ void __init stx7141_configure_usb(int port)
+ 				  usb_pins[port].oc.pin, "USB", STPIO_IN);
+ 	}
+ 
+-	platform_device_register(&st40_ohci_devices[port]);
+-	if (port < 2)
+-		platform_device_register(&st40_ehci_devices[port]);
++	platform_device_register(&st_usb_device[port]);
+ }
+ 
+ /* FDMA resources ---------------------------------------------------------- */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 18fe293..7276d74 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -62,16 +62,13 @@ static struct plat_usb_data usb_wrapper[3] = {
+ 		    USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE),
+ };
+ 
+-static struct platform_device st40_ohci_devices[3] = {
+-	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE(0), ILC_IRQ(81), &usb_wrapper[0]),
+-	USB_OHCI_DEVICE(1, AHB2STBUS_OHCI_BASE(1), ILC_IRQ(83), &usb_wrapper[1]),
+-	USB_OHCI_DEVICE(2, AHB2STBUS_OHCI_BASE(2), ILC_IRQ(85), &usb_wrapper[2]),
+-};
+-
+-static struct platform_device st40_ehci_devices[3] = {
+-	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE(0), ILC_IRQ(80), &usb_wrapper[0]),
+-	USB_EHCI_DEVICE(1, AHB2STBUS_EHCI_BASE(1), ILC_IRQ(82), &usb_wrapper[1]),
+-	USB_EHCI_DEVICE(2, AHB2STBUS_EHCI_BASE(2), ILC_IRQ(84), &usb_wrapper[2]),
++static struct platform_device st_usb[3] = {
++	USB_DEVICE(0, AHB2STBUS_EHCI_BASE(0), ILC_IRQ(80),
++		      AHB2STBUS_OHCI_BASE(0), ILC_IRQ(81), &usb_wrapper[0]),
++	USB_DEVICE(1, AHB2STBUS_EHCI_BASE(1), ILC_IRQ(82),
++		      AHB2STBUS_OHCI_BASE(1), ILC_IRQ(83), &usb_wrapper[1]),
++	USB_DEVICE(2, AHB2STBUS_EHCI_BASE(2), ILC_IRQ(84),
++		      AHB2STBUS_OHCI_BASE(2), ILC_IRQ(85), &usb_wrapper[2]),
+ };
+ 
+ /*
+@@ -383,8 +380,7 @@ void __init stx7200_configure_usb(int port)
+ 		pio = stpio_request_pin(7, oc_pins[port], "USB oc",
+ 					STPIO_IN);
+ 
+-	platform_device_register(&st40_ohci_devices[port]);
+-	platform_device_register(&st40_ehci_devices[port]);
++	platform_device_register(&st_usb[port]);
+ }
+ 
+ /* SATA resources ---------------------------------------------------------- */
+diff --git a/drivers/usb/host/Makefile b/drivers/usb/host/Makefile
+index 0cc179b..c9040c6 100644
+--- a/drivers/usb/host/Makefile
++++ b/drivers/usb/host/Makefile
+@@ -16,4 +16,3 @@ obj-$(CONFIG_USB_SL811_HCD)	+= sl811-hcd.o
+ obj-$(CONFIG_USB_SL811_CS)	+= sl811_cs.o
+ obj-$(CONFIG_USB_U132_HCD)	+= u132-hcd.o
+ obj-$(CONFIG_USB_R8A66597_HCD)	+= r8a66597-hcd.o
+-obj-$(CONFIG_USB_STM_COMMON)	+= stb7100-common.o
+diff --git a/drivers/usb/host/ehci-hcd.c b/drivers/usb/host/ehci-hcd.c
+index 4b10574..4c1b098 100644
+--- a/drivers/usb/host/ehci-hcd.c
++++ b/drivers/usb/host/ehci-hcd.c
+@@ -957,7 +957,7 @@ MODULE_LICENSE ("GPL");
+     defined(CONFIG_CPU_SUBTYPE_STX7141) || \
+     defined(CONFIG_CPU_SUBTYPE_STX7200)
+ #include "ehci-stcore.c"
+-#define	PLATFORM_DRIVER		ehci_hcd_st40_driver
++#define	PLATFORM_DRIVER		ehci_hcd_stm_driver
+ #endif
+ 
+ #ifdef CONFIG_PPC_PS3
+diff --git a/drivers/usb/host/ehci-hub.c b/drivers/usb/host/ehci-hub.c
+index 0dcb416..d54fb93 100644
+--- a/drivers/usb/host/ehci-hub.c
++++ b/drivers/usb/host/ehci-hub.c
+@@ -159,26 +159,40 @@ static int ehci_bus_suspend (struct usb_hcd *hcd)
+ 
+ 		/* enable remote wakeup on all ports */
+ 		if (device_may_wakeup(&hcd->self.root_hub->dev))
+-			t2 |= PORT_WKOC_E|PORT_WKDISC_E|PORT_WKCONN_E;
++/*
++ * FMV: No Connect/Disconnect WakeUp from USB
++ *			t2 |= PORT_WKOC_E|PORT_WKDISC_E|PORT_WKCONN_E;
++ */
++
++			t2 |= PORT_WKOC_E;
+ 		else
+ 			t2 &= ~(PORT_WKOC_E|PORT_WKDISC_E|PORT_WKCONN_E);
+-
+ 		if (t1 != t2) {
+ 			ehci_vdbg (ehci, "port %d, %08x -> %08x\n",
+ 				port + 1, t1, t2);
+ 			ehci_writel(ehci, t2, reg);
+ 		}
+ 	}
+-
++/*
++ * FMV: mdelay suggested by IP desiner
++ */
++	mdelay(10);
+ 	/* turn off now-idle HC */
+ 	del_timer_sync (&ehci->watchdog);
+ 	ehci_halt (ehci);
+ 	hcd->state = HC_STATE_SUSPENDED;
+ 
+ 	/* allow remote wakeup */
++/*
++ * FMV: No remote wakeup
++ */
++#if 0
+ 	mask = INTR_MASK;
+ 	if (!device_may_wakeup(&hcd->self.root_hub->dev))
+ 		mask &= ~STS_PCD;
++#else
++	mask = INTR_MASK & ~STS_PCD;
++#endif
+ 	ehci_writel(ehci, mask, &ehci->regs->intr_enable);
+ 	ehci_readl(ehci, &ehci->regs->intr_enable);
+ 
+diff --git a/drivers/usb/host/ehci-stcore.c b/drivers/usb/host/ehci-stcore.c
+index 5069ac2..b8d61bf 100644
+--- a/drivers/usb/host/ehci-stcore.c
++++ b/drivers/usb/host/ehci-stcore.c
+@@ -10,20 +10,63 @@
+  */
+ 
+ #include <linux/platform_device.h>
+-#include "stb7100-common.h"
++#include <linux/stm/soc.h>
++#include <linux/stm/pm.h>
+ 
+-#ifdef	CONFIG_PM
+-static int ehci_st40_suspend(struct usb_hcd *hcd, pm_message_t message)
+-{
+-	/* Needs implementation! Look at ehci-pci as guide */
+-	return 0;
+-}
++/*#include "stb7100-common.h"*/
++/* The transaction opcode is programmed in this register */
++#define AHB2STBUS_STBUS_OPC_OFFSET      0x00    /* From PROTOCOL_BASE */
++#define AHB2STBUS_STBUS_OPC_4BIT        0x00
++#define AHB2STBUS_STBUS_OPC_8BIT        0x01
++#define AHB2STBUS_STBUS_OPC_16BIT       0x02
++#define AHB2STBUS_STBUS_OPC_32BIT       0x03
++#define AHB2STBUS_STBUS_OPC_64BIT       0x04
+ 
+-static int ehci_st40_resume(struct usb_hcd *hcd)
+-{
+-	/* Needs implementation! Look at ehci-pci as guide */
+-	return 0;
+-}
++/* The message length in number of packets is programmed in this register. */
++#define AHB2STBUS_MSGSIZE_OFFSET        0x04    /* From PROTOCOL_BASE */
++#define AHB2STBUS_MSGSIZE_DISABLE       0x0
++#define AHB2STBUS_MSGSIZE_2             0x1
++#define AHB2STBUS_MSGSIZE_4             0x2
++#define AHB2STBUS_MSGSIZE_8             0x3
++#define AHB2STBUS_MSGSIZE_16            0x4
++#define AHB2STBUS_MSGSIZE_32            0x5
++#define AHB2STBUS_MSGSIZE_64            0x6
++
++/* The chunk size in number of packets is programmed in this register */
++#define AHB2STBUS_CHUNKSIZE_OFFSET      0x08    /* From PROTOCOL_BASE */
++#define AHB2STBUS_CHUNKSIZE_DISABLE     0x0
++#define AHB2STBUS_CHUNKSIZE_2           0x1
++#define AHB2STBUS_CHUNKSIZE_4           0x2
++#define AHB2STBUS_CHUNKSIZE_8           0x3
++#define AHB2STBUS_CHUNKSIZE_16          0x4
++#define AHB2STBUS_CHUNKSIZE_32          0x5
++#define AHB2STBUS_CHUNKSIZE_64          0x6
++
++#define AHB2STBUS_TIMEOUT		0x0c
++
++#define AHB2STBUS_SW_RESET		0x10
++
++/* Wrapper Glue registers */
++
++#define AHB2STBUS_STRAP_OFFSET          0x14    /* From WRAPPER_GLUE_BASE */
++#define AHB2STBUS_STRAP_PLL             0x08    /* undocumented */
++#define AHB2STBUS_STRAP_8_BIT           0x00    /* ss_word_if */
++#define AHB2STBUS_STRAP_16_BIT          0x04    /* ss_word_if */
++
++
++/* Extensions to the standard USB register set */
++
++/* Define a bus wrapper IN/OUT threshold of 128 */
++#define AHB2STBUS_INSREG01_OFFSET       (0x10 + 0x84) /* From EHCI_BASE */
++#define AHB2STBUS_INOUT_THRESHOLD       0x00800080
++
++#undef dgb_print
++
++#ifdef CONFIG_USB_DEBUG
++#define dgb_print(fmt, args...)			\
++		printk(KERN_DEBUG "%s: " fmt, __FUNCTION__ , ## args)
++#else
++#define dgb_print(fmt, args...)
+ #endif
+ 
+ static int ehci_st40_reset(struct usb_hcd *hcd)
+@@ -33,9 +76,25 @@ static int ehci_st40_reset(struct usb_hcd *hcd)
+ 	return ehci_init(hcd);
+ }
+ 
+-static const struct hc_driver ehci_st40_hc_driver = {
++#ifdef CONFIG_PM
++static int
++stm_ehci_bus_suspend(struct usb_hcd *hcd)
++{
++	ehci_bus_suspend(hcd);
++/*
++ * force the root hub to be resetted on resume!
++ * re-enumerates everything during a standby, mem and hibernation...
++ */
++	usb_root_hub_lost_power(hcd->self.root_hub);
++	return 0;
++}
++#else
++#define stm_ehci_bus_suspend		NULL
++#endif
++
++static const struct hc_driver ehci_stm_hc_driver = {
+ 	.description = hcd_name,
+-	.product_desc = "STM EHCI Host Controller",
++	.product_desc = "st-ehci",
+ 	.hcd_priv_size = sizeof(struct ehci_hcd),
+ 
+ 	/*
+@@ -49,11 +108,8 @@ static const struct hc_driver ehci_st40_hc_driver = {
+ 	 */
+ 	.reset = ehci_st40_reset,
+ 	.start = ehci_run,
+-#ifdef	CONFIG_PM
+-	.suspend = ehci_st40_suspend,
+-	.resume = ehci_st40_resume,
+-#endif
+ 	.stop = ehci_stop,
++	.shutdown = ehci_shutdown,
+ 
+ 	/*
+ 	 * managing i/o requests and associated device resources
+@@ -72,7 +128,11 @@ static const struct hc_driver ehci_st40_hc_driver = {
+ 	 */
+ 	.hub_status_data = ehci_hub_status_data,
+ 	.hub_control = ehci_hub_control,
+-	.bus_suspend = ehci_bus_suspend,
++/*
++ * The ehci_bus_suspend suspends all the root hub ports but
++ * it leaves all the interrupts enabled on insert/remove devices
++ */
++	.bus_suspend = stm_ehci_bus_suspend,
+ 	.bus_resume = ehci_bus_resume,
+ };
+ 
+@@ -84,26 +144,24 @@ static void ehci_hcd_st40_remove(struct usb_hcd *hcd, struct platform_device *pd
+ 	usb_put_hcd(hcd);
+ }
+ 
+-static int ehci_hcd_st40_probe(const struct hc_driver *driver,
+-			       struct usb_hcd **hcd_out,
+-			       struct platform_device *dev)
++static int ehci_hcd_stm_probe(struct platform_device *dev)
+ {
+ 	int retval = 0;
+ 	struct usb_hcd *hcd;
+         struct ehci_hcd *ehci;
++	struct plat_usb_data *pdata = dev->dev.platform_data;
++	struct resource *res;
+ 
+-	retval = ST40_start_host_control(dev);
+-	if (retval)
+-		return retval;
+ 
+-	hcd = usb_create_hcd(driver, &dev->dev, dev->dev.bus_id);
++	hcd = usb_create_hcd(&ehci_stm_hc_driver, &dev->dev, dev->dev.bus_id);
+ 	if (!hcd) {
+ 		retval = -ENOMEM;
+ 		goto err0;
+ 	}
+ 
+-	hcd->rsrc_start = dev->resource[0].start;
+-	hcd->rsrc_len = dev->resource[0].end - dev->resource[0].start + 1;
++	res = platform_get_resource(dev, IORESOURCE_MEM, 0);
++	hcd->rsrc_start = res->start;
++	hcd->rsrc_len = res->end - res->start + 1;
+ 
+ 	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len, hcd_name)) {
+ 		pr_debug("request_mem_region failed");
+@@ -118,17 +176,25 @@ static int ehci_hcd_st40_probe(const struct hc_driver *driver,
+ 		goto err2;
+ 	}
+ 
+-	ehci = hcd_to_ehci(hcd);
++	ehci = hcd_to_ehci(hcd);
+ 	ehci->caps = hcd->regs;
+ 	ehci->regs = hcd->regs + HC_LENGTH(readl(&ehci->caps->hc_capbase));
+ 
+ 	/* cache this readonly data; minimize device reads */
+ 	ehci->hcs_params = readl(&ehci->caps->hcs_params);
+ 
+-	retval = usb_add_hcd(hcd, dev->resource[1].start, 0);
+-	if (retval == 0)
++	res = platform_get_resource(dev, IORESOURCE_IRQ, 0);
++	retval = usb_add_hcd(hcd, res->start, 0);
++	if (retval == 0) {
++		pdata->ehci_hcd = hcd;
++#ifdef CONFIG_PM
++		hcd->self.root_hub->do_remote_wakeup = 0;
++		hcd->self.root_hub->persist_enabled = 0;
++		hcd->self.root_hub->autosuspend_disabled = 1;
++		hcd->self.root_hub->autoresume_disabled = 1;
++#endif
+ 		return retval;
+-
++	}
+ 	iounmap(hcd->regs);
+ err2:
+ 	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+@@ -138,32 +204,195 @@ err0:
+ 	return retval;
+ }
+ 
+-static int ehci_hcd_st40_driver_probe(struct platform_device *pdev)
++static int st_usb_boot(struct platform_device *dev)
+ {
+-	struct usb_hcd *hcd = NULL;
+-	int ret;
++	struct plat_usb_data *usb_wrapper = dev->dev.platform_data;
++	unsigned long reg, req_reg;
++	void *wrapper_base = usb_wrapper->ahb2stbus_wrapper_glue_base;
++	void *protocol_base = usb_wrapper->ahb2stbus_protocol_base;
++
++	if (usb_wrapper->flags &
++		(USB_FLAGS_STRAP_8BIT | USB_FLAGS_STRAP_16BIT)) {
++		/* Set strap mode */
++		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		if (usb_wrapper->flags & USB_FLAGS_STRAP_16BIT)
++			reg |= AHB2STBUS_STRAP_16_BIT;
++		else
++			reg &= ~AHB2STBUS_STRAP_16_BIT;
++		writel(reg, wrapper_base + AHB2STBUS_STRAP_OFFSET);
++	}
++
++	if (usb_wrapper->flags & USB_FLAGS_STRAP_PLL) {
++		/* Start PLL */
++		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		writel(reg | AHB2STBUS_STRAP_PLL,
++			wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		mdelay(30);
++		writel(reg & (~AHB2STBUS_STRAP_PLL),
++			wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		mdelay(30);
++	}
++
++	if (usb_wrapper->flags & USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE) {
++		/* Set the STBus Opcode Config for load/store 32 */
++		writel(AHB2STBUS_STBUS_OPC_32BIT,
++			protocol_base + AHB2STBUS_STBUS_OPC_OFFSET);
+ 
+-	if (usb_disabled())
+-		return -ENODEV;
++		/* Set the Message Size Config to n packets per message */
++		writel(AHB2STBUS_MSGSIZE_4,
++			protocol_base + AHB2STBUS_MSGSIZE_OFFSET);
+ 
+-	ret = ehci_hcd_st40_probe(&ehci_st40_hc_driver, &hcd, pdev);
+-	return ret;
++		/* Set the chunksize to n packets */
++		writel(AHB2STBUS_CHUNKSIZE_4,
++			protocol_base + AHB2STBUS_CHUNKSIZE_OFFSET);
++	}
++
++	if (usb_wrapper->flags &
++		(USB_FLAGS_STBUS_CONFIG_THRESHOLD128 |
++		USB_FLAGS_STBUS_CONFIG_THRESHOLD256)) {
++
++		req_reg = (1<<21) |  /* Turn on read-ahead */
++			  (5<<16) |  /* Opcode is store/load 32 */
++			  (0<<15) |  /* Turn off write posting */
++			  (1<<14) |  /* Enable threshold */
++			  (3<<9)  |  /* 2**3 Packets in a chunk */
++			  (0<<4)  ;  /* No messages */
++		reg |= ((usb_wrapper->flags &
++			USB_FLAGS_STBUS_CONFIG_THRESHOLD128) ? 7 /* 128 */ :
++				(8<<0));/* 256 */
++		do {
++			writel(req_reg, protocol_base +
++				AHB2STBUS_MSGSIZE_OFFSET);
++			reg = readl(protocol_base + AHB2STBUS_MSGSIZE_OFFSET);
++		} while ((reg & 0x7FFFFFFF) != req_reg);
++	}
++	return 0;
+ }
+ 
+-static int ehci_hcd_st40_driver_remove(struct platform_device *pdev)
++int ohci_hcd_stm_probe(struct platform_device *pdev);
++
++static int st_usb_probe(struct platform_device *pdev)
+ {
+-	struct usb_hcd *hcd = platform_get_drvdata(pdev);
++	struct plat_usb_data *pdata = pdev->dev.platform_data;
++	unsigned long ahb2stbus_wrapper_glue_base =
++		pdata->ahb2stbus_wrapper_glue_base;
++	unsigned long ahb2stbus_protocol_base =
++		pdata->ahb2stbus_protocol_base;
++	struct resource *res;
++
++	dgb_print("\n");
++	/* Power on */
++	platform_pm_pwdn_req(pdev, HOST_PM | PHY_PM, 0);
++	/* Wait the ack */
++	platform_pm_pwdn_ack(pdev, HOST_PM | PHY_PM, 0);
++
++	if (!request_mem_region(ahb2stbus_wrapper_glue_base, 0x100,
++			pdev->name))
++		return -1;
++
++	if (!request_mem_region(ahb2stbus_protocol_base, 0x100,
++			pdev->name))
++		return -1;
+ 
+-	ehci_hcd_st40_remove(hcd, pdev);
++	pdata->ahb2stbus_wrapper_glue_base
++		= ioremap(ahb2stbus_wrapper_glue_base, 0x100);
++	if (!pdata->ahb2stbus_wrapper_glue_base)
++		return -1;
++
++	pdata->ahb2stbus_protocol_base =
++		ioremap(ahb2stbus_protocol_base, 0x100);
++	if (!pdata->ahb2stbus_protocol_base)
++		return -1;
++
++	st_usb_boot(pdev);
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (res->start) {
++		ehci_hcd_stm_probe(pdev); /* is it EHCI able ? */
++		pdata->ehci_hcd = pdev->dev.driver_data;
++	}
++#ifdef CONFIG_USB_OHCI_HCD
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
++	if (res->start) {
++		ohci_hcd_stm_probe(pdev); /* is it OHCI able ? */
++		pdata->ohci_hcd = pdev->dev.driver_data;
++	}
++#endif
+ 	return 0;
+ }
+ 
+-static struct platform_driver ehci_hcd_st40_driver = {
+-	.probe = ehci_hcd_st40_driver_probe,
+-	.remove = ehci_hcd_st40_driver_remove,
+-	.shutdown = usb_hcd_platform_shutdown,
+-	.driver = {
+-		.name = "stm-ehci",
+-		.bus = &platform_bus_type
++static void st_usb_shutdown(struct platform_device *pdev)
++{
++	struct plat_usb_data *pdata = pdev->dev.platform_data;
++	dgb_print("\n");
++	platform_pm_pwdn_req(pdev, HOST_PM | PHY_PM, 1);
++}
++
++#ifdef CONFIG_PM
++static int st_usb_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	struct plat_usb_data *pdata = pdev->dev.platform_data;
++	unsigned long wrapper_base = pdata->ahb2stbus_wrapper_glue_base;
++	struct usb_hcd *hcd = pdata->ehci_hcd;
++	struct ehci_hcd *ehci = hcd_to_ehci (hcd);
++	long reg;
++	dgb_print("\n");
++
++	if (ehci)
++		ehci_writel(ehci, 1, &ehci->regs->configured_flag);
++
++	if (pdata->flags & USB_FLAGS_STRAP_PLL) {
++		/* PLL turned off */
++		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		writel(reg | AHB2STBUS_STRAP_PLL,
++			wrapper_base + AHB2STBUS_STRAP_OFFSET);
+ 	}
++	platform_pm_pwdn_req(pdev, HOST_PM | PHY_PM, 1);
++	platform_pm_pwdn_ack(pdev, HOST_PM | PHY_PM, 1);
++	return 0;
++}
++static int st_usb_resume(struct platform_device *pdev)
++{
++	struct plat_usb_data *pdata = pdev->dev.platform_data;
++	void *protocol_base = pdata->ahb2stbus_protocol_base;
++	void *wrapper_base = pdata->ahb2stbus_wrapper_glue_base;
++	long reg;
++	dgb_print("\n");
++	platform_pm_pwdn_req(pdev, HOST_PM | PHY_PM, 0);
++	platform_pm_pwdn_ack(pdev, HOST_PM | PHY_PM, 0);
++	if (pdata->flags & USB_FLAGS_STRAP_PLL) {
++		/* Start PLL */
++		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		writel(reg | AHB2STBUS_STRAP_PLL,
++			wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		mdelay(30);
++		writel(reg & (~AHB2STBUS_STRAP_PLL),
++			wrapper_base + AHB2STBUS_STRAP_OFFSET);
++		mdelay(30);
++	}
++	return 0;
++}
++#else
++#define st_usb_suspend	NULL
++#define st_usb_resume	NULL
++#endif
++
++static struct platform_driver ehci_hcd_stm_driver = {
++	.driver.name = "stm-ehci",
++};
++
++static struct platform_driver st_usb_driver = {
++	.driver.name = "st-usb",
++	.probe = st_usb_probe,
++	.shutdown = st_usb_shutdown,
++	.suspend = st_usb_suspend,
++	.resume = st_usb_resume,
+ };
++
++static int __init st_usb_init(void)
++{
++	dgb_print("\n");
++	platform_driver_register(&st_usb_driver);
++	return 0;
++}
++module_init(st_usb_init);
+diff --git a/drivers/usb/host/ohci-stcore.c b/drivers/usb/host/ohci-stcore.c
+index f410228..442c7af 100644
+--- a/drivers/usb/host/ohci-stcore.c
++++ b/drivers/usb/host/ohci-stcore.c
+@@ -12,11 +12,18 @@
+  */
+ 
+ #include <linux/platform_device.h>
+-#include "ohci-stcore.h"
++#include <linux/interrupt.h>
++#include <linux/stm/soc.h>
+ 
+-extern int usb_disabled(void);
++#undef dgb_print
++
++#ifdef CONFIG_USB_DEBUG
++#define dgb_print(fmt, args...)				\
++		printk(KERN_DEBUG "%s: " fmt, __FUNCTION__ , ## args)
++#else
++#define dgb_print(fmt, args...)
++#endif
+ 
+-#include "stb7100-common.h"
+ 
+ static int
+ ohci_st40_start(struct usb_hcd *hcd)
+@@ -24,6 +31,7 @@ ohci_st40_start(struct usb_hcd *hcd)
+ 	struct ohci_hcd *ohci = hcd_to_ohci(hcd);
+ 	int ret = 0;
+ 
++	dgb_print("\n");
+ 	if ((ret = ohci_init(ohci)) < 0)
+ 		return ret;
+ 
+@@ -35,24 +43,50 @@ ohci_st40_start(struct usb_hcd *hcd)
+ 
+ 	return 0;
+ }
+-
+-#ifdef	CONFIG_PM
+-static int
+-ohci_st40_suspend(struct usb_hcd *hcd, pm_message_t message)
++#ifdef CONFIG_PM
++static int stm_ohci_bus_suspend(struct usb_hcd *hcd)
+ {
++	dgb_print("\n");
++	ohci_bus_suspend(hcd);
++
++	/* disable the interrupts */
++#if 0
++/*
++ * At the moment I don't know why
++ * but the next ochi_writel is the
++ * source of the problem...
++ */
++	ohci_writel(ohci, OHCI_INTR_SO | OHCI_INTR_WDH |
++		   OHCI_INTR_SF | OHCI_INTR_RD  |
++		   OHCI_INTR_UE | OHCI_INTR_FNO |
++		   OHCI_INTR_RHSC  | OHCI_INTR_OC |
++		   OHCI_INTR_MIE | OHCI_INTR_UE, &ohci->regs->intrdisable);
++#else
++	disable_irq(hcd->irq);
++	usb_root_hub_lost_power(hcd->self.root_hub);
++#endif
++
++
+ 	return 0;
+ }
+ 
+-static int
+-ohci_st40_resume(struct usb_hcd *hcd)
++static int stm_ohci_bus_resume(struct usb_hcd *hcd)
+ {
++	dgb_print("\n");
++	ohci_bus_resume(hcd);
++#if 1
++	enable_irq(hcd->irq);
++#endif
+ 	return 0;
+ }
++#else
++#define stm_ohci_bus_suspend		NULL
++#define stm_ohci_bus_resume		NULL
+ #endif
+ 
+ static const struct hc_driver ohci_st40_hc_driver = {
+ 	.description =		hcd_name,
+-	.product_desc =		"STM OHCI Host Controller",
++	.product_desc =		"stm-ohci",
+ 	.hcd_priv_size =	sizeof(struct ohci_hcd),
+ 
+ 	/* generic hardware linkage */
+@@ -61,10 +95,6 @@ static const struct hc_driver ohci_st40_hc_driver = {
+ 
+ 	/* basic lifecycle operations */
+ 	.start =		ohci_st40_start,
+-#ifdef	CONFIG_PM
+-	.suspend =		ohci_st40_suspend,
+-	.resume =		ohci_st40_resume,
+-#endif
+ 	.stop =			ohci_stop,
+ 
+ 	/* managing i/o requests and associated device resources */
+@@ -78,36 +108,31 @@ static const struct hc_driver ohci_st40_hc_driver = {
+ 	/* root hub support */
+ 	.hub_status_data =	ohci_hub_status_data,
+ 	.hub_control =		ohci_hub_control,
+-#ifdef	CONFIG_USB_SUSPEND
+-/* note we don't export these funcs for our ohci*/
+-/*	.hub_suspend =		ohci_hub_suspend,*/
+-/*	.hub_resume =		ohci_hub_resume,*/
++#ifdef CONFIG_PM
++	.bus_suspend =		stm_ohci_bus_suspend,
++	.bus_resume =		stm_ohci_bus_resume,
+ #endif
+ 	.start_port_reset =	ohci_start_port_reset,
+ };
+ 
+-static int ohci_hcd_stm_probe(struct platform_device *pdev)
++int ohci_hcd_stm_probe(struct platform_device *pdev)
+ {
+ 	struct usb_hcd *hcd = NULL;
+-	const struct hc_driver *driver = &ohci_st40_hc_driver;
+ 	int retval;
++	struct resource *res;
+ 
+-	if (usb_disabled())
+-		return -ENODEV;
+-
+-	retval = ST40_start_host_control(pdev);
+-	if (retval)
+-		return retval;
+-
+-	hcd = usb_create_hcd(driver, &pdev->dev, pdev->dev.bus_id);
++	dgb_print("\n");
++	hcd = usb_create_hcd(&ohci_st40_hc_driver, &pdev->dev,
++		pdev->dev.bus_id);
+ 	if (!hcd) {
+ 		pr_debug("hcd_create_hcd failed");
+ 		retval = -ENOMEM;
+ 		goto err0;
+ 	}
+ 
+-	hcd->rsrc_start = pdev->resource[0].start;
+-	hcd->rsrc_len = pdev->resource[0].end - pdev->resource[0].start + 1;
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
++	hcd->rsrc_start = res->start;
++	hcd->rsrc_len = res->end - res->start + 1;
+ 
+ 	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len,	hcd_name)) {
+ 		pr_debug("request_mem_region failed");
+@@ -124,10 +149,17 @@ static int ohci_hcd_stm_probe(struct platform_device *pdev)
+ 
+ 	ohci_hcd_init(hcd_to_ohci(hcd));
+ 
+-	retval = usb_add_hcd(hcd, pdev->resource[1].start, 0);
+-	if (retval == 0)
++	res = platform_get_resource(pdev, IORESOURCE_IRQ, 1);
++	retval = usb_add_hcd(hcd, res->start, 0);
++	if (retval == 0) {
++#ifdef CONFIG_PM
++		hcd->self.root_hub->do_remote_wakeup = 0;
++		hcd->self.root_hub->persist_enabled = 0;
++		hcd->self.root_hub->autosuspend_disabled = 1;
++		hcd->self.root_hub->autoresume_disabled = 1;
++#endif
+ 		return retval;
+-
++	}
+ 	iounmap(hcd->regs);
+ err2:
+ 	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+@@ -141,6 +173,7 @@ static int ohci_hcd_stm_remove(struct platform_device *pdev)
+ {
+ 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
+ 
++	dgb_print("\n");
+ 	usb_remove_hcd(hcd);
+ 	iounmap(hcd->regs);
+ 	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+@@ -150,11 +183,5 @@ static int ohci_hcd_stm_remove(struct platform_device *pdev)
+ }
+ 
+ static struct platform_driver ohci_hcd_stm_driver = {
+-	.driver = {
+-		.name = "stm-ohci",
+-                .bus = &platform_bus_type
+-	},
+-	.probe = ohci_hcd_stm_probe,
+-	.remove = ohci_hcd_stm_remove,
+-        .shutdown = usb_hcd_platform_shutdown,
++	.driver.name = "stm-ohci",
+ };
+diff --git a/drivers/usb/host/ohci-stcore.h b/drivers/usb/host/ohci-stcore.h
+deleted file mode 100644
+index 92112e6..0000000
+--- a/drivers/usb/host/ohci-stcore.h
++++ /dev/null
+@@ -1,49 +0,0 @@
+-/*
+- * OHCI HCD (Host Controller Driver) for USB
+- *
+- * (C) copyright STMicroelectronics 2005
+- * Author: Mark Glaisher <mark.glaisher@st.com>
+- *
+- * STMicroelectronics on-chip USB host controller Bus Glue.
+- * Based on the StrongArm ohci-sa1111.c file
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- */
+-
+-#ifndef ST40_ASSIST_H
+-#define ST40_ASSIST_H
+-
+-#if defined(CONFIG_CPU_SUBTYPE_STI5528)
+-
+-	#define CFG_BASE_ADDRESS         0xb9162000
+-	#define USB_OHCI_0_BASE          0xb9141000
+-	#define USB_OHCI_1_BASE          0xb9142000
+-
+-	#define STBUS_USB_0_STATUS_REG   (USB_OHCI_0_BASE + 0x58)
+-	#define STBUS_USB_1_STATUS_REG   (USB_OHCI_1_BASE + 0x58)
+-	#define STBUS_USB_0_MASK_REG     (USB_OHCI_0_BASE + 0x5c)
+-	#define STBUS_USB_1_MASK_REG     (USB_OHCI_1_BASE + 0x5c)
+-
+-	#define SYSTEM_CONFIG10          (CFG_BASE_ADDRESS + 0x58)
+-
+-#elif defined(CONFIG_CPU_SUBTYPE_STM8000)
+-
+-	#define USB_OHCI_0_BASE         0xb4400000
+-	#define FS_B_BASE              (0xb0420000)
+-	#define FS_CONFIG_CLK_3        (FS_B_BASE + 0x18)
+-	#define FS_CONFIG_GENERIC_INFO (FS_B_BASE + 0x00)
+-
+-	#define STBUS_USB_STATUS_REG    (USB_OHCI_0_BASE + 0x58)
+-	#define STBUS_USB_MASK_REG      (USB_OHCI_0_BASE + 0x5c)
+-#endif
+-
+-#define INT_RMT_WAKEUP			0x01
+-#define INT_BUF_ACCESS			0x02
+-#define INT_NEW_FRAME			0x04
+-#define INT_GENERAL			0x08
+-#define STBUS_USB_MASK_DEFAULT  (INT_RMT_WAKEUP | INT_BUF_ACCESS | INT_GENERAL)
+-#define USB_POWER_ENABLE 		((  1 <<4) | ( 1 <<11)) /*power enable usb blk 1/2*/
+-
+-#endif
+-
+diff --git a/drivers/usb/host/stb7100-common.c b/drivers/usb/host/stb7100-common.c
+deleted file mode 100644
+index 1f7a97a..0000000
+--- a/drivers/usb/host/stb7100-common.c
++++ /dev/null
+@@ -1,146 +0,0 @@
+-/*
+- * STb7100 common OHCI/EHCI controller functions.
+- *
+- * Copyright (c) 2005 STMicroelectronics Limited
+- * Author: Mark Glaisher <mark.glaisher@st.com>
+- *
+- * This file is licenced under the GPL.
+- */
+-
+-#include <linux/stm/soc.h>
+-#include <linux/delay.h>
+-#include <linux/platform_device.h>
+-#include <linux/mutex.h>
+-#include <asm/io.h>
+-#include "stb7100-common.h"
+-
+-#define RESOURCE_NAME "USB wrapper"
+-
+-static DEFINE_MUTEX(wraper_mutex);
+-
+-/*
+- * Set up the USB hardware wrapper
+- */
+-int ST40_start_host_control(struct platform_device *pdev)
+-{
+-	struct plat_usb_data *usb_wrapper = pdev->dev.platform_data;
+-	unsigned long ahb2stbus_wrapper_glue_base =
+-		usb_wrapper->ahb2stbus_wrapper_glue_base;
+-	unsigned long ahb2stbus_protocol_base =
+-		usb_wrapper->ahb2stbus_protocol_base;
+-	unsigned long reg, req_reg;
+-	int retval;
+-	void *wrapper_base;
+-	void *protocol_base;
+-
+-	mutex_lock(&wraper_mutex);
+-
+-	if (usb_wrapper->initialised)
+-		goto success;
+-
+-	retval = -EBUSY;
+-
+-	if (!request_mem_region(ahb2stbus_wrapper_glue_base, 0x100,
+-				RESOURCE_NAME))
+-		goto err1;
+-
+-	if (!request_mem_region(ahb2stbus_protocol_base, 0x100,
+-				RESOURCE_NAME))
+-		goto err2;
+-
+-	retval = -ENOMEM;
+-
+-	wrapper_base = ioremap(ahb2stbus_wrapper_glue_base, 0x100);
+-	if (!wrapper_base)
+-		goto err3;
+-
+-	protocol_base = ioremap(ahb2stbus_protocol_base, 0x100);
+-	if (!protocol_base)
+-		goto err4;
+-
+-	if (usb_wrapper->flags &
+-	    (USB_FLAGS_STRAP_8BIT | USB_FLAGS_STRAP_16BIT)) {
+-		/* Set strap mode */
+-		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-		if (usb_wrapper->flags & USB_FLAGS_STRAP_16BIT)
+-			reg |= AHB2STBUS_STRAP_16_BIT;
+-		else
+-			reg &= ~AHB2STBUS_STRAP_16_BIT;
+-		writel(reg, wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-	}
+-
+-	if (usb_wrapper->flags & USB_FLAGS_STRAP_PLL) {
+-		/* Start PLL */
+-		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-		writel(reg | AHB2STBUS_STRAP_PLL,
+-		       wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-		mdelay(30);
+-		writel(reg & (~AHB2STBUS_STRAP_PLL),
+-		       wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-		mdelay(30);
+-	}
+-
+-	if (usb_wrapper->flags & USB_FLAGS_OPC_MSGSIZE_CHUNKSIZE) {
+-		/* Set the STBus Opcode Config for load/store 32 */
+-		writel(AHB2STBUS_STBUS_OPC_32BIT,
+-		       protocol_base + AHB2STBUS_STBUS_OPC_OFFSET);
+-
+-		/* Set the Message Size Config to n packets per message */
+-		writel(AHB2STBUS_MSGSIZE_4,
+-		       protocol_base + AHB2STBUS_MSGSIZE_OFFSET);
+-
+-		/* Set the chunksize to n packets */
+-		writel(AHB2STBUS_CHUNKSIZE_4,
+-		       protocol_base + AHB2STBUS_CHUNKSIZE_OFFSET);
+-	}
+-
+-	if (usb_wrapper->flags &
+-	    (USB_FLAGS_STBUS_CONFIG_THRESHOLD128 |
+-	     USB_FLAGS_STBUS_CONFIG_THRESHOLD256)) {
+-
+-		if (usb_wrapper->flags & USB_FLAGS_STBUS_CONFIG_THRESHOLD128)
+-			req_reg =
+-				(1<<21) |  /* Turn on read-ahead */
+-				(5<<16) |  /* Opcode is store/load 32 */
+-				(0<<15) |  /* Turn off write posting */
+-				(1<<14) |  /* Enable threshold */
+-				(3<<9)  |  /* 2**3 Packets in a chunk */
+-				(0<<4)  |  /* No messages */
+-				7;         /* Threshold is 128 */
+-		else
+-			req_reg =
+-				(1<<21) |  /* Turn on read-ahead */
+-				(5<<16) |  /* Opcode is store/load 32 */
+-				(0<<15) |  /* Turn off write posting */
+-				(1<<14) |  /* Enable threshold */
+-				(3<<9)  |  /* 2**3 Packets in a chunk */
+-				(0<<4)  |  /* No messages */
+-				(8<<0);    /* Threshold is 256 */
+-
+-		do {
+-			writel(req_reg, protocol_base + AHB2STBUS_STBUS_CONFIG);
+-			reg = readl(protocol_base + AHB2STBUS_STBUS_CONFIG);
+-		} while ((reg & 0x7FFFFFFF) != req_reg);
+-	}
+-
+-	usb_wrapper->initialised = 1;
+-
+-success:
+-	mutex_unlock(&wraper_mutex);
+-	return 0;
+-
+-err4:
+-	iounmap(wrapper_base);
+-err3:
+-	release_mem_region(ahb2stbus_protocol_base, 0x100);
+-err2:
+-	release_mem_region(ahb2stbus_wrapper_glue_base, 0x100);
+-err1:
+-	mutex_unlock(&wraper_mutex);
+-	return retval;
+-}
+-EXPORT_SYMBOL(ST40_start_host_control);
+-
+-MODULE_DESCRIPTION ("STM USB Host Controller wrapper driver");
+-MODULE_AUTHOR ("Mark Glaisher <mark.glaisher@st.com>");
+-MODULE_LICENSE ("GPL");
+diff --git a/drivers/usb/host/stb7100-common.h b/drivers/usb/host/stb7100-common.h
+deleted file mode 100644
+index 56ec0ed..0000000
+--- a/drivers/usb/host/stb7100-common.h
++++ /dev/null
+@@ -1,68 +0,0 @@
+-/*
+- * STb7100 common OHCI/EHCI controller functions.
+- *
+- * Copyright (c) 2005 STMicroelectronics Limited
+- * Author: Mark Glaisher <mark.glaisher@st.com>
+- *
+- * This file is licenced under the GPL.
+- */
+-
+-/*
+- * This file attempts to support all the various flavours of USB wrappers,
+- * thus some of the registers appear to overlap.
+- *
+- * Some of these register are described in ADCS 7518758 and 7618754
+- */
+-
+-/* Protocol converter registers (separate registers) */
+-
+-/* The transaction opcode is programmed in this register */
+-#define AHB2STBUS_STBUS_OPC_OFFSET	0x00	/* From AHB2STBUS_PROTOCOL_BASE */
+-#define AHB2STBUS_STBUS_OPC_4BIT	0x00
+-#define AHB2STBUS_STBUS_OPC_8BIT	0x01
+-#define AHB2STBUS_STBUS_OPC_16BIT	0x02
+-#define AHB2STBUS_STBUS_OPC_32BIT	0x03
+-#define AHB2STBUS_STBUS_OPC_64BIT	0x04
+-
+-/* The message length in number of packets is programmed in this register. */
+-#define AHB2STBUS_MSGSIZE_OFFSET	0x04	/* From AHB2STBUS_PROTOCOL_BASE */
+-#define AHB2STBUS_MSGSIZE_DISABLE	0x0
+-#define AHB2STBUS_MSGSIZE_2		0x1
+-#define AHB2STBUS_MSGSIZE_4		0x2
+-#define AHB2STBUS_MSGSIZE_8		0x3
+-#define AHB2STBUS_MSGSIZE_16		0x4
+-#define AHB2STBUS_MSGSIZE_32		0x5
+-#define AHB2STBUS_MSGSIZE_64		0x6
+-
+-/* The chunk size in number of packets is programmed in this register */
+-#define AHB2STBUS_CHUNKSIZE_OFFSET	0x08	/* From AHB2STBUS_PROTOCOL_BASE */
+-#define AHB2STBUS_CHUNKSIZE_DISABLE	0x0
+-#define AHB2STBUS_CHUNKSIZE_2		0x1
+-#define AHB2STBUS_CHUNKSIZE_4		0x2
+-#define AHB2STBUS_CHUNKSIZE_8		0x3
+-#define AHB2STBUS_CHUNKSIZE_16		0x4
+-#define AHB2STBUS_CHUNKSIZE_32		0x5
+-#define AHB2STBUS_CHUNKSIZE_64		0x6
+-
+-
+-/* Protocol converter registers (combined register) */
+-
+-#define AHB2STBUS_STBUS_CONFIG		0x04	/* From AHB2STBUS_PROTOCOL_BASE */
+-
+-
+-/* Wrapper Glue registers */
+-
+-#define AHB2STBUS_STRAP_OFFSET		0x14	/* From AHB2STBUS_WRAPPER_GLUE_BASE */
+-#define AHB2STBUS_STRAP_PLL		0x08	/* undocumented */
+-#define AHB2STBUS_STRAP_8_BIT		0x00	/* ss_word_if */
+-#define AHB2STBUS_STRAP_16_BIT		0x04	/* ss_word_if */
+-
+-
+-/* Extensions to the standard USB register set */
+-
+-/* Define a bus wrapper IN/OUT threshold of 128 */
+-#define AHB2STBUS_INSREG01_OFFSET	(0x10 + 0x84) /* From AHB2STBUS_EHCI_BASE */
+-#define AHB2STBUS_INOUT_THRESHOLD	0x00800080
+-
+-
+-int ST40_start_host_control(struct platform_device *dev);
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 0b053fb..7167f80 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -287,8 +287,8 @@ struct plat_usb_data {
+ 	unsigned long ahb2stbus_wrapper_glue_base;
+ 	unsigned long ahb2stbus_protocol_base;
+ 	unsigned long flags;
+-	int initialised;
+-	int port_number;
++	void *ehci_hcd;
++	void *ohci_hcd;
+ };
+ 
+ #define USB_FLAGS_STRAP_8BIT			(1<<0)
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index c511e2a..ec392bc 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -80,61 +80,42 @@
+ 	.ahb2stbus_wrapper_glue_base = _wrapper_base,			\
+ 	.ahb2stbus_protocol_base = _protocol_base,			\
+ 	.flags = _flags,						\
+-	.initialised = 0,						\
+-	.port_number = _port,						\
+ }
+ 
+-
+-#define USB_EHCI_DEVICE(_port, _base, _irq, _wrapper)			\
++#define USB_DEVICE(_port, _eh_base, _eh_irq, _oh_base, _oh_irq, _wrapper)\
+ {									\
+-	.name = "stm-ehci",						\
+-	.id=_port,							\
++	.name = "st-usb",						\
++	.id = _port,							\
+ 	.dev = {							\
+ 		.dma_mask = &st40_dma_mask,				\
+ 		.coherent_dma_mask = DMA_32BIT_MASK,			\
+ 		.platform_data = _wrapper,				\
+ 	},								\
+-	.num_resources = 2,						\
++	.num_resources = 4,						\
+ 	.resource = (struct resource[]) {				\
+ 		[0] = {							\
+-			.start = _base,					\
+-			.end   = _base + 0xff,				\
++			.start = _eh_base,				\
++			.end   = _eh_base + 0xff,			\
+ 			.flags = IORESOURCE_MEM,			\
+ 		},							\
+ 		[1] = {							\
+-			.start = _irq,					\
+-			.end   = _irq,					\
++			.start = _eh_irq,				\
++			.end   = _eh_irq,				\
+ 			.flags = IORESOURCE_IRQ,			\
+ 		},							\
+-	},								\
+-}									\
+-
+-
+-#define USB_OHCI_DEVICE(_port, _base, _irq, _wrapper)			\
+-{									\
+-	.name = "stm-ohci",						\
+-	.id=_port,							\
+-	.dev = {							\
+-		.dma_mask = &st40_dma_mask,				\
+-		.coherent_dma_mask = DMA_32BIT_MASK,			\
+-		.platform_data = _wrapper,				\
+-	},								\
+-	.num_resources = 2,						\
+-	.resource = (struct resource[]) {				\
+-		[0] = {							\
+-			.start = _base,					\
+-			.end   = _base + 0xff,				\
++		[2] = {							\
++			.start = _oh_base,				\
++			.end   = _oh_base + 0xff,			\
+ 			.flags = IORESOURCE_MEM,			\
+ 		},							\
+-		[1] = {							\
+-			.start = _irq,					\
+-			.end   = _irq,					\
++		[3] = {							\
++			.start = _oh_irq,				\
++			.end   = _oh_irq,				\
+ 			.flags = IORESOURCE_IRQ,			\
+-		}							\
+-	}								\
++		},							\
++	},								\
+ }
+ 
+-
+ #define EMI_NAND_DEVICE(_id)							\
+ {										\
+ 	.name		= "gen_nand",						\
+-- 
+1.5.6.3
+

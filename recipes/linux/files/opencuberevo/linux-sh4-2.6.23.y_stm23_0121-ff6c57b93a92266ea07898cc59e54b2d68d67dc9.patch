@@ -1,0 +1,101 @@
+From ff6c57b93a92266ea07898cc59e54b2d68d67dc9 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 13 Jul 2009 08:40:29 +0200
+Subject: [PATCH] tiny-linux: unroll crc32 calculation on small systems
+
+Added a new option(CRC32_TABLES) to enable use of tables for CRC calculation.
+Disabling reduces kernel size by about 2K. This may actually result in
+faster code on machines with limited memory bandwidth.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ init/Kconfig    |   14 ++++++++++++++
+ lib/Makefile    |    2 ++
+ lib/crc32.c     |    2 ++
+ lib/crc32defs.h |    9 ++++++++-
+ 4 files changed, 26 insertions(+), 1 deletions(-)
+
+diff --git a/init/Kconfig b/init/Kconfig
+index 223f3c5..9595838 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -584,6 +584,16 @@ config SHMEM
+ 	  option replaces shmem and tmpfs with the much simpler ramfs code,
+ 	  which may be appropriate on small systems without swap.
+ 
++config CRC32_TABLES
++	depends CRC32
++	default y
++	bool "Calculate CRC32 with tables" if EMBEDDED
++	help
++	  This option enables use of tables for CRC calculation. Disabling
++          reduces kernel size by about 2K. This may actually result in
++          faster code on machines with limited memory bandwidth.
++
++
+ config VM_EVENT_COUNTERS
+ 	default y
+ 	bool "Enable VM event counters for /proc/vmstat" if EMBEDDED
+@@ -654,6 +664,10 @@ config RT_MUTEXES
+ 	boolean
+ 	select PLIST
+ 
++config CRC32_CALC
++	default !CRC32_TABLES
++	bool
++
+ config TINY_SHMEM
+ 	default !SHMEM
+ 	bool
+diff --git a/lib/Makefile b/lib/Makefile
+index 4f3f3e2..7630ba1 100644
+--- a/lib/Makefile
++++ b/lib/Makefile
+@@ -69,7 +69,9 @@ lib-$(CONFIG_GENERIC_BUG) += bug.o
+ hostprogs-y	:= gen_crc32table
+ clean-files	:= crc32table.h
+ 
++ifeq ($(CONFIG_CRC32_TABLES),y)
+ $(obj)/crc32.o: $(obj)/crc32table.h
++endif
+ 
+ quiet_cmd_crc32 = GEN     $@
+       cmd_crc32 = $< > $@
+diff --git a/lib/crc32.c b/lib/crc32.c
+index bfc3331..62b4b1a 100644
+--- a/lib/crc32.c
++++ b/lib/crc32.c
+@@ -36,7 +36,9 @@
+ #define tole(x) (x)
+ #define tobe(x) (x)
+ #endif
++#ifdef CONFIG_CRC32_TABLES
+ #include "crc32table.h"
++#endif
+ 
+ MODULE_AUTHOR("Matt Domsch <Matt_Domsch@dell.com>");
+ MODULE_DESCRIPTION("Ethernet CRC32 calculations");
+diff --git a/lib/crc32defs.h b/lib/crc32defs.h
+index 9b6773d..4aeea2f 100644
+--- a/lib/crc32defs.h
++++ b/lib/crc32defs.h
+@@ -7,8 +7,15 @@
+ #define CRCPOLY_BE 0x04c11db7
+ 
+ /* How many bits at a time to use.  Requires a table of 4<<CRC_xx_BITS bytes. */
++
++#ifdef CONFIG_CRC32_CALC /* config symbols not visible to gen_crc32table */
++#define CRC_LE_BITS 1
++#define CRC_BE_BITS 1
++#endif
++
+ /* For less performance-sensitive, use 4 */
+-#ifndef CRC_LE_BITS 
++
++#ifndef CRC_LE_BITS
+ # define CRC_LE_BITS 8
+ #endif
+ #ifndef CRC_BE_BITS
+-- 
+1.6.0.6
+

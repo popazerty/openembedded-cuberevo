@@ -1,0 +1,44 @@
+From 27c9701f0b74bbb269bd81a9a0901a48bfcde36b Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 11 Nov 2009 11:24:12 +0000
+Subject: [PATCH] sh_stm: Move PIO driver initialisation to "postcore" level
+
+As the PCI driver (which is initialised on "subsys" level) is going
+to use gpio interrupts, the PIO initialisation must be performed
+one step earlier, which is the "postcore" level.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/stm/pio.c   |    2 +-
+ drivers/stm/pio10.c |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index 68b4e53..7b121f8 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -968,7 +968,7 @@ static int __init stpio_init(void)
+ 
+ 	return platform_driver_register(&stpio_driver);
+ }
+-subsys_initcall(stpio_init);
++postcore_initcall(stpio_init);
+ 
+ MODULE_AUTHOR("Stuart Menefy <stuart.menefy@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics PIO driver");
+diff --git a/drivers/stm/pio10.c b/drivers/stm/pio10.c
+index ba57cdb..2ededf9 100644
+--- a/drivers/stm/pio10.c
++++ b/drivers/stm/pio10.c
+@@ -127,7 +127,7 @@ static int __init stpio10_init(void)
+ {
+ 	return platform_driver_register(&stpio10_driver);
+ }
+-subsys_initcall(stpio10_init);
++postcore_initcall(stpio10_init);
+ 
+ MODULE_AUTHOR("Stuart Menefy <stuart.menefy@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics PIO driver");
+-- 
+1.6.0.6
+

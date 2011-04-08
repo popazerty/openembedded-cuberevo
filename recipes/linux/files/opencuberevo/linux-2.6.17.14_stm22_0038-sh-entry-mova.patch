@@ -1,0 +1,33 @@
+The SH mova instruction only allows the address of 32 bit aligned data
+to be loaded. In arch/sh/kernel/entry.S it is being used to load the
+address of an instruction, which is only guaranteed to be 16 bit aligned.
+As a result, it may load the address of the instruction one after the
+intended one.
+
+It appears that getting this wrong will simply result in a slight
+performance penalty, which is probably why its not been spotted as a
+real problem. However it may introduce a race condition as some code
+gets executed with interrupts enabled which it wouldn't normally.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/arch/sh/kernel/entry.S
+===================================================================
+--- linux.orig/arch/sh/kernel/entry.S
++++ linux/arch/sh/kernel/entry.S
+@@ -369,7 +369,7 @@ work_notifysig:
+ 	mov	#0, r5
+ 	mov	r12, r6		! set arg2(save_r0)
+ 	mov.l	2f, r1
+-	mova	restore_all, r0
++	mov.l	3f, r0
+ 	jmp	@r1
+ 	 lds	r0, pr
+ work_resched:
+@@ -387,6 +387,7 @@ work_resched:
+ 	.align	2
+ 1:	.long	schedule
+ 2:	.long	do_signal
++3:	.long	restore_all
+ 
+ 	.align	2
+ syscall_exit_work:

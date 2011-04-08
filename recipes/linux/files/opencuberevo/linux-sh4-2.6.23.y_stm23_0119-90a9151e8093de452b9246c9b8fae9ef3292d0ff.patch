@@ -1,0 +1,28 @@
+From 90a9151e8093de452b9246c9b8fae9ef3292d0ff Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Tue, 3 Mar 2009 14:34:53 +0000
+Subject: [PATCH] sound_stm: 7105 cut 3 support
+
+This patch bumps up a supported cut number for 7105.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/stx7105.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/sound/stm/stx7105.c b/sound/stm/stx7105.c
+index be5f4b7..6e448f4 100644
+--- a/sound/stm/stx7105.c
++++ b/sound/stm/stx7105.c
+@@ -515,7 +515,7 @@ static int __init snd_stm_stx7105_init(void)
+ 	/* Cut 2.0 presumably will bring something new into the
+ 	 * matter, so above configuration must be checked!
+ 	 * - transfer_sizes (FIFO sizes has changed) */
+-	WARN_ON(cpu_data->cut_major > 2);
++	WARN_ON(cpu_data->cut_major > 3);
+ 
+ 	/* Ugly but quick hack to have SPDIF player & I2S to SPDIF
+ 	 * converters enabled without loading STMFB...
+-- 
+1.6.0.6
+

@@ -1,0 +1,219 @@
+From e27842db4350cf31f21561496b8489b80f8daff9 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 13 Jul 2009 08:40:28 +0200
+Subject: [PATCH] tiny-linux: configurable old-style packet filtering and INET support
+
+This patch adds other  development from  the Tiny  Linux  project for the network
+side. It makes configurable the support for INET peer data tracking and
+the old-style packet filtering support.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ include/linux/filter.h     |    6 ++++++
+ include/net/inetpeer.h     |   10 ++++++++++
+ include/net/sock.h         |   10 +++++++++-
+ init/Kconfig               |   16 ++++++++++++++++
+ net/core/Makefile          |    3 ++-
+ net/core/sock.c            |    5 ++++-
+ net/ipv4/Makefile          |    3 ++-
+ net/ipv4/sysctl_net_ipv4.c |    2 ++
+ 8 files changed, 51 insertions(+), 4 deletions(-)
+
+diff --git a/include/linux/filter.h b/include/linux/filter.h
+index 91b2e3b..0370113 100644
+--- a/include/linux/filter.h
++++ b/include/linux/filter.h
+@@ -141,12 +141,18 @@ static inline unsigned int sk_filter_len(struct sk_filter *fp)
+ #define SKF_LL_OFF    (-0x200000)
+ 
+ #ifdef __KERNEL__
++#ifdef CONFIG_NET_SK_FILTER
+ struct sk_buff;
+ struct sock;
+ 
+ extern unsigned int sk_run_filter(struct sk_buff *skb, struct sock_filter *filter, int flen);
+ extern int sk_attach_filter(struct sock_fprog *fprog, struct sock *sk);
+ extern int sk_chk_filter(struct sock_filter *filter, int flen);
++#else
++#define sk_run_filter(a, b, c) (0)
++#define sk_attach_filter(a, b) (-EINVAL)
++#define sk_chk_filter(a, b) (-EINVAL)
++#endif /* NET_SK_FILTER */
+ #endif /* __KERNEL__ */
+ 
+ #endif /* __LINUX_FILTER_H__ */
+diff --git a/include/net/inetpeer.h b/include/net/inetpeer.h
+index aa10a81..f66a7b2 100644
+--- a/include/net/inetpeer.h
++++ b/include/net/inetpeer.h
+@@ -31,6 +31,7 @@ struct inet_peer
+ 	unsigned long		tcp_ts_stamp;
+ };
+ 
++#ifdef CONFIG_INETPEER
+ void			inet_initpeers(void) __init;
+ 
+ /* can be called with or without local BH being disabled */
+@@ -51,5 +52,14 @@ static inline __u16	inet_getid(struct inet_peer *p, int more)
+ 	spin_unlock_bh(&inet_peer_idlock);
+ 	return id;
+ }
++#else
++
++#define inet_getpeer(a, b) (0)
++#define inet_putpeer(b)
++static void inline inet_initpeers(void) { }
++#define inet_getid(a, b) (0)
++
++#endif
++
+ 
+ #endif /* _NET_INETPEER_H */
+diff --git a/include/net/sock.h b/include/net/sock.h
+index 8a71ab3..e4700d1 100644
+--- a/include/net/sock.h
++++ b/include/net/sock.h
+@@ -878,7 +878,7 @@ extern void sock_init_data(struct socket *sock, struct sock *sk);
+  * be accepted or -EPERM if the packet should be tossed.
+  *
+  */
+-
++#ifdef CONFIG_NET_SK_FILTER
+ static inline int sk_filter(struct sock *sk, struct sk_buff *skb)
+ {
+ 	int err;
+@@ -933,6 +933,14 @@ static inline void sk_filter_charge(struct sock *sk, struct sk_filter *fp)
+ 	atomic_inc(&fp->refcnt);
+ 	atomic_add(sk_filter_len(fp), &sk->sk_omem_alloc);
+ }
++#else
++
++#define sk_filter(a, b) (0)
++#define sk_filter_release(a, fp)
++#define sk_filter_charge(a, b)
++
++#endif
++
+ 
+ /*
+  * Socket reference counting postulates.
+diff --git a/init/Kconfig b/init/Kconfig
+index 749d013..223f3c5 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -498,6 +498,22 @@ config NET_SMALL
+ 	help
+ 	  This reduces the size of miscellaneous networking data structures.
+           Currently a placeholder.
++
++config INETPEER
++	default y
++	bool "Enable INET peer information storage" if EMBEDDED
++	help
++ 	  This allows storing various information about network peers.
++ 	  Disabling saves about 2k.
++
++config NET_SK_FILTER
++	default y
++	depends NET
++	bool "Enable network socket filter" if EMBEDDED
++	help
++	 This enables the basic kernel level socket filtering, not to
++	 be confused with netfilter. Required by PPP.
++
+ config ETHTOOL
+ 	depends NET
+ 	default y
+diff --git a/net/core/Makefile b/net/core/Makefile
+index 53ed64c..46db1f8 100644
+--- a/net/core/Makefile
++++ b/net/core/Makefile
+@@ -8,7 +8,7 @@ obj-y := sock.o request_sock.o skbuff.o iovec.o datagram.o stream.o scm.o \
+ obj-$(CONFIG_SYSCTL) += sysctl_net_core.o
+ 
+ obj-y		     += dev.o dev_mcast.o dst.o netevent.o \
+-			neighbour.o rtnetlink.o utils.o link_watch.o filter.o
++			neighbour.o rtnetlink.o utils.o link_watch.o
+ 
+ obj-$(CONFIG_XFRM) += flow.o
+ obj-$(CONFIG_ETHTOOL) += ethtool.o
+@@ -17,3 +17,4 @@ obj-$(CONFIG_NET_PKTGEN) += pktgen.o
+ obj-$(CONFIG_NETPOLL) += netpoll.o
+ obj-$(CONFIG_NET_DMA) += user_dma.o
+ obj-$(CONFIG_FIB_RULES) += fib_rules.o
++obj-$(CONFIG_NET_SK_FILTER) += filter.o
+diff --git a/net/core/sock.c b/net/core/sock.c
+index 190de61..d22d251 100644
+--- a/net/core/sock.c
++++ b/net/core/sock.c
+@@ -426,7 +426,9 @@ int sock_setsockopt(struct socket *sock, int level, int optname,
+ 		    char __user *optval, int optlen)
+ {
+ 	struct sock *sk=sock->sk;
++#ifdef CONFIG_NET_SK_FILTER
+ 	struct sk_filter *filter;
++#endif
+ 	int val;
+ 	int valbool;
+ 	struct linger ling;
+@@ -636,6 +638,7 @@ set_rcvbuf:
+ 		ret = sock_set_timeout(&sk->sk_sndtimeo, optval, optlen);
+ 		break;
+ 
++#ifdef CONFIG_NET_SK_FILTER
+ 	case SO_ATTACH_FILTER:
+ 		ret = -EINVAL;
+ 		if (optlen == sizeof(struct sock_fprog)) {
+@@ -668,7 +671,7 @@ set_rcvbuf:
+ 		else
+ 			clear_bit(SOCK_PASSSEC, &sock->flags);
+ 		break;
+-
++#endif
+ 		/* We implement the SO_SNDLOWAT etc to
+ 		   not be settable (1003.1g 5.3) */
+ 	default:
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index fbf1674..46ebba6 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -2,7 +2,7 @@
+ # Makefile for the Linux TCP/IP (INET) layer.
+ #
+ 
+-obj-y     := route.o inetpeer.o protocol.o \
++obj-y     := route.o protocol.o \
+ 	     ip_input.o ip_fragment.o ip_forward.o ip_options.o \
+ 	     ip_output.o ip_sockglue.o inet_hashtables.o \
+ 	     inet_timewait_sock.o inet_connection_sock.o \
+@@ -14,6 +14,7 @@ obj-y     := route.o inetpeer.o protocol.o \
+ 
+ obj-$(CONFIG_IP_FIB_HASH) += fib_hash.o
+ obj-$(CONFIG_IP_FIB_TRIE) += fib_trie.o
++obj-$(CONFIG_INETPEER) += inetpeer.o
+ obj-$(CONFIG_PROC_FS) += proc.o
+ obj-$(CONFIG_IP_MULTIPLE_TABLES) += fib_rules.o
+ obj-$(CONFIG_IP_MROUTE) += ipmr.o
+diff --git a/net/ipv4/sysctl_net_ipv4.c b/net/ipv4/sysctl_net_ipv4.c
+index 6ea1306..dbfccc6 100644
+--- a/net/ipv4/sysctl_net_ipv4.c
++++ b/net/ipv4/sysctl_net_ipv4.c
+@@ -482,6 +482,7 @@ ctl_table ipv4_table[] = {
+ 	},
+ 
+ #endif
++#ifdef CONFIG_INETPEER
+ 	{
+ 		.ctl_name	= NET_IPV4_IGMP_MAX_MSF,
+ 		.procname	= "igmp_max_msf",
+@@ -534,6 +535,7 @@ ctl_table ipv4_table[] = {
+ 		.proc_handler	= &proc_dointvec_jiffies,
+ 		.strategy	= &sysctl_jiffies
+ 	},
++#endif
+ 	{
+ 		.ctl_name	= NET_TCP_ORPHAN_RETRIES,
+ 		.procname	= "tcp_orphan_retries",
+-- 
+1.6.0.6
+

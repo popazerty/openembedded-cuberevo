@@ -1,0 +1,73 @@
+From 2f19e82c045e54f62446dee07a258046abb24092 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Wed, 29 Oct 2008 16:50:09 +0000
+Subject: [PATCH] mm_bpa2: bigphysarea_alloc/free turned into macros
+
+Legacy bigphysarea_alloc() and bigphysarea_free() functions turned into
+macros in order to simplify following trace mechanism.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ include/linux/bpa2.h |   17 ++++++++++++-----
+ mm/bpa2.c            |   13 -------------
+ 2 files changed, 12 insertions(+), 18 deletions(-)
+
+diff --git a/include/linux/bpa2.h b/include/linux/bpa2.h
+index a8945c1..dccee47 100644
+--- a/include/linux/bpa2.h
++++ b/include/linux/bpa2.h
+@@ -39,13 +39,20 @@ int bpa2_low_part(struct bpa2_part* part);
+ unsigned long bpa2_alloc_pages(struct bpa2_part *part, int count, int align, int priority);
+ void bpa2_free_pages(struct bpa2_part *part, unsigned long base);
+ 
+-/* Backward compatibility APIs */
+ 
+-/* original interface */
+-caddr_t	bigphysarea_alloc(int size);
+-void	bigphysarea_free(caddr_t addr, int size);
+ 
+-/* new interface */
++/*
++ * Backward compatibility interface (bigphysarea)
++ */
++
++/* Original interface */
++#define bigphysarea_alloc(size) \
++		bigphysarea_alloc_pages(PAGE_ALIGN(size) >> PAGE_SHIFT, \
++		1, GFP_KERNEL)
++#define bigphysarea_free(addr, size) \
++		bigphysarea_free_pages(addr)
++
++/* New(er) interface */
+ caddr_t	bigphysarea_alloc_pages(int count, int align, int priority);
+ void	bigphysarea_free_pages(caddr_t base);
+ 
+diff --git a/mm/bpa2.c b/mm/bpa2.c
+index f2a2a4e..cf11f36 100644
+--- a/mm/bpa2.c
++++ b/mm/bpa2.c
+@@ -563,20 +563,7 @@ void bigphysarea_free_pages(caddr_t mapped_addr)
+ }
+ EXPORT_SYMBOL(bigphysarea_free_pages);
+ 
+-caddr_t bigphysarea_alloc(int size)
+-{
+-	int pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+-
+-	return bigphysarea_alloc_pages(pages, 1, GFP_KERNEL);
+-}
+-EXPORT_SYMBOL(bigphysarea_alloc);
+ 
+-void bigphysarea_free(caddr_t addr, int size)
+-{
+-	(void)size;
+-	bigphysarea_free_pages(addr);
+-}
+-EXPORT_SYMBOL(bigphysarea_free);
+ 
+ #ifdef CONFIG_PROC_FS
+ 
+-- 
+1.5.3.6
+

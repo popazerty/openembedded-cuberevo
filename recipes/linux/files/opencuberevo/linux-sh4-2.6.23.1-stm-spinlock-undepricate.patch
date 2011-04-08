@@ -1,0 +1,30 @@
+SPIN_LOCK_UNLOCKED is deprecated since it defeats lockdep state tracking.
+
+Signed-off by: André Draszik <andre.draszik@st.com>
+
+Index: linux-sh4-2.6.23.1_stm23_0102/drivers/stm/710x_fdma2.c
+===================================================================
+--- linux-sh4-2.6.23.1_stm23_0102.orig/drivers/stm/710x_fdma2.c	2007-11-11 16:46:09.946128986 +0000
++++ linux-sh4-2.6.23.1_stm23_0102/drivers/stm/710x_fdma2.c	2007-11-11 16:46:32.447698010 +0000
+@@ -470,7 +470,7 @@ module_exit(xbar_exit)
+ 
+ #endif
+ 
+-static spinlock_t fdma_req_lock = SPIN_LOCK_UNLOCKED;
++static DEFINE_SPINLOCK(fdma_req_lock);
+ 
+ struct stm_dma_req *fdma_req_allocate(unsigned int req_line, struct channel_status *chan)
+ {
+Index: linux-sh4-2.6.23.1_stm23_0102/drivers/stm/pio.c
+===================================================================
+--- linux-sh4-2.6.23.1_stm23_0102.orig/drivers/stm/pio.c	2007-11-11 17:15:15.570019935 +0000
++++ linux-sh4-2.6.23.1_stm23_0102/drivers/stm/pio.c	2007-11-11 17:15:46.072210784 +0000
+@@ -71,7 +71,7 @@ struct stpio_pin {
+ static struct stpio_port stpio_port_confs[STPIO_MAX_PORTS];
+ static int stpio_numports = STPIO_MAX_PORTS;
+ static struct stpio_pin stpio_pin_conf[STPIO_MAX_PORTS*8];
+-static spinlock_t stpio_lock = SPIN_LOCK_UNLOCKED;
++static DEFINE_SPINLOCK(stpio_lock);
+ 
+ #define STPIO_PIN_DETAILS(pin, port, pinno)		\
+ 	unsigned int pinno;				\

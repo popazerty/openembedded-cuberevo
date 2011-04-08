@@ -1,0 +1,101 @@
+Fix issues related to unmapping memory in 32bit mode. This fixes the pmb
+mapping usage count and the code path in iounmap when a pmb style unmapping 
+has been sucessfull. This was done with the help of Stuart.
+
+With this the framebuffer modules unload cleanly.
+
+Signed off by: Stephen Gallimore <Stephen.Gallimore@st.com>
+
+Index: linux-sh4-2.6.23.1_stm23_0102/arch/sh/mm/pmb.c
+===================================================================
+--- linux-sh4-2.6.23.1_stm23_0102.orig/arch/sh/mm/pmb.c
++++ linux-sh4-2.6.23.1_stm23_0102/arch/sh/mm/pmb.c
+@@ -175,6 +175,9 @@ static struct pmb_mapping* pmb_mapping_a
+ 	pmb_mappings_free = mapping->next;
+ 
+ 	memset(mapping, 0, sizeof(*mapping));
++        /* Set the first reference */
++        mapping->usage = 1;
++
+ 	return mapping;
+ }
+ 
+@@ -368,7 +371,7 @@ long pmb_remap(unsigned long phys,
+ 	return mapping->virt + offset;
+ }
+ 
+-void pmb_unmap(unsigned long addr)
++int pmb_unmap(unsigned long addr)
+ {
+ 	struct pmb_mapping *mapping;
+ 	struct pmb_entry *entry;
+@@ -380,17 +383,21 @@ void pmb_unmap(unsigned long addr)
+ 	}
+ 
+ 	if (unlikely(!mapping))
+-		return;
++		return 0;
+ 
+ 	if (--mapping->usage == 0)
++	{
+ 		pmb_clear_mapping(mapping);
+ 
+-	entry = mapping->entries;
+-	do {
+-		pmb_free(entry->pos);
+-		entry = entry->next;
+-	} while (entry);
+-	pmb_mapping_free(mapping);
++		entry = mapping->entries;
++		do {
++			pmb_free(entry->pos);
++			entry = entry->next;
++		} while (entry);
++		pmb_mapping_free(mapping);
++	}
++
++	return 1;
+ }
+ 
+ static void noinline __uses_jump_to_uncached
+Index: linux-sh4-2.6.23.1_stm23_0102/arch/sh/mm/ioremap.c
+===================================================================
+--- linux-sh4-2.6.23.1_stm23_0102.orig/arch/sh/mm/ioremap.c
++++ linux-sh4-2.6.23.1_stm23_0102/arch/sh/mm/ioremap.c
+@@ -147,21 +147,8 @@ void __iounmap(void __iomem *addr)
+ #endif
+ 
+ #ifdef CONFIG_32BIT
+-	/*
+-	 * Purge any PMB entries that may have been established for this
+-	 * mapping, then proceed with conventional VMA teardown.
+-	 *
+-	 * XXX: Note that due to the way that remove_vm_area() does
+-	 * matching of the resultant VMA, we aren't able to fast-forward
+-	 * the address past the PMB space until the end of the VMA where
+-	 * the page tables reside. As such, unmap_vm_area() will be
+-	 * forced to linearly scan over the area until it finds the page
+-	 * tables where PTEs that need to be unmapped actually reside,
+-	 * which is far from optimal. Perhaps we need to use a separate
+-	 * VMA for the PMB mappings?
+-	 *					-- PFM.
+-	 */
+-	pmb_unmap(vaddr);
++	if(pmb_unmap(vaddr))
++	  return;
+ #endif
+ 
+ 	p = remove_vm_area((void *)(vaddr & PAGE_MASK));
+Index: linux-sh4-2.6.23.1_stm23_0102/include/asm-sh/mmu.h
+===================================================================
+--- linux-sh4-2.6.23.1_stm23_0102.orig/include/asm-sh/mmu.h
++++ linux-sh4-2.6.23.1_stm23_0102/include/asm-sh/mmu.h
+@@ -41,7 +41,7 @@ typedef struct {
+ 
+ /* arch/sh/mm/pmb.c */
+ long pmb_remap(unsigned long phys, unsigned long size, unsigned long flags);
+-void pmb_unmap(unsigned long addr);
++int  pmb_unmap(unsigned long addr);
+ void pmb_init(void);
+ 
+ #endif /* __MMU_H */

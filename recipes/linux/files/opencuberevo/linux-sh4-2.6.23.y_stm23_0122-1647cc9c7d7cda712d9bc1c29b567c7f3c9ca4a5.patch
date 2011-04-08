@@ -1,0 +1,2528 @@
+From 1647cc9c7d7cda712d9bc1c29b567c7f3c9ca4a5 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 11 Nov 2009 17:04:23 +0000
+Subject: [PATCH] sh_stm: Initial STx7106 support (as a STx7105 version)
+
+This patch adds an inital support for STx7106 chip, treating
+it as a STx7105 variant (as it was in STx7100/STx7109 case).
+Part of the BSP API had to been modified (all the relevant
+board files have been updated).
+
+It also cleans up the code in align with kernel coding
+convention.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/boards/st/common/common.h            |    4 +
+ arch/sh/boards/st/common/mb705-audio.c       |   10 +-
+ arch/sh/boards/st/common/mb705.c             |    2 +-
+ arch/sh/boards/st/hmp7105/setup.c            |   11 +-
+ arch/sh/boards/st/ipidtv7105/setup.c         |   72 +-
+ arch/sh/boards/st/mb680/setup.c              |   47 +-
+ arch/sh/boards/st/mb839/setup.c              |   15 +-
+ arch/sh/boards/st/pdk7105/setup.c            |   19 +-
+ arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c |    2 +-
+ arch/sh/kernel/cpu/sh4/probe.c               |    5 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c       | 1304 ++++++++++++++++----------
+ arch/sh/kernel/setup.c                       |    2 +-
+ arch/sh/mm/Kconfig                           |   18 +-
+ include/asm-sh/irq-ilc.h                     |    2 +-
+ include/asm-sh/processor.h                   |    3 +-
+ include/linux/stm/soc.h                      |  113 ++-
+ 16 files changed, 991 insertions(+), 638 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/common.h b/arch/sh/boards/st/common/common.h
+index cd6b193..02b3226 100644
+--- a/arch/sh/boards/st/common/common.h
++++ b/arch/sh/boards/st/common/common.h
+@@ -17,4 +17,8 @@ void epld_early_init(struct platform_device *device);
+ 
+ void harp_init_irq(void);
+ 
++/* peripheral boards callbacks */
++
++void mbxxx_configure_audio_pins(void);
++
+ #endif
+diff --git a/arch/sh/boards/st/common/mb705-audio.c b/arch/sh/boards/st/common/mb705-audio.c
+index 8f0bec0..1f35995 100644
+--- a/arch/sh/boards/st/common/mb705-audio.c
++++ b/arch/sh/boards/st/common/mb705-audio.c
+@@ -115,12 +115,6 @@ static struct snd_stm_conv_ops mb705_audio_enable_mute_ops = {
+ 
+ static int __init mb705_audio_init(void)
+ {
+-#ifndef CONFIG_SH_ST_MB680
+-	/* So far this code is supporting mb705 in a duet with mb680 only! */
+-	BUG();
+-	return -ENODEV;
+-#endif
+-
+ 	/* Check the SPDIF test mode */
+ 	if ((epld_read(EPLD_AUDIO_SWITCH2) & (EPLD_AUDIO_SWITCH1_SW21 |
+ 			EPLD_AUDIO_SWITCH1_SW22 | EPLD_AUDIO_SWITCH1_SW23 |
+@@ -165,9 +159,9 @@ static int __init mb705_audio_init(void)
+ 		goto error;
+ 	}
+ 
+-	/* Configure digital audio pins (multiplexed with PIOs now...) */
++	/* To be defined in processor board, which knows what SOC is there... */
++	mbxxx_configure_audio_pins();
+ 
+-	stx7105_configure_audio_pins(3, 1, 1);
+ 
+ 	return 0;
+ 
+diff --git a/arch/sh/boards/st/common/mb705.c b/arch/sh/boards/st/common/mb705.c
+index 97e65b2..8b73a04 100644
+--- a/arch/sh/boards/st/common/mb705.c
++++ b/arch/sh/boards/st/common/mb705.c
+@@ -280,7 +280,7 @@ static int __init mb705_init(void)
+ 	int i;
+ 
+ 	/* So far valid only for 7105 processor board! */
+-	BUG_ON(cpu_data->type != CPU_STX7105);
++	BUG_ON(cpu_data->type != CPU_STX7105 && cpu_data->type != CPU_STX7106);
+ 
+ 	/* We are't actually doing this early here... */
+ 	epld_early_init(&epld_device);
+diff --git a/arch/sh/boards/st/hmp7105/setup.c b/arch/sh/boards/st/hmp7105/setup.c
+index 0abb684..137c857 100644
+--- a/arch/sh/boards/st/hmp7105/setup.c
++++ b/arch/sh/boards/st/hmp7105/setup.c
+@@ -53,19 +53,20 @@ static struct plat_ssc_data ssc_private_info = {
+ 		ssc2_has(SSC_I2C_CAPABILITY) |
+ 		ssc3_has(SSC_I2C_CAPABILITY),
+ 	.routing =
+-		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7 | SSC3_MRST_PIO3_7,
++		SSC2_SCLK_PIO3_4 | SSC2_MTSR_PIO3_5 |
++		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7,
+ };
+ 
+ static struct usb_init_data usb_init[2] __initdata = {
+ 	{
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB0_OC_PIO4_4,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB0_PWR_PIO4_5,
+ 	}, {
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB1_OC_PIO4_6,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB1_PWR_PIO4_7,
+@@ -235,7 +236,7 @@ lirc_scd_t lirc_scd = {
+ 
+ static int __init device_init(void)
+ {
+-	stx7105_configure_sata();
++	stx7105_configure_sata(0);
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+ 
+@@ -255,7 +256,7 @@ static int __init device_init(void)
+ 	stx7105_configure_usb(1, &usb_init[1]);
+ 
+ 	phy_reset = stpio_request_pin(11, 0, "ResetMII", STPIO_OUT);
+-	stx7105_configure_ethernet(0, 0, 0, 0, 1, 0, 1);
++	stx7105_configure_ethernet(0, stx7105_ethernet_mii, 1, 0, 1, 0);
+ 
+ 	stx7105_configure_lirc(&lirc_scd);
+ 
+diff --git a/arch/sh/boards/st/ipidtv7105/setup.c b/arch/sh/boards/st/ipidtv7105/setup.c
+index d89077e..d7cb673 100644
+--- a/arch/sh/boards/st/ipidtv7105/setup.c
++++ b/arch/sh/boards/st/ipidtv7105/setup.c
+@@ -63,19 +63,20 @@ static struct plat_ssc_data ssc_private_info = {
+ 		ssc2_has(SSC_I2C_CAPABILITY) |
+ 		ssc3_has(SSC_I2C_CAPABILITY),
+ 	.routing =
+-		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7 | SSC3_MRST_PIO3_7,
++		SSC2_SCLK_PIO3_4 | SSC2_MTSR_PIO3_5 |
++		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7,
+ };
+ 
+ static struct usb_init_data usb_init[2] __initdata = {
+ 	{
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB0_OC_PIO4_4,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB0_PWR_PIO4_5,
+ 	}, {
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB1_OC_PIO4_6,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB1_PWR_PIO4_7,
+@@ -236,7 +237,7 @@ static struct pci_config_data ipidtv7105_pci_config = {
+ 	.pci_clk = 33333333,
+ 	.pci_reset_gpio = IPIDTV7105_GPIO_PCI_RESET,
+ };
+-  
++
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+ {
+        /* We can use the standard function on this board */
+@@ -245,47 +246,48 @@ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+ 
+ static int __init device_init(void)
+ {
+- 	/* The IDSEL line is connected to PIO10.2 only... Luckily
+- 	 * there is just one slot, so we can just force 1... */
+- 	if (gpio_request(IPIDTV7105_GPIO_PCI_IDSEL, "PCI_IDSEL") == 0)
+- 		gpio_direction_output(IPIDTV7105_GPIO_PCI_IDSEL, 1);
+- 	else
+- 		printk(KERN_ERR "ipidtv7105: Failed to claim PCI_IDSEL PIO!\n");
+- 	/* Setup the PCI_SERR# PIO */
+- 	if (gpio_request(IPIDTV7105_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
+- 		gpio_direction_input(IPIDTV7105_GPIO_PCI_SERR);
+- 		ipidtv7105_pci_config.serr_irq =
+- 				gpio_to_irq(IPIDTV7105_GPIO_PCI_SERR);
+- 		set_irq_type(ipidtv7105_pci_config.serr_irq,
+- 				IRQ_TYPE_LEVEL_LOW);
+- 	} else {
+- 		printk(KERN_ERR "ipidtv7105: Failed to claim PCI SERR PIO!\n");
+- 	}
+- 	/* And finally! */
+- 	stx7105_configure_pci(&ipidtv7105_pci_config);
+-
+-	stx7105_configure_sata();
++	/* The IDSEL line is connected to PIO10.2 only... Luckily
++	 * there is just one slot, so we can just force 1... */
++	if (gpio_request(IPIDTV7105_GPIO_PCI_IDSEL, "PCI_IDSEL") == 0)
++		gpio_direction_output(IPIDTV7105_GPIO_PCI_IDSEL, 1);
++	else
++		printk(KERN_ERR "ipidtv7105: Failed to claim PCI_IDSEL PIO!\n");
++	/* Setup the PCI_SERR# PIO */
++	if (gpio_request(IPIDTV7105_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
++		gpio_direction_input(IPIDTV7105_GPIO_PCI_SERR);
++		ipidtv7105_pci_config.serr_irq =
++				gpio_to_irq(IPIDTV7105_GPIO_PCI_SERR);
++		set_irq_type(ipidtv7105_pci_config.serr_irq,
++				IRQ_TYPE_LEVEL_LOW);
++	} else {
++		printk(KERN_ERR "ipidtv7105: Failed to claim PCI SERR PIO!\n");
++	}
++	/* And finally! */
++	stx7105_configure_pci(&ipidtv7105_pci_config);
++
++	stx7105_configure_sata(0);
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+ 
+ 	stx7105_configure_usb(0, &usb_init[0]);
+ 	stx7105_configure_usb(1, &usb_init[1]);
+ 
+- 	if (gpio_request(IPIDTV7105_GPIO_POWER_ON_ETH, "POWER_ON_ETH") == 0)
+- 		gpio_direction_output(IPIDTV7105_GPIO_POWER_ON_ETH, 1);
+- 	else
+- 		printk(KERN_ERR "ipidtv7105: Failed to claim POWER_ON_ETH "
+- 				"PIO!\n");
+-	stx7105_configure_ethernet(0, 0, 0, 0, 0, 0, 0);
+- 	stx7105_configure_audio_pins(1, 0, 0);
++	if (gpio_request(IPIDTV7105_GPIO_POWER_ON_ETH, "POWER_ON_ETH") == 0)
++		gpio_direction_output(IPIDTV7105_GPIO_POWER_ON_ETH, 1);
++	else
++		printk(KERN_ERR "ipidtv7105: Failed to claim POWER_ON_ETH "
++				"PIO!\n");
++	stx7105_configure_ethernet(0, stx7105_ethernet_mii, 0, 0, 0, 0);
+ 
+ 	stx7105_configure_lirc(&lirc_scd);
+ 
++	stx7105_configure_audio_pins(3, 0, 1, 1);
++
+ 	/* just permanetly enable the flash*/
+- 	if (gpio_request(IPIDTV7105_GPIO_FLASH_WP, "FLASH_WP") == 0)
+- 		gpio_direction_output(IPIDTV7105_GPIO_FLASH_WP, 1);
+- 	else
+- 		printk(KERN_ERR "ipidtv7105: Failed to claim FLASH_WP PIO!\n");
++	if (gpio_request(IPIDTV7105_GPIO_FLASH_WP, "FLASH_WP") == 0)
++		gpio_direction_output(IPIDTV7105_GPIO_FLASH_WP, 1);
++	else
++		printk(KERN_ERR "ipidtv7105: Failed to claim FLASH_WP PIO!\n");
+ 
+ 	stx7105_configure_nand(&nand_device);
+ 
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index ce9f6ed..86c1b10 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -53,24 +53,25 @@ static struct plat_stm_pwm_data pwm_private_info = {
+ 
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  =
+-		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc0_has(SSC_UNCONFIGURED) |
+ 		ssc1_has(SSC_I2C_CAPABILITY) |
+ 		ssc2_has(SSC_I2C_CAPABILITY) |
+ 		ssc3_has(SSC_I2C_CAPABILITY),
+ 	.routing =
+-		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7 | SSC3_MRST_PIO3_7,
++		SSC2_SCLK_PIO3_4 | SSC2_MTSR_PIO3_5 |
++		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7,
+ };
+ 
+ static struct usb_init_data usb_init[2] __initdata = {
+ 	{
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB0_OC_PIO4_4,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB0_PWR_PIO4_5,
+ 	}, {
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB1_OC_PIO4_6,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB1_PWR_PIO4_7,
+@@ -155,7 +156,7 @@ static struct platform_device mb680_phy_device = {
+ 	.resource	= (struct resource[]) {
+ 		{
+ 			.name	= "phyirq",
+-			.start	= -1,/*FIXME, should be ILC_EXT_IRQ(6), */
++			.start	= -1, /*FIXME, should be ILC_EXT_IRQ(6), */
+ 			.end	= -1,
+ 			.flags	= IORESOURCE_IRQ,
+ 		},
+@@ -171,7 +172,7 @@ static struct platform_device *mb680_devices[] __initdata = {
+ };
+ 
+ /* Configuration based on Futarque-RC signals train. */
+-lirc_scd_t lirc_scd = {
++static lirc_scd_t mb680_lirc_scd = {
+ 	.code = 0x3FFFC028,
+ 	.codelen = 0x1e,
+ 	.alt_codelen = 0,
+@@ -223,20 +224,29 @@ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+        return  stx7105_pcibios_map_platform_irq(&mb680_pci_config, pin);
+ }
+ 
++void __init mbxxx_configure_audio_pins(void)
++{
++	stx7105_configure_audio_pins(3, 0, 1, cpu_data->type == CPU_STX7105);
++}
++
+ static int __init device_init(void)
+ {
+- 	/* Setup the PCI_SERR# PIO
+- 	 * J20-A - open, J27-E - closed */
+- 	if (gpio_request(MB680_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
+- 		gpio_direction_input(MB680_GPIO_PCI_SERR);
+- 		mb680_pci_config.serr_irq = gpio_to_irq(MB680_GPIO_PCI_SERR);
+- 		set_irq_type(mb680_pci_config.serr_irq, IRQ_TYPE_LEVEL_LOW);
+- 	} else {
+- 		printk(KERN_WARNING "mb680: Failed to claim PCI_SERR PIO!\n");
+- 	}
++	/* Setup the PCI_SERR# PIO
++	 * J20-A - open, J27-E - closed */
++	if (gpio_request(MB680_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
++		gpio_direction_input(MB680_GPIO_PCI_SERR);
++		mb680_pci_config.serr_irq = gpio_to_irq(MB680_GPIO_PCI_SERR);
++		set_irq_type(mb680_pci_config.serr_irq, IRQ_TYPE_LEVEL_LOW);
++	} else {
++		printk(KERN_WARNING "mb680: Failed to claim PCI_SERR PIO!\n");
++	}
+ 	stx7105_configure_pci(&mb680_pci_config);
+ 
+-	stx7105_configure_sata();
++	stx7105_configure_sata(0);
++
++	/* Valid only for mb680 rev. A & rev. B (they had two SATA lines) */
++	stx7105_configure_sata(1);
++
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+ 
+@@ -251,15 +261,14 @@ static int __init device_init(void)
+ 	 * norm	|  4[5]	J5B:2-3			 4[7]	J10B:2-3
+ 	 * alt	| 12[6]	J5B:1-2  J6G:open	14[7]	J10B:1-2  J11H:open
+ 	 */
+-
+ 	stx7105_configure_usb(0, &usb_init[0]);
+ 	stx7105_configure_usb(1, &usb_init[1]);
+ 
+ 	phy_reset = stpio_request_set_pin(5, 5, "ResetMII", STPIO_OUT, 1);
+ 	switch_en = stpio_request_set_pin(11, 2, "MIIBusSwitch", STPIO_OUT, 1);
+-	stx7105_configure_ethernet(0, 0, 0, 0, 1, 0, 0);
++	stx7105_configure_ethernet(0, stx7105_ethernet_mii, 1, 0, 0, 0);
+ 
+-	stx7105_configure_lirc(&lirc_scd);
++	stx7105_configure_lirc(&mb680_lirc_scd);
+ 
+ 	return platform_add_devices(mb680_devices, ARRAY_SIZE(mb680_devices));
+ }
+diff --git a/arch/sh/boards/st/mb839/setup.c b/arch/sh/boards/st/mb839/setup.c
+index ee1865f..feaae63 100644
+--- a/arch/sh/boards/st/mb839/setup.c
++++ b/arch/sh/boards/st/mb839/setup.c
+@@ -48,20 +48,23 @@ static struct plat_ssc_data ssc_private_info = {
+ 	.capability =
+ 	    ssc0_has(SSC_I2C_CAPABILITY) |
+ 	    ssc1_has(SSC_I2C_CAPABILITY) |
+-	    ssc2_has(SSC_I2C_CAPABILITY) | ssc3_has(SSC_I2C_CAPABILITY),
+-	.routing = SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7 | SSC3_MRST_PIO3_7,
++	    ssc2_has(SSC_I2C_CAPABILITY) |
++	    ssc3_has(SSC_I2C_CAPABILITY),
++	.routing =
++		SSC2_SCLK_PIO3_4 | SSC2_MTSR_PIO3_5 |
++		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7,
+ };
+ 
+ static struct usb_init_data usb_init[2] __initdata = {
+ 	{
+ 	 .oc_en = 1,
+-	 .oc_actlow = 0,
++	 .oc_actlow = 1,
+ 	 .oc_pinsel = USB0_OC_PIO4_4,
+ 	 .pwr_en = 1,
+ 	 .pwr_pinsel = USB0_PWR_PIO4_5,
+ 	 }, {
+ 	     .oc_en = 1,
+-	     .oc_actlow = 0,
++	     .oc_actlow = 1,
+ 	     .oc_pinsel = USB1_OC_PIO4_6,
+ 	     .pwr_en = 1,
+ 	     .pwr_pinsel = USB1_PWR_PIO4_7,
+@@ -210,7 +213,7 @@ lirc_scd_t lirc_scd = {
+ 
+ static int __init device_init(void)
+ {
+-	stx7105_configure_sata();
++	stx7105_configure_sata(0);
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+ 
+@@ -222,7 +225,7 @@ static int __init device_init(void)
+ 	phy_mode2 = stpio_request_pin(7, 2, "PhyMode2Sel", STPIO_OUT);
+ 	phy_reset = stpio_request_pin(7, 3, "ResetMII", STPIO_OUT);
+ 
+-	stx7105_configure_ethernet(0, 0, 0, 0, 1, 0, 0);
++	stx7105_configure_ethernet(0, stx7105_ethernet_mii, 1, 0, 0, 0);
+ 
+ 	stx7105_configure_lirc(&lirc_scd);
+ 
+diff --git a/arch/sh/boards/st/pdk7105/setup.c b/arch/sh/boards/st/pdk7105/setup.c
+index d84e100..3ddd915 100644
+--- a/arch/sh/boards/st/pdk7105/setup.c
++++ b/arch/sh/boards/st/pdk7105/setup.c
+@@ -79,19 +79,20 @@ static struct plat_ssc_data ssc_private_info = {
+ 		ssc2_has(SSC_I2C_CAPABILITY) |
+ 		ssc3_has(SSC_I2C_CAPABILITY),
+ 	.routing =
+-		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7 | SSC3_MRST_PIO3_7,
++		SSC2_SCLK_PIO3_4 | SSC2_MTSR_PIO3_5 |
++		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7,
+ };
+ 
+ static struct usb_init_data usb_init[2] __initdata = {
+ 	{
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB0_OC_PIO4_4,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB0_PWR_PIO4_5,
+ 	}, {
+ 		.oc_en = 1,
+-		.oc_actlow = 0,
++		.oc_actlow = 1,
+ 		.oc_pinsel = USB1_OC_PIO4_6,
+ 		.pwr_en = 1,
+ 		.pwr_pinsel = USB1_PWR_PIO4_7,
+@@ -330,7 +331,7 @@ static struct platform_device *pdk7105_devices[] __initdata = {
+ };
+ 
+ /* Configuration based on Futarque-RC signals train. */
+-lirc_scd_t lirc_scd = {
++static lirc_scd_t lirc_scd = {
+ 	.code = 0x3FFFC028,
+ 	.codelen = 0x1e,
+ 	.alt_codelen = 0,
+@@ -362,7 +363,7 @@ static struct pci_config_data pdk7105_pci_config = {
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+ {
+ 	/* We can use the standard function on this board */
+- 	return stx7105_pcibios_map_platform_irq(&pdk7105_pci_config, pin);
++	return stx7105_pcibios_map_platform_irq(&pdk7105_pci_config, pin);
+ }
+ 
+ static int __init device_init(void)
+@@ -393,14 +394,14 @@ static int __init device_init(void)
+ 	if (gpio_request(PDK7105_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
+ 		gpio_direction_input(PDK7105_GPIO_PCI_SERR);
+ 		pdk7105_pci_config.serr_irq =
+-			gpio_to_irq(PDK7105_GPIO_PCI_SERR);
++				gpio_to_irq(PDK7105_GPIO_PCI_SERR);
+ 		set_irq_type(pdk7105_pci_config.serr_irq, IRQ_TYPE_LEVEL_LOW);
+ 	} else {
+ 		printk(KERN_WARNING "pdk7105: Failed to claim PCI SERR PIO!\n");
+ 	}
+ 	stx7105_configure_pci(&pdk7105_pci_config);
+ 
+-	stx7105_configure_sata();
++	stx7105_configure_sata(0);
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+ 
+@@ -420,9 +421,9 @@ static int __init device_init(void)
+ 
+ 	phy_reset_pin = stpio_request_set_pin(15, 5, "eth_phy_reset",
+ 					      STPIO_OUT, 1);
+-	stx7105_configure_ethernet(0, 0, 0, 0, 0, 0, 0);
++	stx7105_configure_ethernet(0, stx7105_ethernet_mii, 0, 0, 0, 0);
+ 	stx7105_configure_lirc(&lirc_scd);
+-	stx7105_configure_audio_pins(3, 1, 1);
++	stx7105_configure_audio_pins(0, 0, 1, 0);
+ 
+ 	/*
+ 	 * FLASH_WP is shared by NOR and NAND.  However, since MTD NAND has no
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
+index 78ecab9..af1e6b9 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
+@@ -15,7 +15,7 @@ emi_pwr_dwn_req(struct platform_device *dev, int host_phy, int dwn)
+ {
+ 	static struct sysconf_field *sc;
+ 	if (!sc)
+-		sc = sysconf_claim(SYS_CFG, 12, 1, 1, "emi pwr req");
++		sc = sysconf_claim(SYS_CFG, 32, 1, 1, "emi pwr req");
+ 
+ 	sysconf_write(sc, (dwn ? 1 : 0));
+ 	return 0;
+diff --git a/arch/sh/kernel/cpu/sh4/probe.c b/arch/sh/kernel/cpu/sh4/probe.c
+index 6788980..f813564 100644
+--- a/arch/sh/kernel/cpu/sh4/probe.c
++++ b/arch/sh/kernel/cpu/sh4/probe.c
+@@ -156,7 +156,7 @@ int __init detect_cpu_and_cache_system(void)
+ 		boot_cpu_data.type = CPU_ST40GX1;
+ 		boot_cpu_data.flags |= CPU_HAS_FPU;
+ 		break;
+-	case 0x9090 ... 0x9092:
++	case 0x9090 ... 0x9093:
+ 		/* ST40-300 core */
+ 		switch (prr_all) {
+ 		case 0x0010:
+@@ -188,6 +188,9 @@ int __init detect_cpu_and_cache_system(void)
+ 			/* 5197 (cut 2.0 = 0x9f02) */
+ 			cpu_data->type = CPU_STX5197;
+ 			break;
++		case 0xa100 ... 0xa1ff:
++			boot_cpu_data.type = CPU_STX7106;
++			break;
+ 		default:
+ 			cpu_data->type = CPU_SH_NONE;
+ 			break;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index cd0a548..8a5a4d7 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1,8 +1,9 @@
+ /*
+- * STx7105 Setup
++ * STx7105/STx7106 Setup
+  *
+  * Copyright (C) 2008 STMicroelectronics Limited
+- * Author: Stuart Menefy <stuart.menefy@st.com>
++ * Authors: Stuart Menefy <stuart.menefy@st.com>
++ *          Pawel Moll <pawel.moll@st.com>
+  *
+  * This file is subject to the terms and conditions of the GNU General Public
+  * License.  See the file "COPYING" in the main directory of this archive
+@@ -27,70 +28,89 @@
+ #include <linux/delay.h>
+ #include <asm/irq-ilc.h>
+ 
+-static u64 st40_dma_mask = DMA_32BIT_MASK;
++
++
++#define STX7105 (cpu_data->type == CPU_STX7105)
++
++
+ 
+ static struct {
+-	unsigned char syscfg;
+-	unsigned char max_alt;
+-	unsigned char bits;
+-} pio_sysconf[] = {
+-	[0] = { 19, 5, 2},
+-	[1] = { 20, 4, 2},
+-	[2] = { 21, 3, 2},
+-	[3] = { 25, 4, 2},
+-	[4] = { 34, 4, 2},
+-	[5] = { 35, 4, 2},
+-	[6] = { 36, 6, 2},
+-	[7] = { 37, 5, 2},
+-	[8] = { 46, 3, 2},
+-	[9] = { 47, 3, 2},
+-	[10] = { 0, 1, 0 },
+-	[11] = { 0 /* 5[29] */ , 2, 0 },
+-	[12] = { 48, 4, 3},
+-	[13] = { 49, 4, 3},
+-	[14] = { 0, 2/5, 0},
+-	[15] = { 50, 4, 2},
+-	[16] = { 0, 2/5, 0},
++	u8 sys_cfg;
++	u8 alt_max;
++} stx7105_pio_sysconf_data[] = {
++	[0] = { 19, 5 },
++	[1] = { 20, 4 },
++	[2] = { 21, 4 },
++	[3] = { 25, 4 },
++	[4] = { 34, 4 },
++	[5] = { 35, 4 },
++	[6] = { 36, 4 },
++	[7] = { 37, 4 },
++	[8] = { 46, 3 },
++	[9] = { 47, 4 },
++	[10] = { 39, 2 },
++	[11] = { 53, 4 },
++	[12] = { 48, 5 },
++	[13] = { 49, 5 },
++	[14] = { 0, 1 },
++	[15] = { 50, 4 },
++	[16] = { 54, 2 },
+ };
+ 
+-static void stx7105_pio_sysconf(int bank, int pin, int alt, const char* name)
++static void __init stx7105_pio_sysconf(int port, int pin, int alt,
++		const char *name)
+ {
+-	int cfg = pio_sysconf[bank].syscfg;
+-	struct sysconf_field *sc[3];
++	struct sysconf_field *sc;
++	int sys_cfg, alt_max;
+ 
+-	if ((cfg == 0) || (alt == -1))
++	BUG_ON(port < 0 || port >= ARRAY_SIZE(stx7105_pio_sysconf_data));
++	BUG_ON(pin < 0 || pin > 7);
++
++	if (port == 14 && alt == 2)
++		alt = 1;
++
++	sys_cfg = stx7105_pio_sysconf_data[port].sys_cfg;
++	alt_max = stx7105_pio_sysconf_data[port].alt_max;
++
++	if ((sys_cfg == 0) || (alt == -1))
+ 		return;
+ 
+-	sc[0] = sysconf_claim(SYS_CFG, cfg, pin, pin, name);
+-	sc[1] = sysconf_claim(SYS_CFG, cfg, pin+8, pin+8, name);
+-	sc[2] = sysconf_claim(SYS_CFG, cfg, pin+16, pin+16, name);
+-	sysconf_write(sc[0], (alt-1) & 1);
+-	sysconf_write(sc[1], ((alt-1) >> 1) & 1);
+-	sysconf_write(sc[2], ((alt-1) >> 2) & 1);
+-}
++	BUG_ON(alt < 1 || alt > alt_max);
+ 
+-/* Most of the PIO pins are sane in that alternative 1 is 0 alternative2 is 1,
+- * etc. However, there are some where the alternatives are not fully specified
+- * so alternative 3 is 0 etc. This function just wraps the above to add one
+- * so you can pass in what the datasheet says.
+- */
+-static inline void stx7105_pio_sysconf_alt(int bank, int pin, int alt_val, const char *name)
+-{
+-	stx7105_pio_sysconf(bank, pin, alt_val + 1, name);
++	alt--;
++
++	if (alt_max > 1) {
++		sc = sysconf_claim(SYS_CFG, sys_cfg, pin, pin, name);
++		BUG_ON(!sc);
++		sysconf_write(sc, alt & 1);
++	}
++
++	if (alt_max > 2) {
++		sc = sysconf_claim(SYS_CFG, sys_cfg, pin + 8, pin + 8, name);
++		BUG_ON(!sc);
++		sysconf_write(sc, (alt >> 1) & 1);
++	}
++
++	if (alt_max > 4) {
++		sc = sysconf_claim(SYS_CFG, sys_cfg, pin + 16, pin + 16, name);
++		BUG_ON(!sc);
++		sysconf_write(sc, (alt >> 2) & 1);
++	}
+ }
+ 
+ 
+ 
++/* USB resources ---------------------------------------------------------- */
+ 
+-/* USB resources ----------------------------------------------------------- */
++static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
+-#define UHOST2C_BASE(N)			(0xfe100000 + ((N)*0x00900000))
++#define UHOST2C_BASE(N)			(0xfe100000 + ((N) * 0x00900000))
+ #define AHB2STBUS_WRAPPER_GLUE_BASE(N)  (UHOST2C_BASE(N))
+ #define AHB2STBUS_OHCI_BASE(N)          (UHOST2C_BASE(N) + 0x000ffc00)
+ #define AHB2STBUS_EHCI_BASE(N)          (UHOST2C_BASE(N) + 0x000ffe00)
+ #define AHB2STBUS_PROTOCOL_BASE(N)      (UHOST2C_BASE(N) + 0x000fff00)
+ 
+-static struct platform_device usb_device[2] = {
++static struct platform_device stx7105_usb_devices[] = {
+ 	USB_DEVICE(0, AHB2STBUS_EHCI_BASE(0), evt2irq(0x1720),
+ 		      AHB2STBUS_OHCI_BASE(0), evt2irq(0x1700),
+ 		      AHB2STBUS_WRAPPER_GLUE_BASE(0),
+@@ -104,88 +124,115 @@ static struct platform_device usb_device[2] = {
+ 		      USB_FLAGS_STRAP_8BIT |
+ 		      USB_FLAGS_STBUS_CONFIG_THRESHOLD128)
+ };
++
+ /**
+  * stx7105_configure_usb - Configure a USB port
+  * @port: USB port number (0 or 1)
+  * @init_data: details of how to configure port
+  *
+- * Configure a USB port. Pins:
+- *		  PORT 0	PORT 1
+- *		+-------------------------
+- * OC	normal	|  4[4]		 4[6]
+- *	alt	| 12[5]		14[6]
+- * PWR	normal	|  4[5]		 4[7]
+- *	alt	| 12[6]		14[7]
++ * Configure a USB port.
++ *
++ * 		  PORT 0	  PORT 1
++ *		+-----------------------+-----------+
++ * OC (input)	| PIO4.4                | PIO4.6    |
++ *		| PIO12.5               | PIO14.6   |
++ *		| PIO14.4 (7106 only)   |           |
++ *		+-----------------------+-----------+
++ * PWR (output)	| PIO4.5@4              | PIO4.7@4  |
++ *	@alt	| PIO12.6@3             | PIO14.7@1 |
++ *		| PIO14.5@1 (7106 only) |           |
++ *		+-----------------------+-----------+
+  */
+ void __init stx7105_configure_usb(int port, struct usb_init_data *data)
+ {
+-	static struct stpio_pin *pin;
+ 	struct sysconf_field *sc;
+ 
++	BUG_ON(port < 0 || port > 1);
++
+ 	/* USB PHY clock from alternate pad? */
+-	/* sysconf_claim(SYS_CFG, 40, 2,2, "USB"); */
++	/* sysconf_claim(SYS_CFG, 40, 2, 2, "USB"); */
+ 
+ #ifndef CONFIG_PM
+ 	/* Power up USB PHY */
+-	sc = sysconf_claim(SYS_CFG, 32, 6+port,6+port, "USB");
++	sc = sysconf_claim(SYS_CFG, 32, 6 + port, 6 + port, "USB");
+ 	sysconf_write(sc, 0);
+ 
+ 	/* Power up USB host */
+-	sc = sysconf_claim(SYS_CFG, 32, 4+port,4+port, "USB");
++	sc = sysconf_claim(SYS_CFG, 32, 4 + port, 4 + port, "USB");
+ 	sysconf_write(sc, 0);
+ #endif
+ 
+ 	/* USB overcurrent enable */
+-	sc = sysconf_claim(SYS_CFG, 4, 11+port,11+port, "USBOC");
+-	sysconf_write(sc, data->oc_en);
++	sc = sysconf_claim(SYS_CFG, 4, 11 + port, 11 + port, "USBOC");
++	sysconf_write(sc, data->oc_en ? 1 : 0);
+ 
+ 	if (data->oc_en) {
+ 		const struct {
+-			int portno;
+-			int pinno;
+-			int alt;
+-		} oc_pio[2][2] = {
+-			{ { 4, 4, 4 }, { 12, 5, 3 } },
+-			{ { 4, 6, 4 }, { 14, 6, 2 } }
++			int pios_num;
++			struct {
++				int port;
++				int pin;
++			} pios[3];
++		} oc_pins[2] = {
++			{ 3, { { 4, 4 }, { 12, 5 }, { 14, 4 } } },
++			{ 2, { { 4, 6 }, { 14, 6 } } }
+ 		};
+-
+-		int oc_portno = oc_pio[port][data->oc_pinsel].portno;
+-		int oc_pinno  = oc_pio[port][data->oc_pinsel].pinno;
+-		int oc_alt = oc_pio[port][data->oc_pinsel].alt;
+-
+-		sc = sysconf_claim(SYS_CFG, 4, 5+port,5+port, "USBOC");
++		int sysconf_bit = (port == 0 ? 5 : 8);
++		int pio_port, pio_pin;
++		struct stpio_pin *pin;
++
++		BUG_ON(data->oc_pinsel < 0);
++		BUG_ON(data->oc_pinsel > oc_pins[port].pios_num);
++		BUG_ON(STX7105 && port == 0 && data->oc_pinsel == 2);
++		pio_port = oc_pins[port].pios[data->oc_pinsel].port;
++		pio_pin = oc_pins[port].pios[data->oc_pinsel].pin;
++
++		sc = sysconf_claim(SYS_CFG, 4, sysconf_bit, sysconf_bit,
++				"USBOC");
+ 		sysconf_write(sc, data->oc_pinsel);
+ 
+-		stx7105_pio_sysconf(oc_portno, oc_pinno, oc_alt, "USBOC");
+-		pin = stpio_request_pin(oc_portno, oc_pinno, "USBOC", STPIO_IN);
++		pin = stpio_request_pin(pio_port, pio_pin, "USBOC", STPIO_IN);
++		BUG_ON(!pin);
+ 
+-		sc = sysconf_claim(SYS_CFG, 4, 3+port,3+port, "USBOC");
+-		sysconf_write(sc, data->oc_actlow);
++		sc = sysconf_claim(SYS_CFG, 4, 3 + port, 3 + port, "USBOC");
++		sysconf_write(sc, data->oc_actlow ? 0 : 1);
+ 	}
+ 
+ 	if (data->pwr_en) {
+ 		const struct {
+-			int portno;
+-			int pinno;
+-			int alt;
+-		} pwr_pio[2][2] = {
+-			{ { 4, 5, 4 }, { 12, 6, 3 } },
+-			{ { 4, 7, 4 }, { 14, 7, 2 } }
++			int pios_num;
++			struct {
++				int port;
++				int pin;
++				int alt;
++			} pios[3];
++		} pwr_pins[2] = {
++			{ 3, { { 4, 5, 4 }, { 12, 6, 3 }, { 14, 5, 1 } } },
++			{ 2, { { 4, 7, 4 }, { 14, 7, 2 } } }
+ 		};
+-
+-		int pwr_portno = pwr_pio[port][data->pwr_pinsel].portno;
+-		int pwr_pinno  = pwr_pio[port][data->pwr_pinsel].pinno;
+-		int pwr_alt = pwr_pio[port][data->pwr_pinsel].alt;
+-
+-		stx7105_pio_sysconf(pwr_portno, pwr_pinno, pwr_alt, "USBPWR");
+-		pin = stpio_request_pin(pwr_portno, pwr_pinno, "USBPWR", STPIO_ALT_OUT);
++		int pio_port, pio_pin, pio_alt;
++		struct stpio_pin *pin;
++
++		BUG_ON(data->pwr_pinsel < 0);
++		BUG_ON(data->pwr_pinsel > pwr_pins[port].pios_num);
++		BUG_ON(STX7105 && port == 0 && data->pwr_pinsel == 2);
++		pio_port = pwr_pins[port].pios[data->pwr_pinsel].port;
++		pio_pin = pwr_pins[port].pios[data->pwr_pinsel].pin;
++		pio_alt = pwr_pins[port].pios[data->pwr_pinsel].alt;
++
++		stx7105_pio_sysconf(pio_port, pio_pin, pio_alt, "USBPWR");
++		pin = stpio_request_pin(pio_port, pio_pin, "USBPWR",
++				STPIO_ALT_OUT);
++		BUG_ON(!pin);
+ 	}
+ 
+-	platform_device_register(&usb_device[port]);
++	platform_device_register(&stx7105_usb_devices[port]);
+ 
+ }
+ 
+-/* FDMA resources ---------------------------------------------------------- */
++
++
++/* FDMA resources --------------------------------------------------------- */
+ 
+ #ifdef CONFIG_STM_DMA
+ 
+@@ -279,12 +326,14 @@ static struct platform_device stx7105_fdma_xbar_device = {
+ 	},
+ };
+ 
+-/* SSC resources ----------------------------------------------------------- */
+ 
+-static char i2c_st[] = "i2c_st";
+-static char spi_st[] = "spi_st_ssc";
+ 
+-static struct platform_device stssc_devices[] = {
++/* SSC resources ---------------------------------------------------------- */
++
++static char stx7105_i2c_dev_name[] = "i2c_st";
++static char stx7105_spi_dev_name[] = "spi_st_ssc";
++
++static struct platform_device stx7105_ssc_devices[] = {
+ 	STSSC_DEVICE(0xfd040000, evt2irq(0x10e0), 2, 2, 3, 4),
+ 	STSSC_DEVICE(0xfd041000, evt2irq(0x10c0), 2, 5, 6, 7),
+ 	STSSC_DEVICE(0xfd042000, evt2irq(0x10a0), 0xff, 0xff, 0xff, 0xff),
+@@ -293,123 +342,144 @@ static struct platform_device stssc_devices[] = {
+ 
+ void __init stx7105_configure_ssc(struct plat_ssc_data *data)
+ {
+-	int num_i2c=0;
+-	int num_spi=0;
+-	int i;
++	int num_i2c = 0;
++	int num_spi = 0;
+ 	int capability = data->capability;
+ 	int routing = data->routing;
+-	int pin;
+ 	struct sysconf_field* sc;
++	int i;
+ 
+ 	const struct {
+ 		unsigned char port, pin, alt;
+ 	} ssc_pios[2][3][4] = { {
+-		/* SSC2 */
+-		{ { 3, 4, 3 }, {  3, 4, 3 }, { 12, 0, 3 }, { 13, 4, 2 } },
+-		{ { 3, 5, 3 }, { 12, 1, 3 }, { 13, 5, 2 }, { 13, 5, 2 } },
+-		{ { 2, 0, 3 }, {  3, 5, 3 }, { 12, 1, 3 }, { 13, 5, 2 } }
++		/* SSC2 (SCK on 2.4@2 on 7106 only!) */
++		{ { 2, 4, 2 }, { 3, 4, 2 }, { 12, 0, 3 }, { 13, 4, 2 } },
++		{ { 2, 0, 3 }, { 3, 5, 2 }, { 12, 1, 3 }, { 13, 5, 2 } },
++		{ { 2, 0, 4 }, { 3, 5, 3 }, { 12, 1, 4 }, { 13, 5, 3 } }
+ 	}, {
+-		/* SSC3 */
+-		{ { 3, 6, 3 }, { 13, 2, 3 }, { 13, 6, 2 }, { 13, 6, 2 } },
+-		{ { 3, 7, 3 }, { 13, 3, 3 }, { 13, 7, 2 }, { 13, 7, 2 } },
+-		{ { 2, 1, 3 }, {  3, 7, 3 }, { 13, 3, 3 }, { 13, 7, 2 } }
++		/* SSC3 (SCK on 2.7@2 on 7106 only!) */
++		{ { 2, 7, 2 }, { 3, 6, 2 }, { 13, 2, 4 }, { 13, 6, 2 } },
++		{ { 2, 1, 3 }, { 3, 7, 2 }, { 13, 3, 4 }, { 13, 7, 2 } },
++		{ { 2, 1, 4 }, { 3, 7, 3 }, { 13, 3, 5 }, { 13, 7, 3 } }
+ 	} };
+ 
+-	for (i=0; i < ARRAY_SIZE(stssc_devices);
+-	     i++, capability >>= SSC_BITS_SIZE, routing >>= 6) {
+-		struct ssc_pio_t *ssc_pio = stssc_devices[i].dev.platform_data;
++	for (i = 0; i < ARRAY_SIZE(stx7105_ssc_devices); i++,
++			capability >>= SSC_BITS_SIZE) {
++		struct ssc_pio_t *ssc =
++				stx7105_ssc_devices[i].dev.platform_data;
++		int pin;
+ 
+ 		if(capability & SSC_UNCONFIGURED)
+ 			continue;
+ 
+ 		if (capability & SSC_I2C_CLK_UNIDIR)
+-			ssc_pio->clk_unidir = 1;
++			ssc->clk_unidir = 1;
+ 
+ 		switch (i) {
+ 		case 0:
+ 		case 1:
+ 			/* These have fixed routing */
+-			for (pin = 0; pin < 3; pin++) {
+-				int portno = ssc_pio->pio[pin].pio_port;
+-				int pinno  = ssc_pio->pio[pin].pio_pin;
+-
+-				if ((pin==2) && !(capability & SSC_SPI_CAPABILITY))
+-					continue;
++			for (pin = 0; pin < (capability & SSC_SPI_CAPABILITY ?
++					3 : 2); pin++) {
++				int portno = ssc->pio[pin].pio_port;
++				int pinno  = ssc->pio[pin].pio_pin;
+ 
+ 				stx7105_pio_sysconf(portno, pinno, 3, "ssc");
+ 			}
+ 
+-			sc = sysconf_claim(SYS_CFG, 16, 3*i, 3*i, "ssc");
+-			sysconf_write(sc,
+-				      (capability & SSC_SPI_CAPABILITY) ? 1 : 0);
++			if (capability & SSC_SPI_CAPABILITY) {
++				sc = sysconf_claim(SYS_CFG, 16, 3 * i, 3 * i,
++						"ssc");
++				sysconf_write(sc, 1);
++			}
+ 			break;
+ 		case 2:
+ 		case 3:
+ 			/* Complex routing */
+-			for (pin = 0; pin < 3; pin++) {
+-				int bit = ((i==2) ? 11 : 18) - (pin * 2);
+-				int r = (routing >> (pin*2)) & 3;
+-				int portno = ssc_pios[i-2][pin][r].port;
+-				int pinno  = ssc_pios[i-2][pin][r].pin;
+-				int alt    = ssc_pios[i-2][pin][r].alt;
+-
+-				sc = sysconf_claim(SYS_CFG, 16,
+-						   bit, bit+1, "ssc");
++			for (pin = 0; pin < (capability & SSC_SPI_CAPABILITY ?
++					3 : 2); pin++) {
++				int r = (routing >> STX7105_SSC_SHIFT(i, pin))
++						& 0x3;
++				int bit = ((i == 2) ? 11 : 18) - (pin * 2);
++				int portno = ssc_pios[i - 2][pin][r].port;
++				int pinno = ssc_pios[i - 2][pin][r].pin;
++				int alt = ssc_pios[i - 2][pin][r].alt;
++
++				/* SCLKs on 2.4 & 2.7 are
++				 * not available on 7105 */
++				BUG_ON(STX7105 && pin == 0 && r == 0);
++
++				sc = sysconf_claim(SYS_CFG, 16, bit, bit + 1,
++						"ssc");
+ 				sysconf_write(sc, r);
+-				ssc_pio->pio[pin].pio_port = portno;
+-				ssc_pio->pio[pin].pio_pin  = pinno;
+ 
+-				if ((pin==2) && !(capability & SSC_SPI_CAPABILITY))
+-					continue;
++				ssc->pio[pin].pio_port = portno;
++				ssc->pio[pin].pio_pin  = pinno;
+ 
+ 				stx7105_pio_sysconf(portno, pinno, alt, "ssc");
+ 			}
+ 			break;
+ 		}
+ 
+-		if(capability & SSC_SPI_CAPABILITY){
+-			stssc_devices[i].name = spi_st;
+-			stssc_devices[i].id = num_spi++;
+-			ssc_pio->chipselect = data->spi_chipselects[i];
++		if (capability & SSC_SPI_CAPABILITY) {
++			stx7105_ssc_devices[i].name = stx7105_spi_dev_name;
++			stx7105_ssc_devices[i].id = num_spi++;
++			ssc->chipselect = data->spi_chipselects[i];
+ 		} else {
+-			stssc_devices[i].name = i2c_st;
+-			stssc_devices[i].id = num_i2c++;
++			/* I2C buses number reservation (to prevent any
++			 * hot-plug device from using it) */
++#ifdef CONFIG_I2C_BOARDINFO
++			i2c_register_board_info(num_i2c, NULL, 0);
++#endif
++			stx7105_ssc_devices[i].name = stx7105_i2c_dev_name;
++			stx7105_ssc_devices[i].id = num_i2c++;
++			if (capability & SSC_I2C_CLK_UNIDIR)
++				ssc->clk_unidir = 1;
+ 		}
+ 
+-		platform_device_register(&stssc_devices[i]);
++		platform_device_register(&stx7105_ssc_devices[i]);
+ 	}
+ 
+-	/* I2C buses number reservation (to prevent any hot-plug device
+-	 * from using it) */
+-#ifdef CONFIG_I2C_BOARDINFO
+-	i2c_register_board_info(num_i2c - 1, NULL, 0);
+-#endif
+ }
+ 
+-/* SATA resources ---------------------------------------------------------- */
+ 
+-/* Ok to have same private data for both controllers */
+-static struct plat_sata_data sata_private_info = {
++
++/* SATA resources --------------------------------------------------------- */
++
++/* It's ok to have same private data for all cases */
++static struct plat_sata_data stx7105_sata_private_info = {
+ 	.phy_init = 0,
+ 	.pc_glue_logic_init = 0,
+ 	.only_32bit = 0,
+ };
+ 
+-static struct platform_device sata_device[1] = {
+-	SATA_DEVICE(0, 0xfe209000, evt2irq(0xb00), evt2irq(0xa80),
+-		    &sata_private_info),
++static struct platform_device stx7105_sata_device =
++	SATA_DEVICE(-1, 0xfe209000, evt2irq(0xb00), evt2irq(0xa80),
++			&stx7105_sata_private_info);
++
++static struct platform_device stx7106_sata_devices[] = {
++	SATA_DEVICE(0, 0xfe208000, evt2irq(0xb00), evt2irq(0xa80),
++			&stx7105_sata_private_info),
++	SATA_DEVICE(1, 0xfe209000, ILC_EXT_IRQ(34), ILC_EXT_IRQ(33),
++			&stx7105_sata_private_info),
+ };
+ 
+-void __init stx7105_configure_sata(void)
++void __init stx7105_configure_sata(int port)
+ {
++	static int initialized;
+ 	struct sysconf_field *sc;
+ 
+-	/* Power up SATA phy */
+-	sc = sysconf_claim(SYS_CFG, 32, 9, 9, "SATA");
+-	sysconf_write(sc, 0);
++	BUG_ON(port < 0 || port > 1);
+ 
+-	if ((cpu_data->cut_major >= 3)) {
++	if (STX7105 && (port != 0 || cpu_data->cut_major < 3))
++		return;
++
++	/* Unfortunately there is a lot of dependencies between
++	 * PHYs & controllers... I didn't manage to get everything
++	 * working when powering up only selected bits... */
++	if (!initialized) {
+ 		struct stm_sata_miphy miphy = {
++			.dual_not_single = !STX7105,
+ 			.out = sysconf_claim(SYS_CFG, 33, 0, 5, "SATA"),
+ 			.tms = (1 << 5),
+ 			.trstn = (1 << 4),
+@@ -420,38 +490,61 @@ void __init stx7105_configure_sata(void)
+ 			.in_tdo = sysconf_claim(SYS_STA, 0, 1, 1, "SATA"),
+ 		};
+ 
+-		sc = sysconf_claim(SYS_CFG, 33, 6, 6, "SATA");
++		/* Power up host controllers... */
++		sc = sysconf_claim(SYS_CFG, 32, STX7105 ? 11 : 10, 11, "SATA");
++		sysconf_write(sc, 0);
++
++		/* soft_jtag_en */
++		sc = sysconf_claim(SYS_CFG, 33, 6, 6, "SATA soft_jtag_en");
+ 		sysconf_write(sc, 1);
+ 
++		/* Power up & initialize first PHY */
++		if (STX7105)
++			sc = sysconf_claim(SYS_CFG, 32, 9, 9, "SATA");
++		else
++			/* The second PHY _must not_ be powered when
++			 * initializing the first one... */
++			sc = sysconf_claim(SYS_CFG, 32, 8, 8, "SATA");
++		sysconf_write(sc, 0);
+ 		stm_sata_miphy_init(&miphy, 0);
++
++		if (!STX7105) {
++			/* Power up & initialize the second PHY */
++			sc = sysconf_claim(SYS_CFG, 32, 9, 9, "SATA");
++			sysconf_write(sc, 0);
++			stm_sata_miphy_init(&miphy, 1);
++		}
++
++		initialized = 1;
+ 	}
+ 
+-	/* Power up SATA host */
+-	sc = sysconf_claim(SYS_CFG, 32, 11 , 11, "SATA");
+-	sysconf_write(sc, 0 );
++	if (STX7105)
++		platform_device_register(&stx7105_sata_device);
++	else
++		platform_device_register(&stx7106_sata_devices[port]);
+ 
+-	platform_device_register(sata_device);
+ }
+ 
+-/* PATA resources ---------------------------------------------------------- */
+ 
+-/*
+- * EMI A20 = CS1 (active low)
++
++/* PATA resources --------------------------------------------------------- */
++
++
++/* EMI A20 = CS1 (active low)
+  * EMI A21 = CS0 (active low)
+  * EMI A19 = DA2
+  * EMI A18 = DA1
+- * EMI A17 = DA0
+- */
++ * EMI A17 = DA0 */
+ 
+-static struct resource pata_resources[] = {
++static struct resource stx7105_pata_resources[] = {
+ 	[0] = {	/* I/O base: CS1=N, CS0=A */
+-		.start	= (1<<20),
+-		.end	= (1<<20) + (8<<17)-1,
++		.start	= (1 << 20),
++		.end	= (1 << 20) + (8 << 17) - 1,
+ 		.flags	= IORESOURCE_MEM,
+ 	},
+ 	[1] = {	/* CTL base: CS1=A, CS0=N, DA2=A, DA1=A, DA0=N */
+-		.start	= (1<<21) + (6<<17),
+-		.end	= (1<<21) + (6<<17) + 3,
++		.start	= (1 << 21) + (6 << 17),
++		.end	= (1 << 21) + (6 << 17) + 3,
+ 		.flags	= IORESOURCE_MEM,
+ 	},
+ 	[2] = {	/* IRQ */
+@@ -459,312 +552,529 @@ static struct resource pata_resources[] = {
+ 	}
+ };
+ 
+-static struct pata_platform_info pata_info = {
+-	.ioport_shift	= 17,
+-};
+-
+-static struct platform_device pata_device = {
++static struct platform_device stx7105_pata_device = {
+ 	.name		= "pata_platform",
+ 	.id		= -1,
+-	.num_resources	= ARRAY_SIZE(pata_resources),
+-	.resource	= pata_resources,
+-	.dev = {
+-		.platform_data = &pata_info,
+-	}
++	.num_resources	= ARRAY_SIZE(stx7105_pata_resources),
++	.resource	= stx7105_pata_resources,
++	.dev.platform_data = &(struct pata_platform_info) {
++		.ioport_shift	= 17,
++	},
+ };
+ 
+ void __init stx7105_configure_pata(int bank, int pc_mode, int irq)
+ {
+-	unsigned long bank_base;
++	unsigned long bank_base = emi_bank_base(bank);
+ 
+-	bank_base = emi_bank_base(bank);
+-	pata_resources[0].start += bank_base;
+-	pata_resources[0].end   += bank_base;
+-	pata_resources[1].start += bank_base;
+-	pata_resources[1].end   += bank_base;
+-	pata_resources[2].start = irq;
+-	pata_resources[2].end   = irq;
++	stx7105_pata_resources[0].start += bank_base;
++	stx7105_pata_resources[0].end   += bank_base;
++	stx7105_pata_resources[1].start += bank_base;
++	stx7105_pata_resources[1].end   += bank_base;
++	stx7105_pata_resources[2].start = irq;
++	stx7105_pata_resources[2].end   = irq;
+ 
+ 	emi_config_pata(bank, pc_mode);
+ 
+-	platform_device_register(&pata_device);
++	platform_device_register(&stx7105_pata_device);
+ }
+ 
+-/* Ethernet MAC resources -------------------------------------------------- */
+ 
+-static struct sysconf_field *mac_speed_sc;
+ 
+-static void fix_mac_speed(void* priv, unsigned int speed)
++/* Ethernet MAC resources ------------------------------------------------- */
++
++static void stx7105_gmac_fix_mac_speed(void *priv, unsigned int speed)
+ {
+-	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 1 : 0);
++	struct sysconf_field *sc = priv;
++
++	sysconf_write(sc, (speed == SPEED_100) ? 1 : 0);
+ }
+ 
+-static struct plat_stmmacenet_data stx7105eth_private_data = {
+-	.bus_id = 0,
+-	.pbl = 32,
+-	.has_gmac = 1,
+-	.fix_mac_speed = fix_mac_speed,
++static struct plat_stmmacenet_data stx7105_gmac_private_data[] = {
++	{
++		.bus_id = 0,
++		.pbl = 32,
++		.has_gmac = 1,
++		.fix_mac_speed = stx7105_gmac_fix_mac_speed,
++	}, {
++		.bus_id = 1,
++		.pbl = 32,
++		.has_gmac = 1,
++		.fix_mac_speed = stx7105_gmac_fix_mac_speed,
++	}
+ };
+ 
+-static struct platform_device stx7105eth_device = {
+-        .name           = "stmmaceth",
+-        .id             = 0,
+-        .num_resources  = 2,
+-        .resource       = (struct resource[]) {
+-        	{
+-	                .start = 0xfd110000,
+-        	        .end   = 0xfd117fff,
+-                	.flags  = IORESOURCE_MEM,
+-        	},
+-        	{
+-			.name   = "macirq",
+-                	.start  = evt2irq(0x12c0),
+-                	.end    = evt2irq(0x12c0),
+-                	.flags  = IORESOURCE_IRQ,
+-        	},
+-	},
+-	.dev = {
+-		.power.can_wakeup = 1,
+-		.platform_data = &stx7105eth_private_data,
++static struct platform_device stx7105_gmac_devices[] = {
++	{
++		.name           = "stmmaceth",
++		.id             = 0,
++		.num_resources  = 2,
++		.resource       = (struct resource[]) {
++			{
++				.start = 0xfd110000,
++				.end   = 0xfd117fff,
++				.flags  = IORESOURCE_MEM,
++			}, {
++				.name   = "macirq",
++				.start  = evt2irq(0x12c0),
++				.end    = evt2irq(0x12c0),
++				.flags  = IORESOURCE_IRQ,
++			},
++		},
++		.dev = {
++			.power.can_wakeup = 1,
++			.platform_data = &stx7105_gmac_private_data[0],
++		}
++	}, {
++		.name           = "stmmaceth",
++		.id             = 1,
++		.num_resources  = 2,
++		.resource       = (struct resource[]) {
++			{
++				.start = 0xfd118000,
++				.end   = 0xfd11ffff,
++				.flags  = IORESOURCE_MEM,
++			}, {
++				.name   = "macirq",
++				.start  = ILC_EXT_IRQ(39),
++				.end    = ILC_EXT_IRQ(39),
++				.flags  = IORESOURCE_IRQ,
++			},
++		},
++		.dev = {
++			.power.can_wakeup = 1,
++			.platform_data = &stx7105_gmac_private_data[1],
++		}
+ 	}
+ };
+ 
+-void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
+-				int ext_mdio, int ext_clk, int phy_bus,
+-				int mdint_workaround)
++struct stx7105_gmac_pin {
++	struct {
++		unsigned char port, pin, alt;
++	} pio[2];
++	unsigned char dir;
++};
++
++static struct stx7105_gmac_pin stx7105_gmac_mii_pins[] __initdata = {
++	{ { { 9, 5, 1 }, { 11, 3, 2 } }, /* below */ },		/* PHYCLK */
++	{ { { 8, 3, 1 }, /* below */ },  STPIO_ALT_BIDIR },	/* MDIO */
++	{ { { 8, 4, 1 }, /* below */ },  STPIO_ALT_OUT },	/* MDC */
++	{ { { 9, 6 },    { 3, 6 } },     STPIO_IN },		/* MDINT */
++	{ { { 9, 2 },    { 16, 7 } },    STPIO_IN },		/* TXCLK */
++	{ { { 8, 2, 1 }, { 11, 2, 2 } }, STPIO_ALT_OUT },	/* TXEN */
++	{ { { 7, 6, 1 }, { 11, 4, 2 } }, STPIO_ALT_OUT },	/* TXD[0] */
++	{ { { 7, 7, 1 }, { 11, 5, 2 } }, STPIO_ALT_OUT },	/* TXD[1] */
++	{ { { 8, 0, 1 }, { 11, 6, 2 } }, STPIO_ALT_OUT },	/* TXD[2] */
++	{ { { 8, 1, 1 }, { 11, 7, 2 } }, STPIO_ALT_OUT },	/* TXD[3] */
++	{ { { 8, 5 },    { 16, 6 } },    STPIO_IN },		/* RXCLK */
++	{ { { 7, 4 },    { 16, 4 } },    STPIO_IN },		/* RXDV */
++	{ { { 7, 5 },    { 16, 5 } },    STPIO_IN },		/* RXER */
++	{ { { 8, 6 },    { 16, 0 } },    STPIO_IN },		/* RXD[0] */
++	{ { { 8, 7 },    { 16, 1 } },    STPIO_IN },		/* RXD[1] */
++	{ { { 9, 0 },    { 16, 2 } },    STPIO_IN },		/* RXD[2] */
++	{ { { 9, 1 },    { 16, 3 } },    STPIO_IN },		/* RXD[3] */
++	{ { { 9, 3 },    { 15, 6 } },    STPIO_IN },		/* COL */
++	{ { { 9, 4 },    { 15, 7 } },    STPIO_IN },		/* CRS */
++};
++
++static struct stx7105_gmac_pin stx7105_gmac_gmii_pins[] __initdata = {
++	{ { { 9, 5, 3 } },  /* below */ },		/* PHYCLK */
++	{ { { 8, 3, 3 } },  STPIO_ALT_BIDIR },		/* MDIO */
++	{ { { 8, 4, 3 } },  STPIO_ALT_OUT },		/* MDC */
++	{ { { 9, 6 } },     STPIO_IN },			/* MDINT */
++	{ { { 9, 2 } },     STPIO_IN },			/* TXCLK */
++#if 0
++/* Note: TXER line is not configured (at this moment) as:
++   1. It is generally useless and not used at all by a lot of PHYs.
++   2. PIO9.7 is muxed with HDMI hot plug detect, which is likely to be used.
++   3. Apparently the GMAC (or the SOC) is broken anyway and it doesn't drive
++      it correctly ;-) */
++	{ { { 9, 7, 3 } },  STPIO_ALT_OUT },		/* TXER */
++#endif
++	{ { { 8, 2, 3 } },  STPIO_ALT_OUT },		/* TXEN */
++	{ { { 7, 6, 3 } },  STPIO_ALT_OUT },		/* TXD[0] */
++	{ { { 7, 7, 3 } },  STPIO_ALT_OUT },		/* TXD[1] */
++	{ { { 8, 0, 3 } },  STPIO_ALT_OUT },		/* TXD[2] */
++	{ { { 8, 1, 3 } },  STPIO_ALT_OUT },		/* TXD[3] */
++	{ { { 15, 4, 4 } }, STPIO_ALT_OUT },		/* TXD[4] */
++	{ { { 15, 5, 4 } }, STPIO_ALT_OUT },		/* TXD[5] */
++	{ { { 11, 0, 4 } }, STPIO_ALT_OUT },		/* TXD[6] */
++	{ { { 11, 1, 4 } }, STPIO_ALT_OUT },		/* TXD[7] */
++	{ { { 8, 5 } },     STPIO_IN },			/* RXCLK */
++	{ { { 7, 4 } },     STPIO_IN },			/* RXDV */
++	{ { { 7, 5 } },     STPIO_IN },			/* RXER */
++	{ { { 8, 6 } },     STPIO_IN },			/* RXD[0] */
++	{ { { 8, 7 } },     STPIO_IN },			/* RXD[1] */
++	{ { { 9, 0 } },     STPIO_IN },			/* RXD[2] */
++	{ { { 9, 1 } },     STPIO_IN },			/* RXD[3] */
++	{ { { 15, 0 } },    STPIO_IN },			/* RXD[4] */
++	{ { { 15, 1 } },    STPIO_IN },			/* RXD[5] */
++	{ { { 15, 2 } },    STPIO_IN },			/* RXD[6] */
++	{ { { 15, 3 } },    STPIO_IN },			/* RXD[7] */
++	{ { { 9, 3 } },     STPIO_IN },			/* COL */
++	{ { { 9, 4 } },     STPIO_IN },			/* CRS */
++};
++
++static struct stx7105_gmac_pin stx7105_gmac_rmii_pins[] __initdata = {
++	{ { { 9, 5, 2 }, { 11, 3, 3 } }, /* below */ },		/* REFCLK */
++	{ { { 8, 3, 2 }, /* below */ },  STPIO_ALT_BIDIR },	/* MDIO */
++	{ { { 8, 4, 2 }, /* below */ },  STPIO_ALT_OUT },	/* MDC */
++	{ { { 9, 6 },    { 3, 6 } },     STPIO_IN },		/* MDINT */
++	{ { { 8, 2, 2 }, { 11, 2, 3 } }, STPIO_ALT_OUT },	/* TXEN */
++	{ { { 7, 6, 2 }, { 11, 4, 3 } }, STPIO_ALT_OUT },	/* TXD[0] */
++	{ { { 7, 7, 2 }, { 11, 5, 3 } }, STPIO_ALT_OUT },	/* TXD[1] */
++	{ { { 7, 4 },    { 16, 4 } },    STPIO_IN },		/* CRSDV */
++	{ { { 7, 5 },    { 16, 5 } },    STPIO_IN },		/* CRSER */
++	{ { { 8, 6 },    { 16, 0 } },    STPIO_IN },		/* RXD[0] */
++	{ { { 8, 7 },    { 16, 1 } },    STPIO_IN },		/* RXD[1] */
++};
++
++static struct stx7105_gmac_pin stx7105_gmac_reverse_mii_pins[] __initdata = {
++	{ { { 9, 5, 1 } }, /* below */ },		/* PHYCLK */
++	{ { { 8, 3, 1 } }, STPIO_ALT_BIDIR },		/* MDIO */
++	{ { { 8, 4, 1 } }, STPIO_IN },			/* MDC */
++	{ { { 9, 6 } },    STPIO_IN },			/* MDINT */
++	{ { { 9, 2 } },    STPIO_IN },			/* TXCLK */
++	{ { { 8, 2, 1 } }, STPIO_ALT_OUT },		/* TXEN */
++	{ { { 7, 6, 1 } }, STPIO_ALT_OUT },		/* TXD[0] */
++	{ { { 7, 7, 1 } }, STPIO_ALT_OUT },		/* TXD[1] */
++	{ { { 8, 0, 1 } }, STPIO_ALT_OUT },		/* TXD[2] */
++	{ { { 8, 1, 1 } }, STPIO_ALT_OUT },		/* TXD[3] */
++	{ { { 8, 5 } },    STPIO_IN },			/* RXCLK */
++	{ { { 7, 4 } },    STPIO_IN },			/* RXDV */
++	{ { { 7, 5 } },    STPIO_IN },			/* RXER */
++	{ { { 8, 6 } },    STPIO_IN },			/* RXD[0] */
++	{ { { 8, 7 } },    STPIO_IN },			/* RXD[1] */
++	{ { { 9, 0 } },    STPIO_IN },			/* RXD[2] */
++	{ { { 9, 1 } },    STPIO_IN },			/* RXD[3] */
++	{ { { 7, 4, 1 } }, STPIO_ALT_OUT },		/* EXCOL */
++	{ { { 7, 5, 1 } }, STPIO_ALT_OUT },		/* EXCRS */
++};
++
++void __init stx7105_configure_ethernet(int port,
++		enum stx7105_ethernet_mode mode, int ext_clk, int phy_bus,
++		int mii0_mdint_workaround, int mii1_routing)
+ {
+-	static struct stpio_pin *pin;
+ 	struct sysconf_field *sc;
++	struct stx7105_gmac_pin *pins;
++	int pins_num;
++	struct {
++		unsigned char ouput_enable;
++		unsigned char mac_speed_sel;
++		unsigned char enmii;
++		unsigned char phy_intf_sel;
++		unsigned char rmii_mode;
++		unsigned char miim_dio_select;
++		unsigned char interface_on;
++	} fields;
++	struct {
++		unsigned char enmii;
++		unsigned char phy_intf_sel;
++		unsigned char rmii_mode;
++	} values;
++	int i;
+ 
+-	stx7105eth_private_data.bus_id = phy_bus;
++	BUG_ON(port < 0 || port > 1);
+ 
+-	/* Ethernet ON */
+-	sc = sysconf_claim(SYS_CFG, 7, 16, 16, "stmmac");
+-	sysconf_write(sc, 1);
++	if (STX7105 && port != 0)
++		return;
+ 
+-	/* MII M-DIO select: 1: miim_dio from external input, 0: from GMAC */
+-	sc = sysconf_claim(SYS_CFG, 7, 17, 17, "stmmac");
+-	sysconf_write(sc, ext_mdio ? 1 : 0);
+-
+-	/*
+-	 * RMII pin multiplexing: 0: RMII interface active, 1: MII interface
+-	 * cut 1: This register wasn't connected, so only MII available
+-	 */
+-	sc = sysconf_claim(SYS_CFG, 7, 18, 18, "stmmac");
+-	sysconf_write(sc, rmii_mode ? 1 : 0);
+-
+-	/*
+-	 * PHY EXT CLOCK: 0: provided by STx7105; 1: external
+-	 * cut 1: sysconf7[19], however this wasn't connected, so only
+-	 * input supported.
+-	 * cut 2: direction now based on PIO direction, so this code removed.
+-	 */
+-	sc = sysconf_claim(SYS_CFG, 7, 19, 19, "stmmac");
+-	sysconf_write(sc, ext_clk ? 1 : 0);
+-
+-	/* MAC speed*/
+-	mac_speed_sc = sysconf_claim(SYS_CFG, 7, 20, 20, "stmmac");
+-
+-	/* Default GMII/MII selection */
+-	sc = sysconf_claim(SYS_CFG, 7, 25, 26, "stmmac");
+-	sysconf_write(sc, mode & 0x3);
+-
+-	/* MII mode */
+-	sc = sysconf_claim(SYS_CFG, 7, 27, 27, "stmmac");
+-	sysconf_write(sc, reverse_mii ? 0 : 1);
+-
+-	/* Pin configuration... */
+-
+-	/* MIIRX_DV / RMIICRS_DV */
+-	stx7105_pio_sysconf(7, 4, 1, "eth");
+-	pin = stpio_request_pin(7, 4, "eth", STPIO_IN);
+-
+-	/* MIIRX_ER / RMIIRX_ER */
+-	stx7105_pio_sysconf(7, 5, 1, "eth");
+-	pin = stpio_request_pin(7, 5, "eth", STPIO_IN);
+-
+-	/* MIITXD[0] / RMIITXD[0] */
+-	stx7105_pio_sysconf(7, 6, 1, "eth");
+-	pin = stpio_request_pin(7, 6, "eth", STPIO_ALT_OUT);
+-
+-	/* MIITXD[1] / RMIITXD[1] */
+-	stx7105_pio_sysconf(7, 7, 1, "eth");
+-	pin = stpio_request_pin(7, 7, "eth", STPIO_ALT_OUT);
+-
+-	if (!rmii_mode) {
+-		/* MIITXD[2] */
+-		stx7105_pio_sysconf(8, 0, 1, "eth");
+-		pin = stpio_request_pin(8, 0, "eth", STPIO_ALT_OUT);
+-
+-		/* MIITXD[3] */
+-		stx7105_pio_sysconf(8, 1, 1, "eth");
+-		pin = stpio_request_pin(8, 1, "eth", STPIO_ALT_OUT);
++	switch (mode) {
++	case stx7105_ethernet_mii:
++		values.enmii = 1;
++		values.phy_intf_sel = 0;
++		values.rmii_mode = 0;
++		pins = stx7105_gmac_mii_pins;
++		pins_num = ARRAY_SIZE(stx7105_gmac_mii_pins);
++		break;
++	case stx7105_ethernet_rmii:
++		values.enmii = 1;
++		values.phy_intf_sel = 0;
++		values.rmii_mode = 1;
++		pins = stx7105_gmac_rmii_pins;
++		pins_num = ARRAY_SIZE(stx7105_gmac_rmii_pins);
++		break;
++	case stx7105_ethernet_gmii:
++		BUG_ON(port == 1); /* Available on MII0 only */
++		values.enmii = 1;
++		values.phy_intf_sel = 0;
++		values.rmii_mode = 0;
++		pins = stx7105_gmac_gmii_pins;
++		pins_num = ARRAY_SIZE(stx7105_gmac_gmii_pins);
++		break;
++	case stx7105_ethernet_reverse_mii:
++		BUG_ON(port == 1); /* Available on MII1 only */
++		values.enmii = 0;
++		values.phy_intf_sel = 0;
++		values.rmii_mode = 0;
++		pins = stx7105_gmac_reverse_mii_pins;
++		pins_num = ARRAY_SIZE(stx7105_gmac_reverse_mii_pins);
++		break;
++	default:
++		BUG();
++		return;
+ 	}
+ 
+-	/* MIITX_EN / RMIITX_EN */
+-	stx7105_pio_sysconf(8, 2, 1, "eth");
+-	pin = stpio_request_pin(8, 2, "eth", STPIO_ALT_OUT);
+-
+-	/* MIIMDIO / RMIIMDIO */
+-	stx7105_pio_sysconf(8, 3, 1, "eth");
+-	pin = stpio_request_pin(8, 3, "eth", STPIO_ALT_BIDIR);
++	switch (port) {
++	case 0:
++		fields.ouput_enable = 24;
++		fields.mac_speed_sel = 20;
++		fields.enmii = 27;
++		fields.phy_intf_sel = 25;
++		fields.rmii_mode = 18;
++		fields.miim_dio_select = 17;
++		fields.interface_on = 16;
++		break;
++	case 1:
++		fields.ouput_enable = 31;
++		fields.mac_speed_sel = 21;
++		fields.enmii = 30;
++		fields.phy_intf_sel = 28;
++		fields.rmii_mode = 19;
++		fields.miim_dio_select = 15;
++		fields.interface_on = 14;
++
++		/* eth1_mdiin_src_sel */
++		sc = sysconf_claim(SYS_CFG, 16, 4, 4, "stmmac");
++		switch (mii1_routing & STX7105_ETHERNET_MII1_MDIO_MASK) {
++		case STX7105_ETHERNET_MII1_MDIO_11_0:
++			pins[1].pio[1].port = 11;
++			pins[1].pio[1].pin = 0;
++			pins[1].pio[1].alt = 3;
++			sysconf_write(sc, 1);
++			break;
++		case STX7105_ETHERNET_MII1_MDIO_3_4:
++			pins[1].pio[1].port = 3;
++			pins[1].pio[1].pin = 4;
++			pins[1].pio[1].alt = 3;
++			sysconf_write(sc, 0);
++			break;
++		default:
++			BUG();
++			break;
++		}
+ 
+-	/* MIIMDC / RMIIMDC */
+-	stx7105_pio_sysconf(8, 4, 1, "eth");
+-	pin = stpio_request_pin(8, 4, "eth", STPIO_ALT_OUT);
++		/* eth1_mdcin_src_sel */
++		sc = sysconf_claim(SYS_CFG, 16, 5, 5, "stmmac");
++		switch (mii1_routing & STX7105_ETHERNET_MII1_MDC_MASK) {
++		case STX7105_ETHERNET_MII1_MDC_11_1:
++			pins[2].pio[1].port = 11;
++			pins[2].pio[1].pin = 1;
++			pins[2].pio[1].alt = 4;
++			sysconf_write(sc, 1);
++			break;
++		case STX7105_ETHERNET_MII1_MDC_3_5:
++			pins[2].pio[1].port = 3;
++			pins[2].pio[1].pin = 5;
++			pins[2].pio[1].alt = 4;
++			sysconf_write(sc, 0);
++			break;
++		default:
++			BUG();
++			break;
++		}
+ 
+-	if (!rmii_mode) {
+-		/* MIIRXCLK */
+-		stx7105_pio_sysconf(8, 5, 1, "eth");
+-		pin = stpio_request_pin(8, 5, "eth", STPIO_IN);
++		break;
++	default:
++		BUG();
++		return;
+ 	}
+ 
+-	/* MIIRXD[0] / RMIIRXD[0] */
+-	stx7105_pio_sysconf(8, 6, 1, "eth");
+-	pin = stpio_request_pin(8, 6, "eth", STPIO_IN);
++	sc = sysconf_claim(SYS_CFG, 7, fields.ouput_enable,
++			fields.ouput_enable, "stmmac");
++	sysconf_write(sc, 1);
+ 
+-	/* MIIRXD[1] / RMIIRXD[1] */
+-	stx7105_pio_sysconf(8, 7, 1, "eth");
+-	pin = stpio_request_pin(8, 7, "eth", STPIO_IN);
++	stx7105_gmac_private_data[0].bsp_priv = sysconf_claim(SYS_CFG, 7,
++			fields.mac_speed_sel, fields.mac_speed_sel, "stmmac");
+ 
+-	if (!rmii_mode) {
+-		/* MIIRXD[2] */
+-		stx7105_pio_sysconf(9, 0, 1, "eth");
+-		pin = stpio_request_pin(9, 0, "eth", STPIO_IN);
++	sc = sysconf_claim(SYS_CFG, 7, fields.enmii, fields.enmii, "stmmac");
++	sysconf_write(sc, values.enmii);
+ 
+-		/* MIIRXD[3] */
+-		stx7105_pio_sysconf(9, 1, 1, "eth");
+-		pin = stpio_request_pin(9, 1, "eth", STPIO_IN);
++	sc = sysconf_claim(SYS_CFG, 7, fields.phy_intf_sel,
++			fields.phy_intf_sel, "stmmac");
++	sysconf_write(sc, values.phy_intf_sel);
+ 
+-		/* MIITXCLK */
+-		stx7105_pio_sysconf(9, 2, 1, "eth");
+-		pin = stpio_request_pin(9, 2, "eth", STPIO_IN);
++	sc = sysconf_claim(SYS_CFG, 7, fields.rmii_mode,
++			fields.rmii_mode, "stmmac");
++	sysconf_write(sc, values.rmii_mode);
+ 
+-		/* MIICOL */
+-		stx7105_pio_sysconf(9, 3, 1, "eth");
+-		pin = stpio_request_pin(9, 3, "eth", STPIO_IN);
++	sc = sysconf_claim(SYS_CFG, 7, fields.miim_dio_select,
++			fields.miim_dio_select, "stmmac");
++	sysconf_write(sc, 0);
+ 
+-		/* MIICRS */
+-		stx7105_pio_sysconf(9, 4, 1, "eth");
+-		pin = stpio_request_pin(9, 4, "eth", STPIO_IN);
+-	}
++	sc = sysconf_claim(SYS_CFG, 7, fields.interface_on,
++			fields.interface_on, "stmmac");
++	sysconf_write(sc, 1);
+ 
+-	stx7105_pio_sysconf(9, 5, 1, "eth");
+-	if (!rmii_mode) {
+-		/* MIIPHYCLK */
+-		/* Not implemented in cut 1 (DDTS GNBvd69906) - clock never output */
+-		/* In cut 2 PIO direction used to control input or output. */
+-		pin = stpio_request_pin(9, 5, "eth",
+-					ext_clk ? STPIO_IN : STPIO_ALT_OUT);
+-	} else {
+-		/* RMIIREF_CLK */
+-		pin = stpio_request_pin(9, 5, "eth", STPIO_ALT_BIDIR);
++	pins[0].dir = ext_clk ? STPIO_IN : STPIO_ALT_OUT;
++
++	for (i = 0; i < pins_num; i++) {
++		int pio_port = pins[i].pio[port].port;
++		int pio_pin = pins[i].pio[port].pin;
++		int pio_alt = pins[i].pio[port].alt;
++		int pio_dir = pins[i].dir;
++
++		/* MII0 MDINT */
++		if (port == 0 && pio_port == 9 && pio_pin == 6 &&
++				mii0_mdint_workaround) {
++			/* This is a workaround for a problem seen on some
++			 * boards, such as the HMP7105, which use the SMSC
++			 * LAN8700 with no board level logic to work around
++			 * conflicts on mode pin usage with the STx7105.
++			 *
++			 * Background:
++			 * The 8700 uses the MII RXD[3] pin as a mode
++			 * selection at reset for whether nINT/TXERR/TXD4 is
++			 * used as nINT or TXERR. However the 7105 uses the
++			 * same pin as MODE(9), to determine which processor
++			 * boots first.
++			 * Assuming the pull up/down resistors are configured
++			 * so that the ST40 boots first, this is what causes
++			 * the 8700 to treat nINT/TXERR as TXERR, which is not
++			 * what we want.
++			 *
++			 * Workaround
++			 * Force MII_MDINT to be an output, driven low, to
++			 * indicate there is no error. */
++			stpio_request_set_pin(9, 6, "stmmac", STPIO_OUT, 0);
++		} else {
++			stpio_request_pin(pio_port, pio_pin, "stmmac", pio_dir);
++			if (pio_dir != STPIO_IN)
++				stx7105_pio_sysconf(pio_port, pio_pin, pio_alt,
++						"stmmac");
++		}
+ 	}
+ 
+-	/* MIIMDINT */
+-	/*
+-	 * This is a workaround for a problem seen on some boards, such as the
+-	 * HMP7105, which use the SMSC LAN8700 with no board level logic
+-	 * to work around conflicts on mode pin usage with the STx7105.
+-	 *
+-	 * Background
+-	 * The 8700 uses the MII RXD[3] pin as a mode selection at reset
+-	 * for whether nINT/TXERR/TXD4 is used as nINT or TXERR. However the
+-	 * 7105 uses the same pin as MODE(9), to determine which processor
+-	 * boots first.
+-	 * Assuming the pull up/down resistors are configured so that
+-	 * the ST40 boots first, this is causes the 8700 to treat
+-	 * nINT/TXERR as TXERR, which is not what we want.
+-	 *
+-	 * Workaround
+-	 * Force MII_MDINT to be an output, driven low, to indicate there is
+-	 * no error.
+-	 */
+-	if (mdint_workaround)
+-		pin = stpio_request_set_pin(9, 6, "eth", STPIO_OUT, 0);
+-	else {
+-		stx7105_pio_sysconf(9, 6, 1, "eth");
+-		pin = stpio_request_pin(9, 6, "eth", STPIO_IN);
+-	}
++	stx7105_gmac_private_data[port].bus_id = phy_bus;
+ 
+-	platform_device_register(&stx7105eth_device);
++	platform_device_register(&stx7105_gmac_devices[port]);
+ }
+ 
+-/* Audio output ------------------------------------------------------------ */
+ 
+-void stx7105_configure_audio_pins(int pcmout, int spdif, int pcmin)
++
++/* Audio output ----------------------------------------------------------- */
++
++static const char stx7105_audio_pcmout0_label[] = "auddig0_pcmout";
++static const char stx7105_audio_pcmout1_label[] = "auddig1_pcmout";
++static const char stx7105_audio_spdif_label[] = "aud_spdif";
++static const char stx7105_audio_pcmin_label[] = "auddig_pcmin";
++
++void __init stx7105_configure_audio_pins(int pcmout0, int pcmout1, int spdif,
++		int pcmin)
+ {
+-	/* Claim PIO pins as digital audio outputs, depending
++	struct stpio_pin *pin;
++	const char *label;
++
++	/* Claim PIO pins as digital audio outputs (AUDDIG0), depending
+ 	 * on how many DATA outputs are to be used... */
+ 
+-	if (pcmout > 0) {
+-		stx7105_pio_sysconf(10, 3, 1, "AUD0PCMOUT_CLKIN/OUT");
+-		stpio_request_pin(10, 3, "AUD0PCMOUT_CLKIN/OUT",
+-				STPIO_ALT_OUT);
+-		stx7105_pio_sysconf(10, 4, 1, "AUD0PCMOUT_LRCLK");
+-		stpio_request_pin(10, 4, "AUD0PCMOUT_LRCLK", STPIO_ALT_OUT);
+-		stx7105_pio_sysconf(10, 5, 1, "AUD0PCMOUT_SCLK");
+-		stpio_request_pin(10, 5, "AUD0PCMOUT_SCLK", STPIO_ALT_OUT);
+-		stx7105_pio_sysconf(10, 0, 1, "AUD0PCMOUT_DATA0");
+-		stpio_request_pin(10, 0, "AUD0PCMOUT_DATA0", STPIO_ALT_OUT);
++	label = stx7105_audio_pcmout0_label;
++	if (pcmout0 > 0) {
++		stx7105_pio_sysconf(10, 3, 1, label);
++		pin = stpio_request_pin(10, 3, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
++		stx7105_pio_sysconf(10, 4, 1, label);
++		pin = stpio_request_pin(10, 4, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
++		stx7105_pio_sysconf(10, 5, 1, label);
++		pin = stpio_request_pin(10, 5, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
++		stx7105_pio_sysconf(10, 0, 1, label);
++		pin = stpio_request_pin(10, 0, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
++	}
++	if (pcmout0 > 1) {
++		stx7105_pio_sysconf(10, 1, 1, label);
++		pin = stpio_request_pin(10, 1, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
+ 	}
+-	if (pcmout > 1) {
+-		stx7105_pio_sysconf(10, 1, 1, "AUD0PCMOUT_DATA1");
+-		stpio_request_pin(10, 1, "AUD0PCMOUT_DATA1", STPIO_ALT_OUT);
++	if (pcmout0 > 2) {
++		stx7105_pio_sysconf(10, 2, 1, label);
++		pin = stpio_request_pin(10, 2, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
+ 	}
+-	if (pcmout > 2) {
+-		stx7105_pio_sysconf(10, 2, 1, "AUD0PCMOUT_DATA2");
+-		stpio_request_pin(10, 2, "AUD0PCMOUT_DATA2", STPIO_ALT_OUT);
++	if (pcmout0 > 3) {
++		BUG_ON(STX7105); /* 7106 only! */
++		stx7105_pio_sysconf(10, 7, 1, label);
++		pin = stpio_request_pin(10, 7, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
+ 	}
+-	if (pcmout > 3)
++	if (pcmout0 > 4)
+ 		BUG();
+ 
+ 	/* Claim PIO pin as SPDIF output... */
+ 
+ 	if (spdif > 0) {
+-		stx7105_pio_sysconf(10, 6, 1, "AUDSPDIFOUT");
+-		stpio_request_pin(10, 6, "AUDSPDIFOUT", STPIO_ALT_OUT);
++		label = stx7105_audio_spdif_label;
++		stx7105_pio_sysconf(10, 6, 1, label);
++		pin = stpio_request_pin(10, 6, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
+ 	}
+ 	if (spdif > 1)
+ 		BUG();
+ 
++	/* Claim second (stereo) set of digital audio outputs (AUDDIG1).
++	 * Notice that is has no CLKOUT line, what makes it almost useless... */
++	if (pcmout1 > 0) {
++		label = stx7105_audio_pcmout1_label;
++		if (STX7105) {
++			stx7105_pio_sysconf(10, 7, 1, label);
++			pin = stpio_request_pin(10, 7, label, STPIO_ALT_OUT);
++		} else {
++			stx7105_pio_sysconf(11, 2, 1, label);
++			pin = stpio_request_pin(11, 2, label, STPIO_ALT_OUT);
++		}
++		BUG_ON(!pin);
++		stx7105_pio_sysconf(11, 0, 1, label);
++		pin = stpio_request_pin(11, 0, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
++		stx7105_pio_sysconf(11, 1, 1, label);
++		pin = stpio_request_pin(11, 1, label, STPIO_ALT_OUT);
++		BUG_ON(!pin);
++	}
++	if (pcmout1 > 1)
++		BUG();
++
+ 	/* Claim PIO pins as digital audio inputs... */
+ 
+ 	if (pcmin > 0) {
+-		stx7105_pio_sysconf(10, 7, 1, "AUD0PCMIN_DATA");
+-		stpio_request_pin(10, 7, "AUD0PCMIN_DATA", STPIO_ALT_BIDIR);
+-		stx7105_pio_sysconf(11, 0, 1, "AUD0PCMIN_SCLK");
+-		stpio_request_pin(11, 0, "AUD0PCMIN_SCLK", STPIO_ALT_BIDIR);
+-		stx7105_pio_sysconf(11, 1, 1, "AUD0PCMIN_LRCLK");
+-		stpio_request_pin(11, 1, "AUD0PCMIN_LRCLK", STPIO_ALT_BIDIR);
++		BUG_ON(pcmout1 > 0); /* Shared pins */
++		label = stx7105_audio_pcmin_label;
++		if (STX7105)
++			pin = stpio_request_pin(10, 7, label, STPIO_IN);
++		else
++			pin = stpio_request_pin(11, 2, label, STPIO_IN);
++		BUG_ON(!pin);
++		pin = stpio_request_pin(11, 0, label, STPIO_IN);
++		BUG_ON(!pin);
++		pin = stpio_request_pin(11, 1, label, STPIO_IN);
++		BUG_ON(!pin);
+ 	}
+ 	if (pcmin > 1)
+ 		BUG();
+ }
+ 
+-/* PWM resources ----------------------------------------------------------- */
+ 
+-static struct resource stm_pwm_resource[]= {
+-	[0] = {
+-		.start	= 0xfd010000,
+-		.end	= 0xfd010000 + 0x67,
+-		.flags	= IORESOURCE_MEM
+-	},
+-	[1] = {
+-		.start	= evt2irq(0x11c0),
+-		.end	= evt2irq(0x11c0),
+-		.flags	= IORESOURCE_IRQ
+-	}
+-};
+ 
+-static struct platform_device stm_pwm_device = {
++/* PWM resources ---------------------------------------------------------- */
++
++static struct platform_device stx7105_pwm_device = {
+ 	.name		= "stm-pwm",
+ 	.id		= -1,
+-	.num_resources	= ARRAY_SIZE(stm_pwm_resource),
+-	.resource	= stm_pwm_resource,
++	.num_resources	= 2,
++	.resource	= (struct resource []) {
++		{
++			.start	= 0xfd010000,
++			.end	= 0xfd010067,
++			.flags	= IORESOURCE_MEM
++		}, {
++			.start	= evt2irq(0x11c0),
++			.end	= evt2irq(0x11c0),
++			.flags	= IORESOURCE_IRQ
++		}
++	},
+ };
+ 
+-void stx7105_configure_pwm(struct plat_stm_pwm_data *data)
++void __init stx7105_configure_pwm(struct plat_stm_pwm_data *data)
+ {
+ 	int pwm;
+ 	const struct {
+@@ -774,10 +1084,10 @@ void stx7105_configure_pwm(struct plat_stm_pwm_data *data)
+ 		{ { 4, 5, 3 }, { 13, 1, 3 } },	/* PWM1 */
+ 	};
+ 
+-	stm_pwm_device.dev.platform_data = data;
++	stx7105_pwm_device.dev.platform_data = data;
+ 
+ 	for (pwm = 0; pwm < 2; pwm++) {
+-		if (data->flags & (1<<pwm)) {
++		if (data->flags & (1 << pwm)) {
+ 			int r = (data->routing >> pwm) & 1;
+ 			int port = pwm_pios[pwm][r].port;
+ 			int pin  = pwm_pios[pwm][r].pin;
+@@ -788,35 +1098,36 @@ void stx7105_configure_pwm(struct plat_stm_pwm_data *data)
+ 		}
+ 	}
+ 
+-	platform_device_register(&stm_pwm_device);
++	platform_device_register(&stx7105_pwm_device);
+ }
+ 
+ 
+ 
+-/* ASC resources ----------------------------------------------------------- */
++/* ASC resources ---------------------------------------------------------- */
+ 
+-static struct platform_device stm_stasc_devices[] = {
+-	/* 7105: Checked except pacing */
++static struct platform_device stx7105_asc_devices[] = {
+ 	STASC_DEVICE(0xfd030000, evt2irq(0x1160), 11, 15, 0, 0, 1, 4, 3,
+-		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 2 */
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
++		/* oe pin: 2 */
+ 	STASC_DEVICE(0xfd031000, evt2irq(0x1140), 12, 16, 1, 0, 1, 4, 3,
+ 		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ 	STASC_DEVICE(0xfd032000, evt2irq(0x1120), 13, 17, 4, 0, 1, 2, 3,
+-		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* or 12, 0, 1, 2, 3 */
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
++		/* or 12, 0, 1, 2, 3 */
+ 	STASC_DEVICE(0xfd033000, evt2irq(0x1100), 14, 18, 5, 0, 1, 3, 2,
+ 		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ };
+ 
+-/*
+- * Note these three variables are global, and shared with the stasc driver
+- * for console bring up prior to platform initialisation.
+- */
++/* Note these three variables are global, and shared with the stasc driver
++ * for console bring up prior to platform initialisation.  */
+ 
+ /* the serial console device */
+ int stasc_console_device __initdata;
+ 
+ /* Platform devices to register */
+-struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
++struct platform_device
++		*stasc_configured_devices[ARRAY_SIZE(stx7105_asc_devices)]
++		__initdata;
+ unsigned int stasc_configured_devices_count __initdata = 0;
+ 
+ /* Configure the ASC's for this board.
+@@ -827,39 +1138,35 @@ void __init stx7105_configure_asc(const int *ascs, int num_ascs, int console)
+ 	int i;
+ 	static const int alt_conf[4] = { 4, 4, 3, 2 };
+ 
+-	for (i=0; i<num_ascs; i++) {
++	for (i = 0; i < num_ascs; i++) {
+ 		int port;
+ 		unsigned char flags;
+ 		struct platform_device *pdev;
+-		struct stasc_uart_data *uart_data;
++		struct stasc_uart_data *plat_data;
+ 
+ 		port = ascs[i] & 0xff;
+ 		flags = ascs[i] >> 8;
+-		pdev = &stm_stasc_devices[port];
+-		uart_data = pdev->dev.platform_data;
++		pdev = &stx7105_asc_devices[port];
++		plat_data = pdev->dev.platform_data;
+ 
+-		/* Tx */
+-		stx7105_pio_sysconf(uart_data->pios[0].pio_port,
+-				uart_data->pios[0].pio_pin,
+-				alt_conf[port], "asc");
+-		/* Rx */
+-		stx7105_pio_sysconf(uart_data->pios[1].pio_port,
+-				uart_data->pios[1].pio_pin,
++		/* TXD */
++		stx7105_pio_sysconf(plat_data->pios[0].pio_port,
++				plat_data->pios[0].pio_pin,
+ 				alt_conf[port], "asc");
+ 
+-		if (! (flags & STASC_FLAG_NORTSCTS)) {
+-			/* CTS */
+-			stx7105_pio_sysconf(uart_data->pios[2].pio_port,
+-					uart_data->pios[2].pio_pin,
++		/* RTS */
++		if (!(flags & STASC_FLAG_NORTSCTS))
++			stx7105_pio_sysconf(plat_data->pios[3].pio_port,
++					plat_data->pios[3].pio_pin,
+ 					alt_conf[port], "asc");
+-			/* RTS */
+-			stx7105_pio_sysconf(uart_data->pios[3].pio_port,
+-					uart_data->pios[3].pio_pin,
+-					alt_conf[port], "asc");
+-		}
++
+ 		pdev->id = i;
+-		((struct stasc_uart_data*)(pdev->dev.platform_data))->flags = flags;
+-		stasc_configured_devices[stasc_configured_devices_count++] = pdev;
++		plat_data->flags = flags;
++		if (!STX7105) /* 7106 suffers from the ASC FIFO bug... */
++			plat_data->flags |= STASC_FLAG_TXFIFO_BUG;
++
++		stasc_configured_devices[stasc_configured_devices_count++] =
++				pdev;
+ 	}
+ 
+ 	stasc_console_device = console;
+@@ -876,38 +1183,37 @@ static int __init stx7105_add_asc(void)
+ }
+ arch_initcall(stx7105_add_asc);
+ 
+-/* LiRC resources ---------------------------------------------------------- */
+-static struct lirc_pio lirc_pios[] = {
+-        [0] = {
++
++
++/* LiRC resources --------------------------------------------------------- */
++
++static struct lirc_pio stx7105_lirc_pios[] = {
++	{
+ 		.bank = 3,
+-		.pin  = 0,
+-		.dir  = STPIO_IN,
++		.pin = 0,
++		.dir = STPIO_IN,
+ 		.pinof = 0x00 | LIRC_IR_RX | LIRC_PIO_ON
+-	},
+-	[1] = {
++	}, {
+ 		.bank = 3,
+-		.pin  = 1,
+-		.dir  = STPIO_IN,
++		.pin = 1,
++		.dir = STPIO_IN,
+ 		.pinof = 0x00 | LIRC_UHF_RX | LIRC_PIO_ON
+-        },
+-	[2] = {
++	}, {
+ 		.bank = 3,
+-		.pin  = 2,
+-		.dir  = STPIO_ALT_OUT,
+-        .pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
+-	},
+-	[3] = {
++		.pin = 2,
++		.dir = STPIO_ALT_OUT,
++		.pinof = 0x00 | LIRC_IR_TX | LIRC_PIO_ON
++	}, {
+ 		.bank = 3,
+-		.pin  = 3,
+-		.dir  = STPIO_ALT_OUT,
+-		.pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
++		.pin = 3,
++		.dir = STPIO_ALT_OUT,
++		.pinof = 0x00 | LIRC_IR_TX | LIRC_PIO_ON
+ 	},
+ };
+ 
+ static struct plat_lirc_data lirc_private_info = {
+-	/* For the 7105, the clock settings will be calculated by the driver
+-	 * from the system clock
+-	 */
++	/* The clock settings will be calculated by the driver
++	 * from the system clock */
+ 	.irbclock	= 0, /* use current_cpu data */
+ 	.irbclkdiv      = 0, /* automatically calculate */
+ 	.irbperiodmult  = 0,
+@@ -917,30 +1223,31 @@ static struct plat_lirc_data lirc_private_info = {
+ 	.irbrxmaxperiod = 0x5000,
+ 	.sysclkdiv	= 1,
+ 	.rxpolarity	= 1,
+-	.pio_pin_arr  = lirc_pios,
+-	.num_pio_pins = ARRAY_SIZE(lirc_pios),
++	.pio_pin_arr	= stx7105_lirc_pios,
++	.num_pio_pins	= ARRAY_SIZE(stx7105_lirc_pios),
+ #ifdef CONFIG_PM
+ 	.clk_on_low_power = 1000000,
+ #endif
+ };
+ 
+-static struct platform_device lirc_device =
++static struct platform_device stx7105_lirc_device =
+ 	STLIRC_DEVICE(0xfd018000, evt2irq(0x11a0), ILC_EXT_IRQ(4));
+ 
+ void __init stx7105_configure_lirc(lirc_scd_t *scd)
+ {
+ 	lirc_private_info.scd_info = scd;
+-	stx7105_pio_sysconf(3, 0, 3, "lirc");
+-	stx7105_pio_sysconf(3, 1, 3, "lirc");
+ 	stx7105_pio_sysconf(3, 2, 3, "lirc");
+ 	stx7105_pio_sysconf(3, 3, 3, "lirc");
+-	platform_device_register(&lirc_device);
++	platform_device_register(&stx7105_lirc_device);
+ }
+ 
+-/* NAND Setup -------------------------------------------------------------- */
++
++
++/* NAND Setup ------------------------------------------------------------- */
+ 
+ void __init stx7105_configure_nand(struct platform_device *pdev)
+ {
++
+ 	/* EMI Bank base address */
+ 	/*  - setup done in stm_nand_emi probe */
+ 
+@@ -1060,11 +1367,11 @@ void __init stx7105_configure_pci(struct pci_config_data *pci_conf)
+ 
+ 	/* 7105 cut 3 has req0 wired to req3 to work around NAND problems;
+ 	 * the same story for 7106 */
+-	pci_conf->req0_to_req3 = (cpu_data->cut_major >= 3);
++	pci_conf->req0_to_req3 = !STX7105 || (cpu_data->cut_major >= 3);
+ 
+ 	/* Additionally, we are not supposed to configure the req0/req3
+-	 * to PCI mode on ... */
+-	pci_conf->req0_emi = (cpu_data->cut_major >= 3);
++	 * to PCI mode on 7105... */
++	pci_conf->req0_emi = STX7105 && (cpu_data->cut_major >= 3);
+ 
+ 	/* Fill in the default values for the 7105 */
+ 	if (!pci_conf->ad_override_default) {
+@@ -1344,10 +1651,11 @@ void __init stx7105_early_device_init(void)
+ 
+ 	sc = sysconf_claim(SYS_DEV, 0, 0, 31, "devid");
+ 	devid = sysconf_read(sc);
+-	chip_revision = (devid >> 28) +1;
++	chip_revision = (devid >> 28) + 1;
+ 	boot_cpu_data.cut_major = chip_revision;
+ 
+-	printk("STx7105 version %ld.x\n", chip_revision);
++	printk(KERN_INFO "STx710%d version %ld.x\n", STX7105 ? 5 : 6,
++			chip_revision);
+ 
+ 	/* We haven't configured the LPC, so the sleep instruction may
+ 	 * do bad things. Thus we disable it here. */
+@@ -1392,14 +1700,16 @@ static struct platform_device *stx7105_devices[] __initdata = {
+ static int __init stx7105_devices_setup(void)
+ {
+ 	platform_add_pm_devices(stx7105_pm_devices,
+-				    ARRAY_SIZE(stx7105_pm_devices));
++			ARRAY_SIZE(stx7105_pm_devices));
+ 
+ 	return platform_add_devices(stx7105_devices,
+-				    ARRAY_SIZE(stx7105_devices));
++			ARRAY_SIZE(stx7105_devices));
+ }
+ device_initcall(stx7105_devices_setup);
+ 
+-/* Interrupt initialisation ------------------------------------------------ */
++
++
++/* Interrupt initialisation ----------------------------------------------- */
+ 
+ enum {
+ 	UNUSED = 0,
+@@ -1444,7 +1754,7 @@ enum {
+ 	GROUP16
+ };
+ 
+-static struct intc_vect vectors[] = {
++static struct intc_vect stx7105_intc_vectors[] = {
+ 	INTC_VECT(TMU0, 0x400),
+ 	INTC_VECT(TMU1, 0x420),
+ 	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
+@@ -1482,7 +1792,8 @@ static struct intc_vect vectors[] = {
+ 	INTC_VECT(PCMRDR, 0x1440), INTC_VECT(SPDIFPLYR, 0x1460),
+ 	INTC_VECT(TVO_DCS0, 0x1480), INTC_VECT(NAND, 0x14a0),
+ 	INTC_VECT(DELMU_PP, 0x14c0), INTC_VECT(DELMU_MBE, 0x14e0),
+-	INTC_VECT(MAIN_VDP_FIFO_EMPTY, 0x1500), INTC_VECT(MAIN_VDP_END_PROCESSING, 0x1520),
++	INTC_VECT(MAIN_VDP_FIFO_EMPTY, 0x1500),
++		INTC_VECT(MAIN_VDP_END_PROCESSING, 0x1520),
+ 	INTC_VECT(MAIN_VTG, 0x1540), INTC_VECT(AUX_VTG, 0x1560),
+ 	INTC_VECT(HDMI_CEC_WAKEUP, 0x1580), INTC_VECT(HDMI_CEC, 0x15a0),
+ 	INTC_VECT(HDMI, 0x15c0), INTC_VECT(HDCP, 0x15e0),
+@@ -1496,7 +1807,7 @@ static struct intc_vect vectors[] = {
+ 	INTC_VECT(KEY_SCANNER, 0x17c0), INTC_VECT(MES, 0x17e0),
+ };
+ 
+-static struct intc_group groups[] = {
++static struct intc_group stx7105_intc_groups[] = {
+ 	/* I2S2SPDIF0 is a single bit group */
+ 	INTC_GROUP(GROUP0_0, I2S2SPDIF1, I2S2SPDIF2, I2S2SPDIF3, SATA_DMAC),
+ 	INTC_GROUP(GROUP0_1, SATA_HOSTC, DVP, STANDALONE_PIO,
+@@ -1524,35 +1835,37 @@ static struct intc_group groups[] = {
+ 	INTC_GROUP(GROUP16, ICAM3_KTE, ICAM3, KEY_SCANNER, MES),
+ };
+ 
+-static struct intc_prio_reg prio_registers[] = {
++static struct intc_prio_reg stx7105_intc_prio_registers[] = {
+ 					   /*   15-12, 11-8,  7-4,   3-0 */
+ 	{ 0xffd00004, 0, 16, 4, /* IPRA */     { TMU0, TMU1, TMU2,       } },
+ 	{ 0xffd00008, 0, 16, 4, /* IPRB */     {  WDT,    0,    0,     0 } },
+ 	{ 0xffd0000c, 0, 16, 4, /* IPRC */     {    0,    0,    0,  HUDI } },
+ 	{ 0xffd00010, 0, 16, 4, /* IPRD */     { IRL0, IRL1,  IRL2, IRL3 } },
+ 
+-				/* 31-28,    27-24,    23-20,      19-16, */
+-				/* 15-12,     11-8,      7-4,        3-0  */
+-	{ 0x00000300, 0, 32, 4,
++	/* offset against          31-28,    27-24,    23-20,     19-16,
++	   intc2_base below        15-12,     11-8,      7-4,       3-0  */
++	{ 0x00000000, 0, 32, 4,
+ 		/* INTPRI00 */ {       0,        0,     PIO2,       PIO1,
+ 				    PIO0, GROUP0_1, GROUP0_0, I2S2SPDIF0 } },
+-	{ 0x00000304, 0, 32, 4,
++	{ 0x00000004, 0, 32, 4,
+ 		/* INTPRI04 */ {  GROUP8,   GROUP7,   GROUP6,     GROUP5,
+ 				  GROUP4,   GROUP3,   GROUP2,     GROUP1 } },
+-	{ 0x00000308, 0, 32, 4,
++	{ 0x00000008, 0, 32, 4,
+ 		/* INTPRI08 */ { GROUP16,  GROUP15,  GROUP14,    GROUP13,
+ 				 GROUP12,  GROUP11,  GROUP10,     GROUP9 } },
+ };
+ 
+-static struct intc_mask_reg mask_registers[] = {
+-	{ 0x00000340, 0x00000360, 32, /* INTMSK00 / INTMSKCLR00 */
++static struct intc_mask_reg stx7105_intc_mask_registers[] = {
++	/* offsets against
++	 * intc2_base below */
++	{ 0x00000040, 0x00000060, 32, /* INTMSK00 / INTMSKCLR00 */
+ 	  { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	/* 31..16 */
+ 	    0, PIO2, PIO1, PIO0,				/* 15..12 */
+ 	    COMPO_CAP_TF, COMPO_CAP_BF, AUX_VDP_FIFO_EMPTY,	/* 11...8 */
+ 		AUX_VDP_END_PROC,
+ 	    STANDALONE_PIO, DVP, SATA_HOSTC, SATA_DMAC,		/*  7...4 */
+ 	    I2S2SPDIF3, I2S2SPDIF2, I2S2SPDIF1, I2S2SPDIF0 } },	/*  3...0 */
+-	{ 0x00000344, 0x00000364, 32, /* INTMSK04 / INTMSKCLR04 */
++	{ 0x00000044, 0x00000064, 32, /* INTMSK04 / INTMSKCLR04 */
+ 	  { EHCI1, OHCI1, FDMA1, FDMA0,				/* 31..28 */
+ 	    PTI1, DCXO, LX_AUD, LX_DELTAMU,			/* 27..24 */
+ 	    TS_MERGER, GMAC, GMAC_PMT, EMPI_PCI,		/* 23..20 */
+@@ -1561,7 +1874,7 @@ static struct intc_mask_reg mask_registers[] = {
+ 	    UART0, UART1, UART2, UART3,				/* 11...8 */
+ 	    SSC0, SSC1, SSC2, SSC3, 				/*  7...4 */
+ 	    PIO3, PIO4, PIO5,  PIO6  } },			/*  3...0 */
+-	{ 0x00000348, 0x00000368, 32, /* INTMSK08 / INTMSKCLR08 */
++	{ 0x00000048, 0x00000068, 32, /* INTMSK08 / INTMSKCLR08 */
+ 	  { MES, KEY_SCANNER, ICAM3, ICAM3_KTE,			/* 31..28 */
+ 	    BDISP_CQ, TVO_DCS1, EHCI0, OHCI0,			/* 27..24 */
+ 	    CRIPTO_SIG_CHK, CRIPTO_SIGDMA, TKDMA_DMA, TKDMA_TKD,/* 23..20 */
+@@ -1573,29 +1886,30 @@ static struct intc_mask_reg mask_registers[] = {
+ 	    SPDIFPLYR, PCMRDR, PCMPLYR1, PCMPLYR0 } }		/*  3...0 */
+ };
+ 
+-static DECLARE_INTC_DESC(intc_desc, "stx7105", vectors, groups,
+-			 mask_registers, prio_registers, NULL);
++static DECLARE_INTC_DESC(stx7105_intc_desc, "stx7105", stx7105_intc_vectors,
++		stx7105_intc_groups, stx7105_intc_mask_registers,
++		stx7105_intc_prio_registers, NULL);
+ 
+ void __init plat_irq_setup(void)
+ {
+ 	struct sysconf_field *sc;
+-	unsigned long intc2_base = (unsigned long)ioremap(0xfe001000, 0x400);
++	unsigned long intc2_base = (unsigned long)ioremap(0xfe001300, 0x100);
+ 	int i;
+ 
+ 	ilc_early_init(&stx7105_ilc3_device);
+ 
+-	for (i=4; i<=6; i++)
+-		prio_registers[i].set_reg += intc2_base;
+-	for (i=0; i<=2; i++) {
+-		mask_registers[i].set_reg += intc2_base;
+-		mask_registers[i].clr_reg += intc2_base;
++	for (i = 4; i < ARRAY_SIZE(stx7105_intc_prio_registers); i++)
++		stx7105_intc_prio_registers[i].set_reg += intc2_base;
++	for (i = 0; i < ARRAY_SIZE(stx7105_intc_mask_registers); i++) {
++		stx7105_intc_mask_registers[i].set_reg += intc2_base;
++		stx7105_intc_mask_registers[i].clr_reg += intc2_base;
+ 	}
+ 
+ 	/* Configure the external interrupt pins as inputs */
+ 	sc = sysconf_claim(SYS_CFG, 10, 0, 3, "irq");
+ 	sysconf_write(sc, 0xf);
+ 
+-	register_intc_controller(&intc_desc);
++	register_intc_controller(&stx7105_intc_desc);
+ 
+ 	for (i = 0; i < 16; i++) {
+ 		set_irq_chip(i, &dummy_irq_chip);
+diff --git a/arch/sh/kernel/setup.c b/arch/sh/kernel/setup.c
+index ca8dad0..f9d12c5 100644
+--- a/arch/sh/kernel/setup.c
++++ b/arch/sh/kernel/setup.c
+@@ -332,7 +332,7 @@ static const char *cpu_name[] = {
+ 	[CPU_ST40RA]	= "ST40RA",	[CPU_ST40GX1]	= "ST40GX1",
+ 	[CPU_STX5197]	= "STx5197",
+ 	[CPU_STB7100]	= "STb7100",	[CPU_STX7105]	= "STx7105",
+-	[CPU_STB7109]	= "STb7109",
++	[CPU_STX7106]	= "STx7106",	[CPU_STB7109]	= "STb7109",
+ 	[CPU_STX7111]	= "STx7111",	[CPU_STX7141]	= "STx7141",
+ 	[CPU_STX7200]	= "STx7200",
+ 	[CPU_SH4_202]	= "SH4-202",	[CPU_SH4_501]	= "SH4-501",
+diff --git a/arch/sh/mm/Kconfig b/arch/sh/mm/Kconfig
+index dd1d780..7281bcc 100644
+--- a/arch/sh/mm/Kconfig
++++ b/arch/sh/mm/Kconfig
+@@ -173,13 +173,6 @@ config CPU_SUBTYPE_ST40GX1
+ 	help
+ 	  Select ST40GX1 if you have a ST40GX1 CPU.
+ 
+-config CPU_SUBTYPE_STB7100
+-	bool "Support STb710x processors"
+-	select CPU_SUBTYPE_ST40
+-	select SUPPORTS_32BIT
+-	help
+-	  Select STB7100 if you have an STb7100, STb7109 or STb5202 CPU.
+-
+ config CPU_SUBTYPE_STX5197
+ 	bool "Support STx5197 processors"
+ 	select CPU_ST40_300
+@@ -187,14 +180,21 @@ config CPU_SUBTYPE_STX5197
+ 	help
+ 	  Select STX5197 if you have an STx5197.
+ 
++config CPU_SUBTYPE_STB7100
++	bool "Support STx7100/STx7109 processors"
++	select CPU_SUBTYPE_ST40
++	select SUPPORTS_32BIT
++	help
++	  Select this if you have a STx7100/STx7109 CPU (or derivative).
++
+ config CPU_SUBTYPE_STX7105
+-	bool "Support STx7105 processors"
++ 	bool "Support STx7105/STx7106 processors"
+ 	select CPU_ST40_300
+ 	select SUPPORTS_32BIT
+ 	select SH_ST_SYNOPSYS_PCI if PCI
+ 	select STM_PIO10
+ 	help
+-	  Select STX7105 if you have an STx7105 CPU.
++ 	  Select this if you have a STx7105 or STx7106 CPU (or derivative).
+ 
+ config CPU_SUBTYPE_STX7111
+ 	bool "Support STx7111 processors"
+diff --git a/include/asm-sh/irq-ilc.h b/include/asm-sh/irq-ilc.h
+index 8a28deb..28783f8 100644
+--- a/include/asm-sh/irq-ilc.h
++++ b/include/asm-sh/irq-ilc.h
+@@ -18,7 +18,7 @@
+ #define ILC_EXT_IRQ(x)	(ILC_FIRST_IRQ + 64 + (x))
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7105)
+ #define ILC_FIRST_IRQ	176
+-#define ILC_NR_IRQS	(64+35)
++#define ILC_NR_IRQS	(64 + 42)
+ #define ILC_INT_IRQ(x)	(ILC_FIRST_IRQ + (x))
+ #define ILC_EXT_IRQ(x)	(ILC_FIRST_IRQ + 64 + (x))
+ #define ILC_IRQ(x)	ILC_INT_IRQ(x)
+diff --git a/include/asm-sh/processor.h b/include/asm-sh/processor.h
+index 328aa74..c2ed470 100644
+--- a/include/asm-sh/processor.h
++++ b/include/asm-sh/processor.h
+@@ -52,7 +52,8 @@ enum cpu_type {
+ 	CPU_SH7750, CPU_SH7750S, CPU_SH7750R, CPU_SH7751, CPU_SH7751R,
+ 	CPU_SH7760, CPU_ST40RA, CPU_ST40GX1, CPU_STI5528, CPU_STM8000,
+ 	CPU_STX5197,
+-	CPU_STB7100, CPU_STX7105, CPU_STB7109, CPU_STX7111, CPU_STX7141,
++	CPU_STB7100, CPU_STX7105, CPU_STX7106, CPU_STB7109,
++	CPU_STX7111, CPU_STX7141,
+ 	CPU_STX7200,
+ 	CPU_SH4_202, CPU_SH4_501,
+ 
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 8e9989e..5114a4f 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -69,37 +69,42 @@ struct plat_ssc_data {
+ #endif
+ 
+ #ifdef CONFIG_CPU_SUBTYPE_STX7105
+-#define SSC_SCLK_SHIFT(n)	(0+(n*6))
+-#define SSC_MTSR_SHIFT(n)	(2+(n*6))
+-#define SSC_MRST_SHIFT(n)	(4+(n*6))
+-
+-#define SSC2_SCLK_PIO3_4	(0 << SSC_SCLK_SHIFT(2))
+-#define SSC2_SCLK_PIO12_0	(2 << SSC_SCLK_SHIFT(2))
+-#define SSC2_SCLK_PIO13_4	(3 << SSC_SCLK_SHIFT(2))
+-
+-#define SSC2_MTSR_PIO3_5	(0 << SSC_MTSR_SHIFT(2))
+-#define SSC2_MTSR_PIO12_1	(1 << SSC_MTSR_SHIFT(2))
+-#define SSC2_MTSR_PIO13_5	(2 << SSC_MTSR_SHIFT(2))
+-
+-#define SSC2_MRST_PIO2_0	(0 << SSC_MRST_SHIFT(2))
+-#define SSC2_MRST_PIO3_5	(1 << SSC_MRST_SHIFT(2))
+-#define SSC2_MRST_PIO12_1	(2 << SSC_MRST_SHIFT(2))
+-#define SSC2_MRST_PIO13_5	(3 << SSC_MRST_SHIFT(2))
+-
+-#define SSC3_SCLK_PIO3_6	(0 << SSC_SCLK_SHIFT(3))
+-#define SSC3_SCLK_PIO13_2	(1 << SSC_SCLK_SHIFT(3))
+-#define SSC3_SCLK_PIO13_6	(2 << SSC_SCLK_SHIFT(3))
+-
+-#define SSC3_MTSR_PIO3_7	(0 << SSC_MTSR_SHIFT(3))
+-#define SSC3_MTSR_PIO13_3	(1 << SSC_MTSR_SHIFT(3))
+-#define SSC3_MTSR_PIO13_7	(2 << SSC_MTSR_SHIFT(3))
+-
+-#define SSC3_MRST_PIO2_1	(0 << SSC_MRST_SHIFT(3))
+-#define SSC3_MRST_PIO3_7	(1 << SSC_MRST_SHIFT(3))
+-#define SSC3_MRST_PIO13_3	(2 << SSC_MRST_SHIFT(3))
+-#define SSC3_MRST_PIO13_7	(3 << SSC_MRST_SHIFT(3))
++
++#define STX7105_SSC_SHIFT(ssc, pin)	(((ssc) * 6) + ((pin) * 2))
++
++#define SSC2_SCLK_PIO2_4	(0 << STX7105_SSC_SHIFT(2, 0)) /* 7106 only! */
++#define SSC2_SCLK_PIO3_4	(1 << STX7105_SSC_SHIFT(2, 0))
++#define SSC2_SCLK_PIO12_0	(2 << STX7105_SSC_SHIFT(2, 0))
++#define SSC2_SCLK_PIO13_4	(3 << STX7105_SSC_SHIFT(2, 0))
++
++#define SSC2_MTSR_PIO2_0	(0 << STX7105_SSC_SHIFT(2, 1))
++#define SSC2_MTSR_PIO3_5	(1 << STX7105_SSC_SHIFT(2, 1))
++#define SSC2_MTSR_PIO12_1	(2 << STX7105_SSC_SHIFT(2, 1))
++#define SSC2_MTSR_PIO13_5	(3 << STX7105_SSC_SHIFT(2, 1))
++
++#define SSC2_MRST_PIO2_0	(0 << STX7105_SSC_SHIFT(2, 2))
++#define SSC2_MRST_PIO3_5	(1 << STX7105_SSC_SHIFT(2, 2))
++#define SSC2_MRST_PIO12_1	(2 << STX7105_SSC_SHIFT(2, 2))
++#define SSC2_MRST_PIO13_5	(3 << STX7105_SSC_SHIFT(2, 2))
++
++#define SSC3_SCLK_PIO2_7	(0 << STX7105_SSC_SHIFT(3, 0)) /* 7106 only! */
++#define SSC3_SCLK_PIO3_6	(1 << STX7105_SSC_SHIFT(3, 0))
++#define SSC3_SCLK_PIO13_2	(2 << STX7105_SSC_SHIFT(3, 0))
++#define SSC3_SCLK_PIO13_6	(3 << STX7105_SSC_SHIFT(3, 0))
++
++#define SSC3_MTSR_PIO2_1	(0 << STX7105_SSC_SHIFT(3, 1))
++#define SSC3_MTSR_PIO3_7	(1 << STX7105_SSC_SHIFT(3, 1))
++#define SSC3_MTSR_PIO13_3	(2 << STX7105_SSC_SHIFT(3, 1))
++#define SSC3_MTSR_PIO13_7	(3 << STX7105_SSC_SHIFT(3, 1))
++
++#define SSC3_MRST_PIO2_1	(0 << STX7105_SSC_SHIFT(3, 2))
++#define SSC3_MRST_PIO3_7	(1 << STX7105_SSC_SHIFT(3, 2))
++#define SSC3_MRST_PIO13_3	(2 << STX7105_SSC_SHIFT(3, 2))
++#define SSC3_MRST_PIO13_7	(3 << STX7105_SSC_SHIFT(3, 2))
++
+ #endif
+ 
++
+ #define SPI_LINE_SHIFT		0x0
+ #define SPI_LINE_MASK		0x7
+ #define SPI_BANK_SHIFT		0x3
+@@ -352,9 +357,9 @@ struct plat_usb_data {
+  * struct usb_init_data - initialisation data for a USB port
+  * @oc_en: enable OC detection (0 or 1)
+  * @oc_actlow: whether OC detection is active low (0 or 1)
+- * @oc_pinsel: use alternate pin for OC detection (0 or 1)
++ * @oc_pinsel: pin to be used for OC detection (defined below)
+  * @pwr_en: enable power enable (0 or 1)
+- * @pwr_pinsel: use alternate pin for power enable (0 or 1)
++ * @pwr_pinsel: pin to be used for power enable (defined below)
+  */
+ struct usb_init_data {
+ 	char oc_en;
+@@ -365,15 +370,17 @@ struct usb_init_data {
+ };
+ 
+ #ifdef CONFIG_CPU_SUBTYPE_STX7105
+-#define USB0_OC_PIO4_4		0
+-#define USB0_OC_PIO12_5		1
+-#define USB0_PWR_PIO4_5		0
+-#define USB0_PWR_PIO12_6	1
+-
+-#define USB1_OC_PIO4_6		0
+-#define USB1_OC_PIO14_6		1
+-#define USB1_PWR_PIO4_7		0
+-#define USB1_PWR_PIO14_7	1
++#define USB0_OC_PIO4_4   0
++#define USB0_OC_PIO12_5  1
++#define USB0_OC_PIO14_4  2 /* 7106 only! */
++#define USB0_PWR_PIO4_5  0
++#define USB0_PWR_PIO12_6 1
++#define USB0_PWR_PIO14_5 2 /* 7106 only! */
++
++#define USB1_OC_PIO4_6   0
++#define USB1_OC_PIO14_6  1
++#define USB1_PWR_PIO4_7  0
++#define USB1_PWR_PIO14_7 1
+ #endif
+ 
+ 
+@@ -528,21 +535,35 @@ void stx7100_configure_ethernet(int rmii_mode, int ext_clk, int phy_bus);
+ void stx7100_configure_lirc(lirc_scd_t *scd);
+ void stx7100_configure_pata(int bank, int pc_mode, int irq);
+ 
+-void stx7105_configure_sata(void);
+ void stx7105_early_device_init(void);
+ void stx7105_configure_asc(const int *ascs, int num_ascs, int console);
+ void stx7105_configure_pwm(struct plat_stm_pwm_data *data);
+ void stx7105_configure_ssc(struct plat_ssc_data *data);
+ void stx7105_configure_usb(int port, struct usb_init_data *data);
+-void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
+-				int ext_mdio, int ext_clk, int phy_bus,
+-				int mdint_workaround);
++enum stx7105_ethernet_mode {
++	stx7105_ethernet_mii,
++	stx7105_ethernet_gmii,
++	stx7105_ethernet_rmii,
++	stx7105_ethernet_reverse_mii
++};
++#define STX7105_ETHERNET_MII1_MDIO_MASK	(1 << 0)
++#define STX7105_ETHERNET_MII1_MDIO_11_0	(0 << 0)
++#define STX7105_ETHERNET_MII1_MDIO_3_4	(1 << 0)
++#define STX7105_ETHERNET_MII1_MDC_MASK	(1 << 1)
++#define STX7105_ETHERNET_MII1_MDC_11_1	(0 << 1)
++#define STX7105_ETHERNET_MII1_MDC_3_5	(1 << 1)
++void stx7105_configure_ethernet(int port, enum stx7105_ethernet_mode mode,
++		int ext_clk, int phy_bus,
++		int mii0_mdint_workaround, int mii1_routing);
+ void stx7105_configure_nand(struct platform_device *pdev);
+ void stx7105_configure_lirc(lirc_scd_t *scd);
++void stx7105_configure_sata(int port);
+ void stx7105_configure_pata(int bank, int pc_mode, int irq);
+-void stx7105_configure_audio_pins(int pcmout, int spdif, int pcmin);
++void stx7105_configure_audio_pins(int pcmout1, int pcmout2, int spdif,
++		int pcmin);
+ void stx7105_configure_pci(struct pci_config_data *pci_config);
+-int  stx7105_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin);
++int stx7105_pcibios_map_platform_irq(struct pci_config_data *pci_config,
++		u8 pin);
+ 
+ void stx7111_early_device_init(void);
+ void stx7111_configure_asc(const int *ascs, int num_ascs, int console);
+-- 
+1.6.0.6
+

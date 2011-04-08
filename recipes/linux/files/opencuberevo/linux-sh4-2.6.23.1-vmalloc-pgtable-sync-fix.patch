@@ -1,0 +1,36 @@
+This fixes a problem in the code which copies the vmalloc portion of the
+kernel's page table into the current user space page table. The addition
+of the four level page table code breaks on folded page tables, because
+the pud level is always present (although folded). This updates the code
+to use the same style of updates for the pud as is used for the pgd level.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23.1-stm/arch/sh/mm/fault.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/mm/fault.c
++++ linux-2.6.23.1-stm/arch/sh/mm/fault.c
+@@ -57,7 +57,6 @@ asmlinkage void __kprobes do_page_fault(
+ 		pgd = get_TTB() + offset;
+ 		pgd_k = swapper_pg_dir + offset;
+ 
+-		/* This will never happen with the folded page table. */
+ 		if (!pgd_present(*pgd)) {
+ 			if (!pgd_present(*pgd_k))
+ 				goto bad_area_nosemaphore;
+@@ -67,9 +66,13 @@ asmlinkage void __kprobes do_page_fault(
+ 
+ 		pud = pud_offset(pgd, address);
+ 		pud_k = pud_offset(pgd_k, address);
+-		if (pud_present(*pud) || !pud_present(*pud_k))
+-			goto bad_area_nosemaphore;
+-		set_pud(pud, *pud_k);
++
++		if (!pud_present(*pud)) {
++			if (!pud_present(*pud_k))
++				goto bad_area_nosemaphore;
++			set_pud(pud, *pud_k);
++			return;
++		}
+ 
+ 		pmd = pmd_offset(pud, address);
+ 		pmd_k = pmd_offset(pud_k, address);

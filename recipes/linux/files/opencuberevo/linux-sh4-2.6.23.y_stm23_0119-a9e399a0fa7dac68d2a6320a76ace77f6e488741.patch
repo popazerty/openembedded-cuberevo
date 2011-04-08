@@ -1,0 +1,53 @@
+From a9e399a0fa7dac68d2a6320a76ace77f6e488741 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Mon, 9 Mar 2009 18:50:28 +0000
+Subject: [PATCH] libata: Keep shadow last_ctl up to date during resets
+
+libata keeps a shadow copy of the ATA CTL register (which is write only),
+and only writes to the hardware when the required value doesn't match
+the shadow. However this copy wasn't being maintained when performing
+reset functions. This could cause problems for the first operation after
+a reset when the correct value might not be written to the CTL register.
+
+See bugzilla https://bugzilla.stlinux.com/show_bug.cgi?id=5391
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/ata/libata-core.c |    6 +++++-
+ 1 files changed, 5 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/ata/libata-core.c b/drivers/ata/libata-core.c
+index 859873c..462d9fb 100644
+--- a/drivers/ata/libata-core.c
++++ b/drivers/ata/libata-core.c
+@@ -3102,6 +3102,7 @@ static int ata_bus_softreset(struct ata_port *ap, unsigned int devmask,
+ 	iowrite8(ap->ctl | ATA_SRST, ioaddr->ctl_addr);
+ 	udelay(20);	/* FIXME: flush */
+ 	iowrite8(ap->ctl, ioaddr->ctl_addr);
++	ap->last_ctl = ap->ctl;
+ 
+ 	/* spec mandates ">= 2ms" before checking status.
+ 	 * We wait 150ms, because that was the magic delay used for
+@@ -3200,6 +3201,7 @@ void ata_bus_reset(struct ata_port *ap)
+ 	if (ap->flags & (ATA_FLAG_SATA_RESET | ATA_FLAG_SRST)) {
+ 		/* set up device control for ATA_FLAG_SATA_RESET */
+ 		iowrite8(ap->ctl, ioaddr->ctl_addr);
++		ap->last_ctl = ap->ctl;
+ 	}
+ 
+ 	DPRINTK("EXIT\n");
+@@ -3585,8 +3587,10 @@ void ata_std_postreset(struct ata_port *ap, unsigned int *classes)
+ 	}
+ 
+ 	/* set up device control */
+-	if (ap->ioaddr.ctl_addr)
++	if (ap->ioaddr.ctl_addr) {
+ 		iowrite8(ap->ctl, ap->ioaddr.ctl_addr);
++		ap->last_ctl = ap->ctl;
++	}
+ 
+ 	DPRINTK("EXIT\n");
+ }
+-- 
+1.6.0.6
+

@@ -1,0 +1,28 @@
+From 3312cf9ac673c429d03fe873f3fa5a3f1e18b990 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 7 Aug 2009 15:02:11 +0200
+Subject: [PATCH] stmmac: provide sysfs class device symlink
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 08febdc..9fe76d8 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -2038,6 +2038,9 @@ static int stmmac_dvr_probe(struct platform_device *pdev)
+ 		goto out;
+ 	}
+ 
++	SET_MODULE_OWNER(ndev);
++	SET_NETDEV_DEV(ndev, &pdev->dev);
++
+ 	/* Get the MAC information */
+ 	ndev->irq = platform_get_irq_byname(pdev, "macirq");
+ 	if (ndev->irq == -ENXIO) {
+-- 
+1.6.0.6
+

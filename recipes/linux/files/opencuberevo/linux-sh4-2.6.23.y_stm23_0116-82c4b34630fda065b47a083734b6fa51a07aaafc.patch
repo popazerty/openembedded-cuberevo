@@ -1,0 +1,1528 @@
+From 82c4b34630fda065b47a083734b6fa51a07aaafc Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Fri, 17 Oct 2008 17:07:50 +0100
+Subject: [PATCH] sh_stm: Initial support for the STx5197 and mb704 board
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/Kconfig                           |   11 +
+ arch/sh/Makefile                          |    1 +
+ arch/sh/boards/st/mb704/Makefile          |    5 +
+ arch/sh/boards/st/mb704/setup.c           |  160 +++++++
+ arch/sh/kernel/cpu/Makefile               |    1 +
+ arch/sh/kernel/cpu/irq/Makefile           |    1 +
+ arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c |    6 +-
+ arch/sh/kernel/cpu/sh4/Makefile           |    2 +
+ arch/sh/kernel/cpu/sh4/clock-stx5197.c    |  318 +++++++++++++
+ arch/sh/kernel/cpu/sh4/probe.c            |    3 +
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c    |  717 +++++++++++++++++++++++++++++
+ arch/sh/kernel/setup.c                    |    1 +
+ arch/sh/mm/Kconfig                        |    7 +
+ drivers/stm/Kconfig                       |    1 -
+ drivers/usb/Kconfig                       |    2 +
+ drivers/usb/host/ehci-hcd.c               |    3 +-
+ drivers/usb/host/ohci-hcd.c               |    3 +-
+ include/asm-sh/irq-ilc.h                  |    6 +-
+ include/asm-sh/processor.h                |    1 +
+ include/linux/stm/soc.h                   |   14 +-
+ 20 files changed, 1256 insertions(+), 7 deletions(-)
+ create mode 100644 arch/sh/boards/st/mb704/Makefile
+ create mode 100644 arch/sh/boards/st/mb704/setup.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/clock-stx5197.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/setup-stx5197.c
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 71b3117..6a7a8d3 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -590,6 +590,17 @@ config SH_ST_MB680
+ 	  STi7105-MBOARD, ST board ID: mb680). More information at:
+ 	  <http://www.stlinux.com/boards/mb680/>
+ 
++config SH_ST_MB704
++	bool "mb704: STx5197 Validation board"
++	depends on CPU_SUBTYPE_STX5197
++	select SH_ST_STEM
++	select SH_ST_STPM_HD_V2
++	help
++	  Select STx5197 Validation if configuring for an
++	  STMicroelectronics STx5197 Validation Board (product code:
++	  STx5197-MBOARD, ST board ID: mb704). More information at:
++	  <http://www.stlinux.com/boards/mb704/>
++
+ comment "ST Peripheral Boards"
+ 
+ config SH_ST_DB641
+diff --git a/arch/sh/Makefile b/arch/sh/Makefile
+index 642d133..ff624cc 100644
+--- a/arch/sh/Makefile
++++ b/arch/sh/Makefile
+@@ -143,6 +143,7 @@ machdir-$(CONFIG_SH_ST_MB618)			+= st/mb618 st/common
+ machdir-$(CONFIG_SH_ST_MB628)			+= st/mb628 st/common
+ machdir-$(CONFIG_SH_ST_MB671)			+= st/mb671 st/common
+ machdir-$(CONFIG_SH_ST_MB680)			+= st/mb680 st/common
++machdir-$(CONFIG_SH_ST_MB704)			+= st/mb704
+ 
+ incdir-y	:= $(notdir $(firstword $(machdir-y)))
+ 
+diff --git a/arch/sh/boards/st/mb704/Makefile b/arch/sh/boards/st/mb704/Makefile
+new file mode 100644
+index 0000000..c849303
+--- /dev/null
++++ b/arch/sh/boards/st/mb704/Makefile
+@@ -0,0 +1,5 @@
++#
++# Makefile for STMicroelectronics STx5197 processor board (mb704)
++#
++
++obj-y := setup.o
+diff --git a/arch/sh/boards/st/mb704/setup.c b/arch/sh/boards/st/mb704/setup.c
+new file mode 100644
+index 0000000..40d163e
+--- /dev/null
++++ b/arch/sh/boards/st/mb704/setup.c
+@@ -0,0 +1,160 @@
++/*
++ * arch/sh/boards/st/mb704/setup.c
++ *
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy (stuart.menefy@st.com)
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * STMicroelectronics STx5197 processor board support.
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/leds.h>
++#include <linux/stm/pio.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/emi.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/physmap.h>
++#include <linux/mtd/partitions.h>
++#include <linux/phy.h>
++#include <linux/lirc.h>
++#include <linux/spi/spi.h>
++#include <linux/spi/eeprom.h>
++#include <linux/io.h>
++#include <asm/irq-ilc.h>
++#include <asm/irl.h>
++#include "../common/common.h"
++
++static int ascs[2] __initdata = { 2, 3 };
++
++static void __init mb704_setup(char **cmdline_p)
++{
++	printk(KERN_INFO "STMicroelectronics STx5197 Mboard initialisation\n");
++
++	stx5197_early_device_init();
++	stx5197_configure_asc(ascs, 2, 0);
++}
++
++static struct plat_stm_pwm_data pwm_private_info = {
++	.flags		= PLAT_STM_PWM_OUT0,
++};
++
++/*
++ * Configure SSC0 as SPI to drive serial Flash attached to SPI (requires
++ * SSC driver SPI) or as I2C to drive I2C devices such as HDMI.
++ *
++ * To use I2C bus 0 (PIO1:1:0]) it is necessary to fit jumpers
++ * J2-E, J2-G, J2-F and J2-H.
++ *
++ * I2C bus 1 can be routed to on chip QPSK block (setting routing to
++ * SSC1_QPSK) or the pins QAM_SCLT/SDAT (setting SSC1_QAM_SCLT_SDAT).
++ * Both require SSC driver.
++ *
++ * To use I2C bus 2 (PIO3[3:2]) it is necessary to remove jumpers
++ * J7-A, J7-C, J6-H and J6-F and fit J7-B and J6-G.
++ */
++static struct plat_ssc_data ssc_private_info = {
++	.capability =
++		ssc0_has(SSC_SPI_CAPABILITY) |
++		ssc1_has(SSC_I2C_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY),
++	.routing = SSC1_QPSK,
++};
++
++static struct platform_device mb704_leds = {
++	.name = "leds-gpio",
++	.id = -1,
++	.dev.platform_data = &(struct gpio_led_platform_data) {
++		.num_leds = 1,
++		.leds = (struct gpio_led[]) {
++			{
++				.name = "HB",
++				.default_trigger = "heartbeat",
++				.gpio = stpio_to_gpio(3, 6),
++			},
++		},
++	},
++};
++
++static struct plat_stmmacphy_data phy_private_data = {
++	/* SMSC LAN 8700 on the mb762 */
++	.bus_id = 0,
++	.phy_addr = 0,
++	.phy_mask = 0,
++	.interface = PHY_INTERFACE_MODE_MII,
++};
++
++static struct platform_device mb704_phy_device = {
++	.name		= "stmmacphy",
++	.id		= 0,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.name	= "phyirq",
++			.start	= -1,/* FIXME should be ILC_IRQ(25) */
++			.end	= -1,
++			.flags	= IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = &phy_private_data,
++	}
++};
++
++/* Note to use the mb704's SPI Flash device J10 needs to be in position 1-2. */
++
++static struct spi_board_info mb704_spi_device = {
++	.modalias       = "mtd_dataflash",
++	.chip_select    = 0,
++	.max_speed_hz   = 120000,
++	.bus_num        = 0,
++};
++
++static struct platform_device *mb704_devices[] __initdata = {
++	&mb704_leds,
++	&mb704_phy_device,
++};
++
++static int __init device_init(void)
++{
++	/*
++	 * By default we don't configure PWM as the mb704 has J2C fitted
++	 * which resulsts in contention.
++	 * stx5197_configure_pwm(&pwm_private_info);
++	 */
++	stx5197_configure_ssc(&ssc_private_info);
++	stx5197_configure_usb();
++	stx5197_configure_ethernet(0, 1, 0);
++
++	spi_register_board_info(&mb704_spi_device, 1);
++
++	return platform_add_devices(mb704_devices, ARRAY_SIZE(mb704_devices));
++}
++arch_initcall(device_init);
++
++static void __iomem *mb704_ioport_map(unsigned long port, unsigned int size)
++{
++	/*
++	 * However picking somewhere safe isn't as easy as you might
++	 * think.  I used to use external ROM, but that can cause
++	 * problems if you are in the middle of updating Flash. So I'm
++	 * now using the processor core version register, which is
++	 * guaranted to be available, and non-writable.
++	 */
++	return (void __iomem *)CCN_PVR;
++}
++
++static void __init mb704_init_irq(void)
++{
++}
++
++struct sh_machine_vector mv_mb704 __initmv = {
++	.mv_name		= "mb704",
++	.mv_setup		= mb704_setup,
++	.mv_nr_irqs		= NR_IRQS,
++	.mv_init_irq		= mb704_init_irq,
++	.mv_ioport_map		= mb704_ioport_map,
++};
+diff --git a/arch/sh/kernel/cpu/Makefile b/arch/sh/kernel/cpu/Makefile
+index 6d51f4c..c530ce4 100644
+--- a/arch/sh/kernel/cpu/Makefile
++++ b/arch/sh/kernel/cpu/Makefile
+@@ -17,6 +17,7 @@ obj-y	+= irq/ init.o clock.o
+ # clocks. Those which do not can remove it here, and define a complete
+ # new clock architecture in their own processor specific code.
+ archclock-y					:= clock-cpg.o
++archclock-$(CONFIG_CPU_SUBTYPE_STX5197)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STB7100)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STX7105)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STX7111)	:=
+diff --git a/arch/sh/kernel/cpu/irq/Makefile b/arch/sh/kernel/cpu/irq/Makefile
+index 0336490..ae9bb13 100644
+--- a/arch/sh/kernel/cpu/irq/Makefile
++++ b/arch/sh/kernel/cpu/irq/Makefile
+@@ -5,6 +5,7 @@ obj-y	+= imask.o intc.o
+ 
+ obj-$(CONFIG_CPU_HAS_IPR_IRQ)		+= ipr.o
+ obj-$(CONFIG_CPU_HAS_MASKREG_IRQ)	+= maskreg.o
++obj-$(CONFIG_CPU_SUBTYPE_STX5197)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= st40_ilc_sti5528.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7105)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= st40_ilc_stx7200.o ilc3_common.o
+diff --git a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+index a8237f0..7858435 100644
+--- a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -86,7 +86,8 @@ void ilc_irq_demux(unsigned int irq, struct irq_desc *desc)
+ #if	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7141)
+ 	unsigned int priority = 7;
+-#elif	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
++#elif	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	unsigned int priority = 14 - irq;
+ #endif
+@@ -165,7 +166,8 @@ static unsigned int startup_ilc_irq(unsigned int irq)
+ 	/* ILC_EXT_OUT[6] -> IRL[2] (default priority  7 = irq  8) */
+ 	/* ILC_EXT_OUT[7] -> IRL[3] (default priority  4 = irq 11) */
+ 	ILC_SET_PRI(irq_offset, 0x8007);
+-#elif	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
++#elif	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	ILC_SET_PRI(irq_offset, priority);
+ #elif	defined(CONFIG_CPU_SUBTYPE_STX7141)
+diff --git a/arch/sh/kernel/cpu/sh4/Makefile b/arch/sh/kernel/cpu/sh4/Makefile
+index 204cb42..87ddbb1 100644
+--- a/arch/sh/kernel/cpu/sh4/Makefile
++++ b/arch/sh/kernel/cpu/sh4/Makefile
+@@ -19,6 +19,7 @@ obj-$(CONFIG_CPU_SUBTYPE_SH7751R)	+= setup-sh7750.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH7760)	+= setup-sh7760.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH4_202)	+= setup-sh4-202.o
+ obj-$(CONFIG_CPU_SUBTYPE_ST40STB1)	+= setup-st40ra.o
++obj-$(CONFIG_CPU_SUBTYPE_STX5197)	+= setup-stx5197.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= setup-stb7100.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7105)	+= setup-stx7105.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= setup-stx7111.o
+@@ -28,6 +29,7 @@ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= setup-stx7200.o
+ # Primary on-chip clocks (common)
+ ifndef CONFIG_CPU_SH4A
+ clock-$(CONFIG_CPU_SH4)			:= clock-sh4.o
++clock-$(CONFIG_CPU_SUBTYPE_STX5197)	:= clock-stx5197.o
+ clock-$(CONFIG_CPU_SUBTYPE_STB7100)	:= clock-stb7100.o
+ clock-$(CONFIG_CPU_SUBTYPE_STX7105)	:= clock-stx7105.o
+ clock-$(CONFIG_CPU_SUBTYPE_STX7111)	:= clock-stx7111.o
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx5197.c b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+new file mode 100644
+index 0000000..11624a0
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+@@ -0,0 +1,318 @@
++/*
++ * Copyright (C) 2008 STMicroelectronics Limited
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Code to handle the clockgen hardware on the STx5197.
++ */
++
++#include <linux/init.h>
++#include <linux/kernel.h>
++#include <linux/stm/sysconf.h>
++#include <linux/io.h>
++#include <asm/clock.h>
++#include <asm/freq.h>
++
++/* Values for mb704 */
++#define XTAL	30000000
++
++#define SYS_SERV_BASE_ADDR	0xfdc00000
++
++#define PLL_CONFIG0(x)		((x*8)+0x0)
++#define PLL_CONFIG1(x)		((x*8)+0x4)
++#define PLL_CONFIG1_POFF	(1<<13)
++#define CLKDIV0_CONFIG0		0x90
++#define CLKDIV1_4_CONFIG0(n)	(0x0a0 + ((n-1)*0xc))
++#define CLKDIV6_10_CONFIG0(n)	(0x0d0 + ((n-6)*0xc))
++#define PLL_SELECT_CFG		0x180
++static void __iomem *ss_base;
++
++/* External XTAL ----------------------------------------------------------- */
++
++static void xtal_init(struct clk *clk)
++{
++	clk->rate = XTAL;
++}
++
++static struct clk_ops xtal_ops = {
++	.init		= xtal_init,
++};
++
++static struct clk xtal_osc = {
++	.name		= "xtal",
++	.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++	.ops		= &xtal_ops,
++};
++
++/* PLLs -------------------------------------------------------------------- */
++
++static unsigned long pll_freq(unsigned long input, int pll_num)
++{
++	unsigned long config0, config1;
++	unsigned long freq, ndiv, pdiv, mdiv;
++
++	config0 = readl(ss_base + PLL_CONFIG0(pll_num));
++	config1 = readl(ss_base + PLL_CONFIG1(pll_num));
++
++	if (config1 & PLL_CONFIG1_POFF)
++		return 0;
++
++	mdiv = (config0 >> 0) & 0xff;
++	ndiv = (config0 >> 8) & 0xff;
++	pdiv = (config1 >> 0) & 0x7;
++
++	freq = (((2 * (input / 1000) * ndiv) / mdiv) /
++		(1 << pdiv)) * 1000;
++
++	return freq;
++}
++
++struct pllclk
++{
++	struct clk clk;
++	unsigned long pll_num;
++};
++
++static void pll_clk_recalc(struct clk *clk)
++{
++	struct pllclk *pllclk = container_of(clk, struct pllclk, clk);
++
++	clk->rate = pll_freq(clk->parent->rate, pllclk->pll_num);
++}
++
++static struct clk_ops pll_clk_ops = {
++	.recalc		= pll_clk_recalc,
++};
++
++static struct pllclk pllclks[2] = {
++{
++	.clk = {
++		.name		= "PLLA",
++		.parent		= &xtal_osc,
++		.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++		.ops		= &pll_clk_ops,
++	},
++	.pll_num = 0
++}, {
++	.clk = {
++		.name		= "PLLB",
++		.parent		= &xtal_osc,
++		.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++		.ops		= &pll_clk_ops,
++	},
++	.pll_num = 1
++} };
++
++/* Divided PLL clocks ------------------------------------------------------ */
++
++/*
++ * The divider is implemented as a variable length shift register
++ * preloaded with a bit sequence, which is clocked by the input clock,
++ * plus some additional combinatorial logic. Rather than try and work
++ * out what this represents, we simply use a look up table with the
++ * recommended values.
++ *
++ * Table bits:
++ * 25     half_not_odd
++ * 24     even
++ * 23:20  depth[3:0]
++ * 19: 0 clkdiv_seq[19:0]
++ */
++
++#define FRAC(whole, half) (((whole)*2) + (half ? 1 : 0))
++#define COMBINE_DIVIDER(depth, seq, hno, even) \
++	((hno << 25) | (even << 24) | (depth << 20) | (seq << 0))
++
++static const struct {
++	unsigned long ratio2, value;
++} divide_table[] = {
++	{ FRAC(2 , 0), COMBINE_DIVIDER(0x01, 0x00AAA, 0x1, 0x1) },
++	{ FRAC(2 , 5), COMBINE_DIVIDER(0x04, 0x05AD6, 0x1, 0x0) },
++	{ FRAC(3 , 0), COMBINE_DIVIDER(0x01, 0x00DB6, 0x0, 0x0) },
++	{ FRAC(3 , 5), COMBINE_DIVIDER(0x03, 0x0366C, 0x1, 0x0) },
++	{ FRAC(4 , 0), COMBINE_DIVIDER(0x05, 0x0CCCC, 0x1, 0x1) },
++	{ FRAC(4 , 5), COMBINE_DIVIDER(0x07, 0x3399C, 0x1, 0x0) },
++	{ FRAC(5 , 0), COMBINE_DIVIDER(0x04, 0x0739C, 0x0, 0x0) },
++	{ FRAC(5 , 5), COMBINE_DIVIDER(0x00, 0x0071C, 0x1, 0x0) },
++	{ FRAC(6 , 0), COMBINE_DIVIDER(0x01, 0x00E38, 0x1, 0x1) },
++	{ FRAC(6 , 5), COMBINE_DIVIDER(0x02, 0x01C78, 0x1, 0x0) },
++	{ FRAC(7 , 0), COMBINE_DIVIDER(0x03, 0x03C78, 0x0, 0x0) },
++	{ FRAC(7 , 5), COMBINE_DIVIDER(0x04, 0x07878, 0x1, 0x0) },
++	{ FRAC(8 , 0), COMBINE_DIVIDER(0x05, 0x0F0F0, 0x1, 0x1) },
++	{ FRAC(8 , 5), COMBINE_DIVIDER(0x06, 0x1E1F0, 0x1, 0x0) },
++	{ FRAC(9 , 0), COMBINE_DIVIDER(0x07, 0x3E1F0, 0x0, 0x0) },
++	{ FRAC(9 , 5), COMBINE_DIVIDER(0x08, 0x7C1F0, 0x1, 0x0) },
++	{ FRAC(10, 0), COMBINE_DIVIDER(0x09, 0xF83E0, 0x1, 0x1) },
++	{ FRAC(11, 0), COMBINE_DIVIDER(0x00, 0x007E0, 0x0, 0x0) },
++	{ FRAC(12, 0), COMBINE_DIVIDER(0x01, 0x00FC0, 0x1, 0x1) },
++	{ FRAC(13, 0), COMBINE_DIVIDER(0x02, 0x01FC0, 0x0, 0x0) },
++	{ FRAC(14, 0), COMBINE_DIVIDER(0x03, 0x03F80, 0x1, 0x1) },
++	{ FRAC(15, 0), COMBINE_DIVIDER(0x04, 0x07F80, 0x0, 0x0) },
++	{ FRAC(16, 0), COMBINE_DIVIDER(0x05, 0x0FF00, 0x1, 0x1) },
++	{ FRAC(17, 0), COMBINE_DIVIDER(0x06, 0x1FF00, 0x0, 0x0) },
++	{ FRAC(18, 0), COMBINE_DIVIDER(0x07, 0x3FE00, 0x1, 0x1) },
++	{ FRAC(19, 0), COMBINE_DIVIDER(0x08, 0x7FE00, 0x0, 0x0) },
++	{ FRAC(20, 0), COMBINE_DIVIDER(0x09, 0xFFC00, 0x1, 0x1) },
++	/* Semi-synchronous operation */
++	{ FRAC(2, 0), COMBINE_DIVIDER(0x01, 0x00555, 0x1, 0x1) },
++	{ FRAC(4, 0), COMBINE_DIVIDER(0x05, 0x03333, 0x1, 0x1) },
++	{ FRAC(6, 0), COMBINE_DIVIDER(0x01, 0x001C7, 0x1, 0x1) },
++};
++
++static unsigned long divider_freq(unsigned long input, int div_num)
++{
++	int offset;
++	unsigned long config0, config1, config2;
++	unsigned long seq, depth, hno, even;
++	unsigned long combined;
++	int i;
++
++	switch (div_num) {
++	case 0:
++		offset = CLKDIV0_CONFIG0;
++		break;
++	case 1 ... 4:
++		offset = CLKDIV1_4_CONFIG0(div_num);
++		break;
++	case 6 ... 10:
++		offset = CLKDIV6_10_CONFIG0(div_num);
++		break;
++	default:
++		BUG();
++		return 0;
++	}
++
++	config0 = readl(ss_base + offset + 0x0);
++	config1 = readl(ss_base + offset + 0x4);
++	config2 = readl(ss_base + offset + 0x8);
++
++	seq = (config0 & 0xffff) | ((config1 & 0xf) << 16);
++	depth = config2 & 0xf;
++	hno = (config2 & (1<<6)) ? 1 : 0;
++	even = (config2 & (1<<5)) ? 1 : 0;
++	combined = COMBINE_DIVIDER(depth, seq, hno, even);
++
++	for (i = 0; i < ARRAY_SIZE(divide_table); i++) {
++		if (divide_table[i].value == combined)
++			return (input*2)/divide_table[i].ratio2;
++	}
++
++	printk(KERN_DEBUG "Unrecognised value in divide table %lx\n", combined);
++
++	return 0;
++}
++
++struct dividedpll_clk
++{
++	struct clk clk;
++	unsigned long num;
++};
++
++static void dividedpll_clk_init(struct clk *clk)
++{
++	struct dividedpll_clk *dpc =
++		container_of(clk, struct dividedpll_clk, clk);
++	unsigned long num = dpc->num;
++	unsigned long data;
++
++	data = readl(ss_base + PLL_SELECT_CFG);
++	clk->parent = &pllclks[(data & (1<<(num+1))) ? 1 : 0].clk;
++}
++
++static void dividedpll_clk_recalc(struct clk *clk)
++{
++	struct dividedpll_clk *dpc =
++		container_of(clk, struct dividedpll_clk, clk);
++	unsigned long num = dpc->num;
++
++	clk->rate = divider_freq(clk->parent->rate, num);
++}
++
++static struct clk_ops dividedpll_clk_ops = {
++	.init		= dividedpll_clk_init,
++	.recalc		= dividedpll_clk_recalc,
++};
++
++#define DIVIDEDPLL_CLK(_num, _name)					\
++{									\
++	.clk = {							\
++		 .name	= _name,					\
++		.flags	= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,	\
++		.ops	= &dividedpll_clk_ops,				\
++	},								\
++	.num = _num,							\
++}
++
++static struct dividedpll_clk dividedpll_clks[] = {
++	DIVIDEDPLL_CLK(0, "ddr"), /* or spare? */
++	DIVIDEDPLL_CLK(1, "lmi"),
++	DIVIDEDPLL_CLK(2, "blt"),
++	DIVIDEDPLL_CLK(3, "sys"),
++	DIVIDEDPLL_CLK(4, "fdma"), /* can also be a freq synth */
++	/* 5: DDR */
++	DIVIDEDPLL_CLK(6, "av"),
++	/* 7: Spare */
++	DIVIDEDPLL_CLK(8, "eth"),
++	DIVIDEDPLL_CLK(9, "st40_ick"),
++	DIVIDEDPLL_CLK(10, "st40_pck"),
++};
++
++/* SH4 generic clocks ------------------------------------------------------ */
++
++static void generic_clk_recalc(struct clk *clk)
++{
++	clk->rate = clk->parent->rate;
++}
++
++static struct clk_ops generic_clk_ops = {
++	.recalc		= generic_clk_recalc,
++};
++
++static struct clk generic_module_clk = {
++	.name		= "module_clk",
++	.parent		= &dividedpll_clks[8].clk, /* st40_pck */
++	.flags		= CLK_ALWAYS_ENABLED,
++	.ops		= &generic_clk_ops,
++};
++
++static struct clk generic_comms_clk = {
++	.name		= "comms_clk",
++	.parent		= &dividedpll_clks[3].clk, /* clk_sys */
++	.flags		= CLK_ALWAYS_ENABLED,
++	.ops		= &generic_clk_ops,
++};
++
++int __init clk_init(void)
++{
++	int i, ret;
++
++	ss_base = ioremap(SYS_SERV_BASE_ADDR, 1024);
++	if (! ss_base)
++		panic("Unable to remap system services");
++
++	ret = clk_register(&xtal_osc);
++	clk_enable(&xtal_osc);
++
++	for (i = 0; i < 2; i++) {
++		ret |= clk_register(&pllclks[i].clk);
++		clk_enable(&pllclks[i].clk);
++	}
++
++	for (i = 0; i < ARRAY_SIZE(dividedpll_clks); i++) {
++		ret |= clk_register(&dividedpll_clks[i].clk);
++		clk_enable(&dividedpll_clks[i].clk);
++	}
++
++	ret = clk_register(&generic_module_clk);
++	clk_enable(&generic_module_clk);
++	ret = clk_register(&generic_comms_clk);
++	clk_enable(&generic_comms_clk);
++
++
++	/* Propagate the clk osc value down */
++	clk_set_rate(&xtal_osc, clk_get_rate(&xtal_osc));
++	clk_put(&xtal_osc);
++
++	return ret;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/probe.c b/arch/sh/kernel/cpu/sh4/probe.c
+index db112fb..3748434 100644
+--- a/arch/sh/kernel/cpu/sh4/probe.c
++++ b/arch/sh/kernel/cpu/sh4/probe.c
+@@ -162,6 +162,9 @@ int __init detect_cpu_and_cache_system(void)
+ 		case 0x10:
+ 			cpu_data->type = CPU_STX7105;
+ 			break;
++		case 0x9f:
++			cpu_data->type = CPU_STX5197;
++			break;
+ 		case 0x9500 ... 0x95ff:
+ 			/* CPU_STX7200 cut 2.0 */
+ 			cpu_data->type = CPU_STX7200;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+new file mode 100644
+index 0000000..eeea457
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -0,0 +1,717 @@
++/*
++ * STx5197 Setup
++ *
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#include <linux/platform_device.h>
++#include <linux/init.h>
++#include <linux/serial.h>
++#include <linux/io.h>
++#include <linux/i2c.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/soc_init.h>
++#include <linux/stm/pio.h>
++#include <linux/phy.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/emi.h>
++#include <linux/stm/fdma-plat.h>
++#include <linux/stm/fdma-reqs.h>
++#include <linux/mtd/nand.h>
++#include <linux/mtd/partitions.h>
++#include <linux/dma-mapping.h>
++#include <asm/irl.h>
++#include <asm/irq-ilc.h>
++
++/*
++ * Config control A and B and config monitor A and B are in the High
++ * Speed (HS) config regiter block (in STBus Group 1). We don't currently
++ * map these.
++ *
++ * The remaining config control and config monitor registers are in the
++ * High Density (HD) config register block (in STBus Group 3). These are
++ * mapped using the sysconf driver as it does the right thing, as long
++ * as we disregard the distinction between SYS_STA and SYS_CFG because
++ * monitor and control registers are intermixed.
++ *
++ * Note registers are documented as offsets, but the sysconf driver
++ * always multiples by 4, hence the divide below.
++ */
++
++#define CFG_CONTROL_C	(0x00 / 4)
++#define CFG_CONTROL_D	(0x04 / 4)
++#define CFG_CONTROL_E	(0x08 / 4)
++#define CFG_CONTROL_F	(0x0c / 4)
++#define CFG_CONTROL_G	(0x10 / 4)
++#define CFG_CONTROL_H	(0x14 / 4)
++#define CFG_CONTROL_I	(0x18 / 4)
++#define CFG_CONTROL_J	(0x1c / 4)
++
++#define CFG_CONTROL_K	(0x40 / 4)
++#define CFG_CONTROL_L	(0x44 / 4)
++#define CFG_CONTROL_M	(0x48 / 4)
++#define CFG_CONTROL_N	(0x4c / 4)
++#define CFG_CONTROL_O	(0x50 / 4)
++#define CFG_CONTROL_P	(0x54 / 4)
++#define CFG_CONTROL_Q	(0x58 / 4)
++#define CFG_CONTROL_R	(0x5c / 4)
++
++#define CFG_MONITOR_C	(0x20 / 4)
++#define CFG_MONITOR_D	(0x24 / 4)
++#define CFG_MONITOR_E	(0x28 / 4)
++#define CFG_MONITOR_F	(0x2c / 4)
++#define CFG_MONITOR_G	(0x30 / 4)
++#define CFG_MONITOR_H	(0x34 / 4)
++#define CFG_MONITOR_I	(0x38 / 4)
++#define CFG_MONITOR_J	(0x3c / 4)
++
++#define CFG_MONITOR_K	(0x60 / 4)
++#define CFG_MONITOR_L	(0x64 / 4)
++#define CFG_MONITOR_M	(0x68 / 4)
++#define CFG_MONITOR_N	(0x6c / 4)
++#define CFG_MONITOR_O	(0x70 / 4)
++#define CFG_MONITOR_P	(0x74 / 4)
++#define CFG_MONITOR_Q	(0x78 / 4)
++#define CFG_MONITOR_R	(0x7c / 4)
++
++struct {
++	unsigned char cfg;
++	unsigned char off[2];
++} const pio_conf[5] = {
++	{ CFG_CONTROL_F, {  0,  8} },
++	{ CFG_CONTROL_F, { 16, 24} },
++	{ CFG_CONTROL_G, {  0,  8} },
++	{ CFG_CONTROL_G, { 16, 24} },
++	{ CFG_CONTROL_O, {  0,  8} }
++};
++
++static void stx5197_pio_conf(int bank, int pin, int alt, const char *name)
++{
++	int cfg = pio_conf[bank].cfg;
++	int bit[2] = {
++		 pio_conf[bank].off[0] + pin,
++		 pio_conf[bank].off[1] + pin
++	};
++	struct sysconf_field *sc[2];
++
++	sc[0] = sysconf_claim(SYS_CFG, cfg, bit[0], bit[0], name);
++	sc[1] = sysconf_claim(SYS_CFG, cfg, bit[1], bit[1], name);
++	sysconf_write(sc[0], (alt >> 0) & 1);
++	sysconf_write(sc[1], (alt >> 1) & 1);
++}
++
++static u64 st40_dma_mask = DMA_32BIT_MASK;
++
++/* USB resources ----------------------------------------------------------- */
++
++#define UHOST2C_BASE			0xfdd00000
++#define AHB2STBUS_WRAPPER_GLUE_BASE	(UHOST2C_BASE)
++#define AHB2STBUS_OHCI_BASE		(UHOST2C_BASE + 0x000ffc00)
++#define AHB2STBUS_EHCI_BASE		(UHOST2C_BASE + 0x000ffe00)
++#define AHB2STBUS_PROTOCOL_BASE		(UHOST2C_BASE + 0x000fff00)
++
++static struct plat_usb_data usb_wrapper =
++	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE, AHB2STBUS_PROTOCOL_BASE,
++		    USB_FLAGS_STRAP_16BIT	|
++		    USB_FLAGS_STRAP_PLL		|
++		    USB_FLAGS_STBUS_CONFIG_THRESHOLD256);
++
++static struct platform_device  st40_ohci_device =
++	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE,
++			ILC_IRQ(28),
++			&usb_wrapper);
++
++static struct platform_device  st40_ehci_device =
++	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE,
++			ILC_IRQ(29),
++			&usb_wrapper);
++
++void __init stx5197_configure_usb(void)
++{
++	struct sysconf_field *sc;
++
++	/* USB power down */
++	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_H, 8, 8, "USB");
++	sysconf_write(sc, 0);
++
++	/* DDR enable for ULPI. 0=8 bit SDR ULPI, 1=4 bit DDR ULPI */
++	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_M, 12, 12, "USB");
++	sysconf_write(sc, 0);
++
++	platform_device_register(&st40_ohci_device);
++	platform_device_register(&st40_ehci_device);
++}
++
++/* FDMA resources ---------------------------------------------------------- */
++
++#ifdef CONFIG_STM_DMA
++
++#include <linux/stm/7200_cut1_fdma2_firmware.h>
++
++static struct fdma_regs stx5197_fdma_regs = {
++	.fdma_id = FDMA2_ID,
++	.fdma_ver = FDAM2_VER,
++	.fdma_en = FDMA2_ENABLE_REG,
++	.fdma_clk_gate = FDMA2_CLOCKGATE,
++	.fdma_rev_id = FDMA2_REV_ID,
++	.fdma_cmd_statn = STB7200_FDMA_CMD_STATn_REG,
++	.fdma_ptrn = STB7200_FDMA_PTR_REG,
++	.fdma_cntn = STB7200_FDMA_COUNT_REG,
++	.fdma_saddrn = STB7200_FDMA_SADDR_REG,
++	.fdma_daddrn = STB7200_FDMA_DADDR_REG,
++	.fdma_req_ctln = STB7200_FDMA_REQ_CTLn_REG,
++	.fdma_cmd_sta = FDMA2_CMD_MBOX_STAT_REG,
++	.fdma_cmd_set = FDMA2_CMD_MBOX_SET_REG,
++	.fdma_cmd_clr = FDMA2_CMD_MBOX_CLR_REG,
++	.fdma_cmd_mask = FDMA2_CMD_MBOX_MASK_REG,
++	.fdma_int_sta = FDMA2_INT_STAT_REG,
++	.fdma_int_set = FDMA2_INT_SET_REG,
++	.fdma_int_clr = FDMA2_INT_CLR_REG,
++	.fdma_int_mask = FDMA2_INT_MASK_REG,
++	.fdma_sync_reg = FDMA2_SYNCREG,
++	.fdma_dmem_region = STX7111_DMEM_OFFSET,
++	.fdma_imem_region = STX7111_IMEM_OFFSET,
++};
++
++static struct fdma_platform_device_data stx5197_fdma_plat_data = {
++	.registers_ptr = &stx5197_fdma_regs,
++	.min_ch_num = CONFIG_MIN_STM_DMA_CHANNEL_NR,
++	.max_ch_num = CONFIG_MAX_STM_DMA_CHANNEL_NR,
++	.fw_device_name = "stb7200_v1.4.bin",
++	.fw.data_reg = (unsigned long *)&STB7200_DMEM_REGION,
++	.fw.imem_reg = (unsigned long *)&STB7200_IMEM_REGION,
++	.fw.imem_fw_sz = STB7200_IMEM_FIRMWARE_SZ,
++	.fw.dmem_fw_sz = STB7200_DMEM_FIRMWARE_SZ,
++	.fw.dmem_len = STB7200_DMEM_REGION_LENGTH,
++	.fw.imem_len = STB7200_IMEM_REGION_LENGTH
++};
++
++#define stx5197_fdma_plat_data_addr &stx5197_fdma_plat_data
++#else
++#define stx5197_fdma_plat_data_addr NULL
++#endif /* CONFIG_STM_DMA */
++
++static struct platform_device fdma_device = {
++	.name		= "stmfdma",
++	.id		= -1,
++	.num_resources	= 2,
++	.resource = (struct resource[2]) {
++		[0] = {
++			.start = 0xfdb00000,
++			.end   = 0xfdb0ffff,
++			.flags = IORESOURCE_MEM,
++		},
++		[1] = {
++			.start = ILC_IRQ(34),
++			.end   = ILC_IRQ(34),
++			.flags = IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = stx5197_fdma_plat_data_addr,
++	},
++};
++
++/* SSC resources ----------------------------------------------------------- */
++
++static char i2c_st[] = "i2c_st";
++static char spi_st[] = "spi_st_ssc";
++
++static struct platform_device stssc_devices[] = {
++	STSSC_DEVICE(0xfd140000, ILC_IRQ(5),  1, 6, 7, 0xff),
++	STSSC_DEVICE(0xfd141000, ILC_IRQ(6),  SSC_NO_PIO, 0,0,0),
++	STSSC_DEVICE(0xfd142000, ILC_IRQ(17), 3, 3, 2, 0xff),
++};
++
++static struct sysconf_field *spi_cs;
++static void stx5197_ssc0_cs(void *spi, int is_on)
++{
++	sysconf_write(spi_cs, is_on ? 0 : 1);
++}
++
++void __init stx5197_configure_ssc(struct plat_ssc_data *data)
++{
++	int num_i2c = 0;
++	int num_spi = 0;
++	int i;
++	int capability = data->capability;
++	int routing = data->routing;
++	struct sysconf_field *sc;
++	const unsigned char alt_ssc[3] = { 2, 0xff, 1 };
++	const unsigned char alt_pio[3] = { 1, 0xff, 0 };
++
++	for (i = 0; i < ARRAY_SIZE(stssc_devices);
++	     i++, capability >>= SSC_BITS_SIZE) {
++		struct ssc_pio_t *ssc_pio = stssc_devices[i].dev.platform_data;
++
++		if (capability & SSC_UNCONFIGURED)
++			continue;
++
++		switch (i) {
++		case 0:
++			/* SSC0 can either drive the SPI pins (in which
++			 * case it is SPI) or PIO1[7:6] (I2C).
++			 */
++
++			/* spi_bootnotcomms
++			 * 0: SSC0 -> PIO1[7:6], 1: SSC0 -> SPI */
++			sc = sysconf_claim(SYS_CFG, CFG_CONTROL_M, 14, 14,
++					   "ssc");
++
++			if (capability & SSC_SPI_CAPABILITY) {
++				sysconf_write(sc, 1);
++				ssc_pio->pio[0].pio_port = SSC_NO_PIO;
++
++				spi_cs = sysconf_claim(SYS_CFG, CFG_CONTROL_M,
++						       13, 13, "ssc");
++				sysconf_write(spi_cs, 1);
++				ssc_pio->chipselect = stx5197_ssc0_cs;
++			} else {
++				sysconf_write(sc, 0);
++			}
++
++			/* pio_functionality_on_pio1_7.
++			 * 0: QAM validation, 1: Normal PIO */
++			sc = sysconf_claim(SYS_CFG, CFG_CONTROL_I, 2, 2, "ssc");
++			sysconf_write(sc, 1);
++
++			break;
++
++		case 1:
++			BUG_ON(capability & SSC_SPI_CAPABILITY);
++
++			if (routing & SSC1_QPSK) {
++				/* qpsk_debug_config
++				 *  0 IP289 I2C input from PIO1[0:1]
++				 *  1 IP289 input from BE COMMS SSC1
++				 */
++				sc = sysconf_claim(SYS_CFG, CFG_CONTROL_C,
++						   1, 1, "ssc");
++				sysconf_write(sc, 1);
++			} else {
++				  /* 0: QPSK repeater interface is routed to
++				   *    QAM_SCLT/SDAT.
++				   * 1: SSC1 is routed to QAM_SCLT/SDAT.
++				   */
++				  sc = sysconf_claim(SYS_CFG, CFG_CONTROL_K,
++						     27, 27, "ssc");
++				  sysconf_write(sc, 1);
++			}
++			break;
++
++		case 2:
++			/* SSC2 always drives PIO3[3:2] */
++			BUG_ON(capability & SSC_SPI_CAPABILITY);
++			break;
++		}
++
++		if (ssc_pio->pio[0].pio_port != SSC_NO_PIO) {
++			int pin;
++
++			for (pin = 0; pin < 2; pin++) {
++				int portno = ssc_pio->pio[pin].pio_port;
++				int pinno  = ssc_pio->pio[pin].pio_pin;
++				int alt;
++
++				if (capability & SSC_SPI_CAPABILITY)
++#ifdef CONFIG_SPI_STM_PIO
++					alt = alt_pio[i];
++#else
++					alt = alt_ssc[i];
++#endif
++				else
++#ifdef CONFIG_I2C_ST40_PIO
++					alt = alt_pio[i];
++#else
++					alt = alt_ssc[i];
++#endif
++
++				stx5197_pio_conf(portno, pinno, alt, "ssc");
++			}
++		}
++
++		if (capability & SSC_SPI_CAPABILITY) {
++			stssc_devices[i].name = spi_st;
++			stssc_devices[i].id = num_spi++;
++		} else {
++			stssc_devices[i].name = i2c_st;
++			stssc_devices[i].id = num_i2c++;
++		}
++
++		platform_device_register(&stssc_devices[i]);
++	}
++
++	/* I2C buses number reservation (to prevent any hot-plug device
++	 * from using it) */
++#ifdef CONFIG_I2C_BOARDINFO
++	i2c_register_board_info(num_i2c - 1, NULL, 0);
++#endif
++}
++
++/* Ethernet MAC resources -------------------------------------------------- */
++
++static struct sysconf_field *mac_speed_sc;
++
++static void fix_mac_speed(void *priv, unsigned int speed)
++{
++	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 1 : 0);
++}
++
++static struct plat_stmmacenet_data stx5197eth_private_data = {
++	.bus_id = 0,
++	.pbl = 32,
++	.fix_mac_speed = fix_mac_speed,
++};
++
++static struct platform_device stx5197eth_device = {
++	.name		= "stmmaceth",
++	.id		= 0,
++	.num_resources	= 2,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfde00000,
++			.end	= 0xfde0ffff,
++			.flags	= IORESOURCE_MEM,
++		},
++		{
++			.name	= "macirq",
++			.start	= ILC_IRQ(24),
++			.end	= ILC_IRQ(24),
++			.flags	= IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.power.can_wakeup    = 1,
++		.platform_data = &stx5197eth_private_data,
++	}
++};
++
++void stx5197_configure_ethernet(int rmii, int ext_clk, int phy_bus)
++{
++	struct sysconf_field *sc;
++
++	stx5197eth_private_data.bus_id = phy_bus;
++
++	/* Ethernet interface on */
++	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 0, 0, "stmmac");
++	sysconf_write(sc, 1);
++
++	/* MII plyclk out enable: 0=output, 1=input */
++	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 6, 6, "stmmac");
++	sysconf_write(sc, ext_clk);
++
++	/* MAC speed*/
++	mac_speed_sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 1, 1, "stmmac");
++
++	/* RMII/MII pin mode */
++	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 7, 8, "stmmac");
++	sysconf_write(sc, rmii ? 2 : 3);
++
++	/* MII mode */
++	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 2, 2, "stmmac");
++	sysconf_write(sc, rmii ? 0 : 1);
++
++	platform_device_register(&stx5197eth_device);
++}
++
++/* PWM resources ----------------------------------------------------------- */
++
++static struct resource stm_pwm_resource[] = {
++	[0] = {
++		.start	= 0xfd110000,
++		.end	= 0xfd110000 + 0x67,
++		.flags	= IORESOURCE_MEM
++	},
++	[1] = {
++		.start	= ILC_IRQ(43),
++		.end	= ILC_IRQ(43),
++		.flags	= IORESOURCE_IRQ
++	}
++};
++
++static struct platform_device stm_pwm_device = {
++	.name		= "stm-pwm",
++	.id		= -1,
++	.num_resources	= ARRAY_SIZE(stm_pwm_resource),
++	.resource	= stm_pwm_resource,
++};
++
++void stx5197_configure_pwm(struct plat_stm_pwm_data *data)
++{
++	stm_pwm_device.dev.platform_data = data;
++
++	if (data->flags & PLAT_STM_PWM_OUT0) {
++		stx5197_pio_conf(2, 4, 1, "pwm");
++		stpio_request_pin(2, 4, "pwm", STPIO_ALT_OUT);
++	}
++
++	platform_device_register(&stm_pwm_device);
++}
++
++/* ASC resources ----------------------------------------------------------- */
++
++static struct platform_device stm_stasc_devices[] = {
++	STASC_DEVICE(0xfd130000, ILC_IRQ(7), 8, 10,
++		     0, 0, 1, 5, 4),
++	STASC_DEVICE(0xfd131000, ILC_IRQ(8), 9, 11,
++		     4, 0, 1, 3, 2),
++	STASC_DEVICE(0xfd132000, ILC_IRQ(12), 3, 5,
++		     1, 2, 3, 5, 4),
++	STASC_DEVICE(0xfd133000, ILC_IRQ(13), 4, 6,
++		     2, 0, 1, 2, 5),
++};
++
++static const unsigned char asc_alt[4][4] = {
++	{ 0, 0, 2, 2 },
++	{ 2, 2, 3, 2 },
++	{ 1, 1, 1, 1 },
++	{ 1, 1, 1, 1 },
++};
++
++/*
++ * Note these three variables are global, and shared with the stasc driver
++ * for console bring up prior to platform initialisation.
++ */
++
++/* the serial console device */
++int stasc_console_device __initdata;
++
++/* Platform devices to register */
++struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)]
++	__initdata;
++unsigned int stasc_configured_devices_count __initdata = 0;
++
++/* Configure the ASC's for this board.
++ * This has to be called before console_init().
++ */
++void __init stx5197_configure_asc(const int *ascs, int num_ascs, int console)
++{
++	int i;
++
++	for (i = 0; i < num_ascs; i++) {
++		int port;
++		unsigned char flags;
++		struct platform_device *pdev;
++		struct stasc_uart_data *uart_data;
++
++		port = ascs[i] & 0xff;
++		flags = ascs[i] >> 8;
++		pdev = &stm_stasc_devices[port];
++		uart_data = pdev->dev.platform_data;
++
++		/* Tx */
++		stx5197_pio_conf(uart_data->pio_port, uart_data->pio_pin[0],
++				 asc_alt[port][0], "asc");
++		/* Rx */
++		stx5197_pio_conf(uart_data->pio_port, uart_data->pio_pin[1],
++				 asc_alt[port][1], "asc");
++
++		if (!(flags & STASC_FLAG_NORTSCTS)) {
++			/* CTS */
++			stx5197_pio_conf(uart_data->pio_port,
++					 uart_data->pio_pin[2],
++					 asc_alt[port][2], "asc");
++			/* RTS */
++			stx5197_pio_conf(uart_data->pio_port,
++					 uart_data->pio_pin[3],
++					 asc_alt[port][3], "asc");
++		}
++		pdev->id = i;
++		((struct stasc_uart_data *)(pdev->dev.platform_data))->flags =
++			flags;
++		stasc_configured_devices[stasc_configured_devices_count++] =
++			pdev;
++	}
++
++	stasc_console_device = console;
++}
++
++/* Add platform device as configured by board specific code */
++static int __init stx5197_add_asc(void)
++{
++	return platform_add_devices(stasc_configured_devices,
++				    stasc_configured_devices_count);
++}
++arch_initcall(stx5197_add_asc);
++
++/* Early resources (sysconf and PIO) --------------------------------------- */
++
++static struct platform_device sysconf_device = {
++	.name		= "sysconf",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd901000,
++			.end	= 0xfd901000 + 4095,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++	.dev = {
++		.platform_data = &(struct plat_sysconf_data) {
++			.sys_device_offset = 0,
++			.sys_sta_offset = 0,
++			.sys_cfg_offset = 0,
++		}
++	}
++};
++
++static struct platform_device stpio_devices[] = {
++	STPIO_DEVICE(0, 0xfd120000, ILC_IRQ(0)),
++	STPIO_DEVICE(1, 0xfd121000, ILC_IRQ(1)),
++	STPIO_DEVICE(2, 0xfd122000, ILC_IRQ(2)),
++	STPIO_DEVICE(3, 0xfd123000, ILC_IRQ(3)),
++	STPIO_DEVICE(4, 0xfd124000, ILC_IRQ(4)),
++};
++
++/* Initialise devices which are required early in the boot process. */
++void __init stx5197_early_device_init(void)
++{
++	struct sysconf_field *sc;
++	unsigned long devid;
++	unsigned long chip_revision;
++
++	/* Initialise PIO and sysconf drivers */
++
++	sysconf_early_init(&sysconf_device);
++	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
++			 ILC_FIRST_IRQ+ILC_NR_IRQS);
++
++	sc = sysconf_claim(SYS_DEV, CFG_MONITOR_H, 0, 31, "devid");
++	devid = sysconf_read(sc);
++	chip_revision = (devid >> 28) + 1;
++	boot_cpu_data.cut_major = chip_revision;
++
++	printk(KERN_INFO "STx5197 version %ld.x\n", chip_revision);
++
++	/* We haven't configured the LPC, so the sleep instruction may
++	 * do bad things. Thus we disable it here. */
++	disable_hlt();
++}
++
++static void __init pio_late_setup(void)
++{
++	int i;
++	struct platform_device *pdev = stpio_devices;
++
++	for (i = 0; i < ARRAY_SIZE(stpio_devices); i++, pdev++)
++		platform_device_register(pdev);
++}
++
++static struct platform_device ilc3_device = {
++	.name		= "ilc3",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd100000,
++			.end	= 0xfd100000 + 0x900,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++};
++
++/* Pre-arch initialisation ------------------------------------------------- */
++
++static int __init stx5197_postcore_setup(void)
++{
++	emi_init(0, 0xfde30000);
++
++	return 0;
++}
++postcore_initcall(stx5197_postcore_setup);
++
++/* Late resources ---------------------------------------------------------- */
++
++static int __init stx5197_subsys_setup(void)
++{
++	/*
++	 * We need to do PIO setup before module init, because some
++	 * drivers (eg gpio-keys) require that the interrupts are
++	 * available.
++	 */
++	pio_late_setup();
++
++	return 0;
++}
++subsys_initcall(stx5197_subsys_setup);
++
++static struct platform_device *stx5197_devices[] __initdata = {
++	&fdma_device,
++	&sysconf_device,
++	&ilc3_device,
++};
++
++static int __init stx5197_devices_setup(void)
++{
++	return platform_add_devices(stx5197_devices,
++				    ARRAY_SIZE(stx5197_devices));
++}
++device_initcall(stx5197_devices_setup);
++
++/* Interrupt initialisation ------------------------------------------------ */
++
++enum {
++	UNUSED = 0,
++
++	/* interrupt sources */
++	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
++	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
++	WDT,
++	HUDI,
++
++	/* interrupt groups */
++	TMU2, RTC,
++};
++
++static struct intc_vect vectors[] = {
++	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
++	INTC_VECT(WDT, 0x560),
++	INTC_VECT(HUDI, 0x600),
++};
++
++static struct intc_group groups[] = {
++	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
++};
++
++static struct intc_prio priorities[] = {
++};
++
++static struct intc_prio_reg prio_registers[] = {
++					   /*   15-12, 11-8,  7-4,   3-0 */
++	{ 0xffd00004, 0, 16, 4, /* IPRA */     { TMU0, TMU1, TMU2,       } },
++	{ 0xffd00008, 0, 16, 4, /* IPRB */     {  WDT,    0,    0,     0 } },
++	{ 0xffd0000c, 0, 16, 4, /* IPRC */     {    0,    0,    0,  HUDI } },
++	{ 0xffd00010, 0, 16, 4, /* IPRD */     { IRL0, IRL1,  IRL2, IRL3 } },
++};
++
++static DECLARE_INTC_DESC(intc_desc, "stx5197", vectors, groups,
++			 priorities, NULL, prio_registers, NULL);
++
++void __init plat_irq_setup(void)
++{
++	int i;
++
++	register_intc_controller(&intc_desc);
++
++	for (i = 0; i < 16; i++) {
++		/*
++		 * This is a hack to allow for the fact that we don't
++		 * register a chip type for the IRL lines. Without
++		 * this the interrupt type is "no_irq_chip" which
++		 * causes problems when trying to register the chained
++		 * handler.
++		 */
++		set_irq_chip(i, &dummy_irq_chip);
++
++		set_irq_chained_handler(i, ilc_irq_demux);
++	}
++
++	ilc_early_init(&ilc3_device);
++	ilc_demux_init();
++}
+diff --git a/arch/sh/kernel/setup.c b/arch/sh/kernel/setup.c
+index 8ee22a4..4d497f9 100644
+--- a/arch/sh/kernel/setup.c
++++ b/arch/sh/kernel/setup.c
+@@ -326,6 +326,7 @@ static const char *cpu_name[] = {
+ 	[CPU_SH7751]	= "SH7751",	[CPU_SH7751R]	= "SH7751R",
+ 	[CPU_SH7760]	= "SH7760",
+ 	[CPU_ST40RA]	= "ST40RA",	[CPU_ST40GX1]	= "ST40GX1",
++	[CPU_STX5197]	= "STx5197",
+ 	[CPU_STB7100]	= "STb7100",	[CPU_STX7105]	= "STx7105",
+ 	[CPU_STB7109]	= "STb7109",
+ 	[CPU_STX7111]	= "STx7111",	[CPU_STX7141]	= "STx7141",
+diff --git a/arch/sh/mm/Kconfig b/arch/sh/mm/Kconfig
+index 2f63e90..b1c132f 100644
+--- a/arch/sh/mm/Kconfig
++++ b/arch/sh/mm/Kconfig
+@@ -176,6 +176,13 @@ config CPU_SUBTYPE_STB7100
+ 	help
+ 	  Select STB7100 if you have an STb7100, STb7109 or STb5202 CPU.
+ 
++config CPU_SUBTYPE_STX5197
++	bool "Support STx5197 processors"
++	select CPU_SUBTYPE_ST40
++	select SUPPORTS_32BIT
++	help
++	  Select STX5197 if you have an STx5197.
++
+ config CPU_SUBTYPE_STX7105
+ 	bool "Support STx7105 processors"
+ 	select CPU_SUBTYPE_ST40
+diff --git a/drivers/stm/Kconfig b/drivers/stm/Kconfig
+index b335481..e8d21f9 100644
+--- a/drivers/stm/Kconfig
++++ b/drivers/stm/Kconfig
+@@ -20,7 +20,6 @@ config STM_PIO
+ 
+ config STM_DMA
+ 	bool "STMicroelectronics DMA API"
+-	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7105 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7141 || CPU_SUBTYPE_STX7200
+ 	select SH_DMA_API
+ 	default y
+ 	---help---
+diff --git a/drivers/usb/Kconfig b/drivers/usb/Kconfig
+index 009e99f..6281977 100644
+--- a/drivers/usb/Kconfig
++++ b/drivers/usb/Kconfig
+@@ -42,6 +42,7 @@ config USB_ARCH_HAS_OHCI
+ 	# MIPS:
+ 	default y if SOC_AU1X00
+ 	# SH
++	default y if CPU_SUBTYPE_STX5197
+ 	default y if CPU_SUBTYPE_STB7100
+ 	default y if CPU_SUBTYPE_STX7105
+ 	default y if CPU_SUBTYPE_STX7111
+@@ -55,6 +56,7 @@ config USB_ARCH_HAS_EHCI
+ 	boolean
+ 	default y if PPC_83xx
+ 	default y if SOC_AU1200
++	default y if CPU_SUBTYPE_STX5197
+ 	default y if CPU_SUBTYPE_STB7100
+ 	default y if CPU_SUBTYPE_STX7105
+ 	default y if CPU_SUBTYPE_STX7111
+diff --git a/drivers/usb/host/ehci-hcd.c b/drivers/usb/host/ehci-hcd.c
+index 71ede70..4b10574 100644
+--- a/drivers/usb/host/ehci-hcd.c
++++ b/drivers/usb/host/ehci-hcd.c
+@@ -950,7 +950,8 @@ MODULE_LICENSE ("GPL");
+ #define	PLATFORM_DRIVER		ehci_hcd_au1xxx_driver
+ #endif
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++#if defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++    defined(CONFIG_CPU_SUBTYPE_STB7100) || \
+     defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+     defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+     defined(CONFIG_CPU_SUBTYPE_STX7141) || \
+diff --git a/drivers/usb/host/ohci-hcd.c b/drivers/usb/host/ohci-hcd.c
+index 1ae7736..dfa2b92 100644
+--- a/drivers/usb/host/ohci-hcd.c
++++ b/drivers/usb/host/ohci-hcd.c
+@@ -915,7 +915,8 @@ MODULE_LICENSE ("GPL");
+ #define PLATFORM_DRIVER		usb_hcd_pnx4008_driver
+ #endif
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++#if defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++	defined(CONFIG_CPU_SUBTYPE_STB7100) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7141) || \
+diff --git a/include/asm-sh/irq-ilc.h b/include/asm-sh/irq-ilc.h
+index 95e1c4c..53996c6 100644
+--- a/include/asm-sh/irq-ilc.h
++++ b/include/asm-sh/irq-ilc.h
+@@ -11,7 +11,11 @@
+ 
+ #include <linux/platform_device.h>
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STX7105)
++#if defined(CONFIG_CPU_SUBTYPE_STX5197)
++#define ILC_FIRST_IRQ	33
++#define ILC_NR_IRQS	72
++#define ILC_IRQ(x)	(ILC_FIRST_IRQ + (x))
++#elif defined(CONFIG_CPU_SUBTYPE_STX7105)
+ #define ILC_FIRST_IRQ	176
+ #define ILC_NR_IRQS	(64+35)
+ #define ILC_INT_IRQ(x)	(ILC_FIRST_IRQ + (x))
+diff --git a/include/asm-sh/processor.h b/include/asm-sh/processor.h
+index af79ca9..211c8ab 100644
+--- a/include/asm-sh/processor.h
++++ b/include/asm-sh/processor.h
+@@ -51,6 +51,7 @@ enum cpu_type {
+ 	/* SH-4 types */
+ 	CPU_SH7750, CPU_SH7750S, CPU_SH7750R, CPU_SH7751, CPU_SH7751R,
+ 	CPU_SH7760, CPU_ST40RA, CPU_ST40GX1, CPU_STI5528, CPU_STM8000,
++	CPU_STX5197,
+ 	CPU_STB7100, CPU_STX7105, CPU_STB7109, CPU_STX7111, CPU_STX7141,
+ 	CPU_STX7200,
+ 	CPU_SH4_202, CPU_SH4_501,
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 6b4a263..51172e2 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -49,6 +49,13 @@ struct plat_ssc_data {
+ 	void (*spi_chipselects[])(void *spi, int is_on);
+ };
+ 
++#ifdef CONFIG_CPU_SUBTYPE_STX5197
++/* SSC0 routine depends on whether port configured for SPI or I2C */
++
++#define SSC1_QAM_SCLT_SDAT	(0<<1)
++#define SSC1_QPSK		(1<<1)
++#endif
++
+ #ifdef CONFIG_CPU_SUBTYPE_STX7105
+ #define SSC_SCLK_SHIFT(n)	(0+(n*6))
+ #define SSC_MTSR_SHIFT(n)	(2+(n*6))
+@@ -257,7 +264,12 @@ struct nand_config_data {
+ 						/*  for multiple chips)		*/
+ };
+ 
+-
++void stx5197_early_device_init(void);
++void stx5197_configure_asc(const int *ascs, int num_ascs, int console);
++void stx5197_configure_usb(void);
++void stx5197_configure_ethernet(int rmii, int ext_clk, int phy_bus);
++void stx5197_configure_ssc(struct plat_ssc_data *data);
++void stx5197_configure_pwm(struct plat_stm_pwm_data *data);
+ 
+ void stx7100_early_device_init(void);
+ void stb7100_configure_asc(const int *ascs, int num_ascs, int console);
+-- 
+1.5.3.6
+

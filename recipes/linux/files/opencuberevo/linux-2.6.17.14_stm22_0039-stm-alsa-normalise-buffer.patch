@@ -1,0 +1,14 @@
+Index: linux/sound/stm/st_pcm_core.c
+===================================================================
+--- linux.orig/sound/stm/st_pcm_core.c
++++ linux/sound/stm/st_pcm_core.c
+@@ -432,8 +432,7 @@ static struct page *snd_pcm_mmap_data_no
+                 vaddr = runtime->dma_area + offset;
+                 page = virt_to_page(vaddr);
+         }
+-        if (!PageReserved(page))
+-                get_page(page);
++        get_page(page);
+         if (type)
+                 *type = VM_FAULT_MINOR;
+         return page;

@@ -1,0 +1,88 @@
+From d172b7fea7f48839e0e2fed53735788084c23947 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 13 Mar 2009 16:59:04 +0100
+Subject: [PATCH] sh: fix unaligned and nonexistent address handling
+
+This patch adds into the product tree the following commit:
+author	SUGIOKA Toshinobu <sugioka@itonet.co.jp>
+	Wed, 21 Jan 2009 00:42:10 +0000 (09:42 +0900)
+committer	Paul Mundt <lethal@linux-sh.org>
+	Wed, 21 Jan 2009 09:35:55 +0000 (18:35 +0900)
+commit	2afb447f33c29cb000a494396559f8005d3e33c1
+
+Original comment is below:
+
+"unaligned and nonexistent address causes wrong exception
+handling in traps_32.c(handle_unaligned_access).
+
+'handle_unalinged_ins' should return -EFAULT if address error
+is fixed up with kernel exception table, otherwise
+'handle_unaligned_access' increases already fixed program counter
+and then crash.
+
+for example
+   ioctl(fd, TCGETA, (struct termio *)-1)
+never return and stay in TASK_UNINTERRUPTIBLE state forever
+in my kernel.
+
+sh: fix unaligned and nonexistent address handling
+
+unaligned and nonexistent address causes wrong exception
+handling in traps_32.c(handle_unaligned_access).
+
+'handle_unalinged_ins' should return -EFAULT if address error
+is fixed up with kernel exception table, otherwise
+'handle_unaligned_access' increases already fixed program counter
+and then crash.
+
+for example
+   ioctl(fd, TCGETA, (struct termio *)-1)
+never return and stay in TASK_UNINTERRUPTIBLE state forever
+in my kernel."
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ arch/sh/kernel/traps.c |   11 ++++-------
+ 1 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index ef7bc7e..abc7b00 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -215,18 +215,17 @@ static inline void die_if_kernel(const char *str, struct pt_regs *regs,
+  * - other kernel errors are bad
+  * - return 0 if fixed-up, -EFAULT if non-fatal (to the kernel) fault
+  */
+-static int die_if_no_fixup(const char * str, struct pt_regs * regs, long err)
++static void die_if_no_fixup(const char * str, struct pt_regs * regs, long err)
+ {
+ 	if (!user_mode(regs)) {
+ 		const struct exception_table_entry *fixup;
+ 		fixup = search_exception_tables(regs->pc);
+ 		if (fixup) {
+ 			regs->pc = fixup->fixup;
+-			return 0;
++			return;
+ 		}
+ 		die(str, regs, err);
+ 	}
+-	return -EFAULT;
+ }
+ 
+ /*
+@@ -417,10 +416,8 @@ static int handle_unaligned_ins(u16 instruction, struct pt_regs *regs)
+ 	/* Argh. Address not only misaligned but also non-existent.
+ 	 * Raise an EFAULT and see if it's trapped
+ 	 */
+-	ret = die_if_no_fixup("Fault in unaligned fixup", regs, 0);
+-	if (ret == 0)
+-		ret = 1;
+-	return ret;
++	die_if_no_fixup("Fault in unaligned fixup", regs, 0);
++	return -EFAULT;
+ }
+ 
+ /*
+-- 
+1.6.0.6
+

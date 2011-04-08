@@ -1,0 +1,224 @@
+commit bf78c74ac55ed65acdad7ee1816ffd7e5cd50f8f
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Fri May 23 14:01:21 2008 +0100
+
+    ALSA STM driver FDMA & interrupts handling fixes.
+    
+    - Drivers are doing dma_wait_for_completion() now after being stopped.
+    - In PCM reader:
+      - FDMA error generates an XRUN now, as it is probably the case.
+      - VSYNC handling is not enabled now, as it was absolutely useless.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 97add4d..f9935ec 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -229,6 +229,9 @@ static int snd_stm_pcm_player_open(struct snd_pcm_substream *substream)
+ 
+ 	runtime->hw = snd_stm_pcm_player_hw;
+ 
++	/* Interrupt handler will need the substream pointer... */
++	pcm_player->substream = substream;
++
+ 	return 0;
+ }
+ 
+@@ -243,6 +246,8 @@ static int snd_stm_pcm_player_close(struct snd_pcm_substream *substream)
+ 	snd_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
++	pcm_player->substream = NULL;
++
+ 	return 0;
+ }
+ 
+@@ -262,6 +267,9 @@ static int snd_stm_pcm_player_hw_free(struct snd_pcm_substream *substream)
+ 	/* This callback may be called more than once... */
+ 
+ 	if (snd_stm_buffer_is_allocated(pcm_player->buffer)) {
++		/* Let the FDMA stop */
++		dma_wait_for_completion(pcm_player->fdma_channel);
++
+ 		/* Free buffer */
+ 		snd_stm_buffer_free(pcm_player->buffer);
+ 
+@@ -601,7 +609,6 @@ static inline int snd_stm_pcm_player_start(struct snd_pcm_substream *substream)
+ 
+ 	/* Launch PCM player */
+ 
+-	pcm_player->substream = substream;
+ 	set__AUD_PCMOUT_CTRL__MODE__PCM(pcm_player);
+ 
+ 	/* Enable player interrupts */
+@@ -645,7 +652,6 @@ static inline int snd_stm_pcm_player_stop(struct snd_pcm_substream *substream)
+ 	/* Stop PCM player */
+ 
+ 	set__AUD_PCMOUT_CTRL__MODE__OFF(pcm_player);
+-	pcm_player->substream = NULL;
+ 
+ 	/* Stop FDMA transfer */
+ 
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 9207240..2b01663 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -114,14 +114,6 @@ static irqreturn_t snd_stm_pcm_reader_irq_handler(int irq, void *dev_id)
+ 		snd_pcm_stop(pcm_reader->substream, SNDRV_PCM_STATE_XRUN);
+ 	}
+ 
+-	/* Period successfully played */
+-	if (likely(status & mask__AUD_PCMIN_ITS__VSYNC__PENDING(pcm_reader))) {
+-		snd_stm_printd(2, "Vsync interrupt detected by '%s'!\n",
+-				pcm_reader->device->bus_id);
+-		/* TODO: Calculate sampling frequency */
+-		result = IRQ_HANDLED;
+-	}
+-
+ 	/* Some alien interrupt??? */
+ 	snd_assert(result == IRQ_HANDLED);
+ 
+@@ -139,13 +131,10 @@ static void snd_stm_pcm_reader_callback_node_done(unsigned long param)
+ 	snd_assert(pcm_reader, return);
+ 	snd_stm_magic_assert(pcm_reader, return);
+ 
+-	/* This function will be called after stopping FDMA as well
+-	 * and in this moment ALSA is already shut down... */
+-	if (pcm_reader->substream) {
+-		snd_stm_printd(2, "Period elapsed ('%s')\n",
+-				pcm_reader->device->bus_id);
+-		snd_pcm_period_elapsed(pcm_reader->substream);
+-	}
++	snd_stm_printd(2, "Period elapsed ('%s')\n",
++			pcm_reader->device->bus_id);
++
++	snd_pcm_period_elapsed(pcm_reader->substream);
+ }
+ 
+ static void snd_stm_pcm_reader_callback_node_error(unsigned long param)
+@@ -161,6 +150,8 @@ static void snd_stm_pcm_reader_callback_node_error(unsigned long param)
+ 
+ 	snd_stm_printe("Error during FDMA transfer in reader '%s'!\n",
+ 			pcm_reader->device->bus_id);
++
++	snd_pcm_stop(pcm_reader->substream, SNDRV_PCM_STATE_XRUN);
+ }
+ 
+ static struct snd_pcm_hardware snd_stm_pcm_reader_hw = {
+@@ -177,7 +168,7 @@ static struct snd_pcm_hardware snd_stm_pcm_reader_hw = {
+ 
+ 	/* Keep in mind that we are working in slave mode, so sampling
+ 	 * rate is determined by external components... */
+-	.rates		= (SNDRV_PCM_RATE_CONTINUOUS),
++	.rates		= SNDRV_PCM_RATE_CONTINUOUS,
+ 	.rate_min	= 32000,
+ 	.rate_max	= 192000,
+ 
+@@ -256,6 +247,9 @@ static int snd_stm_pcm_reader_open(struct snd_pcm_substream *substream)
+ 
+ 	runtime->hw = snd_stm_pcm_reader_hw;
+ 
++	/* Interrupt handlers will need the substream pointer... */
++	pcm_reader->substream = substream;
++
+ 	return 0;
+ }
+ 
+@@ -270,6 +264,8 @@ static int snd_stm_pcm_reader_close(struct snd_pcm_substream *substream)
+ 	snd_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
++	pcm_reader->substream = NULL;
++
+ 	return 0;
+ }
+ 
+@@ -289,6 +285,9 @@ static int snd_stm_pcm_reader_hw_free(struct snd_pcm_substream *substream)
+ 	/* This callback may be called more than once... */
+ 
+ 	if (snd_stm_buffer_is_allocated(pcm_reader->buffer)) {
++		/* Let the FDMA stop */
++		dma_wait_for_completion(pcm_reader->fdma_channel);
++
+ 		/* Free buffer */
+ 		snd_stm_buffer_free(pcm_reader->buffer);
+ 
+@@ -599,12 +598,10 @@ static inline int snd_stm_pcm_reader_start(struct snd_pcm_substream *substream)
+ 
+ 	/* Launch PCM reader */
+ 
+-	pcm_reader->substream = substream;
+ 	set__AUD_PCMIN_CTRL__MODE__PCM(pcm_reader);
+ 
+-	/* Enable reader interrupts */
++	/* Enable required reader interrupts */
+ 
+-	set__AUD_PCMIN_IT_EN_SET__VSYNC__SET(pcm_reader);
+ 	set__AUD_PCMIN_IT_EN_SET__OVF__SET(pcm_reader);
+ 
+ 	/* Wake up & unmute ADC */
+@@ -637,13 +634,11 @@ static inline int snd_stm_pcm_reader_stop(struct snd_pcm_substream *substream)
+ 
+ 	/* Disable interrupts */
+ 
+-	set__AUD_PCMIN_IT_EN_CLR__VSYNC__CLEAR(pcm_reader);
+ 	set__AUD_PCMIN_IT_EN_CLR__OVF__CLEAR(pcm_reader);
+ 
+ 	/* Stop PCM reader */
+ 
+ 	set__AUD_PCMIN_CTRL__MODE__OFF(pcm_reader);
+-	pcm_reader->substream = NULL;
+ 
+ 	/* Stop FDMA transfer */
+ 
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 873398d..5197c41 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -301,6 +301,9 @@ static int snd_stm_spdif_player_open(struct snd_pcm_substream *substream)
+ 	else
+ 		runtime->hw = snd_stm_spdif_player_hw_raw;
+ 
++	/* Interrupt handler will need the substream pointer... */
++	spdif_player->substream = substream;
++
+ 	return 0;
+ }
+ 
+@@ -315,6 +318,8 @@ static int snd_stm_spdif_player_close(struct snd_pcm_substream *substream)
+ 	snd_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
++	spdif_player->substream = NULL;
++
+ 	return 0;
+ }
+ 
+@@ -334,6 +339,9 @@ static int snd_stm_spdif_player_hw_free(struct snd_pcm_substream *substream)
+ 	/* This callback may be called more than once... */
+ 
+ 	if (snd_stm_buffer_is_allocated(spdif_player->buffer)) {
++		/* Let the FDMA stop */
++		dma_wait_for_completion(spdif_player->fdma_channel);
++
+ 		/* Free buffer */
+ 		snd_stm_buffer_free(spdif_player->buffer);
+ 
+@@ -620,8 +628,6 @@ static inline int snd_stm_spdif_player_start(struct snd_pcm_substream
+ 
+ 	/* Launch SPDIF player */
+ 
+-	spdif_player->substream = substream;
+-
+ 	if (spdif_player->stream_settings.encoding_mode ==
+ 			SNDRV_STM_SPDIF_ENCODING_MODE_PCM)
+ 		set__AUD_SPDIF_CTRL__MODE__PCM(spdif_player);
+@@ -669,7 +675,6 @@ static inline int snd_stm_spdif_player_stop(struct snd_pcm_substream *substream)
+ 	/* Stop SPDIF player */
+ 
+ 	set__AUD_SPDIF_CTRL__MODE__OFF(spdif_player);
+-	spdif_player->substream = NULL;
+ 
+ 	/* Stop FDMA transfer */
+ 

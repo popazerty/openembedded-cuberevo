@@ -1,0 +1,208 @@
+From 40f0c05d41ce95b0a42a1160a875f904613877f1 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Wed, 13 May 2009 12:37:55 +0100
+Subject: [PATCH] sh: Fix hard IRQ tracing
+
+There are a few missing calls in the SH assembler code to keep the hard
+IRQ tracing code informed about that state of the hardware's IRQ mask.
+
+Also switch to using a macro which removes quite a few #ifdefs. This
+is slightly less efficient because we have to jump over the function
+address, but given that its only used when tracing is enabled its
+probably acceptable.
+
+See bugzilla 6138
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/entry.S |   65 ++++++++++++---------------------------
+ include/asm-sh/entry-macros.S  |   30 ++++++++++++++++++
+ 2 files changed, 50 insertions(+), 45 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/entry.S b/arch/sh/kernel/cpu/sh4/entry.S
+index ce47c5f..4f5d6a6 100644
+--- a/arch/sh/kernel/cpu/sh4/entry.S
++++ b/arch/sh/kernel/cpu/sh4/entry.S
+@@ -633,11 +633,7 @@ ENTRY(sh_bios_handler)
+ 
+ ENTRY(exception_error)
+ 	!
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-	mov.l	2f, r0
+-	jsr	@r0
+-	 nop
+-#endif
++	TRACE_IRQS_ON
+ 	sti
+ 	mov.l	1f, r0
+ 	jmp	@r0
+@@ -645,10 +641,6 @@ ENTRY(exception_error)
+ 
+ 	.align	2
+ 1:	.long	do_exception_error
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-2:	.long	trace_hardirqs_on
+-#endif
+-
+ 
+ !
+ !  Exit function after general exception and IRQ
+@@ -657,11 +649,7 @@ ENTRY(exception_error)
+ ENTRY(ret_from_exception)
+ #if defined(CONFIG_PREEMPT)
+ 	cli
+-#endif
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-	mov.l	4f, r0
+-	jsr	@r0
+-	 nop
++	TRACE_IRQS_OFF
+ #endif
+ ret_from_irq:
+ 	!
+@@ -712,6 +700,16 @@ noresched:
+ !
+ 
+ restore_all:
++#ifdef CONFIG_TRACE_IRQFLAGS
++	mov	#OFF_SR, r0
++	mov.l	@(r0,r15), r0		! get status register
++	shlr2	r0
++	and	#0x3c, r0
++	cmp/eq	#0x3c, r0
++	bt	6f
++	TRACE_IRQS_ON
++6:
++#endif
+ 	mov.l	@r15+, r0
+ 	mov.l	@r15+, r1
+ 	mov.l	@r15+, r2
+@@ -784,11 +782,7 @@ restore_all:
+ ENTRY(resume_userspace)
+ 	! r8: current_thread_info
+ 	cli
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-	mov.l	5f, r0
+-	jsr	@r0
+-	 nop
+-#endif
++	TRACE_IRQS_OFF
+ 	mov.l	@(TI_FLAGS,r8), r0		! current_thread_info->flags
+ 	tst	#_TIF_WORK_MASK, r0
+ 	bt/s	restore_all
+@@ -814,11 +808,7 @@ work_resched:
+ 	jsr	@r1				! schedule
+ 	 nop
+ 	cli
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-	mov.l	5f, r0
+-	jsr	@r0
+-	 nop
+-#endif
++	TRACE_IRQS_OFF
+ 	!
+ 	mov.l	@(TI_FLAGS,r8), r0		! current_thread_info->flags
+ 	tst	#_TIF_WORK_MASK, r0
+@@ -830,10 +820,6 @@ work_resched:
+ 1:	.long	schedule
+ 2:	.long	do_notify_resume
+ 3:	.long	resume_userspace
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-4:	.long	trace_hardirqs_on
+-5:	.long	trace_hardirqs_off
+-#endif
+ 
+ /*
+  * Syscall interface:
+@@ -896,9 +882,10 @@ ENTRY(system_call)
+ 	bt      debug_trap	! 110 BR        1
+ 
+ #ifdef CONFIG_TRACE_IRQFLAGS
+-	mov.l	5f, r11
+-	jsr	@r11
+-	 nop
++	/* Need to preserve r3 */
++	mov	r3, r8
++	TRACE_IRQS_ON
++	mov	r8, r3
+ #endif
+ 
+ /* Expanded sti  (also included in code above ) */
+@@ -940,11 +927,7 @@ syscall_call:
+ 	!
+ syscall_exit:
+ 	cli
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-	mov.l	6f, r0
+-	jsr	@r0
+-	 nop
+-#endif
++	TRACE_IRQS_OFF
+ 	!
+ 	get_current_thread_info r8, r0
+ 	mov.l	@(TI_FLAGS,r8), r0		! current_thread_info->flags
+@@ -964,11 +947,7 @@ syscall_exit_work:
+ 	tst	#_TIF_SYSCALL_TRACE | _TIF_SINGLESTEP | _TIF_KERNEL_TRACE, r0
+ 	bt/s	work_pending
+ 	 tst	#_TIF_NEED_RESCHED, r0
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-	mov.l	5f, r0
+-	jsr	@r0
+-	 nop
+-#endif
++	TRACE_IRQS_ON
+ 	sti
+ 	mov.l	4f, r0			! [LS] do_syscall_trace
+ 	mov	r15,r4			! [MT] pass stacked regs as arg
+@@ -1042,10 +1021,6 @@ syscall_badsys:			! Bad syscall number
+ 2:	.long	(NR_syscalls<<2)
+ 3:	.long	sys_call_table
+ 4:	.long	do_syscall_trace
+-#ifdef CONFIG_TRACE_IRQFLAGS
+-5:	.long	trace_hardirqs_on
+-6:	.long	trace_hardirqs_off
+-#endif
+ 7:	.long	schedule_tail	/* used by ret_from_fork */
+ 8:	.long	debug_trap_table
+ 
+diff --git a/include/asm-sh/entry-macros.S b/include/asm-sh/entry-macros.S
+index 2dab0b8..4af03eb 100644
+--- a/include/asm-sh/entry-macros.S
++++ b/include/asm-sh/entry-macros.S
+@@ -31,3 +31,33 @@
+ #endif	
+ 	.endm
+ 
++#ifdef CONFIG_TRACE_IRQFLAGS
++
++	.macro	TRACE_IRQS_ON
++	mov.l	7834f, r0
++	jsr	@r0
++	 nop
++	bra	7835f
++	 nop
++	.balign	4
++7834:	.long	trace_hardirqs_on
++7835:
++	.endm
++	.macro	TRACE_IRQS_OFF
++	mov.l	7834f, r0
++	jsr	@r0
++	 nop
++	bra	7835f
++	 nop
++	.balign	4
++7834:	.long	trace_hardirqs_off
++7835:
++	.endm
++
++#else
++	.macro	TRACE_IRQS_ON
++	.endm
++
++	.macro	TRACE_IRQS_OFF
++	.endm
++#endif
+-- 
+1.6.0.6
+

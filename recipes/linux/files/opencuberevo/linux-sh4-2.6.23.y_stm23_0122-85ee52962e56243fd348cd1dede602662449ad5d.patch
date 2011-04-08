@@ -1,0 +1,32 @@
+From 85ee52962e56243fd348cd1dede602662449ad5d Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 31 Aug 2009 11:51:36 +0200
+Subject: [PATCH] stm: pm: Flush cache before suspend
+
+This patch updates the suspend core code flushing all the cache before
+the systems is put in standby.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/suspend.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/suspend.c b/arch/sh/kernel/cpu/sh4/suspend.c
+index 0d90e85..735d25a 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend.c
++++ b/arch/sh/kernel/cpu/sh4/suspend.c
+@@ -60,8 +60,11 @@ static int sh4_suspend_enter(suspend_state_t state)
+ 	data->l_p_j = _10_ms_lpj();
+ 
+ 	/* Must wait for serial buffers to clear */
++	printk(KERN_INFO "sh4 is sleeping...\n");
+ 	mdelay(500);
+ 
++	flush_cache_all();
++
+ 	local_irq_save(flags);
+ 
+ 	/* sets the right instruction table */
+-- 
+1.6.0.6
+

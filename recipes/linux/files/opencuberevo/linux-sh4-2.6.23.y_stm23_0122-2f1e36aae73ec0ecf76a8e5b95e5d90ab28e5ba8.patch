@@ -1,0 +1,110 @@
+From 2f1e36aae73ec0ecf76a8e5b95e5d90ab28e5ba8 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Thu, 3 Sep 2009 14:21:45 +0100
+Subject: [PATCH] stm_nand_flex: Workaround for WAIT_RBN bug, GNBvd77579
+
+Due to a bug in the FLEX NAND Controller (GNBvd77579), clearing the 'WAIT_RBN'
+config bit is ignored.  As a result, any write to the FLEX command register will
+cause the controller to wait until the NAND device becomes ready.  The CPU, bus,
+and EMI will all be stalled during this period.
+
+The default nand_wait() function, called after each NAND operation, starts by
+writing a NAND_CMD_STATUS command.  This will stall until the operation has
+completed, which may take several milliseconds in the case of an erase
+operation.
+
+This patch overrides the default nand_wait() function, and waits until RBn is
+asserted before issuing the NAND_CMD_STATUS command.  If the RBn signal is
+unavailable, then we revert to the default behaviour, and accept the stall.
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/pdk7105/setup.c |    2 +-
+ drivers/mtd/nand/stm_nand_flex.c  |   48 ++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 48 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/boards/st/pdk7105/setup.c b/arch/sh/boards/st/pdk7105/setup.c
+index 5a08d5c..0b0a95f 100644
+--- a/arch/sh/boards/st/pdk7105/setup.c
++++ b/arch/sh/boards/st/pdk7105/setup.c
+@@ -304,7 +304,7 @@ static struct plat_stmnand_data nand_config = {
+ 		.rd_off         = 40,
+ 		.chip_delay     = 50,           /* in us */
+ 	},
+-	.flex_rbn_connected     = 0,
++	.flex_rbn_connected     = 1,
+ };
+ 
+ /* Platform data for STM_NAND_EMI/FLEX/AFM. (bank# may be updated later) */
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index 1d88a63..cd78cf1 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -177,10 +177,55 @@ static void flex_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
+ 	}
+ }
+ 
++/*
++ * Override the default nand_wait() function.  If we have access to
++ * RBn/dev_ready(), then we wait until RBn is asserted before issuing the
++ * NAND_CMD_STATUS command.  If RBn is not available, then we revert to the
++ * default behaviour and accept a bus stall until the NAND device becomes ready.
++ */
++static int flex_nand_wait(struct mtd_info *mtd, struct nand_chip *chip)
++{
++
++	unsigned long timeo = jiffies;
++	int status, state = chip->state;
++
++	if (state == FL_ERASING)
++		timeo += (HZ * 400) / 1000;
++	else
++		timeo += (HZ * 20) / 1000;
++
++	/* Apply this short delay always to ensure that we do wait tWB in
++	 * any case on any machine. */
++	ndelay(100);
++
++	if (chip->dev_ready) {
++		/* If we have access to RBn */
++		while (time_before(jiffies, timeo)) {
++			if (chip->dev_ready(mtd))
++				break;
++			cond_resched();
++		}
++		chip->cmdfunc(mtd, NAND_CMD_STATUS, -1, -1);
++	} else {
++		/* Else read NAND status register
++		 * (which will stall bus until NAND device is ready) */
++		chip->cmdfunc(mtd, NAND_CMD_STATUS, -1, -1);
++		while (time_before(jiffies, timeo)) {
++			if (chip->read_byte(mtd) & NAND_STATUS_READY)
++				break;
++			cond_resched();
++		}
++	}
++
++	/* Get operation status */
++	status = (int)chip->read_byte(mtd);
++	return status;
++}
++
+ static int flex_rbn(struct mtd_info *mtd)
+ {
+ 	/* Apply a small delay before sampling RBn signal */
+-	ndelay(500);
++	ndelay(100);
+ 	return (flex_readreg(EMINAND_RBN_STATUS) & (0x4)) ? 1 : 0;
+ }
+ 
+@@ -893,6 +938,7 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	data->chip.read_byte = flex_read_byte;
+ 	data->chip.read_buf = flex_read_buf;
+ 	data->chip.write_buf = flex_write_buf;
++	data->chip.waitfunc = flex_nand_wait;
+ 	if (stmdata->flex_rbn_connected)
+ 		data->chip.dev_ready = flex_rbn;
+ 
+-- 
+1.6.0.6
+

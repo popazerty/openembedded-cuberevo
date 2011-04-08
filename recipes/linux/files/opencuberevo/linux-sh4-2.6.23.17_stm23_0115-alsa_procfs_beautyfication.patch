@@ -1,0 +1,258 @@
+commit e4475aaeb60e6ec70913005d022a59370e5002d8
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Fri Jul 18 12:01:45 2008 +0100
+
+    sound_stm: /proc/asound/stm files beautified
+    
+    There is always a device bus ID at the beginning and a new line
+    at the end of file, so one can do "cat /proc/asound/stm/*" and
+    get a complex information about audio peripherals.
+    
+    Additionally all devices with memory-mapped controls are displaying
+    base address to ease debugger modifications.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 4cda26d..94d92f2 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -260,6 +260,10 @@ int snd_stm_info_register(struct snd_info_entry **entry,
+ {
+ 	int result = 0;
+ 
++	/* Skip the "snd_" prefix, if bus_id has been simply given */
++	if (strncmp(name, "snd_", 4) == 0)
++		name += 4;
++
+ 	*entry = snd_info_create_module_entry(THIS_MODULE, name,
+ 			snd_stm_info_root);
+ 	if (*entry) {
+diff --git a/sound/stm/conv_gpio.c b/sound/stm/conv_gpio.c
+index d265778..26f7006 100644
+--- a/sound/stm/conv_gpio.c
++++ b/sound/stm/conv_gpio.c
+@@ -345,12 +345,13 @@ static struct snd_kcontrol_new snd_stm_conv_gpio_ctl_mute = {
+ static void snd_stm_conv_gpio_read_info(struct snd_info_entry *entry,
+ 		struct snd_info_buffer *buffer)
+ {
+-	struct snd_stm_conv_gpio *conv_gpio =
+-		entry->private_data;
++	struct snd_stm_conv_gpio *conv_gpio = entry->private_data;
+ 
+ 	snd_assert(conv_gpio, return);
+ 	snd_stm_magic_assert(conv_gpio, return);
+ 
++	snd_iprintf(buffer, "--- %s ---\n", conv_gpio->bus_id);
++
+ 	snd_iprintf(buffer, "enable_gpio(%d) = %d\n",
+ 			conv_gpio->info->enable_gpio,
+ 			gpio_get_value(conv_gpio->info->enable_gpio));
+@@ -359,10 +360,7 @@ static void snd_stm_conv_gpio_read_info(struct snd_info_entry *entry,
+ 				conv_gpio->info->mute_gpio,
+ 				gpio_get_value(conv_gpio->info->mute_gpio));
+ 
+-	snd_iprintf(buffer, "enabled = %d\n", conv_gpio->enabled);
+-	snd_iprintf(buffer, "muted_by_source = %d\n",
+-			conv_gpio->muted_by_source);
+-	snd_iprintf(buffer, "muted_by_user = %d\n", conv_gpio->muted_by_user);
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int snd_stm_conv_gpio_register(struct snd_device *snd_device)
+diff --git a/sound/stm/conv_i2sspdif.c b/sound/stm/conv_i2sspdif.c
+index 10b89fa..1d8cf7d 100644
+--- a/sound/stm/conv_i2sspdif.c
++++ b/sound/stm/conv_i2sspdif.c
+@@ -481,6 +481,9 @@ static void snd_stm_conv_i2sspdif_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(conv_i2sspdif, return);
+ 	snd_stm_magic_assert(conv_i2sspdif, return);
+ 
++	snd_iprintf(buffer, "--- %s ---\n", conv_i2sspdif->device->bus_id);
++	snd_iprintf(buffer, "base = 0x%p\n", conv_i2sspdif->base);
++
+ 	DUMP_REGISTER(CFG);
+ 	DUMP_REGISTER(STA);
+ 	DUMP_REGISTER(IT_EN);
+@@ -502,6 +505,8 @@ static void snd_stm_conv_i2sspdif_dump_registers(struct snd_info_entry *entry,
+ 	DUMP_REGISTER(CL1);
+ 	DUMP_REGISTER(CR1);
+ 	DUMP_REGISTER(SUV);
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int snd_stm_conv_i2sspdif_register(
+diff --git a/sound/stm/conv_int_dac.c b/sound/stm/conv_int_dac.c
+index 9ec10b3..0e539b9 100644
+--- a/sound/stm/conv_int_dac.c
++++ b/sound/stm/conv_int_dac.c
+@@ -282,14 +282,13 @@ static void snd_stm_conv_int_dac_read_info(struct snd_info_entry *entry,
+ 	snd_assert(conv_int_dac, return);
+ 	snd_stm_magic_assert(conv_int_dac, return);
+ 
++	snd_iprintf(buffer, "--- %s ---\n", conv_int_dac->bus_id);
++	snd_iprintf(buffer, "base = 0x%p\n", conv_int_dac->base);
++
+ 	snd_iprintf(buffer, "AUDCFG_ADAC_CTRL (offset 0x00) = 0x%08x\n",
+ 			get__AUDCFG_ADAC_CTRL(conv_int_dac));
+ 
+-	snd_iprintf(buffer, "enabled = %d\n", conv_int_dac->enabled);
+-	snd_iprintf(buffer, "muted_by_source = %d\n",
+-			conv_int_dac->muted_by_source);
+-	snd_iprintf(buffer, "muted_by_user = %d\n",
+-			conv_int_dac->muted_by_user);
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int snd_stm_conv_int_dac_register(struct snd_device *snd_device)
+diff --git a/sound/stm/fsynth.c b/sound/stm/fsynth.c
+index 4ed4aad..4a78e27 100644
+--- a/sound/stm/fsynth.c
++++ b/sound/stm/fsynth.c
+@@ -564,6 +564,9 @@ static void snd_stm_fsynth_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(fsynth, return);
+ 	snd_stm_magic_assert(fsynth, return);
+ 
++	snd_iprintf(buffer, "--- %s ---\n", fsynth->bus_id);
++	snd_iprintf(buffer, "base = 0x%p\n", fsynth->base);
++
+ 	snd_iprintf(buffer, "AUDCFG_FSYN_CFG (offset 0x00) = 0x%08x\n",
+ 			get__AUDCFG_FSYN_CFG(fsynth));
+ 
+@@ -573,6 +576,8 @@ static void snd_stm_fsynth_dump_registers(struct snd_info_entry *entry,
+ 		DUMP_REGISTER(SDIV, i);
+ 		DUMP_REGISTER(PROGEN, i);
+ 	}
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int snd_stm_fsynth_register(struct snd_device *snd_device)
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index f9935ec..aeb58be 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -782,6 +782,9 @@ static void snd_stm_pcm_player_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(pcm_player, return);
+ 	snd_stm_magic_assert(pcm_player, return);
+ 
++	snd_iprintf(buffer, "--- %s ---\n", pcm_player->device->bus_id);
++	snd_iprintf(buffer, "base = 0x%p\n", pcm_player->base);
++
+ 	DUMP_REGISTER(RST);
+ 	DUMP_REGISTER(DATA);
+ 	DUMP_REGISTER(ITS);
+@@ -792,6 +795,8 @@ static void snd_stm_pcm_player_dump_registers(struct snd_info_entry *entry,
+ 	DUMP_REGISTER(CTRL);
+ 	DUMP_REGISTER(STA);
+ 	DUMP_REGISTER(FMT);
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int snd_stm_pcm_player_register(struct snd_device *snd_device)
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 0a8a27d..8954294 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -730,6 +730,9 @@ static void snd_stm_pcm_reader_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(pcm_reader, return);
+ 	snd_stm_magic_assert(pcm_reader, return);
+ 
++	snd_iprintf(buffer, "--- %s ---\n", pcm_reader->device->bus_id);
++	snd_iprintf(buffer, "base = 0x%p\n", pcm_reader->base);
++
+ 	DUMP_REGISTER(RST);
+ 	DUMP_REGISTER(DATA);
+ 	DUMP_REGISTER(ITS);
+@@ -740,6 +743,8 @@ static void snd_stm_pcm_reader_dump_registers(struct snd_info_entry *entry,
+ 	DUMP_REGISTER(CTRL);
+ 	DUMP_REGISTER(STA);
+ 	DUMP_REGISTER(FMT);
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int snd_stm_pcm_reader_register(struct snd_device *snd_device)
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 5197c41..511fdf5 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -1353,6 +1353,9 @@ static void snd_stm_spdif_player_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(spdif_player, return);
+ 	snd_stm_magic_assert(spdif_player, return);
+ 
++	snd_iprintf(buffer, "--- %s ---\n", spdif_player->device->bus_id);
++	snd_iprintf(buffer, "base = 0x%p\n", spdif_player->base);
++
+ 	DUMP_REGISTER(RST);
+ 	DUMP_REGISTER(DATA);
+ 	DUMP_REGISTER(ITS);
+@@ -1371,6 +1374,8 @@ static void snd_stm_spdif_player_dump_registers(struct snd_info_entry *entry,
+ 	DUMP_REGISTER(BST_FL);
+ 	if (spdif_player->ver >= ver__AUD_SPDIF__65_3_1)
+ 		DUMP_REGISTER(CONFIG);
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int snd_stm_spdif_player_register(struct snd_device *snd_device)
+diff --git a/sound/stm/stx710x.c b/sound/stm/stx710x.c
+index 6f32074..35a7207 100644
+--- a/sound/stm/stx710x.c
++++ b/sound/stm/stx710x.c
+@@ -297,8 +297,13 @@ static void snd_stm_stx710x_glue_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(stx710x_glue, return);
+ 	snd_stm_magic_assert(stx710x_glue, return);
+ 
++	snd_iprintf(buffer, "--- snd_stx710x_glue ---\n");
++	snd_iprintf(buffer, "base = 0x%p\n", stx710x_glue->base);
++
+ 	snd_iprintf(buffer, "AUDCFG_IO_CTRL (offset 0x00) = 0x%08x\n",
+ 			get__710X_AUDCFG_IO_CTRL(stx710x_glue));
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int __init snd_stm_stx710x_glue_register(struct snd_device *snd_device)
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index d4bec25..354f54c 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -366,8 +366,13 @@ static void snd_stm_stx7111_glue_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(stx7111_glue, return);
+ 	snd_stm_magic_assert(stx7111_glue, return);
+ 
++	snd_iprintf(buffer, "--- snd_stx7111_glue ---\n");
++	snd_iprintf(buffer, "base = 0x%p\n", stx7111_glue->base);
++
+ 	snd_iprintf(buffer, "AUDCFG_IO_CTRL (offset 0x00) = 0x%08x\n",
+ 			get__7111_AUDCFG_IO_CTRL(stx7111_glue));
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int __init snd_stm_stx7111_glue_register(struct snd_device *snd_device)
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index 4db2d96..68158cf 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -570,12 +570,17 @@ static void snd_stm_stx7200_glue_dump_registers(struct snd_info_entry *entry,
+ 	snd_assert(stx7200_glue, return);
+ 	snd_stm_magic_assert(stx7200_glue, return);
+ 
++	snd_iprintf(buffer, "--- snd_stx7200_glue ---\n");
++	snd_iprintf(buffer, "base = 0x%p\n", stx7200_glue->base);
++
+ 	snd_iprintf(buffer, "AUDCFG_IOMUX_CTRL (offset 0x00) = 0x%08x\n",
+ 			get__7200_AUDCFG_IOMUX_CTRL(stx7200_glue));
+ 	snd_iprintf(buffer, "AUDCFG_HDMI_CTRL (offset 0x04) = 0x%08x\n",
+ 			get__7200_AUDCFG_HDMI_CTRL(stx7200_glue));
+ 	snd_iprintf(buffer, "AUDCFG_RECOVERY_CTRL (offset 0x08) = 0x%08x\n",
+ 			get__7200_AUDCFG_RECOVERY_CTRL(stx7200_glue));
++
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ static int __init snd_stm_stx7200_glue_register(struct snd_device *snd_device)

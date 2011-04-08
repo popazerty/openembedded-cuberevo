@@ -1,0 +1,175 @@
+From 6212de822302182a8a9cec2f018a24337ff238e5 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 31 Aug 2009 11:52:02 +0200
+Subject: [PATCH] stm: pio: moved the pio wakeup support at the sysdev level
+
+This patch removes the deprecated stpio_resume_early and
+stpio_suspend_late functions because they are removed in
+the newer kernel.
+The pio wakeup capability is managed during pio sysdev suspend
+and resume.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/stm/pio.c |   98 +++++++++++++++++++++++++++++++++++------------------
+ 1 files changed, 65 insertions(+), 33 deletions(-)
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index 7b121f8..0b382c1 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -95,7 +95,7 @@
+ struct stpio_pin {
+ 	struct stpio_port *port;
+ 	unsigned int no;
+-#ifdef CONFIG_PROC_FS
++#if defined(CONFIG_PROC_FS) || defined(CONFIG_PM)
+ 	int direction;
+ #endif
+ 	const char *name;
+@@ -824,17 +824,32 @@ static int __devexit stpio_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++static struct platform_driver stpio_driver = {
++	.driver	= {
++		.name	= "stpio",
++		.owner	= THIS_MODULE,
++	},
++	.probe		= stpio_probe,
++	.remove		= __devexit_p(stpio_remove),
++};
++
++
+ #ifdef CONFIG_PM
+ /*
+  * Note on Power Management on Pio device
+  * ======================================
+- * The STPio is registered twice on different view:
+- * 1. as platform_device to manage the wakeup capability on the Pio device
+- * 2. as sysdev_device   to restore the pio direction after a resume
+- *    from hibernation
++ * Every PM operation is managed at sysdev level to avoid any
++ * call to the deprecated suspend_late/resume_early functions.
++ * The stpio_sysdev_suspend sysdev function will do the right action
++ * based on the information the platform_driver has on the
++ * platform_device detect on the SOC
++ *
+  */
+-static int stpio_suspend_late(struct platform_device *pdev, pm_message_t state)
++static int stpio_suspend(struct device *dev, void *data)
+ {
++	struct platform_device *pdev = (struct platform_device *)
++		container_of(dev, struct platform_device, dev);
++
+ 	int port = pdev->id;
+ 	int pin;
+ 	if (device_may_wakeup(&(pdev->dev))) {
+@@ -855,10 +870,13 @@ static int stpio_suspend_late(struct platform_device *pdev, pm_message_t state)
+ 			}
+ 	return 0;
+ }
+-static int stpio_resume_early(struct platform_device *pdev)
++
++static int stpio_resume_from_suspend(struct device *dev, void *data)
+ {
+-	int port = pdev->id;
+-	int pin;
++	struct platform_device *pdev = (struct platform_device *)
++		container_of(dev, struct platform_device, dev);
++	int port = pdev->id, pin;
++
+ 	if (device_may_wakeup(&(pdev->dev)))
+ 		return 0; /* no jobs !*/
+ 
+@@ -876,6 +894,22 @@ static int stpio_resume_early(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++static int stpio_resume_from_hibernation(struct device *dev, void *data)
++{
++	struct platform_device *pdev = (struct platform_device *)
++		container_of(dev, struct platform_device, dev);
++	int port = pdev->id, pin;
++
++	for (pin = 0; pin < STPIO_PINS_IN_PORT; ++pin) {
++		if (!stpio_ports[port].pins[pin].name) /* not used */
++			continue;
++		stpio_configure_pin(&stpio_ports[port].pins[pin],
++			stpio_ports[port].pins[pin].direction);
++	}
++	return 0;
++}
++
++
+ int stpio_set_wakeup(struct stpio_pin *pin, int enabled)
+ {
+ 	struct platform_device *pdev = pin->port->pdev;
+@@ -898,19 +932,30 @@ EXPORT_SYMBOL(stpio_set_wakeup);
+ static int stpio_sysdev_suspend(struct sys_device *dev, pm_message_t state)
+ {
+ 	static pm_message_t prev;
+-	int i, j;
+-	/* we manage _only_ the resume from hibernation */
+-	if (state.event == PM_EVENT_ON		&&
+-	    prev.event  == PM_EVENT_FREEZE)
+-		for (i = 0; i < STPIO_MAX_PORTS; ++i)
+-		for (j = 0; j < STPIO_PINS_IN_PORT; ++j) {
+-			if (!stpio_ports[i].pins[j].name) /* not used */
+-				continue;
+-			stpio_configure_pin(&stpio_ports[i].pins[j],
+-				stpio_ports[i].pins[j].direction);
++	int ret = 0;
++
++	switch (state.event) {
++	case PM_EVENT_ON:
++		switch (prev.event) {
++		case PM_EVENT_FREEZE:
++			ret = driver_for_each_device(&stpio_driver.driver, NULL,
++				NULL, stpio_resume_from_hibernation);
++		break;
++		case PM_EVENT_SUSPEND:
++			ret  = driver_for_each_device(&stpio_driver.driver,
++				NULL, NULL, stpio_resume_from_suspend);
++		break;
+ 		}
++	case PM_EVENT_FREEZE:
++	break;
++	case PM_EVENT_SUSPEND:
++		ret = driver_for_each_device(&stpio_driver.driver, NULL, NULL,
++			stpio_suspend);
++	break;
++	}
+ 	prev = state;
+-	return 0;
++
++	return ret;
+ }
+ 
+ static int stpio_sysdev_resume(struct sys_device *dev)
+@@ -940,22 +985,9 @@ static int __init stpio_sysdev_init(void)
+ 	return 0;
+ }
+ #else
+-#define stpio_suspend_late	NULL
+-#define stpio_resume_early	NULL
+ #define stpio_sysdev_init()
+ #endif
+ 
+-static struct platform_driver stpio_driver = {
+-	.driver	= {
+-		.name	= "stpio",
+-		.owner	= THIS_MODULE,
+-	},
+-	.probe		= stpio_probe,
+-	.remove		= __devexit_p(stpio_remove),
+-	.suspend_late = stpio_suspend_late,
+-	.resume_early = stpio_resume_early,
+-};
+-
+ static int __init stpio_init(void)
+ {
+ #ifdef CONFIG_PROC_FS
+-- 
+1.6.0.6
+

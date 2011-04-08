@@ -1,0 +1,31 @@
+From 497fcbad3e404d5e27c79dfbc3e85fcdaa6a4d34 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Tue, 9 Jun 2009 16:19:27 +0100
+Subject: [PATCH] stm_fdma: Fix request lines management when crossbar is present
+
+This patch fixes a stupid bug which slipped into the new request line
+allocation function. Shame on me!
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/stm/fdma.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/stm/fdma.c b/drivers/stm/fdma.c
+index f94094c..6764709 100644
+--- a/drivers/stm/fdma.c
++++ b/drivers/stm/fdma.c
+@@ -382,7 +382,9 @@ static struct stm_dma_req *fdma_req_allocate(struct fdma_channel *channel,
+ 
+ 			if (fdma_req_router->route(fdma_req_router,
+ 						soc_req_line, fdma->pdev->id,
+-						req_line) != 0)
++						req_line) == 0)
++				fdma->reqs_used_mask |= (1 << req_line);
++			else
+ 				req_line = -EBUSY;
+ 		}
+ 	} else {
+-- 
+1.6.0.6
+

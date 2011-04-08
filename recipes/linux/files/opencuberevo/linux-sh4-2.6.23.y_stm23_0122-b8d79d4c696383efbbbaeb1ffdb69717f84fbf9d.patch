@@ -1,0 +1,331 @@
+From b8d79d4c696383efbbbaeb1ffdb69717f84fbf9d Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 18 Nov 2009 13:01:19 +0000
+Subject: [PATCH] sh_stm: Add NAND support for Freeman 510
+
+This patch adds NAND support for Freeman 510.
+
+Note, the freeman targetpack 0.5 fails to hold the st40ctrl core in reset, which
+then tries to access EMI Bank 0. This can cause bus lock-ups on boards
+configured for boot-from-NAND when the NAND boot controller is disabled.
+Setting the targetpack parameter "boot_companions=0" seems to avoid this issue.
+Later revisions of the targetpack should fix the reset-hold problem.
+---
+ arch/sh/boards/st/fldb/setup.c         |   53 +++++++++++++++++++++++++++++++-
+ arch/sh/configs/fldbse_defconfig       |    8 ++++-
+ arch/sh/kernel/cpu/sh4/setup-fli7510.c |   15 +++++++++
+ drivers/mtd/nand/Kconfig               |    5 ++-
+ drivers/mtd/nand/stm_nand_emi.c        |   26 ++++++++++-----
+ drivers/mtd/nand/stm_nand_flex.c       |   31 +++++++++++-------
+ include/linux/stm/soc.h                |    1 +
+ 7 files changed, 114 insertions(+), 25 deletions(-)
+
+diff --git a/arch/sh/boards/st/fldb/setup.c b/arch/sh/boards/st/fldb/setup.c
+index c7ab41b..d2f759a 100644
+--- a/arch/sh/boards/st/fldb/setup.c
++++ b/arch/sh/boards/st/fldb/setup.c
+@@ -18,11 +18,14 @@
+ #include <linux/lirc.h>
+ #include <linux/phy.h>
+ #include <linux/mtd/mtd.h>
++#include <linux/mtd/nand.h>
+ #include <linux/mtd/physmap.h>
+ #include <linux/mtd/partitions.h>
+ #include <linux/stm/emi.h>
+ #include <linux/stm/pio.h>
++#include <linux/stm/nand.h>
+ #include <linux/stm/soc.h>
++#include <linux/stm/soc_init.h>
+ #include <linux/stm/sysconf.h>
+ #include <asm/irq-ilc.h>
+ #include "../common/common.h"
+@@ -134,7 +137,7 @@ static struct platform_device fldb_nor_flash = {
+ 	.num_resources = 1,
+ 	.resource = (struct resource[]) {
+ 		{
+-			.start = 0x00000000, /* Will be overridden */
++			.start = 0x00000000, /* May be overridden */
+ 			.end = 32 * 1024 * 1024 - 1,
+ 			.flags = IORESOURCE_MEM,
+ 		}
+@@ -146,6 +149,43 @@ static struct platform_device fldb_nor_flash = {
+ 	},
+ };
+ 
++static struct mtd_partition fldb_nand_flash_mtd_parts[] = {
++	{
++		.name   = "NAND root",
++		.offset = 0,
++		.size   = 0x00800000
++	}, {
++		.name   = "NAND home",
++		.offset = MTDPART_OFS_APPEND,
++		.size   = MTDPART_SIZ_FULL
++	},
++};
++
++static struct plat_stmnand_data fldb_nand_config = {
++	.emi_withinbankoffset   = 0,
++	.rbn_port               = -1,
++	.rbn_pin                = -1,
++
++	.timing_data = &(struct nand_timing_data) {
++		.sig_setup      = 50,           /* times in ns */
++		.sig_hold       = 50,
++		.CE_deassert    = 0,
++		.WE_to_RBn      = 100,
++		.wr_on          = 10,
++		.wr_off         = 40,
++		.rd_on          = 10,
++		.rd_off         = 40,
++		.chip_delay     = 50,           /* in us */
++	},
++	.flex_rbn_connected     = 1,
++};
++
++static struct platform_device fldb_nand_flash =
++STM_NAND_DEVICE("stm-nand-flex", 1, &fldb_nand_config,
++		fldb_nand_flash_mtd_parts,
++		ARRAY_SIZE(fldb_nand_flash_mtd_parts),
++		NAND_USE_FLASH_BBT);
++
+ static struct pci_config_data fldb_pci_config = {
+ 	.pci_irq = {
+ 		PCI_PIN_DEFAULT,
+@@ -187,6 +227,7 @@ static int __init fldb_device_init(void)
+ {
+ 	struct sysconf_field *sc;
+ 	unsigned long nor_flash_base;
++	unsigned long emi_conf[4];
+ 
+ 	/* If the mode pins are configured to boot from NOR (SW4-SW6 all
+ 	 * off), the NOR flash CS is assigned to EMI_CSA, so it is placed
+@@ -200,6 +241,15 @@ static int __init fldb_device_init(void)
+ 		break;
+ 	default:
+ 		nor_flash_base = emi_bank_base(1);
++		fldb_nand_flash.id = 0;
++
++		/* Configure EMI Bank1 for NOR */
++		emi_conf[0] = 0x001126d1;	/* Settings taken from Bank 0 */
++		emi_conf[1] = 0x8d200000;	/* (Freeman targetpack 0.5)   */
++		emi_conf[2] = 0x9a200000;
++		emi_conf[3] = 0x0400021d;
++		emi_bank_configure(1, emi_conf);
++
+ 		break;
+ 	}
+ 	fldb_nor_flash.resource[0].start += nor_flash_base;
+@@ -230,6 +280,7 @@ static int __init fldb_device_init(void)
+ 	fli7510_configure_usb(fli7510_usb_ovrcur_active_low);
+ 	fli7510_configure_ethernet(fli7510_ethernet_mii, 0, 0);
+ 	fli7510_configure_lirc(NULL);
++	fli7510_configure_nand(&fldb_nand_flash);
+ 
+ 	return platform_add_devices(fldb_devices,
+ 			ARRAY_SIZE(fldb_devices));
+diff --git a/arch/sh/configs/fldbse_defconfig b/arch/sh/configs/fldbse_defconfig
+index 2b6bf61..651b530 100644
+--- a/arch/sh/configs/fldbse_defconfig
++++ b/arch/sh/configs/fldbse_defconfig
+@@ -481,6 +481,8 @@ CONFIG_MTD_PHYSMAP_BANKWIDTH=0
+ # Self-contained MTD device drivers
+ #
+ # CONFIG_MTD_PMC551 is not set
++# CONFIG_MTD_DATAFLASH is not set
++CONFIG_MTD_M25P80=y
+ # CONFIG_MTD_SLRAM is not set
+ # CONFIG_MTD_PHRAM is not set
+ # CONFIG_MTD_MTDRAM is not set
+@@ -500,7 +502,11 @@ CONFIG_MTD_NAND_IDS=y
+ # CONFIG_MTD_NAND_DISKONCHIP is not set
+ # CONFIG_MTD_NAND_CAFE is not set
+ # CONFIG_MTD_NAND_NANDSIM is not set
+-CONFIG_MTD_NAND_PLATFORM=y
++# CONFIG_MTD_NAND_PLATFORM is not set
++# CONFIG_MTD_NAND_STM_EMI is not set
++CONFIG_MTD_NAND_STM_FLEX=y
++# CONFIG_STM_NAND_FLEX_BOOTMODESUPPORT is not set
++CONFIG_STM_NAND_FLEX_BOOTPARTITION="Boot firmware"
+ # CONFIG_MTD_ONENAND is not set
+ 
+ #
+diff --git a/arch/sh/kernel/cpu/sh4/setup-fli7510.c b/arch/sh/kernel/cpu/sh4/setup-fli7510.c
+index 18d601f..a589675 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-fli7510.c
++++ b/arch/sh/kernel/cpu/sh4/setup-fli7510.c
+@@ -691,6 +691,21 @@ void __init fli7510_configure_lirc(lirc_scd_t *scd)
+ 	platform_device_register(&fli7510_lirc_device);
+ }
+ 
++void __init fli7510_configure_nand(struct platform_device *pdev)
++{
++	/* EMI Bank base address */
++	/*  - setup done in stm_nand_emi probe */
++
++	/* NAND Controller base address */
++	pdev->resource[0].start	= 0xFD101000;
++	pdev->resource[0].end	= 0xFD101FFF;
++
++	/* NAND Controller IRQ */
++	pdev->resource[1].start = ILC_IRQ(35);
++	pdev->resource[1].end	= ILC_IRQ(35);
++
++	platform_device_register(pdev);
++}
+ 
+ 
+ /* PCI Resources ---------------------------------------------------------- */
+diff --git a/drivers/mtd/nand/Kconfig b/drivers/mtd/nand/Kconfig
+index e070607..c43040c 100644
+--- a/drivers/mtd/nand/Kconfig
++++ b/drivers/mtd/nand/Kconfig
+@@ -286,7 +286,8 @@ config MTD_NAND_STM_EMI
+        depends on (CPU_SUBTYPE_STX7111 || \
+        	       	  	CPU_SUBTYPE_STX7200 || \
+ 			CPU_SUBTYPE_STX7105 || \
+-			CPU_SUBTYPE_STX7141)
++			CPU_SUBTYPE_STX7141 || \
++			CPU_SUBTYPE_FLI7510)
+        help
+          Enables the STMicroelectronics NAND driver for platforms in which the
+          device is connected via an EMI bank.
+@@ -325,7 +326,7 @@ endchoice
+ 
+ config MTD_NAND_STM_FLEX
+        tristate "STMicroelectronics: H/W FLEX Controller"
+-       depends on CPU_SUBTYPE_STX7200 || CPU_SUBTYPE_STX7105 
++       depends on CPU_SUBTYPE_STX7200 || CPU_SUBTYPE_STX7105 || CPU_SUBTYPE_FLI7510
+        help
+          Enables the STMicroelectronics NAND Controller operating in FLEX mode.
+          This driver is required to access NAND devices when boot-from-NAND is
+diff --git a/drivers/mtd/nand/stm_nand_emi.c b/drivers/mtd/nand/stm_nand_emi.c
+index e7db725..d0c4980 100644
+--- a/drivers/mtd/nand/stm_nand_emi.c
++++ b/drivers/mtd/nand/stm_nand_emi.c
+@@ -12,6 +12,8 @@
+  *  ------------------------------------------------------------------------
+  *
+  *  Changelog:
++  *	2009-11-17 Angus Clark <angus.clark@st.com>
++ *		- Handle different EMI clock names
+  *      2009-03-09 Angus Clark <Angus.Clark@st.com>
+  *              - moved EMI configuration from SoC setup to device probe
+  *              - updated timing specification
+@@ -470,7 +472,6 @@ static int nand_device_ready(struct mtd_info *mtd)
+ /* Configure EMI Bank for NAND access */
+ static int nand_config_emi(int bank, struct nand_timing_data *td)
+ {
+-	uint32_t emi_clk;
+ 	uint32_t emi_t_ns;
+ 	uint32_t emi_p_ns;
+ 
+@@ -483,7 +484,13 @@ static int nand_config_emi(int bank, struct nand_timing_data *td)
+ 	uint32_t bus_release;
+ 	uint32_t wait_active_low;
+ 
+-	struct clk *clk;
++	const char * const clk_names[] = {"emi_master",
++					  "emi",
++					  "CLKA_EMI_MASTER",
++					  NULL};
++	const char * const *c = clk_names;
++	uint32_t emi_clk_rate;
++	struct clk *emi_clk;
+ 
+ 	printk(KERN_INFO NAME ": Configuring EMI Bank %d for NAND access\n",
+ 	       bank);
+@@ -494,13 +501,14 @@ static int nand_config_emi(int bank, struct nand_timing_data *td)
+ 		return 1;
+ 	}
+ 
+-	/* Timings set in number of clock cycles */
+-	clk = clk_get(NULL, "emi_master");
+-	if (!clk || IS_ERR(clk))
+-		clk = clk_get(NULL, "CLKA_EMI_MASTER");
+-	BUG_ON(!clk || IS_ERR(clk));
+-	emi_clk = clk_get_rate(clk);
+-	emi_t_ns = 1000000000UL / emi_clk;
++	/* Timings set in terms of EMI clock... */
++	do {
++		emi_clk = clk_get(NULL, *c);
++	} while ((!emi_clk || IS_ERR(emi_clk)) && *(++c) != NULL);
++
++	BUG_ON(!emi_clk || IS_ERR(emi_clk));
++
++	emi_t_ns = 1000000000UL / clk_get_rate(emi_clk);
+ 	emi_p_ns = emi_t_ns / 2;
+ 
+ 	/* Convert nand timings to EMI compatible values */
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index 59493f0..7d6a022 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -39,7 +39,8 @@
+  *      FLEX data register...
+  *
+  *  Changelog:
+- *
++ *	2009-11-17 Angus Clark <angus.clark@st.com>
++ *		- Handle different EMI clock names
+  *	2009-09-21 Angus Clark <angus.clark@st.com>
+  *		- Add flex_verify_buf
+  *	2009-09-15 Angus Clark <angus.clark@st.com>
+@@ -437,7 +438,7 @@ static void flex_setup_eccparams(struct mtd_info *mtd)
+ 		data->ecc_boot.ecc_ctrl.size;
+ 	if (data->ecc_boot.ecc_ctrl.steps * data->ecc_boot.ecc_ctrl.size !=
+ 	    mtd->writesize) {
+-		printk(KERN_WARNING "Invalid ECC parameters\n");
++		printk(KERN_WARNING NAME ": Invalid ECC parameters\n");
+ 		BUG();
+ 	}
+ 	data->ecc_boot.ecc_ctrl.total = data->ecc_boot.ecc_ctrl.steps *
+@@ -691,17 +692,23 @@ static void flex_set_timings(struct nand_timing_data *tm)
+ {
+ 	uint32_t n;
+ 	uint32_t reg;
+-	uint32_t emi_clk;
++
++	struct clk *emi_clk;
++	const char * const clk_names[] = {"emi_master",
++					  "emi",
++					  "CLKA_EMI_MASTER",
++					  NULL};
++	const char * const *c = clk_names;
+ 	uint32_t emi_t_ns;
+-	struct clk *clk;
+-
+-	/* Timings set in terms of EMI clock cycles */
+-	clk = clk_get(NULL, "emi_master");
+-	if (!clk || IS_ERR(clk))
+-		clk = clk_get(NULL, "CLKA_EMI_MASTER");
+-	BUG_ON(!clk || IS_ERR(clk));
+-	emi_clk = clk_get_rate(clk);
+-	emi_t_ns = 1000000000UL / emi_clk;
++
++	/* Timings set in terms of EMI clock... */
++	do {
++		emi_clk = clk_get(NULL, *c);
++	} while ((!emi_clk || IS_ERR(emi_clk)) && *(++c) != NULL);
++
++	BUG_ON(!emi_clk || IS_ERR(emi_clk));
++
++	emi_t_ns = 1000000000UL / clk_get_rate(emi_clk);
+ 
+ 	/* CONTROL_TIMING */
+ 	n = (tm->sig_setup + emi_t_ns - 1)/emi_t_ns;
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 004588c..07e0788 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -538,6 +538,7 @@ void fli7510_configure_lirc(lirc_scd_t *scd);
+ void fli7510_configure_pci(struct pci_config_data *pci_conf);
+ int fli7510_pcibios_map_platform_irq(struct pci_config_data *pci_config,
+ 		u8 pin);
++void fli7510_configure_nand(struct platform_device *pdev);
+ 
+ void stx5197_early_device_init(void);
+ void stx5197_configure_asc(const int *ascs, int num_ascs, int console);
+-- 
+1.6.0.6
+

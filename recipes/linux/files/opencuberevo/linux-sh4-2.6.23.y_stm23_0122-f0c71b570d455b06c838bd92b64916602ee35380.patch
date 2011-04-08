@@ -1,0 +1,945 @@
+From f0c71b570d455b06c838bd92b64916602ee35380 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 21 Oct 2009 13:32:58 +0200
+Subject: [PATCH] sh: stm: LPC device driver
+
+This patch adds the LPC device driver on:
+ - 7111
+ - 7141
+ - 7200
+ - 5197
+
+Currently the stx7105 isn't supported.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx7200.c |    9 +
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |    4 +
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    5 +
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |    5 +
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |    5 +
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |    5 +
+ drivers/stm/Kconfig                    |   15 ++
+ drivers/stm/Makefile                   |    6 +
+ drivers/stm/lpc_5xxx.c                 |  286 ++++++++++++++++++++++++++++
+ drivers/stm/lpc_7xxx.c                 |  328 ++++++++++++++++++++++++++++++++
+ include/linux/stm/lpc.h                |   37 ++++
+ include/linux/stm/soc.h                |    8 +
+ include/linux/stm/soc_init.h           |   30 +++
+ 13 files changed, 743 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/stm/lpc_5xxx.c
+ create mode 100644 drivers/stm/lpc_7xxx.c
+ create mode 100644 include/linux/stm/lpc.h
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7200.c b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+index 698bae1..27208ec 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+@@ -618,6 +618,12 @@ static struct clk new_module_clk = {
+ 	.ops		= &comms_clk_ops
+ };
+ 
++static struct clk clk_lpc = {
++	.name		= "CLKB_LPC",
++	.rate		= 32768,
++	.flags		= CLK_ALWAYS_ENABLED,
++};
++
+ int __init clk_init(void)
+ {
+ 	int i, ret = 0;
+@@ -641,6 +647,9 @@ int __init clk_init(void)
+ 	ret |= clk_register(&comms_clk);
+ 	clk_enable(&comms_clk);
+ 
++	ret |= clk_register(&clk_lpc);
++	clk_enable(&clk_lpc);
++
+ 	/* Cut 2 uses clockgen B for module clock so we need to detect chip
+ 	 * type  and use the correct source. Also cut 2 no longer has the
+ 	 * interconnect clock so don't register it */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index bc6a02f..9720c74 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -744,12 +744,16 @@ subsys_initcall(stx5197_subsys_setup);
+ 
+ static struct platform_device emi = STEMI();
+ 
++static struct platform_device stx5197_lpc =
++	STLPC_DEVICE(0xfdc00000, -1, -1, 1, 0, NULL);
++
+ static struct platform_device *stx5197_devices[] __initdata = {
+ 	&stx5197_fdma_device,
+ 	&stx5197_sysconf_devices[0],
+ 	&stx5197_sysconf_devices[1],
+ 	&ilc3_device,
+ 	&emi,
++	&stx5197_lpc,
+ };
+ 
+ #include "./platform-pm-stx5197.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 8a5a4d7..44ff739 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1632,6 +1632,10 @@ static struct platform_device stx7105_temp_device = {
+ 
+ static struct platform_device stx7105_emi = STEMI();
+ 
++static struct platform_device stx7105_lpc =
++	STLPC_DEVICE(0xfd008000, ILC_EXT_IRQ(7), IRQ_TYPE_EDGE_FALLING,
++			0, 1, "CLKB_LPC");
++  
+ 
+ 
+ /* Early devices initialization ------------------------------------------- */
+@@ -1693,6 +1697,7 @@ static struct platform_device *stx7105_devices[] __initdata = {
+ 	&stx7105_rng_dev_random_device,
+ 	&stx7105_temp_device,
+ 	&stx7105_emi,
++	&stx7105_lpc,
+ };
+ 
+ #include "./platform-pm-stx7105.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index e4b69b3..50ce370 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -950,6 +950,10 @@ static struct platform_device stx7111_temp_device = {
+ 
+ static struct platform_device emi = STEMI();
+ 
++static struct platform_device stx7111_lpc =
++	STLPC_DEVICE(0xfd008000, ILC_EXT_IRQ(7), IRQ_TYPE_EDGE_FALLING,
++			0, 1, "CLKB_LPC");
++
+ 
+ 
+ /* Early devices initialization ------------------------------------------- */
+@@ -1010,6 +1014,7 @@ static struct platform_device *stx7111_devices[] __initdata = {
+ 	&devrandom_rng_device,
+ 	&stx7111_temp_device,
+ 	&emi,
++	&stx7111_lpc,
+ };
+ 
+ #include "./platform-pm-stx7111.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 9d3dc3d..94a6cdb 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -1342,6 +1342,10 @@ subsys_initcall(stx7141_subsys_setup);
+ 
+ static struct platform_device emi = STEMI();
+ 
++static struct platform_device stx7141_lpc =
++	STLPC_DEVICE(0xfd008000, ILC_IRQ(83), IRQ_TYPE_EDGE_FALLING, 0,
++			1, "CLKB_LPC");
++
+ static struct platform_device *stx7141_devices[] __initdata = {
+ 	&stx7141_fdma_devices[0],
+ 	&stx7141_fdma_devices[1],
+@@ -1354,6 +1358,7 @@ static struct platform_device *stx7141_devices[] __initdata = {
+ 	&stx7141_temp_devices[1],
+ 	&stx7141_temp_devices[2],
+ 	&emi,
++	&stx7141_lpc,
+ };
+ 
+ #include "./platform-pm-stx7141.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 56ca0af..bdcca7b 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -1122,6 +1122,10 @@ postcore_initcall(stx7200_postcore_setup);
+ 
+ static struct platform_device emi = STEMI();
+ 
++static struct platform_device stx7200_lpc =
++	STLPC_DEVICE(0xfd008000, ILC_IRQ(120), IRQ_TYPE_EDGE_FALLING,
++			0, 1, "CLKB_LPC");
++
+ static struct platform_device *stx7200_devices[] __initdata = {
+ 	&stx7200_fdma_devices[0],
+ 	/* &stx7200_fdma_devices[1], */
+@@ -1131,6 +1135,7 @@ static struct platform_device *stx7200_devices[] __initdata = {
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
+ 	&emi,
++	&stx7200_lpc,
+ };
+ 
+ #include "./platform-pm-stx7200.c"
+diff --git a/drivers/stm/Kconfig b/drivers/stm/Kconfig
+index 77c54b9..a0a9ae6 100644
+--- a/drivers/stm/Kconfig
++++ b/drivers/stm/Kconfig
+@@ -153,6 +153,21 @@ config STM_RNG
+           This option can be used in conjunction with the /dev/hw_random
+           driver found in the char drivers menu.
+ 
++config STM_LPC
++	depends on STM_DRIVERS
++	bool "STM Low Power Controller"
++	default n if !PM
++	default y if PM
++	---help---
++	  This option adds support for the hardware low power controller.
++
++config STM_LPC_DEBUG
++	depends on STM_LPC
++	bool "STM Low Power Controller debug"
++	default n
++	---help---
++	  Enable this option to print out information about the LPC
++
+ config PMS
+ 	bool "Power Management Scheme"
+ 	default n
+diff --git a/drivers/stm/Makefile b/drivers/stm/Makefile
+index 64c0501..56c2591 100644
+--- a/drivers/stm/Makefile
++++ b/drivers/stm/Makefile
+@@ -14,3 +14,9 @@ obj-y				+= emi.o
+ obj-$(CONFIG_PM)		+= platform-pm.o
+ obj-$(CONFIG_PMS)		+= pms.o
+ 
++ifdef CONFIG_STM_LPC
++obj-$(CONFIG_CPU_SUBTYPE_STX5197) += lpc_5xxx.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7111) += lpc_7xxx.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7141) += lpc_7xxx.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7200) += lpc_7xxx.o
++endif
+diff --git a/drivers/stm/lpc_5xxx.c b/drivers/stm/lpc_5xxx.c
+new file mode 100644
+index 0000000..dea7c67
+--- /dev/null
++++ b/drivers/stm/lpc_5xxx.c
+@@ -0,0 +1,286 @@
++/* --------------------------------------------------------------------
++ * <root>/drivers/stm/lpc_5xxx.c
++ * --------------------------------------------------------------------
++ *  Copyright (C) 2009 : STMicroelectronics
++ *  Author: Francesco M. Virlinzi <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License version 2.0 ONLY.  See linux/COPYING for more information.
++ *
++ */
++
++#include <linux/stm/lpc.h>
++#include <linux/stm/soc.h>
++#include <linux/platform_device.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/interrupt.h>
++#include <linux/wait.h>
++#include <linux/errno.h>
++
++
++#ifdef CONFIG_STM_LPC_DEBUG
++#define dgb_print(fmt, args...)	printk(KERN_INFO "%s: " fmt, __func__, ## args)
++#else
++#define dgb_print(fmt, args...)
++#endif
++
++#define SS_LOCK_CFG		0x300
++
++#define SS_LPC_CFG0		0x120
++#define SS_LPC_CFG1		0x124
++#define SS_LPC_CFG1_ENABLE	(1<<4)
++#define SS_LPC_MASK		0xfffff
++#define SS_LPC_MASK_LOW		0xffff
++#define SS_LPC_MASK_HI		0xf
++#define SS_LPC_CLOCK		1	/* Hz */
++
++struct lpc_device {
++	unsigned long base; /* base address for system services */
++	struct platform_device *pdev;
++	unsigned long timeout;
++	unsigned long state;
++};
++
++static struct lpc_device lpc;
++
++#define lpc_store32(lpc, offset, value)	iowrite32(value, (lpc)->base + offset)
++#define lpc_load32(lpc, offset)		ioread32((lpc)->base + offset)
++
++#define lpc_set_enabled(l)	device_set_wakeup_enable(&(l)->pdev->dev, 1)
++#define lpc_set_disabled(l)	device_set_wakeup_enable(&(l)->pdev->dev, 0)
++
++#define lpc_set_timeout(l, t)		(l)->timeout = (t)
++#define lpc_read_timeout(l)		((l)->timeout)
++#define lpc_is_enabled(l)		((l)->state & LPC_STATE_ENABLED)
++
++
++
++
++static irqreturn_t stlpc_irq(int this_irq, void *data)
++{
++	dgb_print("Received interrupt from LPC\n");
++	return IRQ_HANDLED;
++}
++
++/*
++ * Currently the LPC_UNLOCK/LPC_LOCK are required
++ * only on the stx5197 platform
++ */
++static inline void LPC_UNLOCK(void)
++{
++	writel(0xf0, lpc.base + SS_LOCK_CFG);
++	writel(0x0f, lpc.base + SS_LOCK_CFG);
++}
++
++static inline void LPC_LOCK(void)
++{
++	writel(0x100, lpc.base + SS_LOCK_CFG);
++}
++
++
++void stlpc_write(unsigned long long counter)
++{
++	union {
++		unsigned long parts[2];
++		unsigned long long value;
++	} tmp;
++	tmp.value = counter;
++	dgb_print("\n");
++	lpc_set_timeout(&lpc, tmp.parts[0]);
++}
++EXPORT_SYMBOL(stlpc_write);
++
++unsigned long long stlpc_read(void)
++{
++	union {
++		unsigned long parts[2];
++		unsigned long long value;
++	} tmp;
++	tmp.value = 0;
++	tmp.parts[0] = lpc_read_timeout(&lpc);
++	return tmp.value;
++}
++EXPORT_SYMBOL(stlpc_read);
++
++int stlpc_set(int enable, unsigned long long tick)
++{
++	union {
++		unsigned long parts[2];
++		unsigned long long value;
++	} tmp;
++	tmp.value = tick;
++	dgb_print("\n");
++	if (enable) {
++		lpc_set_timeout(&lpc, tmp.parts[0]);
++		lpc_set_enabled(&lpc);
++	} else
++		lpc_set_disabled(&lpc);
++	return 0;
++}
++EXPORT_SYMBOL(stlpc_set);
++
++static ssize_t stlpc_show_timeout(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	int ret = 0;
++	unsigned long long value;
++	dgb_print("\n");
++	value = lpc_read_timeout(&lpc);
++
++	ret = sprintf(buf, "%llu", value);
++	return ret;
++}
++
++static ssize_t stlpc_store_timeout(struct device *dev,
++			struct device_attribute *attr,
++			const char *buf, size_t count)
++{
++	unsigned long long value = 0;
++	dgb_print("\n");
++	value =  simple_strtoul(buf, NULL, 10);
++	dgb_print("value = %llu\n", value);
++	value *= SS_LPC_CLOCK;
++	value &= SS_LPC_MASK;
++	dgb_print("tick = %llu\n", value);
++	lpc_set_timeout(&lpc, value);
++	return count;
++}
++
++static DEVICE_ATTR(timeout, S_IRUGO | S_IWUSR, stlpc_show_timeout,
++			stlpc_store_timeout);
++
++static int __init stlpc_probe(struct platform_device *pdev)
++{
++	struct resource *res;
++	struct plat_lpc_data *data = (struct plat_lpc_data *)
++		pdev->dev.platform_data;
++
++	dgb_print("\n");
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res)
++		return -ENODEV;
++
++	if (data->no_hw_req)
++		goto no_hw_request;
++	if (!devm_request_mem_region(&pdev->dev, res->start,
++		res->end - res->start, "stlpc")){
++		printk(KERN_ERR "%s: Request mem 0x%x region not done\n",
++			__func__, res->start);
++		return -ENOMEM;
++	}
++
++no_hw_request:
++	if (!(lpc.base =
++		devm_ioremap_nocache(&pdev->dev, res->start,
++				(int)(res->end - res->start)))) {
++		printk(KERN_ERR "%s: Request iomem 0x%x region not done\n",
++			__func__, (unsigned int)res->start);
++		return -ENOMEM;
++	}
++
++/*
++ *  The LPC on 5197 doesn't generate interrupt.
++ *  It generates the 'wakeup event signal' connected to the
++ *  System Service'
++ *  On the 'wakeup event signal' the Systme Service exits from
++ *  Standby and goes directly in X1 state
++ */
++	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	if (!res)
++		return -ENODEV;
++
++	if (res->start == -1)
++		goto no_irq;
++	if (devm_request_irq(&pdev->dev, res->start, stlpc_irq,
++		IRQF_DISABLED, "stlpc", &lpc) < 0) {
++		printk(KERN_ERR "%s: Request irq not done\n", __func__);
++		return -ENODEV;
++	}
++	set_irq_type(res->start, data->irq_edge_level);
++	enable_irq_wake(res->start);
++
++no_irq:
++	lpc.pdev = pdev;
++	if (device_create_file(&(pdev->dev), &dev_attr_timeout));
++	return 0;
++}
++
++static int stlpc_remove(struct platform_device *pdev)
++{
++	dgb_print("\n");
++	devm_iounmap(&pdev->dev, lpc.base);
++	return 0;
++}
++
++#ifdef CONFIG_PM
++static int stlpc_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	unsigned long timeout = lpc.timeout & SS_LPC_MASK;
++
++	dgb_print("\n");
++	if (state.event != PM_EVENT_SUSPEND  ||
++	    !device_may_wakeup(&(pdev->dev)) ||
++	    !lpc_read_timeout(&lpc))
++		return  0;
++	dgb_print("LPC able to wakeup\n");
++	LPC_UNLOCK();
++	lpc_store32(&lpc, SS_LPC_CFG0, timeout & SS_LPC_MASK_LOW);
++	timeout >>= 16;
++	timeout |= SS_LPC_CFG1_ENABLE;
++	lpc_store32(&lpc, SS_LPC_CFG1, timeout);
++	LPC_LOCK();
++	dgb_print("LPC wakeup On\n");
++	return 0;
++}
++
++static int stlpc_resume(struct platform_device *pdev)
++{
++/*
++ * Reset the 'enable' and the 'timeout' to be
++ * compliant with the hardware reset
++ */
++	dgb_print("\n");
++	lpc_set_disabled(&lpc);
++	lpc_set_timeout(&lpc, 0);
++	LPC_UNLOCK();
++	lpc_store32(&lpc, SS_LPC_CFG0, 1);
++	lpc_store32(&lpc, SS_LPC_CFG1, 0);
++	LPC_LOCK();
++	return 0;
++}
++#else
++#define stlpc_suspend	NULL
++#define stlpc_resume	NULL
++#endif
++
++static struct platform_driver stlpc_driver = {
++	.driver.name = "stlpc",
++	.driver.owner = THIS_MODULE,
++	.probe = stlpc_probe,
++	.remove = stlpc_remove,
++	.suspend = stlpc_suspend,
++	.resume = stlpc_resume,
++};
++
++static int __init stlpc_init(void)
++{
++	dgb_print("\n");
++	platform_driver_register(&stlpc_driver);
++	printk(KERN_INFO "stlpc device driver registered\n");
++	return 0;
++}
++
++static void __exit stlpc_exit(void)
++{
++	dgb_print("\n");
++	platform_driver_unregister(&stlpc_driver);
++}
++
++module_init(stlpc_init);
++module_exit(stlpc_exit);
++
++MODULE_AUTHOR("STMicroelectronics  <www.st.com>");
++MODULE_DESCRIPTION("LPC device driver for STMicroelectronics devices");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/stm/lpc_7xxx.c b/drivers/stm/lpc_7xxx.c
+new file mode 100644
+index 0000000..527ecb6
+--- /dev/null
++++ b/drivers/stm/lpc_7xxx.c
+@@ -0,0 +1,328 @@
++/* --------------------------------------------------------------------
++ * <root>/drivers/stm/lpc_71xx.c
++ * --------------------------------------------------------------------
++ *  Copyright (C) 2009 : STMicroelectronics
++ *  Author: Francesco M. Virlinzi <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License version 2.0 ONLY.  See linux/COPYING for more information.
++ *
++ */
++
++#include <linux/stm/lpc.h>
++#include <linux/stm/soc.h>
++#include <linux/platform_device.h>
++#include <linux/delay.h>
++#include <linux/module.h>
++#include <linux/interrupt.h>
++#include <linux/wait.h>
++#include <linux/errno.h>
++#include <linux/io.h>
++#include <asm/clock.h>
++
++
++#ifdef CONFIG_STM_LPC_DEBUG
++#define dgb_print(fmt, args...)	printk(KERN_INFO "%s: " fmt, __func__ , ## args)
++#else
++#define dgb_print(fmt, args...)
++#endif
++
++/*
++ * LPC Workaround on 7111:
++ * The LPC when enabled can not be stopped
++ * To reset in any case the LPC when the system is resume
++ * we route the irw_wake_irq and the eth_wake_irq to the
++ * on the __'ilc3_wakeup_out' signal__ able to reset
++ * the LPC.
++ * In this manner any wakeup interrupt will reset the LPC
++ * and will gave us the reprogramming capability.
++ *
++ * LPC Workaround on 7141:
++ * On 7141 the LPC can work as watchdog.
++ * On this platform to reset the LPC a WatchDog_reset
++ * is requested able to perform a LPC reset but without
++ * any real WDT Reset signal able to hangs the SOC.
++ */
++
++
++#define LPA_LS		0x410
++#define LPA_MS		0x414
++#define LPA_START	0x418
++#define LPA_WDT		0x510	/* stx7141 */
++
++#define DEFAULT_LPC_FREQ	46875	/* Hz */
++
++struct lpc_device {
++	unsigned long base;
++	struct platform_device *pdev;
++	unsigned long long timeout;
++	unsigned long state;
++	int irq;
++};
++
++static struct lpc_device lpc;
++struct clk *lpc_clk;
++
++#define lpc_store32(lpc, offset, value)	iowrite32(value, (lpc)->base + offset)
++#define lpc_load32(lpc, offset)		ioread32((lpc)->base + offset)
++
++#define lpc_set_enabled(l)	device_set_wakeup_enable(&(l)->pdev->dev, 1)
++#define lpc_set_disabled(l)	device_set_wakeup_enable(&(l)->pdev->dev, 0)
++
++#define lpc_set_timeout(l, t)		(l)->timeout = (t)
++#define lpc_read_timeout(l)		((l)->timeout)
++#define lpc_is_enabled(l)		((l)->state & LPC_STATE_ENABLED)
++
++void stlpc_write(unsigned long long counter)
++{
++	dgb_print("\n");
++	lpc_set_timeout(&lpc, counter);
++}
++EXPORT_SYMBOL(stlpc_write);
++
++unsigned long long stlpc_read(void)
++{
++	return lpc_read_timeout(&lpc);
++}
++EXPORT_SYMBOL(stlpc_read);
++
++int stlpc_set(int enable, unsigned long long tick)
++{
++	dgb_print("\n");
++	if (enable) {
++		lpc_set_timeout(&lpc, tick);
++		lpc_set_enabled(&lpc);
++	} else
++		lpc_set_disabled(&lpc);
++	return 0;
++}
++EXPORT_SYMBOL(stlpc_set);
++
++static irqreturn_t stlpc_irq(int this_irq, void *data)
++{
++	dgb_print("Interrupt from LPC\n");
++	lpc_store32(&lpc, LPA_START, 0);
++	return IRQ_HANDLED;
++}
++
++static ssize_t stlpc_show_timeout(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	int ret = 0;
++	unsigned long long value;
++	dgb_print("\n");
++	value = lpc_read_timeout(&lpc);
++
++	ret = sprintf(buf, "%llu", value);
++	return ret;
++}
++
++static ssize_t stlpc_store_timeout(struct device *dev,
++			struct device_attribute *attr,
++			const char *buf, size_t count)
++{
++	unsigned long long value = 0;
++	dgb_print("\n");
++	value =  simple_strtoul(buf, NULL, 10);
++	dgb_print("value = %llu\n", value);
++	value *= (lpc_clk ? clk_get_rate(lpc_clk) : DEFAULT_LPC_FREQ);
++	dgb_print("tick = %llu\n", value);
++	lpc_set_timeout(&lpc, value);
++	return count;
++}
++
++static DEVICE_ATTR(timeout, S_IRUGO | S_IWUSR, stlpc_show_timeout,
++			stlpc_store_timeout);
++
++#ifdef CONFIG_STM_LPC_DEBUG
++static ssize_t stlpc_store_enable(struct device *dev,
++			struct device_attribute *attr,
++			const char *buf, size_t count)
++{
++	long flags;
++	union {
++		unsigned long long value;
++		unsigned long parts[2];
++	} tmp;
++	tmp.value = lpc.timeout;
++	dgb_print("\n");
++	if (strcmp(buf, "on") == 0) {
++		local_irq_save(flags);
++		lpc_store32(&lpc, LPA_START, 1);
++		lpc_store32(&lpc, LPA_LS, tmp.parts[0]);
++		lpc_store32(&lpc, LPA_MS, tmp.parts[1]);
++		local_irq_restore(flags);
++	} else if (strcmp(buf, "off") == 0) {
++		local_irq_save(flags);
++		lpc_store32(&lpc, LPA_START, 0);
++		local_irq_restore(flags);
++	};
++	return count;
++}
++
++static DEVICE_ATTR(enable, S_IWUSR, NULL, stlpc_store_enable);
++#endif
++
++static int __init stlpc_probe(struct platform_device *pdev)
++{
++	struct resource *res;
++	struct plat_lpc_data *data = (struct plat_lpc_data *)
++		pdev->dev.platform_data;
++
++	dgb_print("\n");
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res)
++		return -ENODEV;
++	if (data->no_hw_req)
++		goto no_hw_request;
++	if (!devm_request_mem_region(&pdev->dev, res->start,
++		res->end - res->start, "stlpc")){
++		printk(KERN_ERR "%s: Request mem 0x%x region not done\n",
++			__func__, res->start);
++		return -ENOMEM;
++	}
++
++	if (!(lpc.base =
++		devm_ioremap_nocache(&pdev->dev, res->start,
++				(int)(res->end - res->start)))) {
++		printk(KERN_ERR "%s: Request iomem 0x%x region not done\n",
++			__func__, (unsigned int)res->start);
++		return -ENOMEM;
++	}
++
++	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	if (!res) {
++		printk(KERN_ERR "%s Request irq %d not done\n",
++			__func__, res->start);
++		return -ENODEV;
++	}
++
++	if (res->start == -1)
++		goto no_irq;
++
++	set_irq_type(res->start, data->irq_edge_level);
++	if (devm_request_irq(&pdev->dev, res->start, stlpc_irq,
++		IRQF_DISABLED, "stlpc", &lpc) < 0){
++		printk(KERN_ERR "%s: Request irq not done\n", __func__);
++		return -ENODEV;
++	}
++
++no_hw_request:
++	if (data->clk_id) {
++		dgb_print("Looking for clk: %s\n", data->clk_id);
++		lpc_clk = clk_get(NULL, data->clk_id);
++		if (lpc_clk)
++			dgb_print("Using clock %s @ %u Hz\n",
++				lpc_clk->name, clk_get_rate(lpc_clk));
++	}
++
++no_irq:
++	lpc.irq = res->start;
++	lpc.pdev = pdev;
++	if (device_create_file(&(pdev->dev), &dev_attr_timeout));
++#ifdef CONFIG_STM_LPC_DEBUG
++	if (device_create_file(&(pdev->dev), &dev_attr_enable));
++#endif
++	return 0;
++}
++
++static int stlpc_remove(struct platform_device *pdev)
++{
++	struct resource *res;
++	dgb_print("\n");
++	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	devm_free_irq(&pdev->dev, res->start, NULL);
++	devm_iounmap(&pdev->dev, (void *)lpc.base);
++	return 0;
++}
++
++#ifdef CONFIG_PM
++static int stlpc_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	union {
++		unsigned long long value;
++		unsigned long parts[2];
++	} tmp;
++	dgb_print("\n");
++	if (state.event != PM_EVENT_SUSPEND  ||
++	    !device_may_wakeup(&(pdev->dev)) ||
++	    !lpc_read_timeout(&lpc))
++		return  0;
++	tmp.value = lpc.timeout;
++	dgb_print("LPC able to wakeup\n");
++lpc_retry:
++	lpc_store32(&lpc, LPA_LS, tmp.parts[0]);
++	lpc_store32(&lpc, LPA_MS, tmp.parts[1]);
++	lpc_store32(&lpc, LPA_START, 1);
++
++	if (!lpc_load32(&lpc, LPA_LS) &&
++	    !lpc_load32(&lpc, LPA_MS))
++		goto lpc_retry;
++	dgb_print("LPC wakeup On\n");
++	return 0;
++}
++
++static int stlpc_resume(struct platform_device *pdev)
++{
++	long flags;
++	struct plat_lpc_data *pdata = (struct plat_lpc_data *)
++		pdev->dev.platform_data;
++/*
++ * Reset the 'enable' and the 'timeout' to be
++ * compliant with the hardware reset
++ */
++	dgb_print("\n");
++	if (device_may_wakeup(&(pdev->dev))) {
++		local_irq_save(flags);
++		if (pdata->need_wdt_reset) {
++			lpc_store32(&lpc, LPA_MS, 0);
++			lpc_store32(&lpc, LPA_LS, 0);
++			lpc_store32(&lpc, LPA_WDT, 1);
++			lpc_store32(&lpc, LPA_START, 1);
++			lpc_store32(&lpc, LPA_WDT, 0);
++		} else {
++			lpc_store32(&lpc, LPA_START, 0);
++			lpc_store32(&lpc, LPA_MS, 1);
++			lpc_store32(&lpc, LPA_LS, 1);
++		}
++		local_irq_restore(flags);
++	}
++
++	lpc_set_disabled(&lpc);
++	lpc_set_timeout(&lpc, 0);
++	return 0;
++}
++#else
++#define stlpc_suspend	NULL
++#define stlpc_resume	NULL
++#endif
++
++static struct platform_driver stlpc_driver = {
++	.driver.name = "stlpc",
++	.driver.owner = THIS_MODULE,
++	.probe = stlpc_probe,
++	.remove = stlpc_remove,
++	.suspend = stlpc_suspend,
++	.resume = stlpc_resume,
++};
++
++static int __init stlpc_init(void)
++{
++	dgb_print("\n");
++	platform_driver_register(&stlpc_driver);
++	printk(KERN_INFO "stlpc device driver registered\n");
++	return 0;
++}
++
++static void __exit stlpc_exit(void)
++{
++	dgb_print("\n");
++	platform_driver_unregister(&stlpc_driver);
++}
++
++module_init(stlpc_init);
++module_exit(stlpc_exit);
++
++MODULE_AUTHOR("STMicroelectronics  <www.st.com>");
++MODULE_DESCRIPTION("LPC device driver for STMicroelectronics devices");
++MODULE_LICENSE("GPL");
+diff --git a/include/linux/stm/lpc.h b/include/linux/stm/lpc.h
+new file mode 100644
+index 0000000..a0458ec
+--- /dev/null
++++ b/include/linux/stm/lpc.h
+@@ -0,0 +1,37 @@
++/* --------------------------------------------------------------------
++ * stlpc.h
++ * --------------------------------------------------------------------
++ *
++ *  Copyright (C) 2009 : STMicroelectronics
++ *  Author: Francesco M. Virlinzi <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License version 2.0 ONLY.  See linux/COPYING for more information.
++ *
++ */
++
++/*
++ * stlpc_write:
++ *
++ * Sets a new counter
++ */
++void stlpc_write(unsigned long long tick);
++
++/*
++ * stlpc_read:
++ *
++ * Reads the current counter
++ */
++unsigned long long stlpc_read(void);
++
++/*
++ * stlpc_set:
++ *
++ * if enable equal zero
++ * - disables the lpc (without care on tick)
++ * if enable not equal to zero
++ * - enable the lpc and
++ * - - uses the current lpa value (if tick equal zero)
++ * - - sets the lpa to tick (if tick not equal to zero)
++ */
++int stlpc_set(int enable, unsigned long long tick);
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 07e0788..c943ae4 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -4,6 +4,14 @@
+ #include <linux/lirc.h>
+ #include <linux/compiler.h>
+ 
++/* Private data for LPC device driver */
++struct plat_lpc_data {
++	unsigned int no_hw_req		:1;	/* iomem in sys/serv 5197 */
++	unsigned int need_wdt_reset	:1;	/* W/A on 7141 */
++	unsigned int irq_edge_level;
++	char *clk_id;
++};
++
+ /* Private platform data for the stpio10 driver */
+ struct stpio10_data {
+ 	int start_pio;
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index 3beec98..9994629 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -4,6 +4,36 @@
+ 	.id = -1,					\
+ }
+ 
++
++#define STLPC_DEVICE(_base, _irq, _irq_level,		\
++	_no_hw_req, _need_wdt_reset, _clk_id)		\
++{							\
++	.name = "stlpc",				\
++	.id = -1,					\
++	.num_resources  = 2,				\
++	.dev = {					\
++		.power.can_wakeup = 1,			\
++		.platform_data = &(struct plat_lpc_data)\
++		{					\
++			.clk_id = _clk_id,		\
++			.irq_edge_level = (_irq_level), \
++			.no_hw_req = (_no_hw_req),	\
++			.need_wdt_reset = (_need_wdt_reset),\
++		},					\
++	},						\
++	.resource = (struct resource[]) {		\
++		{					\
++			.start  = _base,		\
++			.end    = _base + 0xfff,	\
++			.flags  = IORESOURCE_MEM	\
++		}, {					\
++			.start  = _irq,			\
++			.end    = _irq,			\
++			.flags  = IORESOURCE_IRQ	\
++		}					\
++	},						\
++}
++
+ #define STLIRC_DEVICE(_mem_start, _irq, _wake_irq)	\
+ {							\
+ 	.name = "lirc",					\
+-- 
+1.6.0.6
+

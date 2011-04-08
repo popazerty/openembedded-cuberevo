@@ -1,0 +1,29 @@
+From fbaf95278b6cd8103d7653a38fc9525969a4b77f Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Thu, 23 Jul 2009 14:24:31 +0100
+Subject: [PATCH] sh: Fix strncpy_from_user usage in kptrace
+
+This patch fixes the handling of string syscall arguments.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/kptrace.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index edba83f..db91ac9 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -1048,7 +1048,7 @@ static int syscall_shhh_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ 		/* Don't need to strncpy_from_user in this case */
+ 		snprintf(filename, KPTRACE_SMALL_BUF, (char *)regs->regs[4]);
+ 	} else if (strncpy_from_user(filename, (char *)regs->regs[4],
+-				     KPTRACE_SMALL_BUF) != 0)
++				     KPTRACE_SMALL_BUF) < 0)
+ 		snprintf(filename, KPTRACE_SMALL_BUF,
+ 			 "<copy_from_user failed>");
+ 
+-- 
+1.6.0.6
+

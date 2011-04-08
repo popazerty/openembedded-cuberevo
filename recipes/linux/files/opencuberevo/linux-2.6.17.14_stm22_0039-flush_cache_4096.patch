@@ -1,0 +1,55 @@
+Backport of patch from mainline:
+
+From: Paul Mundt <lethal@linux-sh.org>
+Date: Wed, 27 Sep 2006 09:37:30 +0000 (+0900)
+Subject: sh: Fix occasional flush_cache_4096() stack corruption.
+X-Git-Tag: v2.6.19~1843^2
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Flethal%2Fsh-2.6.git;a=commitdiff_plain;h=33573c0e3243aaa38b6ad96942de85a1b713c2ff
+
+sh: Fix occasional flush_cache_4096() stack corruption.
+
+IRQs disabling in flush_cache_4096 for cache purge. Under certain
+workloads we would get an IRQ in the middle of a purge operation,
+and the cachelines would remain in an inconsistent state, leading
+to occasional stack corruption.
+
+Signed-off-by: Takeo Takahashi <takahashi.takeo@renesas.com>
+Signed-off-by: Paul Mundt <lethal@linux-sh.org>
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/arch/sh/mm/cache-sh4.c
+===================================================================
+--- linux.orig/arch/sh/mm/cache-sh4.c	2007-07-17 13:12:55.336307000 +0100
++++ linux/arch/sh/mm/cache-sh4.c	2007-07-17 13:13:00.120314000 +0100
+@@ -220,22 +220,20 @@
+ static inline void flush_cache_4096(unsigned long start,
+ 				    unsigned long phys)
+ {
+-	unsigned long flags;
++	unsigned long flags, exec_offset = 0;
+ 
+ 	/*
+ 	 * All types of SH-4 require PC to be in P2 to operate on the I-cache.
+ 	 * Some types of SH-4 require PC to be in P2 to operate on the D-cache.
+ 	 */
+-	if ((cpu_data->flags & CPU_HAS_P2_FLUSH_BUG)
+-	   || start < CACHE_OC_ADDRESS_ARRAY) {
+-		local_irq_save(flags);
+-		__flush_cache_4096(start | SH_CACHE_ASSOC,
+-				   P1SEGADDR(phys), 0x20000000);
+-		local_irq_restore(flags);
+-	} else {
+-		__flush_cache_4096(start | SH_CACHE_ASSOC,
+-				   P1SEGADDR(phys), 0);
+-	}
++	if ((cpu_data->flags & CPU_HAS_P2_FLUSH_BUG) ||
++	    (start < CACHE_OC_ADDRESS_ARRAY))
++		exec_offset = 0x20000000;
++
++	local_irq_save(flags);
++	__flush_cache_4096(start | SH_CACHE_ASSOC,
++			   P1SEGADDR(phys), exec_offset);
++	local_irq_restore(flags);
+ }
+ 
+ /*

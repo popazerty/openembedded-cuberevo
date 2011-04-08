@@ -1,0 +1,406 @@
+From bea531c93ef43403ee678ad9bda74fc3d4817a7c Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 10 Jul 2009 13:42:40 +0200
+Subject: [PATCH] stm: make the optimize for size option the default
+
+This patch turns-on the CC_OPTIMIZE_FOR_SIZE for all ST platforms.
+
+Below some Kernel sizes (tree built for the mb671 in this scenario)
+while turning-on/off this option:
+
+text       data        bss        dec        hex       filename
+2764668     165332      98972    3028972     2e37ec    vmlinux (-O2)
+2298224     165460      98940    2562624     271a40    vmlinux (-Os)
+
+.text shrinks by over 450KiB.
+
+Note: tests made on ST SOCs (stb7109,Stx7141 ...) actually show an improvement
+on pipe and context switch latencies. No regressions on bandwidth benchmarks.
+Compiler seems to perform best while using -Os option too.
+See the Bugzilla Bugs #6412 and #6555.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ arch/sh/configs/cb104se_defconfig       |    2 +-
+ arch/sh/configs/hdref_defconfig         |    2 +-
+ arch/sh/configs/hdrefse_defconfig       |    2 +-
+ arch/sh/configs/hmp7100_defconfig       |    2 +-
+ arch/sh/configs/hmp7100se_defconfig     |    2 +-
+ arch/sh/configs/hms1_defconfig          |    2 +-
+ arch/sh/configs/hms1se_defconfig        |    2 +-
+ arch/sh/configs/mb374_defconfig         |    2 +-
+ arch/sh/configs/mb411_defconfig         |    2 +-
+ arch/sh/configs/mb442_defconfig         |    2 +-
+ arch/sh/configs/mb442se_defconfig       |    2 +-
+ arch/sh/configs/mb448_defconfig         |    2 +-
+ arch/sh/configs/mb519_mb520_defconfig   |    2 +-
+ arch/sh/configs/mb519se_mb520_defconfig |    2 +-
+ arch/sh/configs/mb602_defconfig         |    2 +-
+ arch/sh/configs/mb618_defconfig         |    2 +-
+ arch/sh/configs/mb618se_defconfig       |    2 +-
+ arch/sh/configs/mb628_defconfig         |    2 +-
+ arch/sh/configs/mb671se_defconfig       |    2 +-
+ arch/sh/configs/mb680_defconfig         |    2 +-
+ arch/sh/configs/mb680se_defconfig       |    2 +-
+ arch/sh/configs/mb704_defconfig         |    2 +-
+ arch/sh/configs/mb704se_defconfig       |    2 +-
+ arch/sh/configs/mb839_defconfig         |    2 +-
+ arch/sh/configs/mb839se_defconfig       |    2 +-
+ arch/sh/configs/pdk7105_defconfig       |    2 +-
+ arch/sh/configs/pdk7105se_defconfig     |    2 +-
+ 27 files changed, 27 insertions(+), 27 deletions(-)
+
+diff --git a/arch/sh/configs/cb104se_defconfig b/arch/sh/configs/cb104se_defconfig
+index ab249fe..b5e2044 100644
+--- a/arch/sh/configs/cb104se_defconfig
++++ b/arch/sh/configs/cb104se_defconfig
+@@ -47,7 +47,7 @@ CONFIG_LOG_BUF_SHIFT=14
+ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ # CONFIG_BLK_DEV_INITRD is not set
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/hdref_defconfig b/arch/sh/configs/hdref_defconfig
+index 5b4b126..6640380 100644
+--- a/arch/sh/configs/hdref_defconfig
++++ b/arch/sh/configs/hdref_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/hdrefse_defconfig b/arch/sh/configs/hdrefse_defconfig
+index 4922993..434b55c 100644
+--- a/arch/sh/configs/hdrefse_defconfig
++++ b/arch/sh/configs/hdrefse_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/hmp7100_defconfig b/arch/sh/configs/hmp7100_defconfig
+index 39a779a..2fb088e 100644
+--- a/arch/sh/configs/hmp7100_defconfig
++++ b/arch/sh/configs/hmp7100_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/hmp7100se_defconfig b/arch/sh/configs/hmp7100se_defconfig
+index 60e5787..d74881a 100644
+--- a/arch/sh/configs/hmp7100se_defconfig
++++ b/arch/sh/configs/hmp7100se_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/hms1_defconfig b/arch/sh/configs/hms1_defconfig
+index 57d2330..0a21ffd 100644
+--- a/arch/sh/configs/hms1_defconfig
++++ b/arch/sh/configs/hms1_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/hms1se_defconfig b/arch/sh/configs/hms1se_defconfig
+index 30187b6..612f3f0 100644
+--- a/arch/sh/configs/hms1se_defconfig
++++ b/arch/sh/configs/hms1se_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb374_defconfig b/arch/sh/configs/mb374_defconfig
+index 2b23d19..abd59bb 100644
+--- a/arch/sh/configs/mb374_defconfig
++++ b/arch/sh/configs/mb374_defconfig
+@@ -45,7 +45,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb411_defconfig b/arch/sh/configs/mb411_defconfig
+index ce9b4ce..0460e47 100644
+--- a/arch/sh/configs/mb411_defconfig
++++ b/arch/sh/configs/mb411_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb442_defconfig b/arch/sh/configs/mb442_defconfig
+index 4a4b0f3..20b977b 100644
+--- a/arch/sh/configs/mb442_defconfig
++++ b/arch/sh/configs/mb442_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb442se_defconfig b/arch/sh/configs/mb442se_defconfig
+index d37a720..5ac8c69 100644
+--- a/arch/sh/configs/mb442se_defconfig
++++ b/arch/sh/configs/mb442se_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb448_defconfig b/arch/sh/configs/mb448_defconfig
+index c83f6e1..5a393eb 100644
+--- a/arch/sh/configs/mb448_defconfig
++++ b/arch/sh/configs/mb448_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb519_mb520_defconfig b/arch/sh/configs/mb519_mb520_defconfig
+index d853da1..8597925 100644
+--- a/arch/sh/configs/mb519_mb520_defconfig
++++ b/arch/sh/configs/mb519_mb520_defconfig
+@@ -45,7 +45,7 @@ CONFIG_LOG_BUF_SHIFT=14
+ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ # CONFIG_BLK_DEV_INITRD is not set
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb519se_mb520_defconfig b/arch/sh/configs/mb519se_mb520_defconfig
+index 4417901..cc9026f 100644
+--- a/arch/sh/configs/mb519se_mb520_defconfig
++++ b/arch/sh/configs/mb519se_mb520_defconfig
+@@ -45,7 +45,7 @@ CONFIG_LOG_BUF_SHIFT=14
+ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ # CONFIG_BLK_DEV_INITRD is not set
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb602_defconfig b/arch/sh/configs/mb602_defconfig
+index 720e369..d041a51 100644
+--- a/arch/sh/configs/mb602_defconfig
++++ b/arch/sh/configs/mb602_defconfig
+@@ -44,7 +44,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb618_defconfig b/arch/sh/configs/mb618_defconfig
+index 0459c5a..e45b8da 100644
+--- a/arch/sh/configs/mb618_defconfig
++++ b/arch/sh/configs/mb618_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb618se_defconfig b/arch/sh/configs/mb618se_defconfig
+index 4f36145..c46cc51 100644
+--- a/arch/sh/configs/mb618se_defconfig
++++ b/arch/sh/configs/mb618se_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb628_defconfig b/arch/sh/configs/mb628_defconfig
+index ae071d2..5fbc73b 100644
+--- a/arch/sh/configs/mb628_defconfig
++++ b/arch/sh/configs/mb628_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb671se_defconfig b/arch/sh/configs/mb671se_defconfig
+index 3f19e57..4d18ccd 100644
+--- a/arch/sh/configs/mb671se_defconfig
++++ b/arch/sh/configs/mb671se_defconfig
+@@ -44,7 +44,7 @@ CONFIG_LOG_BUF_SHIFT=14
+ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ # CONFIG_BLK_DEV_INITRD is not set
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb680_defconfig b/arch/sh/configs/mb680_defconfig
+index 5370365..593b628 100644
+--- a/arch/sh/configs/mb680_defconfig
++++ b/arch/sh/configs/mb680_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb680se_defconfig b/arch/sh/configs/mb680se_defconfig
+index ff7dc79..d173c52 100644
+--- a/arch/sh/configs/mb680se_defconfig
++++ b/arch/sh/configs/mb680se_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb704_defconfig b/arch/sh/configs/mb704_defconfig
+index 5ba8ae8..486b4b4 100644
+--- a/arch/sh/configs/mb704_defconfig
++++ b/arch/sh/configs/mb704_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb704se_defconfig b/arch/sh/configs/mb704se_defconfig
+index fddfbc9..48ac691 100644
+--- a/arch/sh/configs/mb704se_defconfig
++++ b/arch/sh/configs/mb704se_defconfig
+@@ -46,7 +46,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb839_defconfig b/arch/sh/configs/mb839_defconfig
+index def94cb..8a2e2ff 100644
+--- a/arch/sh/configs/mb839_defconfig
++++ b/arch/sh/configs/mb839_defconfig
+@@ -48,7 +48,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/mb839se_defconfig b/arch/sh/configs/mb839se_defconfig
+index 5504a39..8924201 100644
+--- a/arch/sh/configs/mb839se_defconfig
++++ b/arch/sh/configs/mb839se_defconfig
+@@ -48,7 +48,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/pdk7105_defconfig b/arch/sh/configs/pdk7105_defconfig
+index 354e3a5..f88ef25 100644
+--- a/arch/sh/configs/pdk7105_defconfig
++++ b/arch/sh/configs/pdk7105_defconfig
+@@ -48,7 +48,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+diff --git a/arch/sh/configs/pdk7105se_defconfig b/arch/sh/configs/pdk7105se_defconfig
+index c660d3e..96b5662 100644
+--- a/arch/sh/configs/pdk7105se_defconfig
++++ b/arch/sh/configs/pdk7105se_defconfig
+@@ -48,7 +48,7 @@ CONFIG_SYSFS_DEPRECATED=y
+ # CONFIG_RELAY is not set
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_INITRAMFS_SOURCE=""
+-# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+ CONFIG_SYSCTL=y
+ CONFIG_EMBEDDED=y
+ CONFIG_UID16=y
+-- 
+1.6.0.6
+

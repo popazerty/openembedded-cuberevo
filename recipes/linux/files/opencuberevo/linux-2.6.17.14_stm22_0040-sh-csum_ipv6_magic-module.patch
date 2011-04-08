@@ -1,0 +1,26 @@
+Define csum_ipv6_magic() at all times. This was previously broken if building
+as a module.
+
+This was taken from git b482ad5daef786962279ae03090970b0ee8b8d1c.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/include/asm-sh/checksum.h
+===================================================================
+--- linux.orig/include/asm-sh/checksum.h
++++ linux/include/asm-sh/checksum.h
+@@ -160,7 +160,6 @@ static __inline__ unsigned short ip_comp
+ }
+ 
+ #define _HAVE_ARCH_IPV6_CSUM
+-#ifdef CONFIG_IPV6
+ static __inline__ unsigned short int csum_ipv6_magic(struct in6_addr *saddr,
+ 						     struct in6_addr *daddr,
+ 						     __u32 len,
+@@ -196,7 +195,6 @@ static __inline__ unsigned short int csu
+ 
+ 	return csum_fold(sum);
+ }
+-#endif
+ 
+ /* 
+  *	Copy and checksum to user

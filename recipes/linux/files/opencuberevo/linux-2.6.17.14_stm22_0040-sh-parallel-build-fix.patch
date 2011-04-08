@@ -1,0 +1,34 @@
+sh: fix race in parallel out-of-tree build
+
+Depending on which of the three dependencies for archprepare (in
+arch/sh/Makefile) get built first, the directory include/asm-sh may or
+may not exist when the maketools target is built. If the directory does
+not exist, awk will fail to generate machtypes.h. This patch fixes this
+by creating the directory before awk is executed.
+
+Signed-off-by: Erik Johansson <erik.johansson@motorola.com>
+---
+Diff from linux-2.6.17, but the file hasn't changed in sh-2.6.git tree,
+so it should apply there as well.
+
+--- linux-2.6.17/arch/sh/tools/Makefile~	2006-06-18
+03:49:35.000000000 +0200
++++ linux-2.6.17/arch/sh/tools/Makefile	2007-06-19 11:20:05.000000000
++0200
+@@ -12,4 +12,5 @@
+ 
+ include/asm-sh/machtypes.h: $(src)/gen-mach-types $(src)/mach-types
+ 	@echo '  Generating $@'
++	$(Q)if [ ! -d include/asm-sh ]; then mkdir -p include/asm-sh; fi
+ 	$(Q)$(AWK) -f $^ > $@ || { rm -f $@; /bin/false; }
+
+
+-------------------------------------------------------------------------
+This SF.net email is sponsored by DB2 Express
+Download DB2 Express C - the FREE version of DB2 express and take
+control of your XML. No limits. Just data. Click to get it now.
+http://sourceforge.net/powerbar/db2/
+_______________________________________________
+linuxsh-dev mailing list
+linuxsh-dev@lists.sourceforge.net
+https://lists.sourceforge.net/lists/listinfo/linuxsh-dev

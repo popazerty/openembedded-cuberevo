@@ -1,0 +1,238 @@
+These updates are already present in the quilt tree: stlinux2.2-kernel-patches-2.6.17-3.tar.bz2
+
+diff -ur ./arch/sh/boards/st/mediaref/setup.c ../../linux-2.6.17/arch/sh/boards/st/mediaref/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/mediaref/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/mediaref/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -52,15 +52,8 @@
+ #endif
+ }
+ 
+-#if 0
+-// This code should be moved into arch/sh/drivers/pci/{ops,fixups}-<board>.c
+-
+-/*
+- * PCI based boards need a function that maps IRQ's to given PCI
+- * slots. This code is used by the st40 pci routines in arch/sh/kernel
+- */
+-
+-int __init pcibios_map_platform_irq(u8 slot, u8 pin)
++#ifdef CONFIG_PCI
++int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+ 	/* All interrupts are hardwired to the PCI cell's INTA pin. Ahhhh! */
+ 	return ST40PCI_AD_IRQ;
+diff -ur ./arch/sh/boards/st/st40gx1eval/setup.c ../../linux-2.6.17/arch/sh/boards/st/st40gx1eval/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/st40gx1eval/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/st40gx1eval/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -64,16 +64,8 @@
+ 	disable_hlt();
+ }
+ 
+-#if 0
+-// This code should be moved into arch/sh/drivers/pci/{ops,fixups}-<board>.c
+-
+-/*
+- * pcibios_map_platform_irq
+- *
+- * This is board specific and returns the IRQ for a given PCI device.
+- * It is used by the PCI code (arch/sh/drivers/pci/pci-st40.c)
+- */
+-int __init pcibios_map_platform_irq(u8 slot, u8 pin)
++#ifdef CONFIG_PCI
++int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+ 	int irq=-1;
+ 
+@@ -96,5 +88,4 @@
+ 	/* An INTB,INTC,INTD - these are commoned up */
+ 	return pin+3;
+ }
+-
+ #endif
+diff -ur ./arch/sh/boards/st/st40raeval/setup.c ../../linux-2.6.17/arch/sh/boards/st/st40raeval/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/st40raeval/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/st40raeval/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -42,10 +42,8 @@
+ 	disable_hlt();
+ }
+ 
+-#if 0
+-// This code should be moved into arch/sh/drivers/pci/{ops,fixups}-<board>.c
+-
+-int __init pcibios_map_platform_irq(u8 slot, u8 pin)
++#ifdef CONFIG_PCI
++int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+         int irq=-1;
+ 
+@@ -68,5 +66,4 @@
+         /* An INTB,INTC,INTD - these are commoned up */
+         return pin+3;
+ }
+-
+ #endif
+diff -ur ./arch/sh/boards/st/st40rastarter/setup.c ../../linux-2.6.17/arch/sh/boards/st/st40rastarter/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/st40rastarter/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/st40rastarter/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -42,9 +42,7 @@
+ 	disable_hlt();
+ }
+ 
+-#if 1
+-// This code should be moved into arch/sh/drivers/pci/ops-<board>.c
+-
++#ifdef CONFIG_PCI
+ int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+ 	int irq=-1;
+diff -ur ./arch/sh/boards/st/stb1harp/setup.c ../../linux-2.6.17/arch/sh/boards/st/stb1harp/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/stb1harp/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/stb1harp/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -43,16 +43,8 @@
+ 	disable_hlt();
+ }
+ 
+-#if 0
+-// This code should be moved into arch/sh/drivers/pci/{ops,fixups}-<board>.c
+-
+-/*
+- * pcibios_map_platform_irq
+- *
+- * This is board specific and returns the IRQ for a given PCI device.
+- * It is used by the PCI code (arch/sh/drivers/pci/pci-st40.c)
+- */
+-int __init pcibios_map_platform_irq(u8 slot, u8 pin)
++#ifdef CONFIG_PCI
++int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+ 	int irq=-1;
+ 
+@@ -73,5 +65,4 @@
+ 	return pin+3;
+ 
+ }
+-
+ #endif
+diff -ur ./arch/sh/boards/st/stb1overdrive/setup.c ../../linux-2.6.17/arch/sh/boards/st/stb1overdrive/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/stb1overdrive/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/stb1overdrive/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -42,16 +42,8 @@
+ 	       xswitch& 0xf, (xswitch >> 4) & 0x3);
+ }
+ 
+-#if 0
+-// This code should be moved into arch/sh/drivers/pci/{ops,fixups}-<board>.c
+-
+-/*
+- * pcibios_map_platform_irq
+- *
+- * This is board specific and returns the IRQ for a given PCI device.
+- * It is used by the PCI code (arch/sh/drivers/pci/pci-st40.c)
+- */
+-int __init pcibios_map_platform_irq(u8 slot, u8 pin)
++#ifdef CONFIG_PCI
++int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+ 	int irq=-1;
+ 
+@@ -68,5 +60,4 @@
+ 	/* An INTB,INTC,INTD - these are commoned up */
+ 	return pin+2;
+ }
+-
+ #endif
+diff -ur ./arch/sh/boards/st/sti5528espresso/setup.c ../../linux-2.6.17/arch/sh/boards/st/sti5528espresso/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/sti5528espresso/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/sti5528espresso/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -302,14 +302,8 @@
+ 
+ subsys_initcall(device_init);
+ 
+-#if 0
+-// This code should be moved into arch/sh/drivers/pci/{ops,fixups}-<board>.c
+-/*
+- * PCI based boards need a function that maps IRQ's to given PCI
+- * slots. This code is used by the st40 pci routines in arch/sh/kernel
+- */
+-
+-int __init pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
++#ifdef CONFIG_PCI
++int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+ 	static int first_time = 1;
+ 	if ((pin != 1) && (first_time)) {
+diff -ur ./arch/sh/boards/st/sti5528eval/setup.c ../../linux-2.6.17/arch/sh/boards/st/sti5528eval/setup.c
+--- linux-2.6.17.orig/arch/sh/boards/st/sti5528eval/setup.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/boards/st/sti5528eval/setup.c	2006-08-24 22:19:47.000000000 +0100
+@@ -339,14 +339,8 @@
+ 
+ subsys_initcall(device_init);
+ 
+-#if 0
+-// This code should be moved into arch/sh/drivers/pci/{ops,fixups}-<board>.c
+-/*
+- * PCI based boards need a function that maps IRQ's to given PCI
+- * slots. This code is used by the st40 pci routines in arch/sh/kernel
+- */
+-
+-int __init pcibios_map_platform_irq(u8 slot, u8 pin)
++#ifdef CONFIG_PCI
++int __init pcibios_map_platform_irq(struct pci_dev *pdev, u8 slot, u8 pin)
+ {
+ 	int irq=-1;
+ 
+diff -ur ./arch/sh/kernel/cpu/clock-cpg.c ../../linux-2.6.17/arch/sh/kernel/cpu/clock-cpg.c
+--- linux-2.6.17.orig/arch/sh/kernel/cpu/clock-cpg.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/kernel/cpu/clock-cpg.c	2006-08-23 18:24:43.000000000 +0100
+@@ -85,8 +85,8 @@
+ 	}
+ 
+ 	/* Kick the child clocks.. */
+-	propagate_rate(&master_clk);
+-	propagate_rate(&bus_clk);
++	clk_set_rate(&master_clk, clk_get_rate(&master_clk));
++	clk_put(&master_clk);
+ 
+ 	return ret;
+ }
+--- linux-2.6.17.orig/arch/sh/kernel/cpu/sh4/clock-stb7100.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/arch/sh/kernel/cpu/sh4/clock-stb7100.c	2006-08-23 18:26:12.000000000 +0100
+@@ -124,7 +124,9 @@
+ 
+ 	/* Propogate the PLL values down */
+-        clk_set_rate(&pll0_clk, clk_get_rate(&pll0_clk));
+-        clk_set_rate(&pll1_clk, clk_get_rate(&pll1_clk));
++	clk_set_rate(&pll0_clk, clk_get_rate(&pll0_clk));
++	clk_put(&pll0_clk);
++	clk_set_rate(&pll1_clk, clk_get_rate(&pll1_clk));
++	clk_put(&pll1_clk);
+ 
+ 	return ret;
+ }
+diff -ur ./drivers/serial/stasc.c ../../linux-2.6.17/drivers/serial/stasc.c
+--- linux-2.6.17.orig/drivers/serial/stasc.c	2006-08-24 22:48:57.000000000 +0100
++++ linux-2.6.17/drivers/serial/stasc.c	2006-08-24 22:19:47.000000000 +0100
+@@ -408,6 +408,7 @@
+ 	unsigned long rate;
+ 
+ 	clk = clk_get("comms_clk");
++	if (IS_ERR(clk)) clk = clk_get("bus_clk");
+ 	rate = clk_get_rate(clk);
+ 	clk_put(clk);
+ 
+@@ -681,6 +682,7 @@
+ 	unsigned long rate;
+ 
+ 	clk = clk_get("comms_clk");
++	if (IS_ERR(clk)) clk = clk_get("bus_clk");
+ 	rate = clk_get_rate(clk);
+ 	clk_put(clk);
+ 
+@@ -842,6 +844,7 @@
+ 	ascport = &asc_ports[co->index];
+ 
+ 	clk = clk_get("comms_clk");
++	if (IS_ERR(clk)) clk = clk_get("bus_clk");
+ 	rate = clk_get_rate(clk);
+ 	clk_put(clk);
+ 	ascport->port.uartclk = rate;

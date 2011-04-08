@@ -1,0 +1,30 @@
+From 5d3ac1d1319e29ad168954267ed3f2389dec286b Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 17 Oct 2008 10:15:10 +0100
+Subject: [PATCH] sound_stm: Fsynth channels memory usage fixed.
+
+There was a horrible mistake in calculating fsynth->channels pointer.
+Don't know how was it working at all...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/fsynth.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/sound/stm/fsynth.c b/sound/stm/fsynth.c
+index 247390e..ebdaaec 100644
+--- a/sound/stm/fsynth.c
++++ b/sound/stm/fsynth.c
+@@ -691,8 +691,7 @@ static int snd_stm_fsynth_probe(struct platform_device *pdev)
+ 	snd_stm_assert(fsynth->ver > 0, return -EINVAL);
+ 	fsynth->bus_id = pdev->dev.bus_id;
+ 	fsynth->channels_max = channels_max;
+-	fsynth->channels = (void *)fsynth + (channels_max *
+-			sizeof(*fsynth->channels));
++	fsynth->channels = (void *)fsynth + sizeof(*fsynth);
+ 	for (i = 0; i < channels_max; i++) {
+ 		fsynth->channels[i].fsynth = fsynth;
+ 		snd_stm_magic_set(&fsynth->channels[i]);
+-- 
+1.5.3.6
+

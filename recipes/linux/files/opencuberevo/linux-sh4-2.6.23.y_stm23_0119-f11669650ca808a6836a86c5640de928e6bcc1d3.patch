@@ -1,0 +1,43 @@
+From f11669650ca808a6836a86c5640de928e6bcc1d3 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 20 May 2009 10:13:05 +0200
+Subject: [PATCH] stm: lirc: Fixed compilation error due lirc on stx5197
+
+This patch fixes a compilation error due the LIRC macro
+in the stx5197 platform.
+Moreover it adds the ILC_EXT_IRQ() macro for this platform
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |    2 +-
+ include/asm-sh/irq-ilc.h               |    1 +
+ 2 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index 1676ce0..170812f 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -437,7 +437,7 @@ static struct plat_lirc_data lirc_private_info = {
+ };
+ 
+ static struct platform_device lirc_device = 
+-	STLIRC_DEVICE(0xfd118000, ILC_IRQ(19), ILC_EXT_IRQ(4);
++	STLIRC_DEVICE(0xfd118000, ILC_IRQ(19), ILC_EXT_IRQ(4));
+ 
+ void __init stx5197_configure_lirc(lirc_scd_t *scd)
+ {
+diff --git a/include/asm-sh/irq-ilc.h b/include/asm-sh/irq-ilc.h
+index 46af9aa..8a28deb 100644
+--- a/include/asm-sh/irq-ilc.h
++++ b/include/asm-sh/irq-ilc.h
+@@ -15,6 +15,7 @@
+ #define ILC_FIRST_IRQ	33
+ #define ILC_NR_IRQS	72
+ #define ILC_IRQ(x)	(ILC_FIRST_IRQ + (x))
++#define ILC_EXT_IRQ(x)	(ILC_FIRST_IRQ + 64 + (x))
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7105)
+ #define ILC_FIRST_IRQ	176
+ #define ILC_NR_IRQS	(64+35)
+-- 
+1.6.0.6
+

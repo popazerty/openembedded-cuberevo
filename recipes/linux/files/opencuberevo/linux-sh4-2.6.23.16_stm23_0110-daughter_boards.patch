@@ -1,0 +1,358 @@
+commit 0462662a52eca902f30d0ea1b94de21c93893eb4
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Fri May 9 17:53:01 2008 +0100
+
+    Daughter boards infrastructure.
+    
+    - adds hidden Kconfig options SH_ST_HARP_IRQ, SH_ST_EPLD, SH_STEM,
+      SH_ST_STPM_HD_V1 and SH_ST_STPM_HD_V2
+    - main board configuration selects options for features available
+      on the board
+    - daughter board depends on these features...
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 26e891b..a5d923a 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -418,6 +418,26 @@ config SH_MAGIC_PANEL_R2
+ 
+ comment "ST Main Boards"
+ 
++config SH_ST_HARP_IRQ
++	bool
++	default n
++
++config SH_ST_EPLD
++	bool
++	default n
++
++config SH_ST_STEM
++	bool
++	default n
++
++config SH_ST_STPM_HD_V1
++	bool
++	default n
++
++config SH_ST_STPM_HD_V2
++	bool
++	default n
++
+ config SH_ST_CB101
+ 	bool "cb101: ST Customer board 101"
+ 	depends on CPU_SUBTYPE_STX7200
+@@ -436,6 +456,8 @@ config SH_ST_HMS1
+ config SH_ST_MB360
+ 	bool "mb360: ST40RA Eval"
+ 	depends on CPU_SUBTYPE_ST40STB1
++	select SH_ST_HARP_IRQ
++	select SH_ST_STEM
+ 	help
+ 	  Select ST40RA-Eval if configuring for an
+ 	  STMicroelectronics ST40RA Eval Board (product code: ST40RA-Eval,
+@@ -444,8 +466,10 @@ config SH_ST_MB360
+ 
+ config SH_ST_MB374
+ 	bool "mb374: ST40RA Starter"
++	depends on CPU_SUBTYPE_ST40STB1
+ 	select SYS_SUPPORTS_PCI
+-       depends on CPU_SUBTYPE_ST40STB1
++	select SH_ST_HARP_IRQ
++	select SH_ST_STEM
+ 	help
+ 	  Select ST40RA-Starter if configuring for an
+ 	  STMicroelectronics ST40RA Starter Board (also known as the
+@@ -456,6 +480,9 @@ config SH_ST_MB374
+ config SH_ST_MB411
+ 	bool "mb411: STB7100 Validation board"
+ 	depends on CPU_SUBTYPE_STB7100
++	select SH_ST_HARP_IRQ
++	select SH_ST_EPLD
++	select SH_ST_STEM
+ 	help
+ 	  Select STB7100 Validation if configuring for an
+ 	  STMicroelectronics STB7100 Validation Board (product code:
+@@ -483,6 +510,9 @@ config SH_ST_MB448
+ config SH_ST_MB519
+ 	bool "mb519: STx7200 Mboard"
+ 	depends on CPU_SUBTYPE_STX7200
++	select SH_ST_EPLD
++	select SH_ST_STEM
++	select SH_ST_STPM_HD_V1
+ 	help
+ 	  Select SH_ST_MB519 if configuring for an
+ 	  STMicroelectronics STx7200 Mboard (product code: STB7200-MBOARD,
+@@ -492,6 +522,8 @@ config SH_ST_MB519
+ config SH_ST_MB618
+ 	bool "mb618: STx7111 Validation board"
+ 	depends on CPU_SUBTYPE_STX7111
++	select SH_ST_EPLD
++	select SH_ST_STEM
+ 	help
+ 	  Select STx7111 Validation if configuring for an
+ 	  STMicroelectronics STx7111 Validation Board (product code:
+@@ -501,6 +533,9 @@ config SH_ST_MB618
+ config SH_ST_MB671
+ 	bool "mb671: STx7200 cut 2.0 Mboard"
+ 	depends on CPU_SUBTYPE_STX7200
++	select SH_ST_EPLD
++	select SH_ST_STEM
++	select SH_ST_STPM_HD_V1
+ 	help
+ 	  Select SH_ST_MB671 if configuring for an STMicroelectronics
+ 	  STx7200 cut 2.0 Mboard (ST board ID: mb671).
+@@ -509,17 +544,19 @@ config SH_ST_MB671
+ config SH_ST_MB680
+ 	bool "mb680: STx7105 Validation board"
+ 	depends on CPU_SUBTYPE_STX7105
++	select SH_ST_STEM
++	select SH_ST_STPM_HD_V2
+ 	help
+ 	  Select STx7105 Validation if configuring for an
+ 	  STMicroelectronics STx7105 Validation Board (product code:
+ 	  STi7105-MBOARD, ST board ID: mb680). More information at:
+ 	  <http://www.stlinux.com/boards/mb680/>
+ 
+-comment "ST Peripherals Boards"
++comment "ST Peripheral Boards"
+ 
+ config SH_ST_MB520
+ 	bool "mb520: STB peripherals board"
+-	depends on SH_ST_MB519 || SH_ST_MB671
++	depends on SH_ST_STPM_HD_V1
+ 	select I2C
+ 	select I2C_BOARDINFO
+ 	select I2C_STM
+@@ -531,7 +568,7 @@ config SH_ST_MB520
+ 
+ config SH_ST_MB562
+ 	bool "mb562: BD-DVD peripherals board"
+-	depends on SH_ST_MB519 || SH_ST_MB671
++	depends on SH_ST_STPM_HD_V1
+ 	help
+ 	  Select SH_ST_MB562 if your processor board is connected
+ 	  to this multi-audio-outputs board.
+diff --git a/arch/sh/Makefile b/arch/sh/Makefile
+index e06d0b2..249d94d 100644
+--- a/arch/sh/Makefile
++++ b/arch/sh/Makefile
+@@ -130,15 +130,15 @@ machdir-$(CONFIG_SH_MAGIC_PANEL_R2)		+= magicpanelr2
+ # ST Boards
+ machdir-$(CONFIG_SH_ST_CB101)			+= st/cb101
+ machdir-$(CONFIG_SH_ST_HMS1)			+= st/hms1
+-machdir-$(CONFIG_SH_ST_MB360)			+= st/mb360
+-machdir-$(CONFIG_SH_ST_MB374)			+= st/mb374
+-machdir-$(CONFIG_SH_ST_MB411)			+= st/mb411
++machdir-$(CONFIG_SH_ST_MB360)			+= st/mb360 st/common
++machdir-$(CONFIG_SH_ST_MB374)			+= st/mb374 st/common
++machdir-$(CONFIG_SH_ST_MB411)			+= st/mb411 st/common
+ machdir-$(CONFIG_SH_ST_MB442)			+= st/mb442
+ machdir-$(CONFIG_SH_ST_MB448)			+= st/mb448
+-machdir-$(CONFIG_SH_ST_MB519)			+= st/mb519
+-machdir-$(CONFIG_SH_ST_MB618)			+= st/mb618
+-machdir-$(CONFIG_SH_ST_MB671)			+= st/mb671
+-machdir-$(CONFIG_SH_ST_MB680)			+= st/mb680
++machdir-$(CONFIG_SH_ST_MB519)			+= st/mb519 st/common
++machdir-$(CONFIG_SH_ST_MB618)			+= st/mb618 st/common
++machdir-$(CONFIG_SH_ST_MB671)			+= st/mb671 st/common
++machdir-$(CONFIG_SH_ST_MB680)			+= st/mb680 st/common
+ 
+ incdir-y	:= $(notdir $(firstword $(machdir-y)))
+ 
+diff --git a/arch/sh/boards/st/common/Makefile b/arch/sh/boards/st/common/Makefile
+new file mode 100644
+index 0000000..a988e89
+--- /dev/null
++++ b/arch/sh/boards/st/common/Makefile
+@@ -0,0 +1,9 @@
++#
++# Makefile for STMicroelectronics boards common implementation
++#
++
++obj-$(CONFIG_SH_ST_HARP_IRQ) += harp-irq.o
++obj-$(CONFIG_SH_ST_EPLD) += epld.o
++
++obj-$(CONFIG_SH_ST_MB520) += mb520.o
++obj-$(CONFIG_SH_ST_MB562) += mb562.o
+diff --git a/arch/sh/boards/st/mb360/Makefile b/arch/sh/boards/st/mb360/Makefile
+index abffe2b..5b3819a 100644
+--- a/arch/sh/boards/st/mb360/Makefile
++++ b/arch/sh/boards/st/mb360/Makefile
+@@ -2,5 +2,4 @@
+ # Makefile for STMicroelectronics ST40RA Eval board
+ #
+ 
+-obj-y := setup.o mach.o led.o harp-irq.o
+-harp-irq-y := ../common/harp-irq.o
++obj-y := setup.o mach.o led.o
+diff --git a/arch/sh/boards/st/mb374/Makefile b/arch/sh/boards/st/mb374/Makefile
+index 7f3cf50..9350afb 100644
+--- a/arch/sh/boards/st/mb374/Makefile
++++ b/arch/sh/boards/st/mb374/Makefile
+@@ -2,5 +2,4 @@
+ # Makefile for STMicroelectronics ST40RA/ST40STB1 Starter board
+ #
+ 
+-obj-y := setup.o mach.o harp-irq.o
+-harp-irq-y := ../common/harp-irq.o
++obj-y := setup.o mach.o
+diff --git a/arch/sh/boards/st/mb411/Makefile b/arch/sh/boards/st/mb411/Makefile
+index 34c69eb..6c48b4b 100644
+--- a/arch/sh/boards/st/mb411/Makefile
++++ b/arch/sh/boards/st/mb411/Makefile
+@@ -2,6 +2,4 @@
+ # Makefile for STMicroelectronics STb7100 Validation board
+ #
+ 
+-obj-y := setup.o epld.o harp-irq.o
+-epld-y := ../common/epld.o
+-harp-irq-y := ../common/harp-irq.o
++obj-y := setup.o
+diff --git a/arch/sh/boards/st/mb519/Makefile b/arch/sh/boards/st/mb519/Makefile
+index ebba907..c91d10a 100644
+--- a/arch/sh/boards/st/mb519/Makefile
++++ b/arch/sh/boards/st/mb519/Makefile
+@@ -2,9 +2,4 @@
+ # Makefile for STMicroelectronics STx7200 Mboard (mb519) board
+ #
+ 
+-obj-y := setup.o epld.o
+-obj-$(CONFIG_SH_ST_MB520) += mb520.o
+-obj-$(CONFIG_SH_ST_MB562) += mb562.o
+-epld-y := ../common/epld.o
+-mb520-y := ../common/mb520.o
+-mb562-y := ../common/mb562.o
++obj-y := setup.o
+diff --git a/arch/sh/boards/st/mb519/setup.c b/arch/sh/boards/st/mb519/setup.c
+index 39749ce..82517da 100644
+--- a/arch/sh/boards/st/mb519/setup.c
++++ b/arch/sh/boards/st/mb519/setup.c
+@@ -236,7 +236,7 @@ static int __init device_init(void)
+ 	stx7200_configure_ethernet(1, 0, 1, 1);
+ #endif
+ 	stx7200_configure_lirc();
+-	stx7200_configure_nand(&mb519_nand_config);
++//	stx7200_configure_nand(&mb519_nand_config);
+ //	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
+ 
+ 	return platform_add_devices(mb519_devices, ARRAY_SIZE(mb519_devices));
+@@ -257,18 +257,22 @@ static void __init mb519_init_irq(void)
+ {
+ 	epld_early_init(&epld_device);
+ 
+-#if 0
++#if defined(CONFIG_SH_ST_STEM)
+ 	/* The off chip interrupts on the mb519 are a mess. The external
+ 	 * EPLD priority encodes them, but because they pass through the ILC3
+ 	 * there is no way to decode them.
+ 	 *
+ 	 * So here we bodge it as well. Only enable the STEM INTR0 signal,
+-	 * and hope nothing else goes active.
++	 * and hope nothing else goes active. This will result in
++	 * SYS_ITRQ[3..0] = 0100.
+ 	 *
+-	 * Note that this changed between EPLD rev 1r2 and 1r3. This is correct
+-	 * for 1r3 which should be the most common now.
++	 * BTW. According to EPLD code author - "masking" interrupts
++	 * means "enabling" them... Just to let you know... ;-)
+ 	 */
+-	ctrl_outw(1<<4, EPLD_IntMask0Set); /* IntPriority(4) <= not STEM_notINTR0 */
++	epld_write(0xff, EPLD_INTMASK0CLR);
++	epld_write(0xff, EPLD_INTMASK1CLR);
++	/* IntPriority(4) <= not STEM_notINTR0 */
++	epld_write(1 << 4, EPLD_INTMASK0SET);
+ #endif
+ }
+ 
+diff --git a/arch/sh/boards/st/mb618/Makefile b/arch/sh/boards/st/mb618/Makefile
+index bc0932d..ec67a24 100644
+--- a/arch/sh/boards/st/mb618/Makefile
++++ b/arch/sh/boards/st/mb618/Makefile
+@@ -2,5 +2,4 @@
+ # Makefile for STMicroelectronics STx7111 Mboard (mb618) board
+ #
+ 
+-obj-y := setup.o epld.o
+-epld-y := ../common/epld.o
++obj-y := setup.o
+diff --git a/arch/sh/boards/st/mb671/Makefile b/arch/sh/boards/st/mb671/Makefile
+index 31a8d2b..6b84946 100644
+--- a/arch/sh/boards/st/mb671/Makefile
++++ b/arch/sh/boards/st/mb671/Makefile
+@@ -2,9 +2,4 @@
+ # Makefile for STMicroelectronics STx7200 Mboard (mb671) board
+ #
+ 
+-obj-y := setup.o epld.o
+-obj-$(CONFIG_SH_ST_MB520) += mb520.o
+-obj-$(CONFIG_SH_ST_MB562) += mb562.o
+-epld-y := ../common/epld.o
+-mb520-y := ../common/mb520.o
+-mb562-y := ../common/mb562.o
++obj-y := setup.o
+diff --git a/arch/sh/boards/st/mb671/setup.c b/arch/sh/boards/st/mb671/setup.c
+index 13ede2d..f8a54a7 100644
+--- a/arch/sh/boards/st/mb671/setup.c
++++ b/arch/sh/boards/st/mb671/setup.c
+@@ -242,13 +242,10 @@ static int __init device_init(void)
+ 
+ 	stx7200_configure_usb();
+ 
+-#if 1 /* On-board PHY (MII0) */
+ 	stx7200_configure_ethernet(0, 0, 1, 0);
+-#else /* External PHY board (MII1) */
+-	stx7200_configure_ethernet(1, 0, 1, 1);
+-#endif
++//	stx7200_configure_ethernet(1, 0, 1, 1);
+ 	stx7200_configure_lirc();
+-	stx7200_configure_nand(&mb671_nand_config);
++//	stx7200_configure_nand(&mb671_nand_config);
+ 
+ 	return platform_add_devices(mb671_devices, ARRAY_SIZE(mb671_devices));
+ }
+@@ -268,20 +265,22 @@ static void __init mb671_init_irq(void)
+ {
+ 	epld_early_init(&epld_device);
+ 
+-#if 0
++#if defined(CONFIG_SH_ST_STEM)
+ 	/* The off chip interrupts on the mb671 are a mess. The external
+ 	 * EPLD priority encodes them, but because they pass through the ILC3
+ 	 * there is no way to decode them.
+ 	 *
+ 	 * So here we bodge it as well. Only enable the STEM INTR0 signal,
+-	 * and hope nothing else goes active.
++	 * and hope nothing else goes active. This will result in
++	 * SYS_ITRQ[3..0] = 0100.
+ 	 *
+-	 * Note that this changed between EPLD rev 1r2 and 1r3. This is correct
+-	 * for 1r3 which should be the most common now.
++	 * BTW. According to EPLD code author - "masking" interrupts
++	 * means "enabling" them... Just to let you know... ;-)
+ 	 */
+-
++	epld_write(0xff, EPLD_INTMASK0CLR);
++	epld_write(0xff, EPLD_INTMASK1CLR);
+ 	/* IntPriority(4) <= not STEM_notINTR0 */
+-	ctrl_outw(1<<4, EPLD_IntMask0Set);
++	epld_write(1 << 4, EPLD_INTMASK0SET);
+ #endif
+ }
+ 
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 0f1a986..791cfa5 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -128,10 +128,6 @@ static int __init device_init(void)
+ 	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
+ #endif
+ 
+-	/* Configure BANK2 for the db641 STEM card */
+-	emi_bank_configure(2, (unsigned long[4]){ 0x041086f1, 0x0e024400,
+-				0x0e024400, 0 });
+-
+ 	return platform_add_devices(mb680_devices, ARRAY_SIZE(mb680_devices));
+ }
+ arch_initcall(device_init);

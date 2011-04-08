@@ -1,0 +1,123 @@
+From a86a7a624d7e28435e91aee7e0c7b1a9418f6082 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Tue, 20 Oct 2009 14:41:59 +0100
+Subject: [PATCH] sound_stm: Add ALSA support for STx7106
+
+This patch extends the STx7105 ALSA driver to support STx7106
+as well. It also modifies the relevant bits in 7105- and
+7106-based boards, including mb705 peripherals board setup.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/Kconfig   |    4 ++--
+ sound/stm/stx7105.c |   37 ++++++++++++++++++++++++-------------
+ 2 files changed, 26 insertions(+), 15 deletions(-)
+
+diff --git a/sound/stm/Kconfig b/sound/stm/Kconfig
+index b792ab3..a37f48c 100644
+--- a/sound/stm/Kconfig
++++ b/sound/stm/Kconfig
+@@ -67,11 +67,11 @@ config SND_STM_STX7100
+ 		called snd-stm-stx7100.ko
+ 
+ config SND_STM_STX7105
+-	tristate "STx7105 support"
++	tristate "STx7105 and STx7106 support"
+ 	depends on SND_STM
+ 	default y if CPU_SUBTYPE_STX7105
+ 	help
+-		Select this to get ALSA driver for STx7105 chip.
++		Select this to get ALSA driver for STx7105 and STx7106 chips.
+ 
+ 		If you compile this driver as a module, it will be
+ 		called snd-stm-stx7105.ko
+diff --git a/sound/stm/stx7105.c b/sound/stm/stx7105.c
+index eec123b..e320085 100644
+--- a/sound/stm/stx7105.c
++++ b/sound/stm/stx7105.c
+@@ -1,7 +1,7 @@
+ /*
+- *   STMicrolectronics STx7105 SoC description & audio glue driver
++ *   STMicrolectronics STx7105/STx7106 SoC description & audio glue driver
+  *
+- *   Copyright (c) 2005-2007 STMicroelectronics Limited
++ *   Copyright (c) 2005-2009 STMicroelectronics Limited
+  *
+  *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+@@ -42,9 +42,10 @@ static int index = -1; /* First available index */
+ static char *id = "STx7105"; /* Default card ID */
+ 
+ module_param(index, int, 0444);
+-MODULE_PARM_DESC(index, "Index value for STx7105 audio subsystem card.");
++MODULE_PARM_DESC(index, "Index value for STx7105/STx7106 audio subsystem "
++		"card.");
+ module_param(id, charp, 0444);
+-MODULE_PARM_DESC(id, "ID string for STx7105 audio subsystem card.");
++MODULE_PARM_DESC(id, "ID string for STx7105/STx7106 audio subsystem card.");
+ 
+ 
+ 
+@@ -52,7 +53,7 @@ MODULE_PARM_DESC(id, "ID string for STx7105 audio subsystem card.");
+  * Audio subsystem components & platform devices
+  */
+ 
+-/* STx7105 audio glue */
++/* STx7105/STx7106 audio glue */
+ 
+ static struct platform_device stx7105_glue = {
+ 	.name          = "snd_stx7105_glue",
+@@ -73,7 +74,7 @@ static struct snd_stm_fsynth_info fsynth_info = {
+ 	.channels_from = 0,
+ 	.channels_to = 2,
+ 	.value_pcm_clk_sel = 1,
+-	.value_ref_clk_in = 0,
++	/* .value_ref_clk_in set in snd_stm_stx7105_init() */
+ };
+ 
+ static struct platform_device fsynth = {
+@@ -504,13 +505,23 @@ static struct platform_driver snd_stm_stx7105_glue_driver = {
+ static int __init snd_stm_stx7105_init(void)
+ {
+ 	int result;
++	const char *soc_type;
+ 	struct snd_card *card;
+ 
+ 	snd_stm_printd(0, "snd_stm_stx7105_init()\n");
+ 
+-	if (cpu_data->type != CPU_STX7105) {
+-		snd_stm_printe("Not supported (other than STx7105) SOC "
+-				"detected!\n");
++	switch (cpu_data->type) {
++	case CPU_STX7105:
++		soc_type = "STx7105";
++		fsynth_info.value_ref_clk_in = 0;
++		break;
++	case CPU_STX7106:
++		soc_type = "STx7106";
++		fsynth_info.value_ref_clk_in = 1;
++		break;
++	default:
++		snd_stm_printe("Not supported (other than STx7105 or STx7106)"
++				" SOC detected!\n");
+ 		result = -EINVAL;
+ 		goto error_soc_type;
+ 	}
+@@ -537,10 +548,10 @@ static int __init snd_stm_stx7105_init(void)
+ 		result = -ENOMEM;
+ 		goto error_card_new;
+ 	}
+-	strcpy(card->driver, "STx7105");
+-	strcpy(card->shortname, "STx7105 audio subsystem");
+-	snprintf(card->longname, 79, "STMicroelectronics STx7105 cut %d "
+-			"SOC audio subsystem", cpu_data->cut_major);
++	strcpy(card->driver, soc_type);
++	snprintf(card->shortname, 31, "%s audio subsystem", soc_type);
++	snprintf(card->longname, 79, "STMicroelectronics %s cut %d "
++			"SOC audio subsystem", soc_type, cpu_data->cut_major);
+ 
+ 	result = snd_stm_add_platform_devices(snd_stm_stx7105_devices,
+ 			ARRAY_SIZE(snd_stm_stx7105_devices));
+-- 
+1.6.0.6
+

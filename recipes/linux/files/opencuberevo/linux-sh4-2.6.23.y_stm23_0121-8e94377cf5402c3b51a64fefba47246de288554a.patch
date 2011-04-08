@@ -1,0 +1,129 @@
+From 8e94377cf5402c3b51a64fefba47246de288554a Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 9 Jul 2009 14:27:46 +0200
+Subject: [PATCH] stmmac: statically fix the default coalescence parameters
+
+This patch fixes the coalescence parameters according to the best tuning
+found for both mac100 and gmac.
+These values can be overridden through either command line stmmaceth
+option or sysfs.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |   61 ++++++++++++++++++++++++++++----------
+ 1 files changed, 45 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 7fcc2c8..ab215ac 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -101,24 +101,16 @@ static int tc = TC_DEFAULT;
+ module_param(tc, int, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(tc, "DMA threshold control value");
+ 
+-/*
+- * These values have been set based on testing data as well as attempting
+- * to minimize response time while increasing bulk throughput. */
+-#if defined(CONFIG_STMMAC_TIMER)
+-#define RX_COALESCE	32
+-#define TX_COALESCE	64
+-#else
+-#define RX_COALESCE	1	/* Always interrupt on completion */
+-#define TX_COALESCE	-1	/* No moderation by default */
+-#endif
++#define RX_NO_COALESCE	1	/* Always interrupt on completion */
++#define TX_NO_COALESCE	-1	/* No moderation by default */
+ 
+ /* It makes sense to combine interrupt coalescence when the timer is enabled
+  * to avoid adverse effects on timing and make safe the TCP traffic.*/
+-static int rx_coalesce = RX_COALESCE;
++static int rx_coalesce = RX_NO_COALESCE;
+ module_param(rx_coalesce, int, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(rx_coalesce, "Rx irq coalescence parameter");
+ 
+-static int tx_coalesce = TX_COALESCE;
++static int tx_coalesce = TX_NO_COALESCE;
+ module_param(tx_coalesce, int, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(tx_coalesce, "Tx irq coalescence parameter");
+ 
+@@ -154,10 +146,46 @@ static int stmmac_rx(struct net_device *dev, int limit);
+ extern struct ethtool_ops stmmac_ethtool_ops;
+ 
+ /**
++ * stmmac_init_coalescence - init the coalescence parameters
++ * Description: initialises the coalescence parameters statically when
++ *		use Timer optimisation.
++ * These values have been set based on testing data as well as attempting
++ * to minimize response time while increasing bulk throughput.
++ * These parameters can also be tuned via sys and new values can be
++ * used after reopening the interface (via ifconfig for example).
++ * TODO: tunes these dynamically..
++ */
++static void stmmac_init_coalescence(int gmac, int mtu)
++{
++#ifdef CONFIG_STMMAC_TIMER
++	/* maybe, params passed through cmdline?!? Do not use the defaults
++	 * values. */
++	if ((rx_coalesce != RX_NO_COALESCE) ||
++	    (tx_coalesce != TX_NO_COALESCE))
++		return;
++
++	if (gmac) {
++		rx_coalesce = 32;
++		tx_coalesce = 64;
++
++		if (unlikely(mtu > ETH_DATA_LEN)) {
++			/* Tests on Jumbo showed that it's better to
++			 * reduce the coalescence. */
++			rx_coalesce = 4;
++			tx_coalesce = 4;
++		}
++	} else {
++		rx_coalesce = 16;
++		tx_coalesce = 32;
++	}
++#endif
++}
++
++/**
+  * stmmac_verify_args - Check work parameters passed to the driver
+  * Description: wrong parameters are replaced with the default values
+  */
+-static __inline__ void stmmac_verify_args(void)
++static void stmmac_verify_args(void)
+ {
+ 	if (watchdog < 0)
+ 		watchdog = TX_TIMEO;
+@@ -166,9 +194,9 @@ static __inline__ void stmmac_verify_args(void)
+ 	if (dma_txsize < 0)
+ 		dma_txsize = DMA_TX_SIZE;
+ 	if (tx_coalesce >= (dma_txsize))
+-		tx_coalesce = TX_COALESCE;
++		tx_coalesce = TX_NO_COALESCE;
+ 	if (rx_coalesce > (dma_rxsize))
+-		rx_coalesce = RX_COALESCE;
++		rx_coalesce = RX_NO_COALESCE;
+ 	if ((buf_sz < DMA_BUFFER_SIZE) || (buf_sz > BUF_SIZE_16KiB))
+ 		buf_sz = DMA_BUFFER_SIZE;
+ 	if (flow_ctrl > 1)
+@@ -1840,6 +1868,7 @@ static int stmmac_probe(struct net_device *dev)
+ 
+ 	/* Get the MAC address */
+ 	priv->mac_type->ops->get_umac_addr(dev->base_addr, dev->dev_addr, 0);
++	stmmac_init_coalescence(priv->is_gmac, dev->mtu);
+ 
+ 	if (!is_valid_ether_addr(dev->dev_addr)) {
+ 		printk(KERN_WARNING "\tno valid MAC address; "
+@@ -2032,7 +2061,7 @@ static int stmmac_dvr_probe(struct platform_device *pdev)
+ 	/* Set the I/O base addr */
+ 	ndev->base_addr = (unsigned long)addr;
+ 
+-	/* MAC HW revice detection */
++	/* MAC HW device detection */
+ 	stmmac_mac_device_setup(ndev);
+ 
+ 	/* Network Device Registration */
+-- 
+1.6.0.6
+

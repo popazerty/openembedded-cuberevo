@@ -1,0 +1,54 @@
+From 57144b201d5d18d3d9aedb3bd20db9c3b2d96151 Mon Sep 17 00:00:00 2001
+From: Jon Frosdick <jon.frosdick@st.com>
+Date: Wed, 11 Feb 2009 17:57:34 +0000
+Subject: [PATCH] sh: Use internal watchdog timer to perform reset
+
+This patches will trigger a reboot using the watchdog
+timer instead of double fault.  Unlike the previous
+method, this one actually works in 32 bit mode.
+
+Reset should also be cleaner.
+
+Signed-off-by: Jon Frosdick <jon.frosdick@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ arch/sh/kernel/process.c |   14 +++++++++++---
+ 1 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/arch/sh/kernel/process.c b/arch/sh/kernel/process.c
+index 4704d1f..d64fc9d 100644
+--- a/arch/sh/kernel/process.c
++++ b/arch/sh/kernel/process.c
+@@ -25,6 +25,7 @@
+ #include <asm/pgalloc.h>
+ #include <asm/system.h>
+ #include <asm/ubc.h>
++#include <asm/watchdog.h>
+ 
+ static int hlt_counter;
+ int ubc_usercnt = 0;
+@@ -97,11 +98,18 @@ void cpu_idle(void)
+ 	}
+ }
+ 
++static void watchdog_trigger_immediate(void)
++{
++	sh_wdt_write_cnt(0xFF);
++	sh_wdt_write_csr(0xC2);
++}
++
+ void machine_restart(char *__unused)
+ {
+-	/* SR.BL=1 and invoke address error to let CPU reset (manual reset) */
+-	asm volatile ("ldc %0, sr\n\t"
+-		      "mov.l @%1, %0"::"r" (0x10000000), "r"(0x80000001));
++	/* Use watchdog timer to trigger reset */
++	local_irq_disable();
++	watchdog_trigger_immediate();
++	while (1) {};
+ }
+ 
+ void machine_halt(void)
+-- 
+1.5.6.3
+

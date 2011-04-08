@@ -1,0 +1,75 @@
+From a070e0eb7c24e202381d5b1fef0f2a90d2a9cf5a Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 7 Nov 2008 11:21:31 +0100
+Subject: [PATCH] stmmac: fix phy_stop/start invokations
+
+Indeed, both phy_start and phy_stop functions have to be invoked if
+phydev is actually attached to the MAC.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |   19 +++++++++++--------
+ 1 files changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 186c711..e75ba78 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -330,7 +330,7 @@ static int stmmac_init_phy(struct net_device *dev)
+ 	}
+ 
+ 	snprintf(phy_id, BUS_ID_SIZE, PHY_ID_FMT, priv->bus_id, priv->phy_addr);
+-	DBG(probe, DEBUG, "stmmac_init_phy:  trying to attach to %s\n", phy_id);
++	printk(KERN_DEBUG "stmmac_init_phy:  trying to attach to %s\n", phy_id);
+ 
+ 	phydev =
+ 	    phy_connect(dev, phy_id, &stmmac_adjust_link, 0,
+@@ -341,8 +341,7 @@ static int stmmac_init_phy(struct net_device *dev)
+ 		return PTR_ERR(phydev);
+ 	}
+ 
+-	DBG(probe, DEBUG,
+-	    "stmmac_init_phy:  %s: attached to PHY. Link = %d\n",
++	printk(KERN_DEBUG "stmmac_init_phy:  %s: attached to PHY. Link = %d\n",
+ 	    dev->name, phydev->link);
+ 
+ 	priv->phydev = phydev;
+@@ -1238,9 +1237,11 @@ static int stmmac_release(struct net_device *dev)
+ 	struct stmmac_priv *priv = netdev_priv(dev);
+ 
+ 	/* Stop and disconnect the PHY */
+-	phy_stop(priv->phydev);
+-	phy_disconnect(priv->phydev);
+-	priv->phydev = NULL;
++	if (priv->phydev) {
++		phy_stop(priv->phydev);
++		phy_disconnect(priv->phydev);
++		priv->phydev = NULL;
++	}
+ 
+ 	netif_stop_queue(dev);
+ 	tasklet_kill(&priv->tx_task);
+@@ -2141,7 +2142,8 @@ static int stmmac_suspend(struct platform_device *pdev, pm_message_t state)
+ 	if (state.event == PM_EVENT_SUSPEND) {
+ 		netif_device_detach(dev);
+ 		netif_stop_queue(dev);
+-		phy_stop(priv->phydev);
++		if (priv->phydev)
++			phy_stop(priv->phydev);
+ 		netif_stop_queue(dev);
+ 		tasklet_disable(&priv->tx_task);
+ 
+@@ -2212,7 +2214,8 @@ static int stmmac_resume(struct platform_device *pdev)
+ #endif
+ 	tasklet_enable(&priv->tx_task);
+ 
+-	phy_start(priv->phydev);
++	if (priv->phydev)
++		phy_start(priv->phydev);
+ 
+ 	netif_start_queue(dev);
+ 
+-- 
+1.5.3.6
+

@@ -1,0 +1,61 @@
+From 5a17e8901abad550b33b382cc955d0b404edf45d Mon Sep 17 00:00:00 2001
+From: Angelo CASTELLO <angelo.castello@st.com>
+Date: Fri, 26 Sep 2008 14:05:38 +0200
+Subject: [PATCH] lirc_stm: Fixed PIO's lines for 7105 soc.
+
+MB705B jumpers setting:
+- IRB_IR: J25A 1-2, J25B 2-3.
+- IRB_UHF: J25A 1-2, J25B 1-2.
+
+Signed-off-by: Angelo Castello <angelo.castello@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    4 ++--
+ drivers/char/lirc/Kconfig              |    4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 998e9c9..e701306 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -852,13 +852,13 @@ static struct lirc_pio lirc_pios[] = {
+ 		.bank = 3,
+ 		.pin  = 0,
+ 		.dir  = STPIO_IN,
+-                .pinof= 0x00 | LIRC_UHF_RX | LIRC_PIO_ON
++		.pinof = 0x00 | LIRC_IR_RX | LIRC_PIO_ON
+ 	},
+ 	[1] = {
+ 		.bank = 3,
+ 		.pin  = 1,
+ 		.dir  = STPIO_IN,
+-		.pinof = 0x00 | LIRC_IR_RX | LIRC_PIO_ON /* not available */
++		.pinof = 0x00 | LIRC_UHF_RX | LIRC_PIO_ON
+         },
+ 	[2] = {
+ 		.bank = 3,
+diff --git a/drivers/char/lirc/Kconfig b/drivers/char/lirc/Kconfig
+index 95d3ee8..2838aa4 100644
+--- a/drivers/char/lirc/Kconfig
++++ b/drivers/char/lirc/Kconfig
+@@ -261,7 +261,7 @@ config LIRC_SUPPORT
+ 			depends on LIRC_SIR
+         config LIRC_STM
+                 tristate "STM Lirc support"
+-                depends on LIRC_SUPPORT && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB448 || SH_ST_HMS1 || SH_ST_MB520 || SH_ST_MB618)
++                depends on LIRC_SUPPORT && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB448 || SH_ST_HMS1 || SH_ST_MB520 || SH_ST_MB618 || SH_ST_MB680)
+ 		help
+ 		  The IR and UHF are identical and independent, except
+ 		  that the IRB receiver does not use the noise filter.
+@@ -270,7 +270,7 @@ config LIRC_SUPPORT
+ 
+         config LIRC_STM_UHF_RX
+ 	        bool "UHF Receiver mode"
+-		depends on LIRC_STM && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB520 || SH_ST_MB618)
++		depends on LIRC_STM && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB520 || SH_ST_MB618 || SH_ST_MB680)
+ 		help
+ 		  This causes the driver to use UHF RX mode.
+ 
+-- 
+1.5.3.6
+

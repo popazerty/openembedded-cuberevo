@@ -1,0 +1,40 @@
+From 2e751785cff6ad8030d85a99ed4ace17be5e6a01 Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Mon, 15 Sep 2008 18:29:01 +0200
+Subject: [PATCH] sh: get_current_thread_info can use r7_bank register
+
+Due to a typo in entry-macros.S, we are not using r7_bank
+register to retrievethe current thread_info.
+Fix already available on git but never spotted internally before.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ include/asm-sh/entry-macros.S |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/asm-sh/entry-macros.S b/include/asm-sh/entry-macros.S
+index 500030e..2dab0b8 100644
+--- a/include/asm-sh/entry-macros.S
++++ b/include/asm-sh/entry-macros.S
+@@ -12,7 +12,7 @@
+ 	not	r11, r11
+ 	stc	sr, r10
+ 	and	r11, r10
+-#ifdef CONFIG_HAS_SR_RB
++#ifdef CONFIG_CPU_HAS_SR_RB
+ 	stc	k_g_imask, r11
+ 	or	r11, r10
+ #endif
+@@ -20,7 +20,7 @@
+ 	.endm
+ 
+ 	.macro	get_current_thread_info, ti, tmp
+-#ifdef CONFIG_HAS_SR_RB
++#ifdef CONFIG_CPU_HAS_SR_RB
+ 	stc	r7_bank, \ti
+ #else
+ 	mov	#((THREAD_SIZE - 1) >> 10) ^ 0xff, \tmp
+-- 
+1.5.3.6
+

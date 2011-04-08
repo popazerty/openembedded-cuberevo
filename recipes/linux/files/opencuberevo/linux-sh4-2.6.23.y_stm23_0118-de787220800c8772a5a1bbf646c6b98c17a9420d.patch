@@ -1,0 +1,193 @@
+From de787220800c8772a5a1bbf646c6b98c17a9420d Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Mon, 16 Feb 2009 16:26:16 +0100
+Subject: [PATCH] stm_usb: Fix EHCI/OHCI to work with PM
+
+This patch fixes the EHCI and OHCI PM suspend and resume support.
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/usb/host/ehci-stcore.c |   37 ++++++++++++++------------------
+ drivers/usb/host/ohci-stcore.c |   45 +--------------------------------------
+ 2 files changed, 18 insertions(+), 64 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-stcore.c b/drivers/usb/host/ehci-stcore.c
+index b8d61bf..0aa629d 100644
+--- a/drivers/usb/host/ehci-stcore.c
++++ b/drivers/usb/host/ehci-stcore.c
+@@ -13,7 +13,6 @@
+ #include <linux/stm/soc.h>
+ #include <linux/stm/pm.h>
+ 
+-/*#include "stb7100-common.h"*/
+ /* The transaction opcode is programmed in this register */
+ #define AHB2STBUS_STBUS_OPC_OFFSET      0x00    /* From PROTOCOL_BASE */
+ #define AHB2STBUS_STBUS_OPC_4BIT        0x00
+@@ -64,7 +63,7 @@
+ 
+ #ifdef CONFIG_USB_DEBUG
+ #define dgb_print(fmt, args...)			\
+-		printk(KERN_DEBUG "%s: " fmt, __FUNCTION__ , ## args)
++		printk(KERN_INFO "%s: " fmt, __FUNCTION__ , ## args)
+ #else
+ #define dgb_print(fmt, args...)
+ #endif
+@@ -152,7 +151,6 @@ static int ehci_hcd_stm_probe(struct platform_device *dev)
+ 	struct plat_usb_data *pdata = dev->dev.platform_data;
+ 	struct resource *res;
+ 
+-
+ 	hcd = usb_create_hcd(&ehci_stm_hc_driver, &dev->dev, dev->dev.bus_id);
+ 	if (!hcd) {
+ 		retval = -ENOMEM;
+@@ -311,6 +309,7 @@ static int st_usb_probe(struct platform_device *pdev)
+ 		ehci_hcd_stm_probe(pdev); /* is it EHCI able ? */
+ 		pdata->ehci_hcd = pdev->dev.driver_data;
+ 	}
++
+ #ifdef CONFIG_USB_OHCI_HCD
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+ 	if (res->start) {
+@@ -333,43 +332,39 @@ static int st_usb_suspend(struct platform_device *pdev, pm_message_t state)
+ {
+ 	struct plat_usb_data *pdata = pdev->dev.platform_data;
+ 	unsigned long wrapper_base = pdata->ahb2stbus_wrapper_glue_base;
++	void *protocol_base = pdata->ahb2stbus_protocol_base;
+ 	struct usb_hcd *hcd = pdata->ehci_hcd;
+-	struct ehci_hcd *ehci = hcd_to_ehci (hcd);
+ 	long reg;
+ 	dgb_print("\n");
+ 
+-	if (ehci)
+-		ehci_writel(ehci, 1, &ehci->regs->configured_flag);
+-
+ 	if (pdata->flags & USB_FLAGS_STRAP_PLL) {
+ 		/* PLL turned off */
+ 		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
+ 		writel(reg | AHB2STBUS_STRAP_PLL,
+ 			wrapper_base + AHB2STBUS_STRAP_OFFSET);
+ 	}
++
++	writel(0, hcd->regs + AHB2STBUS_INSREG01_OFFSET);
++	writel(0, wrapper_base + AHB2STBUS_STRAP_OFFSET);
++	writel(0, protocol_base + AHB2STBUS_STBUS_OPC_OFFSET);
++	writel(0, protocol_base + AHB2STBUS_MSGSIZE_OFFSET);
++	writel(0, protocol_base + AHB2STBUS_CHUNKSIZE_OFFSET);
++	writel(0, protocol_base + AHB2STBUS_MSGSIZE_OFFSET);
++
++	writel(1, protocol_base + AHB2STBUS_SW_RESET);
++	mdelay(10);
++	writel(0, protocol_base + AHB2STBUS_SW_RESET);
++
+ 	platform_pm_pwdn_req(pdev, HOST_PM | PHY_PM, 1);
+ 	platform_pm_pwdn_ack(pdev, HOST_PM | PHY_PM, 1);
+ 	return 0;
+ }
+ static int st_usb_resume(struct platform_device *pdev)
+ {
+-	struct plat_usb_data *pdata = pdev->dev.platform_data;
+-	void *protocol_base = pdata->ahb2stbus_protocol_base;
+-	void *wrapper_base = pdata->ahb2stbus_wrapper_glue_base;
+-	long reg;
+ 	dgb_print("\n");
+ 	platform_pm_pwdn_req(pdev, HOST_PM | PHY_PM, 0);
+ 	platform_pm_pwdn_ack(pdev, HOST_PM | PHY_PM, 0);
+-	if (pdata->flags & USB_FLAGS_STRAP_PLL) {
+-		/* Start PLL */
+-		reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-		writel(reg | AHB2STBUS_STRAP_PLL,
+-			wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-		mdelay(30);
+-		writel(reg & (~AHB2STBUS_STRAP_PLL),
+-			wrapper_base + AHB2STBUS_STRAP_OFFSET);
+-		mdelay(30);
+-	}
++	st_usb_boot(pdev);
+ 	return 0;
+ }
+ #else
+diff --git a/drivers/usb/host/ohci-stcore.c b/drivers/usb/host/ohci-stcore.c
+index 442c7af..20a1b0c 100644
+--- a/drivers/usb/host/ohci-stcore.c
++++ b/drivers/usb/host/ohci-stcore.c
+@@ -48,40 +48,11 @@ static int stm_ohci_bus_suspend(struct usb_hcd *hcd)
+ {
+ 	dgb_print("\n");
+ 	ohci_bus_suspend(hcd);
+-
+-	/* disable the interrupts */
+-#if 0
+-/*
+- * At the moment I don't know why
+- * but the next ochi_writel is the
+- * source of the problem...
+- */
+-	ohci_writel(ohci, OHCI_INTR_SO | OHCI_INTR_WDH |
+-		   OHCI_INTR_SF | OHCI_INTR_RD  |
+-		   OHCI_INTR_UE | OHCI_INTR_FNO |
+-		   OHCI_INTR_RHSC  | OHCI_INTR_OC |
+-		   OHCI_INTR_MIE | OHCI_INTR_UE, &ohci->regs->intrdisable);
+-#else
+-	disable_irq(hcd->irq);
+ 	usb_root_hub_lost_power(hcd->self.root_hub);
+-#endif
+-
+-
+-	return 0;
+-}
+-
+-static int stm_ohci_bus_resume(struct usb_hcd *hcd)
+-{
+-	dgb_print("\n");
+-	ohci_bus_resume(hcd);
+-#if 1
+-	enable_irq(hcd->irq);
+-#endif
+ 	return 0;
+ }
+ #else
+ #define stm_ohci_bus_suspend		NULL
+-#define stm_ohci_bus_resume		NULL
+ #endif
+ 
+ static const struct hc_driver ohci_st40_hc_driver = {
+@@ -96,6 +67,7 @@ static const struct hc_driver ohci_st40_hc_driver = {
+ 	/* basic lifecycle operations */
+ 	.start =		ohci_st40_start,
+ 	.stop =			ohci_stop,
++	.shutdown = ohci_shutdown,
+ 
+ 	/* managing i/o requests and associated device resources */
+ 	.urb_enqueue =		ohci_urb_enqueue,
+@@ -110,7 +82,7 @@ static const struct hc_driver ohci_st40_hc_driver = {
+ 	.hub_control =		ohci_hub_control,
+ #ifdef CONFIG_PM
+ 	.bus_suspend =		stm_ohci_bus_suspend,
+-	.bus_resume =		stm_ohci_bus_resume,
++	.bus_resume =		ohci_bus_resume,
+ #endif
+ 	.start_port_reset =	ohci_start_port_reset,
+ };
+@@ -169,19 +141,6 @@ err0:
+ 	return retval;
+ }
+ 
+-static int ohci_hcd_stm_remove(struct platform_device *pdev)
+-{
+-	struct usb_hcd *hcd = platform_get_drvdata(pdev);
+-
+-	dgb_print("\n");
+-	usb_remove_hcd(hcd);
+-	iounmap(hcd->regs);
+-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+-	usb_put_hcd(hcd);
+-
+-	return 0;
+-}
+-
+ static struct platform_driver ohci_hcd_stm_driver = {
+ 	.driver.name = "stm-ohci",
+ };
+-- 
+1.5.6.3
+

@@ -1,0 +1,38 @@
+From f3fdb280e3d9245f3cc8329304b34b6e9bac5515 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 18 Nov 2009 14:16:50 +0000
+Subject: [PATCH] sh_stm: Change the clocking framework used by Freeman 510
+
+As the new clocking framework is being compiled for ST parts now,
+it's better to use related header...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-fli7510.c |    5 +----
+ 1 files changed, 1 insertions(+), 4 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-fli7510.c b/arch/sh/kernel/cpu/sh4/clock-fli7510.c
+index de124de..915f5c6 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-fli7510.c
++++ b/arch/sh/kernel/cpu/sh4/clock-fli7510.c
+@@ -7,16 +7,13 @@
+  * Code to handle the clockgen hardware on the Freeman 510 (FLI7510).
+  */
+ 
+-#include <asm/clock.h>
+-#include <asm/freq.h>
+ #include <linux/err.h>
+ #include <linux/io.h>
+ #include <linux/init.h>
+ #include <linux/kernel.h>
+ #include <linux/pm.h>
+ #include <linux/stm/sysconf.h>
+-
+-#include "clock-common.h"
++#include <linux/stm/clk.h>
+ 
+ 
+ 
+-- 
+1.6.0.6
+

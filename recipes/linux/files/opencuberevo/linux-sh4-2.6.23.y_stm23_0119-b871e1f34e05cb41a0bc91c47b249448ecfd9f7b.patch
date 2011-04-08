@@ -1,0 +1,129 @@
+From b871e1f34e05cb41a0bc91c47b249448ecfd9f7b Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 20 May 2009 10:58:45 +0200
+Subject: [PATCH] stm: pm: Fixed compilation error on 5197 when PM enabled
+
+This patch fixes several compilation errors when the power
+management is enabled in the kernel.
+Now aligned to the new sysconf (block based) API.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c |   28 +++----------------------
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c       |    6 +++-
+ arch/sh/kernel/cpu/sh4/suspend-stx5197.c     |    4 +-
+ 3 files changed, 10 insertions(+), 28 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
+index 3a9e50c..beb7c21 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
+@@ -17,8 +17,7 @@ usb_pwr_ack(struct platform_device *dev, int host_phy, int on)
+ 	static struct sysconf_field *sc;
+ 	int i;
+ 	if (!sc)
+-		sc = sysconf_claim(SYS_STA, CFG_MONITOR_E, 30, 30,
+-			"usb pwd ack");
++		sc = sysconf_claim(CFG_MONITOR_E, 30, 30, "USB");
+ 	for (i = 5; i; --i) {
+ 		if (sysconf_read(sc) == on)
+ 			return 0;
+@@ -34,38 +33,20 @@ usb_pwr_dwn(struct platform_device *dev, int host_phy, int pwd)
+ 
+ 	/* Power on USB */
+ 	if (!sc) {
+-		sc = sysconf_claim(SYS_CFG, CFG_CONTROL_H, 8, 8, "usb pwd req");
++		sc = sysconf_claim(CFG_CTRL_H, 8, 8, "USB");
+ 	}
+ 
+ 	sysconf_write(sc, (pwd ? 1 : 0));
+ 
+ 	return 0;
+ }
+-#if 0
+-static int
+-usb_sw_reset(struct platform_device *dev, int host_phy)
+-{
+-	static struct sysconf_field *sc;
+-
+-	/* Reset USB */
+-	if (!sc)
+-		sc = sysconf_claim(SYS_CFG, 4, 4, 4, "USB_RST");
+-	sysconf_write(sc, 0);
+-	mdelay(10);
+-	sysconf_write(sc, 1);
+-	mdelay(10);
+-
+-	return 0;
+-}
+-#endif
+ 
+ static int
+ emi_pwr_dwn_req(struct platform_device *dev, int host_phy, int dwn)
+ {
+ 	static struct sysconf_field *sc;
+ 	if (!sc)
+-		sc = sysconf_claim(SYS_CFG, CFG_CONTROL_I, 31, 31,
+-			"emi pwd req");
++		sc = sysconf_claim(CFG_CTRL_I, 31, 31, "emi pwd req");
+ 
+ 	sysconf_write(sc, (dwn ? 1 : 0));
+ 	return 0;
+@@ -77,8 +58,7 @@ emi_pwr_dwn_ack(struct platform_device *dev, int host_phy, int ack)
+ 	static struct sysconf_field *sc;
+ 	int i;
+ 	if (!sc)
+-		sc = sysconf_claim(SYS_DEV, CFG_MONITOR_J, 20, 20,
+-			"emi pwr ack");
++		sc = sysconf_claim(CFG_MONITOR_J, 20, 20, "emi pwr ack");
+ 	for (i = 5; i; --i) {
+ 		if (sysconf_read(sc) == ack)
+ 			return 0;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index 3a2d984..9d72adf 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -25,6 +25,8 @@
+ #include <asm/irl.h>
+ #include <asm/irq-ilc.h>
+ 
++#include "soc-stx5197.h"
++
+ struct {
+ 	unsigned char regtype, regnum;
+ 	unsigned char off[2];
+@@ -76,11 +78,11 @@ static struct platform_device st_usb =
+ void __init stx5197_configure_usb(void)
+ {
+ 	struct sysconf_field *sc;
+-
++#ifndef CONFIG_PM
+ 	/* USB power down */
+ 	sc = sysconf_claim(CFG_CTRL_H, 8, 8, "USB");
+ 	sysconf_write(sc, 0);
+-
++#endif
+ 	/* DDR enable for ULPI. 0=8 bit SDR ULPI, 1=4 bit DDR ULPI */
+ 	sc = sysconf_claim(CFG_CTRL_M, 12, 12, "USB");
+ 	sysconf_write(sc, 0);
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx5197.c b/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
+index ee793ad..4c19238 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
+@@ -157,11 +157,11 @@ static int __init suspend_platform_setup(void)
+ 
+ 	struct sysconf_field* sc;
+ 
+-	sc = sysconf_claim(SYS_DEV, CFG_MONITOR_J, 24, 24, "LMI pwd ack");
++	sc = sysconf_claim(CFG_MONITOR_J, 24, 24, "LMI pwd ack");
+ 	stx5197_wrt_table[_SYS_MON_J] = (unsigned long)sysconf_address(sc);
+ 	stx5197_wrt_table[_SYS_MON_J_MASK] = sysconf_mask(sc);
+ 
+-	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_H, 26, 26, "LMI pwd req");
++	sc = sysconf_claim(CFG_CTRL_H, 26, 26, "LMI pwd req");
+ 	stx5197_wrt_table[_SYS_CFG_H] = (unsigned long)sysconf_address(sc);
+ 	stx5197_wrt_table[_SYS_CFG_H_MASK] = sysconf_mask(sc);
+ 
+-- 
+1.6.0.6
+

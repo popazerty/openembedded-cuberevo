@@ -1,0 +1,940 @@
+sh: This patch adds callgraph support for sh.
+
+This patch improves the oprofile support on sh and
+adds callgraph support.
+
+Signed-off-by: Dave Peverley <dpeverley@mpc-data.co.uk>
+Signed-off-by: Chris Smith<chris.smith@st.com>
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/backtrace.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/backtrace.c	2008-07-01 10:35:17.000000000 +0100
+@@ -0,0 +1,151 @@
++/*
++ * SH specific backtracing code for oprofile
++ *
++ * Copyright 2007 STMicroelectronics Ltd.
++ *
++ * Author: Dave Peverley <dpeverley@mpc-data.co.uk>
++ *
++ * Based on ARM oprofile backtrace code by Richard Purdie and in turn, i386
++ * oprofile backtrace code by John Levon, David Smith
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++
++#include <linux/oprofile.h>
++#include <linux/sched.h>
++#include <linux/kallsyms.h>
++#include <linux/mm.h>
++#include <asm/ptrace.h>
++#include <asm/uaccess.h>
++#include <asm/sections.h>
++
++
++
++
++/* Limit to stop backtracing too far. */
++static int backtrace_limit = 20;
++
++
++static int valid_kernel_stack(unsigned long *stackaddr, struct pt_regs *regs);
++
++
++
++static unsigned long *
++kernel_backtrace(unsigned long *stackaddr, struct pt_regs *regs)
++{
++        unsigned long addr;
++
++
++        /*
++         * If not a valid kernel address, keep going till we find one
++         * or the SP stops being a valid address.
++         */
++        do {
++                addr = *stackaddr++;
++
++                if (kernel_text_address(addr)) {
++                        oprofile_add_trace(addr);
++                        break;
++                }
++        } while (valid_kernel_stack(stackaddr, regs));
++
++        return stackaddr;
++}
++
++
++
++static unsigned long *
++user_backtrace(unsigned long *stackaddr, struct pt_regs *regs)
++{
++        unsigned long buf_stack;
++
++
++        /* Also check accessibility of address */
++        if (!access_ok(VERIFY_READ, stackaddr, sizeof(unsigned long))) {
++                return NULL;
++        }
++        if (__copy_from_user_inatomic(&buf_stack, stackaddr, sizeof(unsigned long))) {
++                return NULL;
++        }
++
++        /* Quick paranoia check */
++        if (buf_stack & 3) {
++                return NULL;
++        }
++
++        /*
++         * TODO : This doesn't work!
++         */
++
++#if 0
++        printk("user_backtrace() : R15 0x%08lx ", regs->regs[15]);
++        print_symbol("[%-10s] ",  regs->regs[15]);
++
++        printk("PC  0x%08lx ", regs->pc);
++        print_symbol("[%-10s] ", regs->pc);
++
++        printk("PR  0x%08lx ", regs->pr);
++        print_symbol("[%-10s]\n", regs->pr);
++#endif
++
++        oprofile_add_trace(buf_stack);
++
++        stackaddr++;
++
++        return stackaddr;
++}
++
++/*
++ * |             | /\ Higher addresses
++ * |             |
++ * --------------- stack base (address of current_thread_info)
++ * | thread info |
++ * .             .
++ * |    stack    |
++ * --------------- saved regs->regs[15] value if valid
++ * .             .
++ * --------------- struct pt_regs stored on stack (struct pt_regs *)
++ * |             |
++ * .             .
++ * |             |
++ * --------------- ???
++ * |             |
++ * |             | \/ Lower addresses
++ *
++ * Thus, &pt_regs <-> stack base restricts the valid(ish) fp values
++ */
++static int valid_kernel_stack(unsigned long *stackaddr, struct pt_regs *regs)
++{
++        unsigned long stack = (unsigned long)regs;
++        unsigned long stack_base = (stack & ~(THREAD_SIZE - 1)) + THREAD_SIZE;
++
++        return ((unsigned long)stackaddr > stack) && ((unsigned long)stackaddr < stack_base);
++}
++
++void sh_backtrace(struct pt_regs * const regs, unsigned int depth)
++{
++        unsigned long *stackaddr;
++
++
++        /*
++         * Paranoia - clip max depth as we could get lost in the weeds.
++         */
++        if (depth > backtrace_limit)
++                depth = backtrace_limit;
++
++        stackaddr = (unsigned long *)regs->regs[15];
++
++        if (!user_mode(regs)) {
++                while (depth-- && valid_kernel_stack(stackaddr, regs))
++                        stackaddr = kernel_backtrace(stackaddr, regs);
++
++                return;
++        }
++
++        while (depth-- && (stackaddr != NULL)) {
++                stackaddr = user_backtrace(stackaddr, regs);
++        }
++}
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/common.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/common.c	2008-07-01 10:35:17.000000000 +0100
+@@ -0,0 +1,106 @@
++/*
++ * arch/sh/oprofile/op_model_null.c
++ *
++ * Copyright (C) 2003  Paul Mundt
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#include <linux/kernel.h>
++#include <linux/oprofile.h>
++#include <linux/init.h>
++#include <linux/errno.h>
++#include <linux/slab.h>
++#include <linux/sysdev.h>
++#include <linux/mutex.h>
++
++
++#include "op_sh_model.h"
++#include "op_counter.h"
++
++static struct op_sh_model_spec *op_sh_model;
++static int op_sh_enabled;
++static DEFINE_MUTEX(op_sh_mutex);
++
++struct op_counter_config *counter_config;
++
++static int op_sh_setup(void)
++{
++        int ret;
++
++        spin_lock(&oprofilefs_lock);
++        ret = op_sh_model->setup_ctrs();
++        spin_unlock(&oprofilefs_lock);
++        return ret;
++}
++
++static int op_sh_start(void)
++{
++        int ret = -EBUSY;
++
++        mutex_lock(&op_sh_mutex);
++        if (!op_sh_enabled) {
++                ret = op_sh_model->start();
++                op_sh_enabled = !ret;
++        }
++        mutex_unlock(&op_sh_mutex);
++        return ret;
++}
++
++static void op_sh_stop(void)
++{
++        mutex_lock(&op_sh_mutex);
++        if (op_sh_enabled)
++                op_sh_model->stop();
++        op_sh_enabled = 0;
++        mutex_unlock(&op_sh_mutex);
++}
++
++#ifdef CONFIG_PM
++#error This needs to be implemented!
++#else
++#define init_driverfs() do { } while (0)
++#define exit_driverfs() do { } while (0)
++#endif /* CONFIG_PM */
++
++
++int __init oprofile_arch_init(struct oprofile_operations *ops)
++{
++        struct op_sh_model_spec *spec = NULL;
++        int ret = -ENODEV;
++
++#if defined(CONFIG_CPU_SUBTYPE_STB7100)
++	spec = &op_sh7109_spec;
++#else
++        spec = &op_shtimer_spec;
++#endif
++
++	if (spec) {
++                ret = spec->init();
++
++                if (ret < 0)
++                        return ret;
++
++                op_sh_model = spec;
++                init_driverfs();
++                ops->create_files       = NULL;
++                ops->setup              = op_sh_setup;
++                ops->shutdown           = op_sh_stop;
++                ops->start              = op_sh_start;
++                ops->stop               = op_sh_stop;
++                ops->cpu_type           = op_sh_model->name;
++		ops->backtrace          = sh_backtrace;
++                printk(KERN_INFO "oprofile: using %s\n", spec->name);
++	}
++
++	return ret;
++}
++
++void oprofile_arch_exit(void)
++{
++        if (op_sh_model) {
++                exit_driverfs();
++                op_sh_model = NULL;
++        }
++}
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/Makefile
+===================================================================
+--- linux-sh4-2.6.23.17_stm23_0113.orig/arch/sh/oprofile/Makefile	2007-10-09 21:31:38.000000000 +0100
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/Makefile	2008-07-01 10:35:17.000000000 +0100
+@@ -6,12 +6,15 @@
+ 		oprofilefs.o oprofile_stats.o \
+ 		timer_int.o )
+ 
+-profdrvr-y				:= op_model_null.o
++profdrvr-y				:= common.o backtrace.o op_model_timer.o
+ 
+ # SH7750-style performance counters exist across 7750/7750S and 7091.
+-profdrvr-$(CONFIG_CPU_SUBTYPE_SH7750S)	:= op_model_sh7750.o
+-profdrvr-$(CONFIG_CPU_SUBTYPE_SH7750)	:= op_model_sh7750.o
+-profdrvr-$(CONFIG_CPU_SUBTYPE_SH7091)	:= op_model_sh7750.o
++profdrvr-$(CONFIG_CPU_SUBTYPE_SH7750S)	+= op_model_sh7750.o
++profdrvr-$(CONFIG_CPU_SUBTYPE_SH7750)	+= op_model_sh7750.o
++profdrvr-$(CONFIG_CPU_SUBTYPE_SH7091)	+= op_model_sh7750.o
++
++# SH7109 has a PWM timer we nab for performance timing.
++profdrvr-$(CONFIG_CPU_SUBTYPE_STB7100)  += op_model_sh7109.o
+ 
+ oprofile-y				:= $(DRIVER_OBJS) $(profdrvr-y)
+ 
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_counter.h
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_counter.h	2008-07-01 10:35:17.000000000 +0100
+@@ -0,0 +1,29 @@
++/**
++ * @file op_counter.h
++ *
++ * @remark Copyright 2004 Oprofile Authors
++ * @remark Read the file COPYING
++ *
++ * @author Zwane Mwaikambo
++ */
++
++#ifndef OP_COUNTER_H
++#define OP_COUNTER_H
++
++#define OP_MAX_COUNTER 5
++
++/* Per performance monitor configuration as set via
++ * oprofilefs.
++ */
++struct op_counter_config {
++	unsigned long count;
++	unsigned long enabled;
++	unsigned long event;
++	unsigned long unit_mask;
++	unsigned long kernel;
++	unsigned long user;
++};
++
++extern struct op_counter_config *counter_config;
++
++#endif /* OP_COUNTER_H */
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_model_null.c
+===================================================================
+--- linux-sh4-2.6.23.17_stm23_0113.orig/arch/sh/oprofile/op_model_null.c	2007-10-09 21:31:38.000000000 +0100
++++ /dev/null	1970-01-01 00:00:00.000000000 +0000
+@@ -1,23 +0,0 @@
+-/*
+- * arch/sh/oprofile/op_model_null.c
+- *
+- * Copyright (C) 2003  Paul Mundt
+- *
+- * This file is subject to the terms and conditions of the GNU General Public
+- * License.  See the file "COPYING" in the main directory of this archive
+- * for more details.
+- */
+-#include <linux/kernel.h>
+-#include <linux/oprofile.h>
+-#include <linux/init.h>
+-#include <linux/errno.h>
+-
+-int __init oprofile_arch_init(struct oprofile_operations *ops)
+-{
+-	return -ENODEV;
+-}
+-
+-void oprofile_arch_exit(void)
+-{
+-}
+-
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_model_sh7109.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_model_sh7109.c	2008-07-01 12:53:01.000000000 +0100
+@@ -0,0 +1,442 @@
++/*
++ * arch/sh/oprofile/op_model_sh7109.c
++ *
++ * Copyright (C) 2007 Dave Peverley
++ *
++ * PWM timer code shamelessly pilfered from :
++ *   drivers/hwmon/stm-pwm.c
++ *
++ * Note that the "PWM" name is a bit of a red-herring as we're not really
++ * using the PWM part of the peripheral, but the "compare" part of the
++ * capture-compare side.
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/notifier.h>
++#include <linux/smp.h>
++#include <linux/oprofile.h>
++#include <linux/interrupt.h>
++#include <linux/profile.h>
++#include <linux/init.h>
++#include <asm/ptrace.h>
++#include <linux/errno.h>
++#include <linux/ioport.h>
++#include <asm/io.h>
++
++#include "op_sh_model.h"
++
++
++
++/*
++ * Hard-wire the profiler sample frequency (in Hz)
++ */
++#define PROFILER_FREQ       500
++
++
++/*
++ * The capture-compare block uses the cpu clock @ 100MHz
++ */
++#define CC_CLK_FREQ         100000000
++
++/* TODO : This should be defined elsewhere? */
++#define SH7109_PWM_IRQ      126
++
++
++
++struct stm_pwm_counter {
++        unsigned long compare_increment;
++};
++
++
++
++static struct stm_pwm_counter results;
++
++/*
++ * PWM Registers
++ */
++
++#define SH7109_PWM_TIMER_BASE_ADDRESS   0x18010000
++
++#define PWM0_VAL_REG                    0x00
++#define PWM1_VAL_REG                    0x04
++#define PWM0_CPT_VAL_REG                0x10
++#define PWM1_CPT_VAL_REG                0x14
++#define PWM0_CMP_VAL_REG                0x20
++#define PWM1_CMP_VAL_REG                0x24
++#define PWM0_CPT_EDGE_REG               0x30
++#define PWM1_CPT_EDGE_REG               0x34
++#define PWM0_CMP_OUT_VAL_REG            0x40
++#define PWM1_CMP_OUT_VAL_REG            0x44
++#define PWM_CTRL_REG                    0x50
++#define PWM_INT_EN_REG                  0x54
++#define PWM_INT_STA_REG                 0x58
++#define PWM_INT_ACK_REG                 0x5C
++#define PWM_CNT_REG                     0x60
++#define PWM_CPT_CMP_CNT_REG             0x64
++
++/* Bit PWM_CTRL Definitions. */
++#define PWM_CTRL_PWM_CLK_VAL4_SHIFT     11
++#define PWM_CTRL_PWM_CLK_VAL4_MASK      0x0f
++#define PWM_CTRL_CPT_EN                 (1 << 10)
++#define PWM_CTRL_PWM_EN                 (1 << 9)
++#define PWM_CTRL_CPT_CLK_VAL_SHIFT      4
++#define PWM_CTRL_CPT_CLK_VAL_MASK       0x1f
++#define PWM_CTRL_PWM_CLK_VAL0_SHIFT     0
++#define PWM_CTRL_PWM_CLK_VAL0_MASK      0x0f
++
++/*
++ * Bit Definitions for :
++ *   PWM_INT_EN
++ *   PWM_INT_STA
++ *   PWM_INT_ACK
++ * These are the same bits in all three registers.
++ */
++#define CMP1_INT_EN                     (1 << 6)
++#define CMP0_INT_EN                     (1 << 5)
++#define CPT1_INT_EN                     (1 << 2)
++#define CPT0_INT_EN                     (1 << 1)
++#define PWM_INT_EN                      (1 << 0)
++
++
++
++
++/*
++ * PWM Timer support
++ *
++ * The PWM peripheral has two identical programmable timers. We're going
++ * to use PWM1, the second channel, exclusively for the profiler irq
++ * generation.
++ */
++
++struct stm_pwm {
++        struct resource *mem;
++        unsigned long base;
++};
++
++struct stm_pwm *pwm;
++
++
++
++/***********************************************************************
++ * pwm_init()
++ *
++ * Initialise the PWM1 counter registers to a known state ready for
++ * use.
++ */
++void pwm_init(void)
++{
++        u32 reg = 0;
++
++
++        /* Disable PWM if currently running */
++        reg = ctrl_inl(pwm->base + PWM_CTRL_REG);
++        reg &= ~(PWM_CTRL_PWM_EN);
++        reg &= ~(PWM_CTRL_CPT_EN);
++        ctrl_outl(reg, pwm->base + PWM_CTRL_REG);
++
++        /* Disable all PWM related interrupts */
++        ctrl_outl(0, pwm->base + PWM_INT_EN_REG);
++
++        /* Initial reload value for PWM1 counter. */
++        ctrl_outl(0, pwm->base + PWM1_VAL_REG);
++
++        return;
++}
++
++
++
++/***********************************************************************
++ * pwm_set_frequency()
++ *
++ * Set the interrupt generation of the PWM1 counter. The frequency is
++ * specified in HZ.
++ * use.
++ */
++void pwm_set_frequency(unsigned int freq_hz)
++{
++        u32 reg = 0;
++        u32 psc;
++
++
++        printk(KERN_INFO "oprofile: Setting profiler frequency to %d Hz\n", freq_hz);
++
++        /*
++         * The input clock top the capture-compare is the CPU Clock which is 100MHz.
++         * We can use this as-is for profiling.
++         */
++
++
++        /* Set initial capture counter clock prescale value to x1. */
++        psc = 0x00;
++
++        reg &= ~(PWM_CTRL_CPT_CLK_VAL_MASK << PWM_CTRL_CPT_CLK_VAL_SHIFT);
++        reg |= (psc & PWM_CTRL_CPT_CLK_VAL_MASK) << PWM_CTRL_CPT_CLK_VAL_SHIFT;
++
++        ctrl_outl(reg, pwm->base + PWM_CTRL_REG);
++
++
++        /* PWM1 compare interrupt on value 0. */
++        results.compare_increment = CC_CLK_FREQ / freq_hz;
++
++        reg = (u32)results.compare_increment;
++        ctrl_outl(reg, pwm->base + PWM1_CMP_VAL_REG);
++
++        return;
++}
++
++
++
++/***********************************************************************
++ * pwm_irq_enable()
++ *
++ * Enable interrupt generation by the PWM counter.
++ */
++void pwm_irq_enable(void)
++{
++        u32 reg = 0;
++
++
++        /*
++         * TODO : Just enable & ack all the sources for now!
++         */
++
++        reg = ctrl_inl(pwm->base + PWM_INT_ACK_REG);
++        reg |= CMP1_INT_EN;
++        //        reg |= CMP0_INT_EN;
++        reg |= CPT1_INT_EN;
++        //        reg |= CPT0_INT_EN;
++        //        reg |= PWM_INT_EN;
++        ctrl_outl(reg, pwm->base + PWM_INT_ACK_REG);
++
++        reg = ctrl_inl(pwm->base + PWM_INT_EN_REG);
++        reg |= CMP1_INT_EN;
++        //        reg |= CMP0_INT_EN;
++        reg |= CPT1_INT_EN;
++        //        reg |= CPT0_INT_EN;
++        //        reg |= PWM_INT_EN;
++        ctrl_outl(reg, pwm->base + PWM_INT_EN_REG);
++
++        return;
++}
++
++
++
++/***********************************************************************
++ * pwm_irq_disable()
++ *
++ * Disable interrupt generation by the PWM counter.
++ */
++void pwm_irq_disable(void)
++{
++        u32 reg = 0;
++
++
++        /* Disable the PWM1 interrupt source. */
++
++        reg = ctrl_inl(pwm->base + PWM_INT_EN_REG);
++        reg &= ~(CMP1_INT_EN);
++        ctrl_outl(reg, pwm->base + PWM_INT_EN_REG);
++
++        return;
++}
++
++
++
++/***********************************************************************
++ * pwm_counter_start()
++ *
++ * Start the PWM1 counter
++ */
++void pwm_counter_start(void)
++{
++        volatile u32 reg = 0;
++
++
++        /* Reset counters. */
++        ctrl_outl(0, pwm->base + PWM_CNT_REG);
++        ctrl_outl(0, pwm->base + PWM_CPT_CMP_CNT_REG);
++
++        /* Enable the pwm counter. */
++        reg = ctrl_inl(pwm->base + PWM_CTRL_REG);
++        reg |= PWM_CTRL_PWM_EN;
++        reg |= PWM_CTRL_CPT_EN;
++        ctrl_outl(reg, pwm->base + PWM_CTRL_REG);
++
++        return;
++}
++
++
++
++/***********************************************************************
++ * pwm_counter_stop()
++ *
++ * Stop the PWM1 counter
++ */
++void pwm_counter_stop(void)
++{
++        u32 reg = 0;
++
++
++        reg = ctrl_inl(pwm->base + PWM_CTRL_REG);
++        reg |= PWM_CTRL_PWM_EN;
++        ctrl_outl(reg, pwm->base + PWM_CTRL_REG);
++
++        return;
++}
++
++
++
++
++
++/*
++ * Hooks for oprofile
++ */
++
++
++/***********************************************************************
++ * sh7109_setup_ctrs()
++ *
++ *
++ */
++static int sh7109_setup_ctrs(void)
++{
++        pwm_set_frequency(PROFILER_FREQ);
++
++        return 0;
++}
++
++
++
++/***********************************************************************
++ * sh7109_pwm_interrupt()
++ *
++ *
++ */
++static irqreturn_t sh7109_pwm_interrupt(int irq, void *dev_id)
++{
++        u32 reg = 0;
++        struct pt_regs *regs = get_irq_regs();
++
++        /* Give the sample to oprofile. */
++        oprofile_add_sample(regs, 0);
++
++        /* Update the compare value. */
++        reg = ctrl_inl(pwm->base + PWM1_CMP_VAL_REG);
++        reg += results.compare_increment;
++        ctrl_outl(reg, pwm->base + PWM1_CMP_VAL_REG);
++
++        /* Ack active irq sources. */
++        reg = ctrl_inl(pwm->base + PWM_INT_STA_REG);
++        ctrl_outl(reg, pwm->base + PWM_INT_ACK_REG);
++
++
++        return IRQ_HANDLED;
++}
++
++
++
++/***********************************************************************
++ * sh7109_stop()
++ *
++ *
++ */
++static void sh7109_stop(void)
++{
++        pwm_irq_disable();
++        pwm_counter_stop();
++
++        free_irq(SH7109_PWM_IRQ, &results);
++}
++
++
++
++/***********************************************************************
++ * sh7109_start()
++ *
++ *
++ */
++static int sh7109_start(void)
++{
++        int ret;
++
++        ret = request_irq(SH7109_PWM_IRQ, sh7109_pwm_interrupt, SA_INTERRUPT,
++                        "SH7109 PWM", (void *)&results);
++
++        if (ret < 0) {
++                printk(KERN_ERR "oprofile: unable to request IRQ%d for SH7109 PWM\n",
++                        SH7109_PWM_IRQ);
++                return ret;
++        }
++
++        pwm_irq_enable();
++        pwm_counter_start();
++
++        return 0;
++}
++
++
++
++/***********************************************************************
++ * sh7109_init()
++ *
++ *
++ */
++static int sh7109_init(void)
++{
++        int err = 0;
++
++
++        /*
++         * Allocate and map memory for SH7109 PWM timer registers.
++         */
++
++        pwm = kmalloc(sizeof(struct stm_pwm), GFP_KERNEL);
++        if (pwm == NULL) {
++                err = -ENOMEM;
++                goto cleanup;
++        }
++        memset(pwm, 0, sizeof(*pwm));
++
++        pwm->mem = request_mem_region(SH7109_PWM_TIMER_BASE_ADDRESS, 0x64, "oprofile pwm timer");
++        if (pwm->mem == NULL) {
++                printk(KERN_ERR "sh7109_init: failed to claim memory region\n");
++                kfree(pwm);
++                err = -EBUSY;
++                goto cleanup;
++        }
++
++        pwm->base = (unsigned long)ioremap(SH7109_PWM_TIMER_BASE_ADDRESS, 0x64);
++        if (pwm->base == (unsigned long)NULL) {
++                printk(KERN_ERR "sh7109_init: failed ioremap");
++                kfree(pwm);
++                err = -EINVAL;
++                goto cleanup;
++        }
++
++        /* Initialise the SH7109 PWM timer peripheral. */
++        pwm_init();
++
++
++ cleanup:
++        return err;
++}
++
++
++
++/*
++ * Hooks for the common oprofile support for the SH architecture.
++ */
++struct op_sh_model_spec op_sh7109_spec = {
++        .init           = sh7109_init,
++	.num_counters   = 0,  // TODO
++	.setup_ctrs     = sh7109_setup_ctrs,
++        .start          = sh7109_start,
++        .stop           = sh7109_stop,
++//        .name           = "sh/STb710x",
++        .name           = "timer",  // TODO : Shouldn't this be STb710x or similar?
++};
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_model_sh7750.c
+===================================================================
+--- linux-sh4-2.6.23.17_stm23_0113.orig/arch/sh/oprofile/op_model_sh7750.c	2007-10-09 21:31:38.000000000 +0100
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_model_sh7750.c	2008-07-01 10:35:17.000000000 +0100
+@@ -20,6 +20,8 @@
+ #include <asm/uaccess.h>
+ #include <asm/io.h>
+ 
++#include "op_sh_model.h"
++
+ #define PM_CR_BASE	0xff000084	/* 16-bit */
+ #define PM_CTR_BASE	0xff100004	/* 32-bit */
+ 
+@@ -257,7 +259,7 @@
+ 	.stop		= sh7750_perf_counter_stop,
+ };
+ 
+-int __init oprofile_arch_init(struct oprofile_operations **ops)
++int __init oprofile_arch_init(struct oprofile_operations *ops)
+ {
+ 	if (!(current_cpu_data.flags & CPU_HAS_PERF_COUNTER))
+ 		return -ENODEV;
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_model_timer.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_model_timer.c	2008-07-01 10:35:17.000000000 +0100
+@@ -0,0 +1,69 @@
++/*
++ * arch/sh/oprofile/op_model_timer.c
++ *
++ * Copyright (C) 2007 Dave Peverley
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ *
++ * Generic SH profiling - just uses the timer interrupt. This is separate to
++ * the standard support so we can still hook into the
++ *
++ */
++#include <linux/kernel.h>
++#include <linux/notifier.h>
++#include <linux/smp.h>
++#include <linux/oprofile.h>
++#include <linux/profile.h>
++#include <linux/init.h>
++#include <asm/ptrace.h>
++#include <linux/errno.h>
++
++#include "op_sh_model.h"
++
++
++static int timer_notify(struct pt_regs *regs)
++{
++        oprofile_add_sample(regs, 0);
++        return 0;
++}
++
++static int sh_timer_setup_ctrs(void)
++{
++        /* TODO : This is using the timer irq... */
++        return 0;
++}
++
++static void sh_timer_stop(void)
++{
++        unregister_timer_hook(timer_notify);
++}
++
++static int sh_timer_start(void)
++{
++        int ret;
++
++	ret = register_timer_hook(timer_notify);
++
++        if (ret < 0) {
++                printk(KERN_ERR "oprofile: unable to register timer hook\n");
++                return ret;
++        }
++
++        return 0;
++}
++
++static int sh_timer_init(void)
++{
++        return 0;
++}
++
++struct op_sh_model_spec op_shtimer_spec = {
++        .init           = sh_timer_init,
++	.num_counters   = 0,  // TODO : Copy timer config to report?
++	.setup_ctrs     = sh_timer_setup_ctrs,
++        .start          = sh_timer_start,
++        .stop           = sh_timer_stop,
++        .name           = "timer",
++};
+Index: linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_sh_model.h
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4-2.6.23.17_stm23_0113/arch/sh/oprofile/op_sh_model.h	2008-07-01 10:35:17.000000000 +0100
+@@ -0,0 +1,32 @@
++/**
++ * @file op_sh_model.h
++ * interface to SH machine specific operations
++ *
++ * @remark Copyright 2007 STMicroelectronics
++ * @remark Read the file COPYING
++ *
++ * @author Dave Peverley
++ */
++
++#ifndef OP_SH_MODEL_H
++#define OP_SH_MODEL_H
++
++struct op_sh_model_spec {
++        int (*init)(void);
++        unsigned int num_counters;
++        int (*setup_ctrs)(void);
++        int (*start)(void);
++        void (*stop)(void);
++        char *name;
++};
++
++#if defined(CONFIG_CPU_SUBTYPE_STB7100)
++extern struct op_sh_model_spec op_sh7109_spec;
++#else
++extern struct op_sh_model_spec op_shtimer_spec;
++#endif
++
++extern void sh_backtrace(struct pt_regs * const regs, unsigned int depth);
++
++
++#endif /* OP_SH_MODEL_H */

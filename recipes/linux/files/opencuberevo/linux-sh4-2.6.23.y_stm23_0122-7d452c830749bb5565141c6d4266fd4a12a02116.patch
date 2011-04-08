@@ -1,0 +1,243 @@
+From 7d452c830749bb5565141c6d4266fd4a12a02116 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Tue, 10 Nov 2009 17:04:56 +0000
+Subject: [PATCH] sh_stm: Add front panel & fix leds devices in PDK7105 BSP
+
+This patch fixes leds definition for PDK7105 and adds a front
+panel device (driven by TM1668 chip). It also enables required
+drivers in default configs.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/boards/st/pdk7105/setup.c   |   58 ++++++++++++++++++++++++++++++----
+ arch/sh/configs/pdk7105_defconfig   |   28 ++++++++++++++--
+ arch/sh/configs/pdk7105se_defconfig |   28 ++++++++++++++--
+ 3 files changed, 99 insertions(+), 15 deletions(-)
+
+diff --git a/arch/sh/boards/st/pdk7105/setup.c b/arch/sh/boards/st/pdk7105/setup.c
+index 204c4e7..5a08d5c 100644
+--- a/arch/sh/boards/st/pdk7105/setup.c
++++ b/arch/sh/boards/st/pdk7105/setup.c
+@@ -13,6 +13,7 @@
+ #include <linux/init.h>
+ #include <linux/platform_device.h>
+ #include <linux/leds.h>
++#include <linux/tm1668.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/emi.h>
+@@ -27,8 +28,6 @@
+ #include <linux/spi/flash.h>
+ #include <linux/stm/soc_init.h>
+ #include <linux/phy.h>
+-#include <linux/gpio_keys.h>
+-#include <linux/input.h>
+ #include <asm/irq-ilc.h>
+ #include <asm/irl.h>
+ #include <asm/io.h>
+@@ -92,25 +91,69 @@ static struct usb_init_data usb_init[2] __initdata = {
+ 	}
+ };
+ 
++
++
+ static struct platform_device pdk7105_leds = {
+ 	.name = "leds-gpio",
+ 	.id = 0,
+ 	.dev.platform_data = &(struct gpio_led_platform_data) {
+ 		.num_leds = 2,
+ 		.leds = (struct gpio_led[]) {
++			/* The schematics actually describes these PIOs
++			 * the other way round, but all tested boards
++			 * had the bi-colour LED fitted like below... */
+ 			{
+-				.name = "LD5",
+-				.default_trigger = "heartbeat",
+-				.gpio = stpio_to_gpio(2, 4),
++				.name = "RED", /* This is also frontpanel LED */
++				.gpio = stpio_to_gpio(7, 0),
++				.active_low = 1,
+ 			},
+ 			{
+-				.name = "LD6",
+-				.gpio = stpio_to_gpio(2, 3),
++				.name = "GREEN",
++				.default_trigger = "heartbeat",
++				.gpio = stpio_to_gpio(7, 1),
++				.active_low = 1,
+ 			},
+ 		},
+ 	},
+ };
+ 
++static struct tm1668_key pdk7105_front_panel_keys[] = {
++	{ 0x00001000, KEY_UP, "Up (SWF2)" },
++	{ 0x00800000, KEY_DOWN, "Down (SWF7)" },
++	{ 0x00008000, KEY_LEFT, "Left (SWF6)" },
++	{ 0x00000010, KEY_RIGHT, "Right (SWF5)" },
++	{ 0x00000080, KEY_ENTER, "Enter (SWF1)" },
++	{ 0x00100000, KEY_ESC, "Escape (SWF4)" },
++};
++
++static struct tm1668_character pdk7105_front_panel_characters[] = {
++	TM1668_7_SEG_HEX_DIGITS,
++	TM1668_7_SEG_HEX_DIGITS_WITH_DOT,
++	TM1668_7_SEG_SEGMENTS,
++};
++
++static struct platform_device pdk7105_front_panel = {
++	.name = "tm1668",
++	.id = -1,
++	.dev.platform_data = &(struct tm1668_platform_data) {
++		.gpio_dio = stpio_to_gpio(11, 2),
++		.gpio_sclk = stpio_to_gpio(11, 3),
++		.gpio_stb = stpio_to_gpio(11, 4),
++		.config = tm1668_config_6_digits_12_segments,
++
++		.keys_num = ARRAY_SIZE(pdk7105_front_panel_keys),
++		.keys = pdk7105_front_panel_keys,
++		.keys_poll_period = DIV_ROUND_UP(HZ, 5),
++
++		.brightness = 8,
++		.characters_num = ARRAY_SIZE(pdk7105_front_panel_characters),
++		.characters = pdk7105_front_panel_characters,
++		.text = "7105",
++	},
++};
++
++
++
+ static struct stpio_pin *phy_reset_pin;
+ 
+ static int pdk7105_phy_reset(void* bus)
+@@ -274,6 +317,7 @@ STM_NAND_DEVICE("stm-nand-flex", 2, &nand_config,
+ static struct platform_device *pdk7105_devices[] __initdata = {
+ 	&pdk7105_physmap_flash,
+ 	&pdk7105_leds,
++	&pdk7105_front_panel,
+ 	&pdk7105_phy_device,
+ 	&spi_pio_device[0],
+ };
+diff --git a/arch/sh/configs/pdk7105_defconfig b/arch/sh/configs/pdk7105_defconfig
+index f88ef25..d552b9d 100644
+--- a/arch/sh/configs/pdk7105_defconfig
++++ b/arch/sh/configs/pdk7105_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.23.17
+-# Wed Feb 18 16:55:18 2009
++# Fri Sep 11 10:57:26 2009
+ #
+ CONFIG_SUPERH=y
+ CONFIG_RWSEM_GENERIC_SPINLOCK=y
+@@ -624,7 +624,7 @@ CONFIG_INPUT_MOUSEDEV_SCREEN_X=1024
+ CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
+ # CONFIG_INPUT_JOYDEV is not set
+ # CONFIG_INPUT_TSDEV is not set
+-# CONFIG_INPUT_EVDEV is not set
++CONFIG_INPUT_EVDEV=y
+ # CONFIG_INPUT_EVBUG is not set
+ 
+ #
+@@ -635,7 +635,14 @@ CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
+ # CONFIG_INPUT_JOYSTICK is not set
+ # CONFIG_INPUT_TABLET is not set
+ # CONFIG_INPUT_TOUCHSCREEN is not set
+-# CONFIG_INPUT_MISC is not set
++CONFIG_INPUT_MISC=y
++# CONFIG_INPUT_ATI_REMOTE is not set
++# CONFIG_INPUT_ATI_REMOTE2 is not set
++# CONFIG_INPUT_KEYSPAN_REMOTE is not set
++# CONFIG_INPUT_POWERMATE is not set
++# CONFIG_INPUT_YEALINK is not set
++# CONFIG_INPUT_UINPUT is not set
++CONFIG_INPUT_TM1668=y
+ 
+ #
+ # Hardware I/O ports
+@@ -1002,7 +1009,20 @@ CONFIG_USB_STORAGE=y
+ #
+ # CONFIG_USB_GADGET is not set
+ # CONFIG_MMC is not set
+-# CONFIG_NEW_LEDS is not set
++CONFIG_NEW_LEDS=y
++CONFIG_LEDS_CLASS=y
++
++#
++# LED drivers
++#
++CONFIG_LEDS_GPIO=y
++
++#
++# LED Triggers
++#
++CONFIG_LEDS_TRIGGERS=y
++# CONFIG_LEDS_TRIGGER_TIMER is not set
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ # CONFIG_RTC_CLASS is not set
+ 
+ #
+diff --git a/arch/sh/configs/pdk7105se_defconfig b/arch/sh/configs/pdk7105se_defconfig
+index 96b5662..0c648d4 100644
+--- a/arch/sh/configs/pdk7105se_defconfig
++++ b/arch/sh/configs/pdk7105se_defconfig
+@@ -1,7 +1,7 @@
+ #
+ # Automatically generated make config: don't edit
+ # Linux kernel version: 2.6.23.17
+-# Wed Feb 18 16:55:18 2009
++# Fri Sep 11 10:57:26 2009
+ #
+ CONFIG_SUPERH=y
+ CONFIG_RWSEM_GENERIC_SPINLOCK=y
+@@ -624,7 +624,7 @@ CONFIG_INPUT_MOUSEDEV_SCREEN_X=1024
+ CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
+ # CONFIG_INPUT_JOYDEV is not set
+ # CONFIG_INPUT_TSDEV is not set
+-# CONFIG_INPUT_EVDEV is not set
++CONFIG_INPUT_EVDEV=y
+ # CONFIG_INPUT_EVBUG is not set
+ 
+ #
+@@ -635,7 +635,14 @@ CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
+ # CONFIG_INPUT_JOYSTICK is not set
+ # CONFIG_INPUT_TABLET is not set
+ # CONFIG_INPUT_TOUCHSCREEN is not set
+-# CONFIG_INPUT_MISC is not set
++CONFIG_INPUT_MISC=y
++# CONFIG_INPUT_ATI_REMOTE is not set
++# CONFIG_INPUT_ATI_REMOTE2 is not set
++# CONFIG_INPUT_KEYSPAN_REMOTE is not set
++# CONFIG_INPUT_POWERMATE is not set
++# CONFIG_INPUT_YEALINK is not set
++# CONFIG_INPUT_UINPUT is not set
++CONFIG_INPUT_TM1668=y
+ 
+ #
+ # Hardware I/O ports
+@@ -1002,7 +1009,20 @@ CONFIG_USB_STORAGE=y
+ #
+ # CONFIG_USB_GADGET is not set
+ # CONFIG_MMC is not set
+-# CONFIG_NEW_LEDS is not set
++CONFIG_NEW_LEDS=y
++CONFIG_LEDS_CLASS=y
++
++#
++# LED drivers
++#
++CONFIG_LEDS_GPIO=y
++
++#
++# LED Triggers
++#
++CONFIG_LEDS_TRIGGERS=y
++# CONFIG_LEDS_TRIGGER_TIMER is not set
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+ # CONFIG_RTC_CLASS is not set
+ 
+ #
+-- 
+1.6.0.6
+

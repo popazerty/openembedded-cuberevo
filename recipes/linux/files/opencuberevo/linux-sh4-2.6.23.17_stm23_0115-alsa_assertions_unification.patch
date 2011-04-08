@@ -1,0 +1,2191 @@
+commit b5124edaefedb731446c6c271fc1c644efcbe136
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Thu Jul 24 09:42:33 2008 +0100
+
+    sound_stm: Unified assertions usage in drivers.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 0f7584c..be88317 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -49,8 +49,8 @@ static int snd_stm_card_registered;
+ struct snd_card *snd_stm_card_new(int index, const char *id,
+ 		struct module *module)
+ {
+-	snd_assert(snd_stm_card == NULL, return NULL);
+-	snd_assert(!snd_stm_card_registered, return NULL);
++	snd_stm_assert(snd_stm_card == NULL, return NULL);
++	snd_stm_assert(!snd_stm_card_registered, return NULL);
+ 
+ 	snd_stm_card = snd_card_new(index, id, module, 0);
+ 
+@@ -62,8 +62,8 @@ int snd_stm_card_register(void)
+ {
+ 	int result;
+ 
+-	snd_assert(snd_stm_card != NULL, return -EINVAL);
+-	snd_assert(!snd_stm_card_registered, return -EINVAL);
++	snd_stm_assert(snd_stm_card != NULL, return -EINVAL);
++	snd_stm_assert(!snd_stm_card_registered, return -EINVAL);
+ 
+ 	result = snd_card_register(snd_stm_card);
+ 
+@@ -76,7 +76,7 @@ EXPORT_SYMBOL(snd_stm_card_register);
+ 
+ int snd_stm_card_is_registered(void)
+ {
+-	snd_assert(snd_stm_card != NULL, return -EINVAL);
++	snd_stm_assert(snd_stm_card != NULL, return -EINVAL);
+ 
+ 	return snd_stm_card_registered;
+ }
+@@ -84,8 +84,8 @@ EXPORT_SYMBOL(snd_stm_card_is_registered);
+ 
+ void snd_stm_card_free(void)
+ {
+-	snd_assert(snd_stm_card != NULL, return);
+-	snd_assert(snd_stm_card_registered, return);
++	snd_stm_assert(snd_stm_card != NULL, return);
++	snd_stm_assert(snd_stm_card_registered, return);
+ 
+ 	snd_card_free(snd_stm_card);
+ 
+@@ -96,7 +96,7 @@ EXPORT_SYMBOL(snd_stm_card_free);
+ 
+ struct snd_card *snd_stm_card_get(void)
+ {
+-	snd_assert(snd_stm_card != NULL, return NULL);
++	snd_stm_assert(snd_stm_card != NULL, return NULL);
+ 
+ 	return snd_stm_card;
+ }
+@@ -339,7 +339,7 @@ struct snd_stm_buffer *snd_stm_buffer_create(struct snd_pcm *pcm,
+ 	snd_stm_printd(1, "snd_stm_buffer_init(pcm=%p, prealloc_size=%d)\n",
+ 			pcm, prealloc_size);
+ 
+-	snd_assert(pcm, return NULL);
++	snd_stm_assert(pcm, return NULL);
+ 
+ 	buffer = kzalloc(sizeof(*buffer), GFP_KERNEL);
+ 	if (!buffer) {
+@@ -382,9 +382,9 @@ void snd_stm_buffer_dispose(struct snd_stm_buffer *buffer)
+ {
+ 	snd_stm_printd(1, "snd_stm_buffer_dispose(buffer=%p)\n", buffer);
+ 
+-	snd_assert(buffer, return);
++	snd_stm_assert(buffer, return);
+ 	snd_stm_magic_assert(buffer, return);
+-	snd_assert(!buffer->allocated, return);
++	snd_stm_assert(!buffer->allocated, return);
+ 
+ 	if (!buffer->bpa2_part)
+ 		snd_pcm_lib_preallocate_free_for_all(buffer->pcm);
+@@ -398,7 +398,7 @@ inline int snd_stm_buffer_is_allocated(struct snd_stm_buffer *buffer)
+ 	snd_stm_printd(1, "snd_stm_buffer_is_allocated(buffer=%p)\n",
+ 			buffer);
+ 
+-	snd_assert(buffer, return -EINVAL);
++	snd_stm_assert(buffer, return -EINVAL);
+ 	snd_stm_magic_assert(buffer, return -EINVAL);
+ 
+ 	return buffer->allocated;
+@@ -410,10 +410,10 @@ int snd_stm_buffer_alloc(struct snd_stm_buffer *buffer,
+ 	snd_stm_printd(1, "snd_stm_buffer_alloc(buffer=%p, substream=%p, "
+ 			"size=%d)\n", buffer, substream, size);
+ 
+-	snd_assert(buffer, return -EINVAL);
++	snd_stm_assert(buffer, return -EINVAL);
+ 	snd_stm_magic_assert(buffer, return -EINVAL);
+-	snd_assert(!buffer->allocated, return -EINVAL);
+-	snd_assert(size > 0, return -EINVAL);
++	snd_stm_assert(!buffer->allocated, return -EINVAL);
++	snd_stm_assert(size > 0, return -EINVAL);
+ 
+ 	if (buffer->bpa2_part) {
+ #if defined(CONFIG_BPA2)
+@@ -458,9 +458,9 @@ void snd_stm_buffer_free(struct snd_stm_buffer *buffer)
+ 
+ 	snd_stm_printd(1, "snd_stm_buffer_free(buffer=%p)\n", buffer);
+ 
+-	snd_assert(buffer, return);
++	snd_stm_assert(buffer, return);
+ 	snd_stm_magic_assert(buffer, return);
+-	snd_assert(buffer->allocated, return);
++	snd_stm_assert(buffer->allocated, return);
+ 
+ 	runtime = buffer->substream->runtime;
+ 
+@@ -711,8 +711,8 @@ int snd_stm_iec958_cmp(const struct snd_aes_iec958 *a,
+ {
+ 	int result;
+ 
+-	snd_assert(a != NULL, return -EINVAL);
+-	snd_assert(b != NULL, return -EINVAL);
++	snd_stm_assert(a != NULL, return -EINVAL);
++	snd_stm_assert(b != NULL, return -EINVAL);
+ 
+ 	result = memcmp(a->status, b->status, sizeof(a->status));
+ 	if (result == 0)
+diff --git a/sound/stm/common.h b/sound/stm/common.h
+index ae404f1..0c3ca86 100644
+--- a/sound/stm/common.h
++++ b/sound/stm/common.h
+@@ -344,12 +344,17 @@ extern int *snd_stm_debug_level;
+ #endif
+ 
+ #if defined(CONFIG_SND_VERBOSE_PRINTK)
++
+ #define snd_stm_printd(level, format, args...) \
+ 		do { \
+ 			if (level <= verbosity) \
+ 				snd_printk(KERN_INFO format, ## args); \
+ 		} while (0)
++
++#define snd_stm_assert snd_assert
++
+ #else
++
+ #define snd_stm_printd(level, format, args...) \
+ 		do { \
+ 			if (level <= verbosity) \
+@@ -357,12 +362,27 @@ extern int *snd_stm_debug_level;
+ 						__snd_stm_component, \
+ 						__LINE__, ## args); \
+ 		} while (0)
++
++#define snd_stm_assert(expr, args...) \
++		do { \
++			if (unlikely(!(expr))) { \
++				printk(KERN_ERR "snd-stm:%s:%d: BUG? " \
++						"(%s)\n", \
++						__snd_stm_component, \
++						__LINE__, \
++						__stringify(expr)); \
++				dump_stack(); \
++				args; \
++			} \
++		} while (0)
+ #endif
+ 
+ #else
+ 
+ #define snd_stm_printd(...) /* nothing */
+ 
++#define snd_stm_assert snd_assert
++
+ #endif
+ 
+ /* Error messages */
+@@ -378,17 +398,20 @@ extern int *snd_stm_debug_level;
+ 
+ /* Magic value checking in device structures */
+ 
+-#if defined(SND_DEBUG) || defined(DEBUG)
++#if defined(CONFIG_SND_DEBUG) || defined(DEBUG)
+ 
+-#define snd_stm_magic ((&__snd_stm_component & 0xffff0000) >> 16 ^ \
+-		(&__snd_stm_component & 0xffff))
++#define snd_stm_magic \
++		(((unsigned)(&__snd_stm_component) & 0xffff0000) >> 16 ^ \
++		((unsigned)(&__snd_stm_component) & 0xffff))
+ #define snd_stm_magic_good (0x600d0000 | snd_stm_magic)
+ #define snd_stm_magic_bad (0xbaad0000 | snd_stm_magic)
+ #define snd_stm_magic_field unsigned __snd_stm_magic
+-#define snd_stm_magic_set(object) (object)->__magic = snd_stm_magic_good
+-#define snd_stm_magic_clear(object) (object)->__magic = snd_stm_magic_bad
++#define snd_stm_magic_set(object) \
++		(object)->__snd_stm_magic = snd_stm_magic_good
++#define snd_stm_magic_clear(object) \
++		(object)->__snd_stm_magic = snd_stm_magic_bad
+ #define snd_stm_magic_assert(object, args...) \
+-		snd_assert((object)->__snd_stm_magic == \
++		snd_stm_assert((object)->__snd_stm_magic == \
+ 				snd_stm_magic_good, ## args)
+ 
+ #else
+diff --git a/sound/stm/conv.c b/sound/stm/conv.c
+index e57588e..2a69379 100644
+--- a/sound/stm/conv.c
++++ b/sound/stm/conv.c
+@@ -105,7 +105,7 @@ const char *snd_stm_conv_get_name(struct snd_stm_conv_group *group)
+ {
+ 	snd_stm_printd(1, "snd_stm_conv_get_name(group=%p)\n", group);
+ 
+-	snd_assert(group, return NULL);
++	snd_stm_assert(group, return NULL);
+ 	snd_stm_magic_assert(group, return NULL);
+ 
+ 	return group->name;
+@@ -118,7 +118,7 @@ unsigned int snd_stm_conv_get_format(struct snd_stm_conv_group *group)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_get_format(group=%p)\n", group);
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+ 
+ 	/* All configured converters must share the same input format -
+@@ -150,7 +150,7 @@ int snd_stm_conv_get_oversampling(struct snd_stm_conv_group *group)
+ 	snd_stm_printd(1, "snd_stm_conv_get_oversampling(group=%p)\n",
+ 			group);
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+ 
+ 	/* All configured converters must share the same oversampling value -
+@@ -160,7 +160,7 @@ int snd_stm_conv_get_oversampling(struct snd_stm_conv_group *group)
+ 	list_for_each_entry(converter, &group->converters, list) {
+ 		int oversampling;
+ 
+-		snd_assert(converter, return -EINVAL);
++		snd_stm_assert(converter, return -EINVAL);
+ 		snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 		oversampling = converter->ops->get_oversampling(
+@@ -188,17 +188,17 @@ int snd_stm_conv_enable(struct snd_stm_conv_group *group,
+ 	snd_stm_printd(1, "snd_stm_conv_enable(group=%p, channel_from=%d, "
+ 			"channel_to=%d)\n", group, channel_from, channel_to);
+ 
+-	snd_assert(channel_to >= channel_from, return -EINVAL);
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(channel_to >= channel_from, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+-	snd_assert(!group->enabled, return -EINVAL);
++	snd_stm_assert(!group->enabled, return -EINVAL);
+ 
+ 	group->enabled = 1;
+ 
+ 	list_for_each_entry(converter, &group->converters, list) {
+-		snd_assert(converter, return -EINVAL);
++		snd_stm_assert(converter, return -EINVAL);
+ 		snd_stm_magic_assert(converter, return -EINVAL);
+-		snd_assert(!converter->enabled, continue);
++		snd_stm_assert(!converter->enabled, continue);
+ 
+ 		spin_lock(&converter->status_lock);
+ 
+@@ -206,12 +206,12 @@ int snd_stm_conv_enable(struct snd_stm_conv_group *group,
+ 				converter->source_channel_from <= channel_to) ||
+ 				(channel_from <= converter->source_channel_to &&
+ 				converter->source_channel_to <= channel_to)) {
+-
+ 			converter->enabled = 1;
+ 
+ 			if (converter->ops->set_enabled) {
+ 				int done = converter->ops->set_enabled(1,
+ 						converter->priv);
++
+ 				if (done != 0) {
+ 					snd_stm_printe("Failed to enable "
+ 							"converter %p!\n",
+@@ -234,14 +234,14 @@ int snd_stm_conv_disable(struct snd_stm_conv_group *group)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_disable(group=%p)\n", group);
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+-	snd_assert(group->enabled, return -EINVAL);
++	snd_stm_assert(group->enabled, return -EINVAL);
+ 
+ 	group->enabled = 0;
+ 
+ 	list_for_each_entry(converter, &group->converters, list) {
+-		snd_assert(converter, return -EINVAL);
++		snd_stm_assert(converter, return -EINVAL);
+ 		snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 		spin_lock(&converter->status_lock);
+@@ -252,6 +252,7 @@ int snd_stm_conv_disable(struct snd_stm_conv_group *group)
+ 			if (converter->ops->set_enabled) {
+ 				int done = converter->ops->set_enabled(0,
+ 						converter->priv);
++
+ 				if (done != 0) {
+ 					snd_stm_printe("Failed to disable "
+ 							"converter %p!\n",
+@@ -274,15 +275,15 @@ int snd_stm_conv_mute(struct snd_stm_conv_group *group)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_mute(group=%p)\n", group);
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+-	snd_assert(group->enabled, return -EINVAL);
+-	snd_assert(!group->muted_by_source, return -EINVAL);
++	snd_stm_assert(group->enabled, return -EINVAL);
++	snd_stm_assert(!group->muted_by_source, return -EINVAL);
+ 
+ 	group->muted_by_source = 1;
+ 
+ 	list_for_each_entry(converter, &group->converters, list) {
+-		snd_assert(converter, return -EINVAL);
++		snd_stm_assert(converter, return -EINVAL);
+ 		snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 		spin_lock(&converter->status_lock);
+@@ -294,6 +295,7 @@ int snd_stm_conv_mute(struct snd_stm_conv_group *group)
+ 					!converter->muted_by_user) {
+ 				int done = converter->ops->set_muted(1,
+ 						converter->priv);
++
+ 				if (done != 0) {
+ 					snd_stm_printe("Failed to mute "
+ 							"converter %p!\n",
+@@ -316,15 +318,15 @@ int snd_stm_conv_unmute(struct snd_stm_conv_group *group)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_unmute(group=%p)\n", group);
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+-	snd_assert(group->enabled, return -EINVAL);
+-	snd_assert(group->muted_by_source, return -EINVAL);
++	snd_stm_assert(group->enabled, return -EINVAL);
++	snd_stm_assert(group->muted_by_source, return -EINVAL);
+ 
+ 	group->muted_by_source = 0;
+ 
+ 	list_for_each_entry(converter, &group->converters, list) {
+-		snd_assert(converter, return -EINVAL);
++		snd_stm_assert(converter, return -EINVAL);
+ 		snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 		spin_lock(&converter->status_lock);
+@@ -336,6 +338,7 @@ int snd_stm_conv_unmute(struct snd_stm_conv_group *group)
+ 					!converter->muted_by_user) {
+ 				int done = converter->ops->set_muted(0,
+ 						converter->priv);
++
+ 				if (done != 0) {
+ 					snd_stm_printe("Failed to unmute "
+ 							"converter %p!\n",
+@@ -365,7 +368,7 @@ static int snd_stm_conv_ctl_mute_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_conv_ctl_mute_get(kcontrol=0x%p,"
+ 			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(converter, return -EINVAL);
++	snd_stm_assert(converter, return -EINVAL);
+ 	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 	spin_lock(&converter->status_lock);
+@@ -386,10 +389,10 @@ static int snd_stm_conv_ctl_mute_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_conv_ctl_mute_put(kcontrol=0x%p,"
+ 			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(converter, return -EINVAL);
++	snd_stm_assert(converter, return -EINVAL);
+ 	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+-	snd_assert(converter->ops->set_muted, return -EINVAL);
++	snd_stm_assert(converter->ops->set_muted, return -EINVAL);
+ 
+ 	spin_lock(&converter->status_lock);
+ 
+@@ -432,12 +435,12 @@ static int snd_stm_conv_ctl_mute_add(struct snd_stm_conv_converter *converter)
+ 	snd_stm_printd(1, "snd_stm_conv_ctl_mute_add(converter=%p)\n",
+ 			converter);
+ 
+-	snd_assert(converter, return -EINVAL);
++	snd_stm_assert(converter, return -EINVAL);
+ 	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 	source = converter->group->source;
+ 
+-	snd_assert(source, return -EINVAL);
++	snd_stm_assert(source, return -EINVAL);
+ 	snd_stm_magic_assert(source, return -EINVAL);
+ 
+ 	snd_stm_conv_ctl_mute.device = source->card_device;
+@@ -471,7 +474,7 @@ static int snd_stm_conv_ctl_route_info(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_conv_ctl_route_info(kcontrol=0x%p,"
+ 			" uinfo=0x%p)\n", kcontrol, uinfo);
+ 
+-	snd_assert(source, return -EINVAL);
++	snd_stm_assert(source, return -EINVAL);
+ 	snd_stm_magic_assert(source, return -EINVAL);
+ 
+ 	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
+@@ -506,7 +509,7 @@ static int snd_stm_conv_ctl_route_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_conv_ctl_route_get(kcontrol=0x%p,"
+ 			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(source, return -EINVAL);
++	snd_stm_assert(source, return -EINVAL);
+ 	snd_stm_magic_assert(source, return -EINVAL);
+ 
+ 	mutex_lock(&source->groups_mutex);
+@@ -537,7 +540,7 @@ static int snd_stm_conv_ctl_route_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_conv_ctl_route_put(kcontrol=0x%p,"
+ 			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(source, return -EINVAL);
++	snd_stm_assert(source, return -EINVAL);
+ 	snd_stm_magic_assert(source, return -EINVAL);
+ 
+ 	mutex_lock(&source->groups_mutex);
+@@ -573,7 +576,7 @@ static int snd_stm_conv_ctl_route_add(struct snd_stm_conv_source *source)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_ctl_route_add(source=%p)\n", source);
+ 
+-	snd_assert(source, return -EINVAL);
++	snd_stm_assert(source, return -EINVAL);
+ 	snd_stm_magic_assert(source, return -EINVAL);
+ 
+ 	snd_stm_conv_ctl_route.device = source->card_device;
+@@ -610,8 +613,8 @@ static struct snd_stm_conv_source *snd_stm_conv_get_source(
+ {
+ 	struct snd_stm_conv_source *source;
+ 
+-	snd_assert(bus, return NULL);
+-	snd_assert(bus_id, return NULL);
++	snd_stm_assert(bus, return NULL);
++	snd_stm_assert(bus_id, return NULL);
+ 
+ 	mutex_lock(&snd_stm_conv_sources_mutex);
+ 
+@@ -652,11 +655,11 @@ struct snd_stm_conv_source *snd_stm_conv_register_source(struct bus_type *bus,
+ 			"channels_num=%d, card=%p, card_device=%d)\n",
+ 			bus, bus_id, channels_num, card, card_device);
+ 
+-	snd_assert(bus, return NULL);
+-	snd_assert(bus_id, return NULL);
+-	snd_assert(channels_num > 0, return NULL);
+-	snd_assert(card, return NULL);
+-	snd_assert(card_device >= 0, return NULL);
++	snd_stm_assert(bus, return NULL);
++	snd_stm_assert(bus_id, return NULL);
++	snd_stm_assert(channels_num > 0, return NULL);
++	snd_stm_assert(card, return NULL);
++	snd_stm_assert(card_device >= 0, return NULL);
+ 
+ 	source = snd_stm_conv_get_source(bus, bus_id);
+ 	if (!source) {
+@@ -664,8 +667,8 @@ struct snd_stm_conv_source *snd_stm_conv_register_source(struct bus_type *bus,
+ 		return NULL;
+ 	}
+ 
+-	snd_assert(source->channels_num == 0, return NULL);
+-	snd_assert(!source->card, return NULL);
++	snd_stm_assert(source->channels_num == 0, return NULL);
++	snd_stm_assert(!source->card, return NULL);
+ 
+ 	source->channels_num = channels_num;
+ 	source->card = card;
+@@ -707,10 +710,10 @@ int snd_stm_conv_unregister_source(struct snd_stm_conv_source *source)
+ 	snd_stm_printd(1, "snd_stm_conv_unregister_source(source=%p)\n",
+ 			source);
+ 
+-	snd_assert(source, return -EINVAL);
++	snd_stm_assert(source, return -EINVAL);
+ 	snd_stm_magic_assert(source, return -EINVAL);
+ 
+-	snd_assert(list_empty(&source->groups), return -EINVAL);
++	snd_stm_assert(list_empty(&source->groups), return -EINVAL);
+ 
+ 	mutex_lock(&snd_stm_conv_sources_mutex);
+ 
+@@ -733,9 +736,12 @@ static inline struct snd_stm_conv_group *snd_stm_conv_get_group(
+ 	snd_stm_printd(1, "snd_stm_conv_get_group(source=%p, name='%s')\n",
+ 			source, name);
+ 
+-	snd_assert(source, return NULL);
++	snd_stm_assert(source, return NULL);
+ 	snd_stm_magic_assert(source, return NULL);
+-	snd_assert(name, return NULL);
++	snd_stm_assert(name, return NULL);
++
++	/* Random memory fuse */
++	snd_stm_assert(strlen(name) < 1024, return NULL);
+ 
+ 	mutex_lock(&source->groups_mutex);
+ 
+@@ -745,8 +751,6 @@ static inline struct snd_stm_conv_group *snd_stm_conv_get_group(
+ 
+ 	/* First time see... */
+ 
+-	snd_assert(strlen(name) < 1024, return NULL); /* Random memory fuse */
+-
+ 	group = kzalloc(sizeof(*group) + strlen(name), GFP_KERNEL);
+ 	if (!group) {
+ 		snd_stm_printe("Can't allocate memory for group!\n");
+@@ -785,12 +789,12 @@ static inline int snd_stm_conv_remove_group(struct snd_stm_conv_group *group)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_remove_group(group=%p)\n", group);
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+ 
+ 	source = group->source;
+ 
+-	snd_assert(source, return -EINVAL);
++	snd_stm_assert(source, return -EINVAL);
+ 	snd_stm_magic_assert(source, return -EINVAL);
+ 
+ 	mutex_lock(&source->groups_mutex);
+@@ -845,12 +849,12 @@ struct snd_stm_conv_converter *snd_stm_conv_register_converter(
+ 			group_name, ops, priv, source_bus, source_bus_id,
+ 			source_channel_from, source_channel_to);
+ 
+-	snd_assert(group_name, return NULL);
+-	snd_assert(ops, return NULL);
+-	snd_assert(source_bus, return NULL);
+-	snd_assert(source_bus_id, return NULL);
+-	snd_assert(source_channel_from >= 0, return NULL);
+-	snd_assert(source_channel_to >= source_channel_from, return NULL);
++	snd_stm_assert(group_name, return NULL);
++	snd_stm_assert(ops, return NULL);
++	snd_stm_assert(source_bus, return NULL);
++	snd_stm_assert(source_bus_id, return NULL);
++	snd_stm_assert(source_channel_from >= 0, return NULL);
++	snd_stm_assert(source_channel_to >= source_channel_from, return NULL);
+ 
+ 	/* Create converter description */
+ 
+@@ -927,12 +931,12 @@ int snd_stm_conv_unregister_converter(struct snd_stm_conv_converter *converter)
+ 	snd_stm_printd(1, "snd_stm_conv_unregister_converter(converter=%p)\n",
+ 			converter);
+ 
+-	snd_assert(converter, return -EINVAL);
++	snd_stm_assert(converter, return -EINVAL);
+ 	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 	group = converter->group;
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+ 
+ 	mutex_lock(&group->converters_mutex);
+@@ -959,7 +963,7 @@ int snd_stm_conv_get_card_device(struct snd_stm_conv_converter *converter)
+ 	snd_stm_printd(1, "snd_stm_conv_get_card_device(converter=%p)\n",
+ 			converter);
+ 
+-	snd_assert(converter, return -EINVAL);
++	snd_stm_assert(converter, return -EINVAL);
+ 	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+ 	return converter->group->source->card_device;
+@@ -972,10 +976,10 @@ struct snd_stm_conv_group *snd_stm_conv_request_group(
+ {
+ 	snd_stm_printd(1, "snd_stm_conv_request_group(source=%p)\n", source);
+ 
+-	snd_assert(source, return NULL);
++	snd_stm_assert(source, return NULL);
+ 	snd_stm_magic_assert(source, return NULL);
+ 
+-	snd_assert(!source->group_active, return NULL);
++	snd_stm_assert(!source->group_active, return NULL);
+ 
+ 	mutex_lock(&source->groups_mutex);
+ 
+@@ -990,13 +994,13 @@ int snd_stm_conv_release_group(struct snd_stm_conv_group *group)
+ {
+ 	snd_stm_printd(1, "snd_stm_conv_release_group(group=%p)\n", group);
+ 
+-	snd_assert(group, return -EINVAL);
++	snd_stm_assert(group, return -EINVAL);
+ 	snd_stm_magic_assert(group, return -EINVAL);
+ 
+-	snd_assert(group->source, return -EINVAL);
++	snd_stm_assert(group->source, return -EINVAL);
+ 	snd_stm_magic_assert(group->source, return -EINVAL);
+ 
+-	snd_assert(group == group->source->group_active, return -EINVAL);
++	snd_stm_assert(group == group->source->group_active, return -EINVAL);
+ 
+ 	mutex_lock(&group->source->groups_mutex);
+ 
+diff --git a/sound/stm/conv_dummy.c b/sound/stm/conv_dummy.c
+index 1a8858a..9daa1cf 100644
+--- a/sound/stm/conv_dummy.c
++++ b/sound/stm/conv_dummy.c
+@@ -53,7 +53,7 @@ static unsigned int snd_stm_conv_dummy_get_format(void *priv)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_dummy_get_format(priv=%p)\n", priv);
+ 
+-	snd_assert(conv_dummy, return -EINVAL);
++	snd_stm_assert(conv_dummy, return -EINVAL);
+ 	snd_stm_magic_assert(conv_dummy, return -EINVAL);
+ 
+ 	return conv_dummy->info->format;
+@@ -66,7 +66,7 @@ static int snd_stm_conv_dummy_get_oversampling(void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_dummy_get_oversampling(priv=%p)\n",
+ 			priv);
+ 
+-	snd_assert(conv_dummy, return -EINVAL);
++	snd_stm_assert(conv_dummy, return -EINVAL);
+ 	snd_stm_magic_assert(conv_dummy, return -EINVAL);
+ 
+ 	return conv_dummy->info->oversampling;
+@@ -89,7 +89,7 @@ static int snd_stm_conv_dummy_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(pdev->dev.platform_data != NULL, return -EINVAL);
++	snd_stm_assert(pdev->dev.platform_data != NULL, return -EINVAL);
+ 
+ 	conv_dummy = kzalloc(sizeof(*conv_dummy), GFP_KERNEL);
+ 	if (!conv_dummy) {
+@@ -126,7 +126,7 @@ static int snd_stm_conv_dummy_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_conv_dummy *conv_dummy = platform_get_drvdata(pdev);
+ 
+-	snd_assert(conv_dummy, return -EINVAL);
++	snd_stm_assert(conv_dummy, return -EINVAL);
+ 	snd_stm_magic_assert(conv_dummy, return -EINVAL);
+ 
+ 	snd_stm_conv_unregister_converter(conv_dummy->converter);
+diff --git a/sound/stm/conv_gpio.c b/sound/stm/conv_gpio.c
+index 094b443..693b818 100644
+--- a/sound/stm/conv_gpio.c
++++ b/sound/stm/conv_gpio.c
+@@ -74,7 +74,7 @@ static void snd_stm_conv_gpio_work(struct work_struct *work)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_gpio_work(work=%p)\n", work);
+ 
+-	snd_assert(conv_gpio, return);
++	snd_stm_assert(conv_gpio, return);
+ 	snd_stm_magic_assert(conv_gpio, return);
+ 
+ 	spin_lock(&conv_gpio->work_lock);
+@@ -101,7 +101,7 @@ static void snd_stm_conv_gpio_set_value(struct snd_stm_conv_gpio *conv_gpio,
+ 			"enable_not_mute=%d, value=%d)\n",
+ 			conv_gpio, enable_not_mute, value);
+ 
+-	snd_assert(conv_gpio, return);
++	snd_stm_assert(conv_gpio, return);
+ 	snd_stm_magic_assert(conv_gpio, return);
+ 
+ 	if (conv_gpio->may_sleep) {
+@@ -130,7 +130,7 @@ static unsigned int snd_stm_conv_gpio_get_format(void *priv)
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_gpio_get_format(priv=%p)\n", priv);
+ 
+-	snd_assert(conv_gpio, return -EINVAL);
++	snd_stm_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+ 
+ 	return conv_gpio->info->format;
+@@ -143,7 +143,7 @@ static int snd_stm_conv_gpio_get_oversampling(void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_gpio_get_oversampling(priv=%p)\n",
+ 			priv);
+ 
+-	snd_assert(conv_gpio, return -EINVAL);
++	snd_stm_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+ 
+ 	return conv_gpio->info->oversampling;
+@@ -156,7 +156,7 @@ static int snd_stm_conv_gpio_set_enabled(int enabled, void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_gpio_enable(enabled=%d, priv=%p)\n",
+ 			enabled, priv);
+ 
+-	snd_assert(conv_gpio, return -EINVAL);
++	snd_stm_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+ 
+ 	snd_stm_printd(1, "%sabling DAC %s's.\n", enabled ? "En" : "Dis",
+@@ -176,9 +176,9 @@ static int snd_stm_conv_gpio_set_muted(int muted, void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_gpio_set_muted(muted=%d, priv=%p)\n",
+ 			muted, priv);
+ 
+-	snd_assert(conv_gpio, return -EINVAL);
++	snd_stm_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-	snd_assert(conv_gpio->info->mute_supported, return -EINVAL);
++	snd_stm_assert(conv_gpio->info->mute_supported, return -EINVAL);
+ 
+ 	snd_stm_printd(1, "%suting DAC %s.\n", muted ? "M" : "Unm",
+ 			conv_gpio->bus_id);
+@@ -214,7 +214,7 @@ static void snd_stm_conv_gpio_read_info(struct snd_info_entry *entry,
+ {
+ 	struct snd_stm_conv_gpio *conv_gpio = entry->private_data;
+ 
+-	snd_assert(conv_gpio, return);
++	snd_stm_assert(conv_gpio, return);
+ 	snd_stm_magic_assert(conv_gpio, return);
+ 
+ 	snd_iprintf(buffer, "--- %s ---\n", conv_gpio->bus_id);
+@@ -243,7 +243,7 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(pdev->dev.platform_data != NULL, return -EINVAL);
++	snd_stm_assert(pdev->dev.platform_data != NULL, return -EINVAL);
+ 
+ 	conv_gpio = kzalloc(sizeof(*conv_gpio), GFP_KERNEL);
+ 	if (!conv_gpio) {
+@@ -258,7 +258,7 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ 
+ 	/* Get connections */
+ 
+-	snd_assert(conv_gpio->info->source_bus_id != NULL,
++	snd_stm_assert(conv_gpio->info->source_bus_id != NULL,
+ 			return -EINVAL);
+ 	snd_stm_printd(0, "This DAC is attached to PCM player '%s'.\n",
+ 			conv_gpio->info->source_bus_id);
+@@ -350,7 +350,7 @@ static int snd_stm_conv_gpio_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_conv_gpio *conv_gpio = platform_get_drvdata(pdev);
+ 
+-	snd_assert(conv_gpio, return -EINVAL);
++	snd_stm_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+ 
+ 	snd_device_free(snd_stm_card_get(), conv_gpio);
+diff --git a/sound/stm/conv_i2sspdif.c b/sound/stm/conv_i2sspdif.c
+index 735faca..35602b4 100644
+--- a/sound/stm/conv_i2sspdif.c
++++ b/sound/stm/conv_i2sspdif.c
+@@ -95,7 +95,7 @@ static int snd_stm_conv_i2sspdif_iec958_set(struct snd_stm_conv_i2sspdif
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_iec958_set(conv_i2sspdif=%p"
+ 			", iec958=%p)\n", conv_i2sspdif, iec958);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+ 	/* I2S to SPDIF converter should be used only for playing
+@@ -108,7 +108,7 @@ static int snd_stm_conv_i2sspdif_iec958_set(struct snd_stm_conv_i2sspdif
+ 	 * converter hardware, so it is better not to do this at all... */
+ 	set__AUD_SPDIFPC_DATA__USER_DATA_BITS(conv_i2sspdif, 0);
+ 
+-	snd_assert(memcmp(snd_stm_conv_i2sspdif_iec958_zeroed.subcode,
++	snd_stm_assert(memcmp(snd_stm_conv_i2sspdif_iec958_zeroed.subcode,
+ 			iec958->subcode, sizeof(iec958->subcode)) == 0);
+ 
+ 	if (conv_i2sspdif->ver < ver__AUD_SPDIFPC__65_3_0) {
+@@ -214,7 +214,7 @@ static inline int snd_stm_conv_i2sspdif_oversampling(
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_oversampling("
+ 			"conv_i2sspdif=%p)\n", conv_i2sspdif);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+ 	return DEFAULT_OVERSAMPLING;
+@@ -229,13 +229,13 @@ static inline int snd_stm_conv_i2sspdif_enable(struct snd_stm_conv_i2sspdif
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_enable(conv_i2sspdif=%p)\n",
+ 			conv_i2sspdif);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+-	snd_assert(!conv_i2sspdif->enabled, return -EINVAL);
++	snd_stm_assert(!conv_i2sspdif->enabled, return -EINVAL);
+ 
+ 	oversampling = snd_stm_conv_i2sspdif_oversampling(conv_i2sspdif);
+-	snd_assert(oversampling > 0, return -EINVAL);
+-	snd_assert((oversampling % 128) == 0, return -EINVAL);
++	snd_stm_assert(oversampling > 0, return -EINVAL);
++	snd_stm_assert((oversampling % 128) == 0, return -EINVAL);
+ 
+ 	set__AUD_SPDIFPC_CFG(conv_i2sspdif,
+ 		mask__AUD_SPDIFPC_CFG__DEVICE_EN__ENABLED(conv_i2sspdif) |
+@@ -275,9 +275,9 @@ static inline int snd_stm_conv_i2sspdif_disable(struct snd_stm_conv_i2sspdif
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_disable(conv_i2sspdif=%p)\n",
+ 			conv_i2sspdif);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+-	snd_assert(conv_i2sspdif->enabled, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif->enabled, return -EINVAL);
+ 
+ 	if (snd_stm_conv_i2sspdif_iec958_set(conv_i2sspdif,
+ 			&snd_stm_conv_i2sspdif_iec958_zeroed) != 0)
+@@ -317,7 +317,7 @@ static int snd_stm_conv_i2sspdif_get_oversampling(void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_get_oversampling(priv=%p)\n",
+ 			priv);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+ 	return snd_stm_conv_i2sspdif_oversampling(conv_i2sspdif);
+@@ -330,7 +330,7 @@ static int snd_stm_conv_i2sspdif_set_enabled(int enabled, void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_set_enabled(enabled=%d, "
+ 			"priv=%p)\n", enabled, priv);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+ 	snd_stm_printd(1, "%sabling I2S to SPDIF converter '%s'.\n",
+@@ -363,7 +363,7 @@ static int snd_stm_conv_i2sspdif_ctl_default_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_ctl_default_get("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+ 	spin_lock(&conv_i2sspdif->iec958_default_lock);
+@@ -383,7 +383,7 @@ static int snd_stm_conv_i2sspdif_ctl_default_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_ctl_default_put("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+ 	spin_lock(&conv_i2sspdif->iec958_default_lock);
+@@ -438,7 +438,7 @@ static void snd_stm_conv_i2sspdif_dump_registers(struct snd_info_entry *entry,
+ 		entry->private_data;
+ 	int i;
+ 
+-	snd_assert(conv_i2sspdif, return);
++	snd_stm_assert(conv_i2sspdif, return);
+ 	snd_stm_magic_assert(conv_i2sspdif, return);
+ 
+ 	snd_iprintf(buffer, "--- %s ---\n", conv_i2sspdif->device->bus_id);
+@@ -478,9 +478,9 @@ static int snd_stm_conv_i2sspdif_register(
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_register(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+-	snd_assert(!conv_i2sspdif->enabled, return -EINVAL);
++	snd_stm_assert(!conv_i2sspdif->enabled, return -EINVAL);
+ 
+ 	snd_stm_printd(0, "--- Registering I2S to SPDIF converter '%s'...\n",
+ 			conv_i2sspdif->device->bus_id);
+@@ -535,9 +535,9 @@ static int snd_stm_conv_i2sspdif_disconnect(
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_disconnect(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+-	snd_assert(!conv_i2sspdif->enabled, return -EINVAL);
++	snd_stm_assert(!conv_i2sspdif->enabled, return -EINVAL);
+ 
+ 	/* Remove procfs entry */
+ 
+@@ -577,7 +577,7 @@ static int snd_stm_conv_i2sspdif_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(conv_i2sspdif_info != NULL, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif_info != NULL, return -EINVAL);
+ 
+ 	conv_i2sspdif = kzalloc(sizeof(*conv_i2sspdif), GFP_KERNEL);
+ 	if (!conv_i2sspdif) {
+@@ -588,7 +588,7 @@ static int snd_stm_conv_i2sspdif_probe(struct platform_device *pdev)
+ 	}
+ 	snd_stm_magic_set(conv_i2sspdif);
+ 	conv_i2sspdif->ver = conv_i2sspdif_info->ver;
+-	snd_assert(conv_i2sspdif->ver > 0, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif->ver > 0, return -EINVAL);
+ 	conv_i2sspdif->info = conv_i2sspdif_info;
+ 	conv_i2sspdif->device = &pdev->dev;
+ 	spin_lock_init(&conv_i2sspdif->iec958_default_lock);
+@@ -604,7 +604,7 @@ static int snd_stm_conv_i2sspdif_probe(struct platform_device *pdev)
+ 
+ 	/* Get connections */
+ 
+-	snd_assert(conv_i2sspdif_info->source_bus_id != NULL,
++	snd_stm_assert(conv_i2sspdif_info->source_bus_id != NULL,
+ 			return -EINVAL);
+ 	snd_stm_printd(0, "This I2S-SPDIF converter is attached to PCM player"
+ 			" '%s'.\n",
+@@ -655,7 +655,7 @@ static int snd_stm_conv_i2sspdif_remove(struct platform_device *pdev)
+ 	struct snd_stm_conv_i2sspdif *conv_i2sspdif =
+ 			platform_get_drvdata(pdev);
+ 
+-	snd_assert(conv_i2sspdif, return -EINVAL);
++	snd_stm_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+ 	snd_stm_conv_unregister_converter(conv_i2sspdif->converter);
+diff --git a/sound/stm/conv_int_dac.c b/sound/stm/conv_int_dac.c
+index 33d509a..74281ec 100644
+--- a/sound/stm/conv_int_dac.c
++++ b/sound/stm/conv_int_dac.c
+@@ -93,7 +93,7 @@ static int snd_stm_conv_int_dac_set_enabled(int enabled, void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_int_dac_set_enabled(enabled=%d, "
+ 			"priv=%p)\n", enabled, priv);
+ 
+-	snd_assert(conv_int_dac, return -EINVAL);
++	snd_stm_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+ 
+ 	snd_stm_printd(1, "%sabling DAC %s's digital part.\n",
+@@ -117,7 +117,7 @@ static int snd_stm_conv_int_dac_set_muted(int muted, void *priv)
+ 	snd_stm_printd(1, "snd_stm_conv_int_dac_set_muted(muted=%d, priv=%p)\n",
+ 		       muted, priv);
+ 
+-	snd_assert(conv_int_dac, return -EINVAL);
++	snd_stm_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+ 
+ 	snd_stm_printd(1, "%suting DAC %s.\n", muted ? "M" : "Unm",
+@@ -150,7 +150,7 @@ static void snd_stm_conv_int_dac_read_info(struct snd_info_entry *entry,
+ 	struct snd_stm_conv_int_dac *conv_int_dac =
+ 		entry->private_data;
+ 
+-	snd_assert(conv_int_dac, return);
++	snd_stm_assert(conv_int_dac, return);
+ 	snd_stm_magic_assert(conv_int_dac, return);
+ 
+ 	snd_iprintf(buffer, "--- %s ---\n", conv_int_dac->bus_id);
+@@ -167,7 +167,7 @@ static int snd_stm_conv_int_dac_register(struct snd_device *snd_device)
+ 	struct snd_stm_conv_int_dac *conv_int_dac =
+ 			snd_device->device_data;
+ 
+-	snd_assert(conv_int_dac, return -EINVAL);
++	snd_stm_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+ 
+ 	/* Initialize DAC with digital part down, analog up and muted */
+@@ -195,7 +195,7 @@ static int __exit snd_stm_conv_int_dac_disconnect(struct snd_device *snd_device)
+ 	struct snd_stm_conv_int_dac *conv_int_dac =
+ 			snd_device->device_data;
+ 
+-	snd_assert(conv_int_dac, return -EINVAL);
++	snd_stm_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+ 
+ 	/* Remove procfs entry */
+@@ -236,8 +236,8 @@ static int snd_stm_conv_int_dac_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(card != NULL, return -EINVAL);
+-	snd_assert(conv_int_dac_info != NULL, return -EINVAL);
++	snd_stm_assert(card != NULL, return -EINVAL);
++	snd_stm_assert(conv_int_dac_info != NULL, return -EINVAL);
+ 
+ 	conv_int_dac = kzalloc(sizeof(*conv_int_dac), GFP_KERNEL);
+ 	if (!conv_int_dac) {
+@@ -248,7 +248,7 @@ static int snd_stm_conv_int_dac_probe(struct platform_device *pdev)
+ 	}
+ 	snd_stm_magic_set(conv_int_dac);
+ 	conv_int_dac->ver = conv_int_dac_info->ver;
+-	snd_assert(conv_int_dac->ver > 0, return -EINVAL);
++	snd_stm_assert(conv_int_dac->ver > 0, return -EINVAL);
+ 	conv_int_dac->bus_id = pdev->dev.bus_id;
+ 
+ 	/* Get resources */
+@@ -262,7 +262,7 @@ static int snd_stm_conv_int_dac_probe(struct platform_device *pdev)
+ 
+ 	/* Get connections */
+ 
+-	snd_assert(conv_int_dac_info->source_bus_id != NULL,
++	snd_stm_assert(conv_int_dac_info->source_bus_id != NULL,
+ 			return -EINVAL);
+ 	snd_stm_printd(0, "This DAC is attached to PCM player '%s'.\n",
+ 			conv_int_dac_info->source_bus_id);
+@@ -309,7 +309,7 @@ static int snd_stm_conv_int_dac_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_conv_int_dac *conv_int_dac = platform_get_drvdata(pdev);
+ 
+-	snd_assert(conv_int_dac, return -EINVAL);
++	snd_stm_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+ 
+ 	snd_stm_conv_unregister_converter(conv_int_dac->converter);
+diff --git a/sound/stm/fsynth.c b/sound/stm/fsynth.c
+index 4a78e27..aba8fb8 100644
+--- a/sound/stm/fsynth.c
++++ b/sound/stm/fsynth.c
+@@ -288,10 +288,10 @@ static int snd_stm_fsynth_channel_configure(struct snd_stm_fsynth *fsynth,
+ 			"frequency=%d, adjustment=%d)\n", fsynth, channel,
+ 			frequency, adjustment);
+ 
+-	snd_assert(fsynth, return -EINVAL);
++	snd_stm_assert(fsynth, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth, return -EINVAL);
+-	snd_assert(channel >= fsynth->channels_from, return -EINVAL);
+-	snd_assert(channel <= fsynth->channels_to, return -EINVAL);
++	snd_stm_assert(channel >= fsynth->channels_from, return -EINVAL);
++	snd_stm_assert(channel <= fsynth->channels_to, return -EINVAL);
+ 
+ 	/* All specs say, that maximum frequency generated by the fsynth
+ 	 * is 12.288MHz... */
+@@ -418,9 +418,9 @@ static int snd_stm_fsynth_adjustment_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_fsynth_adjustment_get(kcontrol=0x%p, "
+ 			"ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(fsynth_channel, return -EINVAL);
++	snd_stm_assert(fsynth_channel, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth_channel, return -EINVAL);
+-	snd_assert(fsynth_channel->fsynth, return -EINVAL);
++	snd_stm_assert(fsynth_channel->fsynth, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth_channel->fsynth, return -EINVAL);
+ 
+ 	ucontrol->value.integer.value[0] = fsynth_channel->adjustment;
+@@ -441,12 +441,12 @@ static int snd_stm_fsynth_adjustment_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_fsynth_clock_adjustment_put(kcontrol=0x%p,"
+ 			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(fsynth_channel, return -EINVAL);
++	snd_stm_assert(fsynth_channel, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth_channel, return -EINVAL);
+ 
+ 	fsynth = fsynth_channel->fsynth;
+ 
+-	snd_assert(fsynth, return -EINVAL);
++	snd_stm_assert(fsynth, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth, return -EINVAL);
+ 
+ 	channel = fsynth_channel - fsynth_channel->fsynth->channels;
+@@ -494,8 +494,8 @@ struct snd_stm_fsynth_channel *snd_stm_fsynth_get_channel(const char *bus_id,
+ 		struct snd_stm_fsynth *fsynth = dev_get_drvdata(device);
+ 
+ 		snd_stm_magic_assert(fsynth, return NULL);
+-		snd_assert(output >= fsynth->channels_from, return NULL);
+-		snd_assert(output <= fsynth->channels_to, return NULL);
++		snd_stm_assert(output >= fsynth->channels_from, return NULL);
++		snd_stm_assert(output <= fsynth->channels_to, return NULL);
+ 
+ 		return &fsynth->channels[output];
+ 	}
+@@ -512,9 +512,9 @@ int snd_stm_fsynth_set_frequency(struct snd_stm_fsynth_channel *fsynth_channel,
+ 	snd_stm_printd(1, "snd_stm_fsynth_set_frequency(fsynth_channel=%p, "
+ 			"frequency=%d)\n", fsynth_channel, frequency);
+ 
+-	snd_assert(fsynth_channel, return -EINVAL);
++	snd_stm_assert(fsynth_channel, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth_channel, return -EINVAL);
+-	snd_assert(fsynth_channel->fsynth, return -EINVAL);
++	snd_stm_assert(fsynth_channel->fsynth, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth_channel->fsynth, return -EINVAL);
+ 
+ 	return snd_stm_fsynth_channel_configure(fsynth_channel->fsynth,
+@@ -532,7 +532,7 @@ int snd_stm_fsynth_add_adjustement_ctl(
+ 			"card=%p, card_device=%d)\n", fsynth_channel,
+ 			card, card_device);
+ 
+-	snd_assert(fsynth_channel, return -EINVAL);
++	snd_stm_assert(fsynth_channel, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth_channel, return -EINVAL);
+ 
+ 	snd_stm_fsynth_adjustment_ctl.device = card_device;
+@@ -561,7 +561,7 @@ static void snd_stm_fsynth_dump_registers(struct snd_info_entry *entry,
+ 	struct snd_stm_fsynth *fsynth = entry->private_data;
+ 	int i;
+ 
+-	snd_assert(fsynth, return);
++	snd_stm_assert(fsynth, return);
+ 	snd_stm_magic_assert(fsynth, return);
+ 
+ 	snd_iprintf(buffer, "--- %s ---\n", fsynth->bus_id);
+@@ -586,7 +586,7 @@ static int snd_stm_fsynth_register(struct snd_device *snd_device)
+ 	unsigned long value = 0;
+ 	int i;
+ 
+-	snd_assert(fsynth, return -EINVAL);
++	snd_stm_assert(fsynth, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth, return -EINVAL);
+ 
+ 	snd_stm_printd(0, "--- Registering frequency synthesizer '%s'...\n",
+@@ -633,7 +633,7 @@ static int snd_stm_fsynth_disconnect(struct snd_device *snd_device)
+ 	unsigned long value = 0;
+ 	int i;
+ 
+-	snd_assert(fsynth, return -EINVAL);
++	snd_stm_assert(fsynth, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth, return -EINVAL);
+ 
+ 	/* Remove procfs entry */
+@@ -678,7 +678,7 @@ static int snd_stm_fsynth_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(fsynth_info != NULL, return -EINVAL);
++	snd_stm_assert(fsynth_info != NULL, return -EINVAL);
+ 
+ 	if (fsynth_info->ver < ver__AUDCFG_FSYN__65_2_1_2)
+ 		channels_max = 3;
+@@ -695,7 +695,7 @@ static int snd_stm_fsynth_probe(struct platform_device *pdev)
+ 	}
+ 	snd_stm_magic_set(fsynth);
+ 	fsynth->ver = fsynth_info->ver;
+-	snd_assert(fsynth->ver > 0, return -EINVAL);
++	snd_stm_assert(fsynth->ver > 0, return -EINVAL);
+ 	fsynth->bus_id = pdev->dev.bus_id;
+ 	fsynth->channels_max = channels_max;
+ 	fsynth->channels = (void *)fsynth + (channels_max *
+@@ -714,10 +714,10 @@ static int snd_stm_fsynth_probe(struct platform_device *pdev)
+ 
+ 	fsynth->channels_from = fsynth_info->channels_from;
+ 	fsynth->channels_to = fsynth_info->channels_to;
+-	snd_assert(fsynth->channels_from < fsynth->channels_to,
++	snd_stm_assert(fsynth->channels_from < fsynth->channels_to,
+ 			return -EINVAL);
+-	snd_assert(fsynth->channels_from >= 0, return -EINVAL);
+-	snd_assert(fsynth->channels_to < channels_max, return -EINVAL);
++	snd_stm_assert(fsynth->channels_from >= 0, return -EINVAL);
++	snd_stm_assert(fsynth->channels_to < channels_max, return -EINVAL);
+ 
+ 	snd_stm_printd(0, "Used synthesizer channels: %d to %d\n",
+ 			fsynth->channels_from, fsynth->channels_to);
+@@ -753,7 +753,7 @@ static int snd_stm_fsynth_remove(struct platform_device *pdev)
+ 	struct snd_stm_fsynth *fsynth = platform_get_drvdata(pdev);
+ 	int i;
+ 
+-	snd_assert(fsynth, return -EINVAL);
++	snd_stm_assert(fsynth, return -EINVAL);
+ 	snd_stm_magic_assert(fsynth, return -EINVAL);
+ 
+ 	snd_stm_memory_release(fsynth->mem_region, fsynth->base);
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 01cc137..2c94072 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -104,7 +104,7 @@ static irqreturn_t snd_stm_pcm_player_irq_handler(int irq, void *dev_id)
+ 	snd_stm_printd(2, "snd_stm_pcm_player_irq_handler(irq=%d, "
+ 			"dev_id=0x%p)\n", irq, dev_id);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	/* Get interrupt status & clear them immediately */
+@@ -123,7 +123,7 @@ static irqreturn_t snd_stm_pcm_player_irq_handler(int irq, void *dev_id)
+ 	/* Period successfully played */
+ 	if (likely(status & mask__AUD_PCMOUT_ITS__NSAMPLE__PENDING(pcm_player)))
+ 		do {
+-			snd_assert(pcm_player->substream, break);
++			snd_stm_assert(pcm_player->substream, break);
+ 
+ 			snd_stm_printd(2, "Period elapsed ('%s')\n",
+ 					pcm_player->device->bus_id);
+@@ -133,7 +133,7 @@ static irqreturn_t snd_stm_pcm_player_irq_handler(int irq, void *dev_id)
+ 		} while (0);
+ 
+ 	/* Some alien interrupt??? */
+-	snd_assert(result == IRQ_HANDLED);
++	snd_stm_assert(result == IRQ_HANDLED);
+ 
+ 	return result;
+ }
+@@ -181,9 +181,9 @@ static int snd_stm_pcm_player_open(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_open(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	snd_pcm_set_sync(substream);  /* TODO: ??? */
+ 
+@@ -244,7 +244,7 @@ static int snd_stm_pcm_player_close(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_close(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	if (pcm_player->conv_group) {
+@@ -266,9 +266,9 @@ static int snd_stm_pcm_player_hw_free(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_hw_free(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	/* This callback may be called more than once... */
+ 
+@@ -308,9 +308,9 @@ static int snd_stm_pcm_player_hw_params(struct snd_pcm_substream *substream,
+ 	snd_stm_printd(1, "snd_stm_pcm_player_hw_params(substream=0x%p,"
+ 			" hw_params=0x%p)\n", substream, hw_params);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	/* This function may be called many times, so let's be prepared... */
+ 	if (snd_stm_buffer_is_allocated(pcm_player->buffer))
+@@ -339,14 +339,14 @@ static int snd_stm_pcm_player_hw_params(struct snd_pcm_substream *substream,
+ 	snd_stm_printd(1, "FDMA request trigger limit and transfer size set "
+ 			"to %d.\n", transfer_size);
+ 
+-	snd_assert(buffer_bytes % transfer_bytes == 0, return -EINVAL);
+-	snd_assert(transfer_size <= pcm_player->fdma_max_transfer_size,
++	snd_stm_assert(buffer_bytes % transfer_bytes == 0, return -EINVAL);
++	snd_stm_assert(transfer_size <= pcm_player->fdma_max_transfer_size,
+ 			return -EINVAL);
+ 	fdma_req_config.count = transfer_size;
+ 
+-	snd_assert(transfer_size == 1 || transfer_size % 2 == 0,
++	snd_stm_assert(transfer_size == 1 || transfer_size % 2 == 0,
+ 			return -EINVAL);
+-	snd_assert(transfer_size <=
++	snd_stm_assert(transfer_size <=
+ 			mask__AUD_PCMOUT_FMT__DMA_REQ_TRIG_LMT(pcm_player),
+ 			return -EINVAL);
+ 	set__AUD_PCMOUT_FMT__DMA_REQ_TRIG_LMT(pcm_player, transfer_size);
+@@ -402,10 +402,10 @@ static int snd_stm_pcm_player_prepare(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_prepare(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
+-	snd_assert(runtime->period_size * runtime->channels <
++	snd_stm_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime->period_size * runtime->channels <
+ 			MAX_SAMPLES_PER_PERIOD, return -EINVAL);
+ 
+ 	/* Configure SPDIF synchronisation */
+@@ -429,11 +429,11 @@ static int snd_stm_pcm_player_prepare(struct snd_pcm_substream *substream)
+ 			pcm_player->device->bus_id, runtime->rate,
+ 			oversampling);
+ 
+-	snd_assert(oversampling > 0, return -EINVAL);
++	snd_stm_assert(oversampling > 0, return -EINVAL);
+ 
+ 	/* For 32 bits subframe oversampling must be a multiple of 128,
+ 	 * for 16 bits - of 64 */
+-	snd_assert(((format & SND_STM_FORMAT__SUBFRAME_32_BITS) &&
++	snd_stm_assert(((format & SND_STM_FORMAT__SUBFRAME_32_BITS) &&
+ 				(oversampling % 128 == 0)) ||
+ 				(oversampling % 64 == 0), return -EINVAL);
+ 
+@@ -579,8 +579,8 @@ static int snd_stm_pcm_player_prepare(struct snd_pcm_substream *substream)
+ 
+ 	/* Number of channels... */
+ 
+-	snd_assert(runtime->channels % 2 == 0, return -EINVAL);
+-	snd_assert(runtime->channels >= 2 && runtime->channels <= 10,
++	snd_stm_assert(runtime->channels % 2 == 0, return -EINVAL);
++	snd_stm_assert(runtime->channels >= 2 && runtime->channels <= 10,
+ 			return -EINVAL);
+ 
+ 	set__AUD_PCMOUT_FMT__NUM_CH(pcm_player, runtime->channels / 2);
+@@ -597,7 +597,7 @@ static inline int snd_stm_pcm_player_start(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_start(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	/* Un-reset PCM player */
+@@ -642,7 +642,7 @@ static inline int snd_stm_pcm_player_stop(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_stop(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	/* Mute & shutdown DAC */
+@@ -680,7 +680,7 @@ static inline int snd_stm_pcm_player_pause(struct snd_pcm_substream
+ 	snd_stm_printd(1, "snd_stm_pcm_player_pause(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	/* "Mute" player
+@@ -701,7 +701,7 @@ static inline int snd_stm_pcm_player_release(struct snd_pcm_substream
+ 	snd_stm_printd(1, "snd_stm_pcm_player_release(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	/* "Unmute" player */
+@@ -743,9 +743,9 @@ static snd_pcm_uframes_t snd_stm_pcm_player_pointer(struct snd_pcm_substream
+ 	snd_stm_printd(2, "snd_stm_pcm_player_pointer(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	residue = get_dma_residue(pcm_player->fdma_channel);
+ 	pointer = bytes_to_frames(runtime, runtime->dma_bytes - residue);
+@@ -787,7 +787,7 @@ static void snd_stm_pcm_player_dump_registers(struct snd_info_entry *entry,
+ {
+ 	struct snd_stm_pcm_player *pcm_player = entry->private_data;
+ 
+-	snd_assert(pcm_player, return);
++	snd_stm_assert(pcm_player, return);
+ 	snd_stm_magic_assert(pcm_player, return);
+ 
+ 	snd_iprintf(buffer, "--- %s ---\n", pcm_player->device->bus_id);
+@@ -815,7 +815,7 @@ static int snd_stm_pcm_player_register(struct snd_device *snd_device)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_register(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	snd_stm_printd(0, "--- Registering player '%s'...\n",
+@@ -834,7 +834,7 @@ static int snd_stm_pcm_player_register(struct snd_device *snd_device)
+ 
+ 	/* Get frequency synthesizer channel */
+ 
+-	snd_assert(pcm_player->info->fsynth_bus_id != NULL, return -EINVAL);
++	snd_stm_assert(pcm_player->info->fsynth_bus_id != NULL, return -EINVAL);
+ 	snd_stm_printd(0, "Player connected to %s's output %d.\n",
+ 			pcm_player->info->fsynth_bus_id,
+ 			pcm_player->info->fsynth_output);
+@@ -842,7 +842,7 @@ static int snd_stm_pcm_player_register(struct snd_device *snd_device)
+ 	pcm_player->fsynth_channel = snd_stm_fsynth_get_channel(
+ 			pcm_player->info->fsynth_bus_id,
+ 			pcm_player->info->fsynth_output);
+-	snd_assert(pcm_player->fsynth_channel != NULL, return -EINVAL);
++	snd_stm_assert(pcm_player->fsynth_channel != NULL, return -EINVAL);
+ 
+ 	/* Registers view in ALSA's procfs */
+ 
+@@ -871,7 +871,7 @@ static int __exit snd_stm_pcm_player_disconnect(struct snd_device *snd_device)
+ 	snd_stm_printd(1, "snd_stm_pcm_player_disconnect(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	snd_stm_info_unregister(pcm_player->proc_entry);
+@@ -899,7 +899,7 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(card != NULL, return -EINVAL);
++	snd_stm_assert(card != NULL, return -EINVAL);
+ 
+ 	pcm_player = kzalloc(sizeof(*pcm_player), GFP_KERNEL);
+ 	if (!pcm_player) {
+@@ -910,9 +910,9 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 	}
+ 	snd_stm_magic_set(pcm_player);
+ 	pcm_player->info = pdev->dev.platform_data;
+-	snd_assert(pcm_player->info != NULL, return -EINVAL);
++	snd_stm_assert(pcm_player->info != NULL, return -EINVAL);
+ 	pcm_player->ver = pcm_player->info->ver;
+-	snd_assert(pcm_player->ver > 0, return -EINVAL);
++	snd_stm_assert(pcm_player->ver > 0, return -EINVAL);
+ 	pcm_player->device = &pdev->dev;
+ 
+ 	/* Get resources */
+@@ -957,9 +957,9 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "Player's name is '%s'\n", pcm_player->info->name);
+ 
+-	snd_assert(pcm_player->info->channels > 0, return -EINVAL);
+-	snd_assert(pcm_player->info->channels <= 10, return -EINVAL);
+-	snd_assert(pcm_player->info->channels % 2 == 0, return -EINVAL);
++	snd_stm_assert(pcm_player->info->channels > 0, return -EINVAL);
++	snd_stm_assert(pcm_player->info->channels <= 10, return -EINVAL);
++	snd_stm_assert(pcm_player->info->channels % 2 == 0, return -EINVAL);
+ 	if (pcm_player->ver > ver__AUD_PCMOUT__90_1_1) {
+ 		static unsigned int channels_2_10[] = { 2, 4, 6, 8, 10 };
+ 
+@@ -1058,7 +1058,7 @@ static int snd_stm_pcm_player_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_pcm_player *pcm_player = platform_get_drvdata(pdev);
+ 
+-	snd_assert(pcm_player, return -EINVAL);
++	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+ 	snd_stm_conv_unregister_source(pcm_player->conv_source);
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 76934b6..67bf958 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -98,7 +98,7 @@ static irqreturn_t snd_stm_pcm_reader_irq_handler(int irq, void *dev_id)
+ 	snd_stm_printd(2, "snd_stm_pcm_reader_irq_handler(irq=%d, "
+ 			"dev_id=0x%p)\n", irq, dev_id);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+ 	/* Get interrupt status & clear them immediately */
+@@ -116,7 +116,7 @@ static irqreturn_t snd_stm_pcm_reader_irq_handler(int irq, void *dev_id)
+ 	}
+ 
+ 	/* Some alien interrupt??? */
+-	snd_assert(result == IRQ_HANDLED);
++	snd_stm_assert(result == IRQ_HANDLED);
+ 
+ 	return result;
+ }
+@@ -129,7 +129,7 @@ static void snd_stm_pcm_reader_callback_node_done(unsigned long param)
+ 	snd_stm_printd(2, "snd_stm_pcm_reader_callback_node_done(param=0x%lx"
+ 			")\n", param);
+ 
+-	snd_assert(pcm_reader, return);
++	snd_stm_assert(pcm_reader, return);
+ 	snd_stm_magic_assert(pcm_reader, return);
+ 
+ 	snd_stm_printd(2, "Period elapsed ('%s')\n",
+@@ -146,7 +146,7 @@ static void snd_stm_pcm_reader_callback_node_error(unsigned long param)
+ 	snd_stm_printd(2, "snd_stm_pcm_reader_callback_node_error(param=0x%lx"
+ 			")\n", param);
+ 
+-	snd_assert(pcm_reader, return);
++	snd_stm_assert(pcm_reader, return);
+ 	snd_stm_magic_assert(pcm_reader, return);
+ 
+ 	snd_stm_printe("Error during FDMA transfer in reader '%s'!\n",
+@@ -199,9 +199,9 @@ static int snd_stm_pcm_reader_open(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_open(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	snd_pcm_set_sync(substream);  /* TODO: ??? */
+ 
+@@ -262,7 +262,7 @@ static int snd_stm_pcm_reader_close(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_close(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+ 	if (pcm_reader->conv_group) {
+@@ -284,9 +284,9 @@ static int snd_stm_pcm_reader_hw_free(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_hw_free(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	/* This callback may be called more than once... */
+ 
+@@ -328,9 +328,9 @@ static int snd_stm_pcm_reader_hw_params(struct snd_pcm_substream *substream,
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_hw_params(substream=0x%p,"
+ 			" hw_params=0x%p)\n", substream, hw_params);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	/* This function may be called many times, so let's be prepared... */
+ 	if (snd_stm_buffer_is_allocated(pcm_reader->buffer))
+@@ -341,7 +341,7 @@ static int snd_stm_pcm_reader_hw_params(struct snd_pcm_substream *substream,
+ 	buffer_bytes = params_buffer_bytes(hw_params);
+ 	periods = params_periods(hw_params);
+ 	period_bytes = buffer_bytes / periods;
+-	snd_assert(periods * period_bytes == buffer_bytes, return -EINVAL);
++	snd_stm_assert(periods * period_bytes == buffer_bytes, return -EINVAL);
+ 
+ 	/* Allocate buffer */
+ 
+@@ -365,13 +365,13 @@ static int snd_stm_pcm_reader_hw_params(struct snd_pcm_substream *substream,
+ 
+ 	snd_stm_printd(1, "FDMA request trigger limit set to %d.\n",
+ 			transfer_size);
+-	snd_assert(buffer_bytes % transfer_bytes == 0, return -EINVAL);
+-	snd_assert(transfer_size <= pcm_reader->fdma_max_transfer_size,
++	snd_stm_assert(buffer_bytes % transfer_bytes == 0, return -EINVAL);
++	snd_stm_assert(transfer_size <= pcm_reader->fdma_max_transfer_size,
+ 			return -EINVAL);
+ 	if (pcm_reader->ver > ver__AUD_PCMIN__65_2_0) {
+-		snd_assert(transfer_size == 1 || transfer_size % 2 == 0,
++		snd_stm_assert(transfer_size == 1 || transfer_size % 2 == 0,
+ 				return -EINVAL);
+-		snd_assert(transfer_size <=
++		snd_stm_assert(transfer_size <=
+ 				mask__AUD_PCMIN_FMT__DMA_REQ_TRIG_LMT(
+ 				pcm_reader), return -EINVAL);
+ 		set__AUD_PCMIN_FMT__DMA_REQ_TRIG_LMT(pcm_reader, transfer_size);
+@@ -482,9 +482,9 @@ static int snd_stm_pcm_reader_prepare(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_prepare(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	/* Get format value from connected converter */
+ 
+@@ -577,8 +577,8 @@ static int snd_stm_pcm_reader_prepare(struct snd_pcm_substream *substream)
+ 
+ 	/* Number of channels... */
+ 
+-	snd_assert(runtime->channels % 2 == 0, return -EINVAL);
+-	snd_assert(runtime->channels >= 2 && runtime->channels <= 10,
++	snd_stm_assert(runtime->channels % 2 == 0, return -EINVAL);
++	snd_stm_assert(runtime->channels >= 2 && runtime->channels <= 10,
+ 			return -EINVAL);
+ 
+ 	if (pcm_reader->ver > ver__AUD_PCMIN__65_2_0)
+@@ -596,7 +596,7 @@ static inline int snd_stm_pcm_reader_start(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_start(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+ 	/* Un-reset PCM reader */
+@@ -640,7 +640,7 @@ static inline int snd_stm_pcm_reader_stop(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_stop(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+ 	/* Mute & shutdown DAC */
+@@ -697,9 +697,9 @@ static snd_pcm_uframes_t snd_stm_pcm_reader_pointer(struct snd_pcm_substream
+ 	snd_stm_printd(2, "snd_stm_pcm_reader_pointer(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	residue = get_dma_residue(pcm_reader->fdma_channel);
+ 	pointer = bytes_to_frames(runtime, runtime->dma_bytes - residue);
+@@ -741,7 +741,7 @@ static void snd_stm_pcm_reader_dump_registers(struct snd_info_entry *entry,
+ {
+ 	struct snd_stm_pcm_reader *pcm_reader = entry->private_data;
+ 
+-	snd_assert(pcm_reader, return);
++	snd_stm_assert(pcm_reader, return);
+ 	snd_stm_magic_assert(pcm_reader, return);
+ 
+ 	snd_iprintf(buffer, "--- %s ---\n", pcm_reader->device->bus_id);
+@@ -768,7 +768,7 @@ static int snd_stm_pcm_reader_register(struct snd_device *snd_device)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_register(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+ 	snd_stm_printd(0, "--- Registering reader '%s'...\n",
+@@ -801,7 +801,7 @@ static int snd_stm_pcm_reader_disconnect(struct snd_device *snd_device)
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_disconnect(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+ 	snd_stm_info_unregister(pcm_reader->proc_entry);
+@@ -829,7 +829,7 @@ static int snd_stm_pcm_reader_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(card != NULL, return -EINVAL);
++	snd_stm_assert(card != NULL, return -EINVAL);
+ 
+ 	pcm_reader = kzalloc(sizeof(*pcm_reader), GFP_KERNEL);
+ 	if (!pcm_reader) {
+@@ -840,9 +840,9 @@ static int snd_stm_pcm_reader_probe(struct platform_device *pdev)
+ 	}
+ 	snd_stm_magic_set(pcm_reader);
+ 	pcm_reader->info = pdev->dev.platform_data;
+-	snd_assert(pcm_reader->info != NULL, return -EINVAL);
++	snd_stm_assert(pcm_reader->info != NULL, return -EINVAL);
+ 	pcm_reader->ver = pcm_reader->info->ver;
+-	snd_assert(pcm_reader->ver > 0, return -EINVAL);
++	snd_stm_assert(pcm_reader->ver > 0, return -EINVAL);
+ 	pcm_reader->device = &pdev->dev;
+ 
+ 	/* Get resources */
+@@ -890,15 +890,17 @@ static int snd_stm_pcm_reader_probe(struct platform_device *pdev)
+ 		 * mode, so we will just not be using it ;-) */
+ 		static unsigned int channels_2[] = { 2 };
+ 
+-		snd_assert(pcm_reader->info->channels == 2, return -EINVAL);
++		snd_stm_assert(pcm_reader->info->channels == 2, return -EINVAL);
+ 		pcm_reader->channels_constraint.list = channels_2;
+ 		pcm_reader->channels_constraint.count = 1;
+ 	} else {
+ 		static unsigned int channels_2_10[] = { 2, 4, 6, 8, 10 };
+ 
+-		snd_assert(pcm_reader->info->channels > 0, return -EINVAL);
+-		snd_assert(pcm_reader->info->channels <= 10, return -EINVAL);
+-		snd_assert(pcm_reader->info->channels % 2 == 0, return -EINVAL);
++		snd_stm_assert(pcm_reader->info->channels > 0, return -EINVAL);
++		snd_stm_assert(pcm_reader->info->channels <= 10,
++				return -EINVAL);
++		snd_stm_assert(pcm_reader->info->channels % 2 == 0,
++				return -EINVAL);
+ 		pcm_reader->channels_constraint.list = channels_2_10;
+ 		pcm_reader->channels_constraint.count =
+ 			pcm_reader->info->channels / 2;
+@@ -986,7 +988,7 @@ static int snd_stm_pcm_reader_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_pcm_reader *pcm_reader = platform_get_drvdata(pdev);
+ 
+-	snd_assert(pcm_reader, return -EINVAL);
++	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+ 	snd_stm_conv_unregister_source(pcm_reader->conv_source);
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index f79e3fd..ce87cdb 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -128,7 +128,7 @@ static irqreturn_t snd_stm_spdif_player_irq_handler(int irq, void *dev_id)
+ 	snd_stm_printd(2, "snd_stm_spdif_player_irq_handler(irq=%d, "
+ 			"dev_id=0x%p)\n", irq, dev_id);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	/* Get interrupt status & clear them immediately */
+@@ -149,7 +149,7 @@ static irqreturn_t snd_stm_spdif_player_irq_handler(int irq, void *dev_id)
+ 	if (likely(status &
+ 			mask__AUD_SPDIF_ITS__NSAMPLE__PENDING(spdif_player)))
+ 		do {
+-			snd_assert(spdif_player->substream, break);
++			snd_stm_assert(spdif_player->substream, break);
+ 
+ 			snd_stm_printd(2, "Period elapsed ('%s')\n",
+ 					spdif_player->device->bus_id);
+@@ -159,7 +159,7 @@ static irqreturn_t snd_stm_spdif_player_irq_handler(int irq, void *dev_id)
+ 		} while (0);
+ 
+ 	/* Some alien interrupt??? */
+-	snd_assert(result == IRQ_HANDLED);
++	snd_stm_assert(result == IRQ_HANDLED);
+ 
+ 	return result;
+ }
+@@ -251,9 +251,9 @@ static int snd_stm_spdif_player_open(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_spdif_player_open(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	snd_pcm_set_sync(substream);  /* TODO: ??? */
+ 
+@@ -317,7 +317,7 @@ static int snd_stm_spdif_player_close(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_spdif_player_close(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	if (spdif_player->conv_group) {
+@@ -339,9 +339,9 @@ static int snd_stm_spdif_player_hw_free(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_spdif_player_hw_free(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	/* This callback may be called more than once... */
+ 
+@@ -382,9 +382,9 @@ static int snd_stm_spdif_player_hw_params(struct snd_pcm_substream *substream,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_hw_params(substream=0x%p,"
+ 			" hw_params=0x%p)\n", substream, hw_params);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	/* This function may be called many times, so let's be prepared... */
+ 	if (snd_stm_buffer_is_allocated(spdif_player->buffer))
+@@ -413,17 +413,17 @@ static int snd_stm_spdif_player_hw_params(struct snd_pcm_substream *substream,
+ 	snd_stm_printd(1, "FDMA request trigger limit and transfer size set "
+ 			"to %d.\n", transfer_size);
+ 
+-	snd_assert(buffer_bytes % transfer_bytes == 0, return -EINVAL);
+-	snd_assert(transfer_size <= spdif_player->fdma_max_transfer_size,
++	snd_stm_assert(buffer_bytes % transfer_bytes == 0, return -EINVAL);
++	snd_stm_assert(transfer_size <= spdif_player->fdma_max_transfer_size,
+ 			return -EINVAL);
+ 	fdma_req_config.count = transfer_size;
+ 
+ 	if (spdif_player->ver >= ver__AUD_SPDIF__65_3_1) {
+ 		/* FDMA request trigger control was introduced in
+ 		 * STx7111... */
+-		snd_assert(transfer_size == 1 || transfer_size % 2 == 0,
++		snd_stm_assert(transfer_size == 1 || transfer_size % 2 == 0,
+ 				return -EINVAL);
+-		snd_assert(transfer_size <=
++		snd_stm_assert(transfer_size <=
+ 				mask__AUD_SPDIF_CONFIG__DMA_REQ_TRIG_LMT(
+ 				spdif_player), return -EINVAL);
+ 		set__AUD_SPDIF_CONFIG__DMA_REQ_TRIG_LMT(spdif_player,
+@@ -483,10 +483,10 @@ static int snd_stm_spdif_player_prepare(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_spdif_player_prepare(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
+-	snd_assert(runtime->period_size * runtime->channels <
++	snd_stm_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime->period_size * runtime->channels <
+ 			MAX_SAMPLES_PER_PERIOD, return -EINVAL);
+ 
+ 	/* Configure SPDIF-PCM synchronisation */
+@@ -499,7 +499,7 @@ static int snd_stm_spdif_player_prepare(struct snd_pcm_substream *substream)
+ 		unsigned int format = snd_stm_conv_get_format(
+ 				spdif_player->conv_group);
+ 
+-		snd_assert((format & SND_STM_FORMAT__MASK) ==
++		snd_stm_assert((format & SND_STM_FORMAT__MASK) ==
+ 				SND_STM_FORMAT__SPDIF, return -EINVAL);
+ 
+ 		oversampling = snd_stm_conv_get_oversampling(
+@@ -514,11 +514,11 @@ static int snd_stm_spdif_player_prepare(struct snd_pcm_substream *substream)
+ 			spdif_player->device->bus_id, runtime->rate,
+ 			oversampling);
+ 
+-	snd_assert(oversampling > 0, return -EINVAL);
++	snd_stm_assert(oversampling > 0, return -EINVAL);
+ 
+ 	/* Allowed oversampling values (SPDIF subframe is 32 bits long,
+ 	 * so oversampling must be multiple of 128... */
+-	snd_assert(oversampling % 128 == 0, return -EINVAL);
++	snd_stm_assert(oversampling % 128 == 0, return -EINVAL);
+ 
+ 	/* Set up frequency synthesizer */
+ 
+@@ -616,7 +616,7 @@ static inline int snd_stm_spdif_player_start(struct snd_pcm_substream
+ 	snd_stm_printd(1, "snd_stm_spdif_player_start(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	/* Un-reset SPDIF player */
+@@ -665,7 +665,7 @@ static inline int snd_stm_spdif_player_stop(struct snd_pcm_substream *substream)
+ 	snd_stm_printd(1, "snd_stm_spdif_player_stop(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	/* Mute & shutdown converter */
+@@ -704,7 +704,7 @@ static inline int snd_stm_spdif_player_pause(struct snd_pcm_substream
+ 	snd_stm_printd(1, "snd_stm_spdif_player_pause(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	/* "Mute" player
+@@ -729,7 +729,7 @@ static inline int snd_stm_spdif_player_release(struct snd_pcm_substream
+ 	snd_stm_printd(1, "snd_stm_spdif_player_release(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	/* "Unmute" player */
+@@ -775,9 +775,9 @@ static snd_pcm_uframes_t snd_stm_spdif_player_pointer(struct snd_pcm_substream
+ 	snd_stm_printd(2, "snd_stm_spdif_player_pointer(substream=0x%p)\n",
+ 			substream);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
++	snd_stm_assert(runtime, return -EINVAL);
+ 
+ 	residue = get_dma_residue(spdif_player->fdma_channel);
+ 	pointer = bytes_to_frames(runtime, runtime->dma_bytes - residue);
+@@ -807,7 +807,7 @@ static void snd_stm_spdif_player_format_frame(struct snd_stm_spdif_player
+ {
+ 	unsigned char data;
+ 
+-	snd_assert(spdif_player, return);
++	snd_stm_assert(spdif_player, return);
+ 	snd_stm_magic_assert(spdif_player, return);
+ 
+ 	/* Clean VUC bits */
+@@ -856,10 +856,10 @@ static int snd_stm_spdif_player_copy(struct snd_pcm_substream *substream,
+ 			"channel=%d, pos=%lu, buf=0x%p, count=%lu)\n",
+ 			substream, channel, pos, src, count);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
+-	snd_assert(channel == -1, return -EINVAL); /* Interleaved buffer */
++	snd_stm_assert(runtime, return -EINVAL);
++	snd_stm_assert(channel == -1, return -EINVAL); /* Interleaved buffer */
+ 
+ 	if (spdif_player->stream_settings.input_mode ==
+ 			SNDRV_STM_SPDIF_INPUT_MODE_NORMAL) {
+@@ -941,10 +941,10 @@ static int snd_stm_spdif_player_silence(struct snd_pcm_substream *substream,
+ 			"channel=%d, pos=%lu, count=%lu)\n",
+ 			substream, channel, pos, count);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+-	snd_assert(runtime, return -EINVAL);
+-	snd_assert(channel == -1, return -EINVAL); /* Interleaved buffer */
++	snd_stm_assert(runtime, return -EINVAL);
++	snd_stm_assert(channel == -1, return -EINVAL); /* Interleaved buffer */
+ 
+ 	if (spdif_player->stream_settings.input_mode ==
+ 			SNDRV_STM_SPDIF_INPUT_MODE_NORMAL) {
+@@ -999,7 +999,7 @@ static int snd_stm_spdif_player_ctl_default_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_default_get("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1018,7 +1018,7 @@ static int snd_stm_spdif_player_ctl_default_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_default_put("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1045,7 +1045,7 @@ static int snd_stm_spdif_player_ctl_raw_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_raw_get(kcontrol=0x%p, "
+ 			"ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1067,7 +1067,7 @@ static int snd_stm_spdif_player_ctl_raw_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_raw_put(kcontrol=0x%p, "
+ 			"ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	if (ucontrol->value.integer.value[0])
+@@ -1095,7 +1095,7 @@ static int snd_stm_spdif_player_ctl_encoded_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_encoded_get(kcontrol=0x%p, "
+ 			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1117,7 +1117,7 @@ static int snd_stm_spdif_player_ctl_encoded_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_encoded_put(kcontrol=0x%p,"
+ 			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	if (ucontrol->value.integer.value[0])
+@@ -1154,7 +1154,7 @@ static int snd_stm_spdif_player_ctl_preamble_get(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_preamble_get(kcontrol=0x%p"
+ 			", ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1175,7 +1175,7 @@ static int snd_stm_spdif_player_ctl_preamble_put(struct snd_kcontrol *kcontrol,
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_preamble_put(kcontrol=0x%p"
+ 			", ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1208,7 +1208,7 @@ static int snd_stm_spdif_player_ctl_audio_repetition_get(struct snd_kcontrol
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_audio_repetition_get("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1228,7 +1228,7 @@ static int snd_stm_spdif_player_ctl_audio_repetition_put(struct snd_kcontrol
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_audio_repetition_put("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1251,7 +1251,7 @@ static int snd_stm_spdif_player_ctl_pause_repetition_get(struct snd_kcontrol
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_pause_repetition_get("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1271,7 +1271,7 @@ static int snd_stm_spdif_player_ctl_pause_repetition_put(struct snd_kcontrol
+ 	snd_stm_printd(1, "snd_stm_spdif_player_ctl_pause_repetition_put("
+ 			"kcontrol=0x%p, ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	spin_lock(&spdif_player->default_settings_lock);
+@@ -1358,7 +1358,7 @@ static void snd_stm_spdif_player_dump_registers(struct snd_info_entry *entry,
+ {
+ 	struct snd_stm_spdif_player *spdif_player = entry->private_data;
+ 
+-	snd_assert(spdif_player, return);
++	snd_stm_assert(spdif_player, return);
+ 	snd_stm_magic_assert(spdif_player, return);
+ 
+ 	snd_iprintf(buffer, "--- %s ---\n", spdif_player->device->bus_id);
+@@ -1395,7 +1395,7 @@ static int snd_stm_spdif_player_register(struct snd_device *snd_device)
+ 	snd_stm_printd(1, "snd_stm_spdif_player_register(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	snd_stm_printd(0, "--- Registering player '%s'...\n",
+@@ -1417,7 +1417,8 @@ static int snd_stm_spdif_player_register(struct snd_device *snd_device)
+ 
+ 	/* Get frequency synthesizer channel */
+ 
+-	snd_assert(spdif_player->info->fsynth_bus_id != NULL, return -EINVAL);
++	snd_stm_assert(spdif_player->info->fsynth_bus_id != NULL,
++			return -EINVAL);
+ 	snd_stm_printd(0, "Player connected to %s's output %d.\n",
+ 			spdif_player->info->fsynth_bus_id,
+ 			spdif_player->info->fsynth_output);
+@@ -1425,7 +1426,7 @@ static int snd_stm_spdif_player_register(struct snd_device *snd_device)
+ 	spdif_player->fsynth_channel = snd_stm_fsynth_get_channel(
+ 			spdif_player->info->fsynth_bus_id,
+ 			spdif_player->info->fsynth_output);
+-	snd_assert(spdif_player->fsynth_channel != NULL, return -EINVAL);
++	snd_stm_assert(spdif_player->fsynth_channel != NULL, return -EINVAL);
+ 
+ 	/* Registers view in ALSA's procfs */
+ 
+@@ -1468,7 +1469,7 @@ static int snd_stm_spdif_player_disconnect(struct snd_device *snd_device)
+ 	snd_stm_printd(1, "snd_stm_spdif_player_disconnect(snd_device=0x%p)\n",
+ 			snd_device);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	snd_stm_info_unregister(spdif_player->proc_entry);
+@@ -1496,7 +1497,7 @@ static int snd_stm_spdif_player_probe(struct platform_device *pdev)
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(card != NULL, return -EINVAL);
++	snd_stm_assert(card != NULL, return -EINVAL);
+ 
+ 	spdif_player = kzalloc(sizeof(*spdif_player), GFP_KERNEL);
+ 	if (!spdif_player) {
+@@ -1507,9 +1508,9 @@ static int snd_stm_spdif_player_probe(struct platform_device *pdev)
+ 	}
+ 	snd_stm_magic_set(spdif_player);
+ 	spdif_player->info = pdev->dev.platform_data;
+-	snd_assert(spdif_player->info != NULL, return -EINVAL);
++	snd_stm_assert(spdif_player->info != NULL, return -EINVAL);
+ 	spdif_player->ver = spdif_player->info->ver;
+-	snd_assert(spdif_player->ver > 0, return -EINVAL);
++	snd_stm_assert(spdif_player->ver > 0, return -EINVAL);
+ 	spdif_player->device = &pdev->dev;
+ 
+ 	spin_lock_init(&spdif_player->default_settings_lock);
+@@ -1635,7 +1636,7 @@ static int snd_stm_spdif_player_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_spdif_player *spdif_player = platform_get_drvdata(pdev);
+ 
+-	snd_assert(spdif_player, return -EINVAL);
++	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+ 	snd_stm_conv_unregister_source(spdif_player->conv_source);
+diff --git a/sound/stm/stx710x.c b/sound/stm/stx710x.c
+index 4602f85..964a507 100644
+--- a/sound/stm/stx710x.c
++++ b/sound/stm/stx710x.c
+@@ -294,7 +294,7 @@ static void snd_stm_stx710x_glue_dump_registers(struct snd_info_entry *entry,
+ {
+ 	struct snd_stm_stx710x_glue *stx710x_glue = entry->private_data;
+ 
+-	snd_assert(stx710x_glue, return);
++	snd_stm_assert(stx710x_glue, return);
+ 	snd_stm_magic_assert(stx710x_glue, return);
+ 
+ 	snd_iprintf(buffer, "--- snd_stx710x_glue ---\n");
+@@ -310,7 +310,7 @@ static int __init snd_stm_stx710x_glue_register(struct snd_device *snd_device)
+ {
+ 	struct snd_stm_stx710x_glue *stx710x_glue = snd_device->device_data;
+ 
+-	snd_assert(stx710x_glue, return -EINVAL);
++	snd_stm_assert(stx710x_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx710x_glue, return -EINVAL);
+ 
+ 	/* Enable audio outputs */
+@@ -333,7 +333,7 @@ static int __exit snd_stm_stx710x_glue_disconnect(struct snd_device *snd_device)
+ {
+ 	struct snd_stm_stx710x_glue *stx710x_glue = snd_device->device_data;
+ 
+-	snd_assert(stx710x_glue, return -EINVAL);
++	snd_stm_assert(stx710x_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx710x_glue, return -EINVAL);
+ 
+ 	/* Remove procfs entry */
+@@ -410,7 +410,7 @@ static int __exit snd_stm_stx710x_glue_remove(struct platform_device *pdev)
+ 	struct snd_stm_stx710x_glue *stx710x_glue =
+ 			platform_get_drvdata(pdev);
+ 
+-	snd_assert(stx710x_glue, return -EINVAL);
++	snd_stm_assert(stx710x_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx710x_glue, return -EINVAL);
+ 
+ 	snd_stm_memory_release(stx710x_glue->mem_region, stx710x_glue->base);
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index 2c0147c..ff7600d 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -363,7 +363,7 @@ static void snd_stm_stx7111_glue_dump_registers(struct snd_info_entry *entry,
+ {
+ 	struct snd_stm_stx7111_glue *stx7111_glue = entry->private_data;
+ 
+-	snd_assert(stx7111_glue, return);
++	snd_stm_assert(stx7111_glue, return);
+ 	snd_stm_magic_assert(stx7111_glue, return);
+ 
+ 	snd_iprintf(buffer, "--- snd_stx7111_glue ---\n");
+@@ -379,7 +379,7 @@ static int __init snd_stm_stx7111_glue_register(struct snd_device *snd_device)
+ {
+ 	struct snd_stm_stx7111_glue *stx7111_glue = snd_device->device_data;
+ 
+-	snd_assert(stx7111_glue, return -EINVAL);
++	snd_stm_assert(stx7111_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx7111_glue, return -EINVAL);
+ 
+ 	/* Enable audio outputs */
+@@ -401,7 +401,7 @@ static int __exit snd_stm_stx7111_glue_disconnect(struct snd_device *snd_device)
+ {
+ 	struct snd_stm_stx7111_glue *stx7111_glue = snd_device->device_data;
+ 
+-	snd_assert(stx7111_glue, return -EINVAL);
++	snd_stm_assert(stx7111_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx7111_glue, return -EINVAL);
+ 
+ 	/* Remove procfs entry */
+@@ -477,7 +477,7 @@ static int __exit snd_stm_stx7111_glue_remove(struct platform_device *pdev)
+ 	struct snd_stm_stx7111_glue *stx7111_glue =
+ 			platform_get_drvdata(pdev);
+ 
+-	snd_assert(stx7111_glue, return -EINVAL);
++	snd_stm_assert(stx7111_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx7111_glue, return -EINVAL);
+ 
+ 	snd_stm_memory_release(stx7111_glue->mem_region, stx7111_glue->base);
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index 3d869f2..97c39a2 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -565,7 +565,7 @@ static void snd_stm_stx7200_glue_dump_registers(struct snd_info_entry *entry,
+ {
+ 	struct snd_stm_stx7200_glue *stx7200_glue = entry->private_data;
+ 
+-	snd_assert(stx7200_glue, return);
++	snd_stm_assert(stx7200_glue, return);
+ 	snd_stm_magic_assert(stx7200_glue, return);
+ 
+ 	snd_iprintf(buffer, "--- snd_stx7200_glue ---\n");
+@@ -585,7 +585,7 @@ static int __init snd_stm_stx7200_glue_register(struct snd_device *snd_device)
+ {
+ 	struct snd_stm_stx7200_glue *stx7200_glue = snd_device->device_data;
+ 
+-	snd_assert(stx7200_glue, return -EINVAL);
++	snd_stm_assert(stx7200_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx7200_glue, return -EINVAL);
+ 
+ 	/* Enable audio outputs */
+@@ -614,7 +614,7 @@ static int __exit snd_stm_stx7200_glue_disconnect(struct snd_device *snd_device)
+ {
+ 	struct snd_stm_stx7200_glue *stx7200_glue = snd_device->device_data;
+ 
+-	snd_assert(stx7200_glue, return -EINVAL);
++	snd_stm_assert(stx7200_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx7200_glue, return -EINVAL);
+ 
+ 	/* Remove procfs entry */
+@@ -698,7 +698,7 @@ static int __exit snd_stm_stx7200_glue_remove(struct platform_device *pdev)
+ 	struct snd_stm_stx7200_glue *stx7200_glue =
+ 			platform_get_drvdata(pdev);
+ 
+-	snd_assert(stx7200_glue, return -EINVAL);
++	snd_stm_assert(stx7200_glue, return -EINVAL);
+ 	snd_stm_magic_assert(stx7200_glue, return -EINVAL);
+ 
+ 	snd_stm_memory_release(stx7200_glue->mem_region, stx7200_glue->base);
+@@ -742,11 +742,11 @@ static int __init snd_stm_stx7200_init(void)
+ 	}
+ 
+ 	/* We assume farther that MEM resource is first, lets check it... */
+-	snd_assert(spdif_player.resource[0].flags == IORESOURCE_MEM,
++	snd_stm_assert(spdif_player.resource[0].flags == IORESOURCE_MEM,
+ 			return -EINVAL);
+-	snd_assert(hdmi_pcm_player.resource[0].flags == IORESOURCE_MEM,
++	snd_stm_assert(hdmi_pcm_player.resource[0].flags == IORESOURCE_MEM,
+ 			return -EINVAL);
+-	snd_assert(hdmi_spdif_player.resource[0].flags == IORESOURCE_MEM,
++	snd_stm_assert(hdmi_spdif_player.resource[0].flags == IORESOURCE_MEM,
+ 			return -EINVAL);
+ 
+ 	switch (cpu_data->cut_major) {

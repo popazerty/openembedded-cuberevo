@@ -1,0 +1,76 @@
+From 3f4b1754fe77941f0073cc1ffd6cd9c61589e8a3 Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?Andr=C3=A9=20Draszik?= <andre.draszik@st.com>
+Date: Thu, 12 Mar 2009 11:52:15 +0000
+Subject: [PATCH] sh: cleanup of do_address_error()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This patch fixes a few problems with the existing code in do_address_error().
+a) the variable used to printk()d the offending instruction wasn't
+   initialized correctly. This is a fix to bug 5727
+b) behaviour for CONFIG_CPU_SH2A wasn't correct
+c) the 'ignore address error' behaviour didn't update the PC, causing an
+   infinite loop.
+
+Signed-off-by: André Draszik <andre.draszik@st.com>
+---
+ arch/sh/kernel/traps.c |   24 ++++++++++++++----------
+ 1 files changed, 14 insertions(+), 10 deletions(-)
+
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index d393544..ef7bc7e 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -643,12 +643,23 @@ asmlinkage void do_address_error(struct pt_regs *regs,
+ 
+ 		se_user += 1;
+ 
++#ifndef CONFIG_CPU_SH2A
++		set_fs(USER_DS);
++		if (copy_from_user (&instruction, (u16 *)(regs->pc & ~1), 2)) {
++                        /* Argh. Fault on the instruction itself.
++                           This should never happen non-SMP
++                        */
++			set_fs(oldfs);
++			goto uspace_segv;
++		}
++		set_fs(oldfs);
+ 		/* shout about userspace fixups */
+ 		if (se_usermode & 1)
+ 			printk("Unaligned userspace access "
+ 			       "in \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
+-			       current->comm,current->pid,(u16*)regs->pc,
+-			       instruction);
++			       current->comm,current->pid,
++			       (u16*)regs->pc,instruction);
++#endif
+ 
+ 		if (se_usermode & 2)
+ 			goto fixup;
+@@ -658,6 +669,7 @@ asmlinkage void do_address_error(struct pt_regs *regs,
+ 		else {
+ 			/* ignore */
+ 			trace_mark(kernel_arch_trap_exit, MARK_NOARGS);
++			regs->pc += instruction_size(instruction);
+ 			return;
+ 		}
+ 
+@@ -670,14 +682,6 @@ fixup:
+ 
+ #ifndef CONFIG_CPU_SH2A
+ 		set_fs(USER_DS);
+-		if (copy_from_user(&instruction, (u16 *)(regs->pc), 2)) {
+-			/* Argh. Fault on the instruction itself.
+-			   This should never happen non-SMP
+-			*/
+-			set_fs(oldfs);
+-			goto uspace_segv;
+-		}
+-
+ 		tmp = handle_unaligned_access(instruction, regs);
+ 		set_fs(oldfs);
+ 
+-- 
+1.6.0.6
+

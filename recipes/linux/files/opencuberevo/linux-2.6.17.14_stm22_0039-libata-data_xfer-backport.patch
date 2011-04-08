@@ -1,0 +1,313 @@
+This is a backport of the following patch. It is needed for the
+sata_stm.c driver so that we can override the data_xfer method.
+Note that we don't have the preceeding patch which added dev->ap,
+so this portion of the patch has been removed.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+commit a6b2c5d4754dc539a560fdf0d3fb78a14174394a
+Author: Alan Cox <alan@lxorguk.ukuu.org.uk>
+Date:   Mon May 22 16:59:59 2006 +0100
+
+    [PATCH] PATCH: libata. Add ->data_xfer method
+    
+    We need to pass the device in order to do per device checks such as
+    32bit I/O enables. With the changes to include dev->ap we now don't have
+    to add parameters however just clean them up. Also add data_xfer methods
+    to the existing drivers except ata_piix (which is in the other block of
+    patches). If you reject the piix one just add a data_xfer to it...
+    
+    Signed-off-by: Alan Cox <alan@redhat.com>
+    Signed-off-by: Jeff Garzik <jeff@garzik.org>
+
+Index: linux/drivers/scsi/libata-core.c
+===================================================================
+--- linux.orig/drivers/scsi/libata-core.c
++++ linux/drivers/scsi/libata-core.c
+@@ -3335,8 +3335,8 @@ void swap_buf_le16(u16 *buf, unsigned in
+  *	Inherited from caller.
+  */
+ 
+-static void ata_mmio_data_xfer(struct ata_port *ap, unsigned char *buf,
+-			       unsigned int buflen, int write_data)
++void ata_mmio_data_xfer(struct ata_port *ap, unsigned char *buf,
++			unsigned int buflen, int write_data)
+ {
+ 	unsigned int i;
+ 	unsigned int words = buflen >> 1;
+@@ -3380,8 +3380,8 @@ static void ata_mmio_data_xfer(struct at
+  *	Inherited from caller.
+  */
+ 
+-static void ata_pio_data_xfer(struct ata_port *ap, unsigned char *buf,
+-			      unsigned int buflen, int write_data)
++void ata_pio_data_xfer(struct ata_port *ap, unsigned char *buf,
++		       unsigned int buflen, int write_data)
+ {
+ 	unsigned int words = buflen >> 1;
+ 
+@@ -3407,39 +3407,6 @@ static void ata_pio_data_xfer(struct ata
+ }
+ 
+ /**
+- *	ata_data_xfer - Transfer data from/to the data register.
+- *	@ap: port to read/write
+- *	@buf: data buffer
+- *	@buflen: buffer length
+- *	@do_write: read/write
+- *
+- *	Transfer data from/to the device data register.
+- *
+- *	LOCKING:
+- *	Inherited from caller.
+- */
+-
+-static void ata_data_xfer(struct ata_port *ap, unsigned char *buf,
+-			  unsigned int buflen, int do_write)
+-{
+-	/* Make the crap hardware pay the costs not the good stuff */
+-	if (unlikely(ap->flags & ATA_FLAG_IRQ_MASK)) {
+-		unsigned long flags;
+-		local_irq_save(flags);
+-		if (ap->flags & ATA_FLAG_MMIO)
+-			ata_mmio_data_xfer(ap, buf, buflen, do_write);
+-		else
+-			ata_pio_data_xfer(ap, buf, buflen, do_write);
+-		local_irq_restore(flags);
+-	} else {
+-		if (ap->flags & ATA_FLAG_MMIO)
+-			ata_mmio_data_xfer(ap, buf, buflen, do_write);
+-		else
+-			ata_pio_data_xfer(ap, buf, buflen, do_write);
+-	}
+-}
+-
+-/**
+  *	ata_pio_sector - Transfer ATA_SECT_SIZE (512 bytes) of data.
+  *	@qc: Command on going
+  *
+@@ -3482,7 +3449,7 @@ static void ata_pio_sector(struct ata_qu
+ 
+ 	/* do the actual data transfer */
+ 	do_write = (qc->tf.flags & ATA_TFLAG_WRITE);
+-	ata_data_xfer(ap, buf, ATA_SECT_SIZE, do_write);
++	ap->ops->data_xfer(ap, buf, ATA_SECT_SIZE, do_write);
+ 
+ 	kunmap(page);
+ }
+@@ -3529,7 +3496,7 @@ next_sg:
+ 			       ap->id, bytes);
+ 
+ 		for (i = 0; i < words; i++)
+-			ata_data_xfer(ap, (unsigned char*)pad_buf, 2, do_write);
++			ap->ops->data_xfer(ap, (unsigned char*)pad_buf, 2, do_write);
+ 
+ 		ap->hsm_task_state = HSM_ST_LAST;
+ 		return;
+@@ -3564,7 +3531,7 @@ next_sg:
+ 	DPRINTK("data %s\n", qc->tf.flags & ATA_TFLAG_WRITE ? "write" : "read");
+ 
+ 	/* do the actual data transfer */
+-	ata_data_xfer(ap, buf, count, do_write);
++	ap->ops->data_xfer(ap,  buf, count, do_write);
+ 
+ 	kunmap(page);
+ 
+@@ -3793,14 +3760,14 @@ static void atapi_packet_task(void *_dat
+ 		 */
+ 		spin_lock_irqsave(&ap->host_set->lock, flags);
+ 		ap->flags &= ~ATA_FLAG_NOINTR;
+-		ata_data_xfer(ap, qc->cdb, qc->dev->cdb_len, 1);
++		ap->ops->data_xfer(ap, qc->cdb, qc->dev->cdb_len, 1);
+ 		ata_altstatus(ap); /* flush */
+ 
+ 		if (qc->tf.protocol == ATA_PROT_ATAPI_DMA)
+ 			ap->ops->bmdma_start(qc);	/* initiate bmdma */
+ 		spin_unlock_irqrestore(&ap->host_set->lock, flags);
+ 	} else {
+-		ata_data_xfer(ap, qc->cdb, qc->dev->cdb_len, 1);
++		ap->ops->data_xfer(ap, qc->cdb, qc->dev->cdb_len, 1);
+ 		ata_altstatus(ap); /* flush */
+ 
+ 		/* PIO commands are handled by polling */
+@@ -4957,6 +4924,8 @@ EXPORT_SYMBOL_GPL(ata_port_start);
+ EXPORT_SYMBOL_GPL(ata_port_stop);
+ EXPORT_SYMBOL_GPL(ata_host_stop);
+ EXPORT_SYMBOL_GPL(ata_interrupt);
++EXPORT_SYMBOL_GPL(ata_mmio_data_xfer);
++EXPORT_SYMBOL_GPL(ata_pio_data_xfer);
+ EXPORT_SYMBOL_GPL(ata_qc_prep);
+ EXPORT_SYMBOL_GPL(ata_noop_qc_prep);
+ EXPORT_SYMBOL_GPL(ata_bmdma_setup);
+Index: linux/drivers/scsi/sata_mv.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_mv.c
++++ linux/drivers/scsi/sata_mv.c
+@@ -406,6 +406,7 @@ static const struct ata_port_operations 
+ 
+ 	.qc_prep		= mv_qc_prep,
+ 	.qc_issue		= mv_qc_issue,
++	.data_xfer		= ata_mmio_data_xfer,
+ 
+ 	.eng_timeout		= mv_eng_timeout,
+ 
+@@ -433,6 +434,7 @@ static const struct ata_port_operations 
+ 
+ 	.qc_prep		= mv_qc_prep,
+ 	.qc_issue		= mv_qc_issue,
++	.data_xfer		= ata_mmio_data_xfer,
+ 
+ 	.eng_timeout		= mv_eng_timeout,
+ 
+Index: linux/drivers/scsi/sata_nv.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_nv.c
++++ linux/drivers/scsi/sata_nv.c
+@@ -228,6 +228,7 @@ static const struct ata_port_operations 
+ 	.qc_prep		= ata_qc_prep,
+ 	.qc_issue		= ata_qc_issue_prot,
+ 	.eng_timeout		= ata_eng_timeout,
++	.data_xfer		= ata_pio_data_xfer,
+ 	.irq_handler		= nv_interrupt,
+ 	.irq_clear		= ata_bmdma_irq_clear,
+ 	.scr_read		= nv_scr_read,
+Index: linux/drivers/scsi/sata_promise.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_promise.c
++++ linux/drivers/scsi/sata_promise.c
+@@ -136,6 +136,7 @@ static const struct ata_port_operations 
+ 	.qc_prep		= pdc_qc_prep,
+ 	.qc_issue		= pdc_qc_issue_prot,
+ 	.eng_timeout		= pdc_eng_timeout,
++	.data_xfer		= ata_mmio_data_xfer,
+ 	.irq_handler		= pdc_interrupt,
+ 	.irq_clear		= pdc_irq_clear,
+ 
+@@ -158,6 +159,7 @@ static const struct ata_port_operations 
+ 
+ 	.qc_prep		= pdc_qc_prep,
+ 	.qc_issue		= pdc_qc_issue_prot,
++	.data_xfer		= ata_mmio_data_xfer,
+ 	.eng_timeout		= pdc_eng_timeout,
+ 	.irq_handler		= pdc_interrupt,
+ 	.irq_clear		= pdc_irq_clear,
+Index: linux/drivers/scsi/sata_qstor.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_qstor.c
++++ linux/drivers/scsi/sata_qstor.c
+@@ -156,6 +156,7 @@ static const struct ata_port_operations 
+ 	.phy_reset		= qs_phy_reset,
+ 	.qc_prep		= qs_qc_prep,
+ 	.qc_issue		= qs_qc_issue,
++	.data_xfer		= ata_mmio_data_xfer,
+ 	.eng_timeout		= qs_eng_timeout,
+ 	.irq_handler		= qs_intr,
+ 	.irq_clear		= qs_irq_clear,
+Index: linux/drivers/scsi/sata_sil.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_sil.c
++++ linux/drivers/scsi/sata_sil.c
+@@ -174,6 +174,7 @@ static const struct ata_port_operations 
+ 	.bmdma_status		= ata_bmdma_status,
+ 	.qc_prep		= ata_qc_prep,
+ 	.qc_issue		= ata_qc_issue_prot,
++	.data_xfer		= ata_mmio_data_xfer,
+ 	.eng_timeout		= ata_eng_timeout,
+ 	.irq_handler		= ata_interrupt,
+ 	.irq_clear		= ata_bmdma_irq_clear,
+Index: linux/drivers/scsi/sata_sis.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_sis.c
++++ linux/drivers/scsi/sata_sis.c
+@@ -113,6 +113,7 @@ static const struct ata_port_operations 
+ 	.bmdma_status		= ata_bmdma_status,
+ 	.qc_prep		= ata_qc_prep,
+ 	.qc_issue		= ata_qc_issue_prot,
++	.data_xfer		= ata_pio_data_xfer,
+ 	.eng_timeout		= ata_eng_timeout,
+ 	.irq_handler		= ata_interrupt,
+ 	.irq_clear		= ata_bmdma_irq_clear,
+Index: linux/drivers/scsi/sata_svw.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_svw.c
++++ linux/drivers/scsi/sata_svw.c
+@@ -320,6 +320,7 @@ static const struct ata_port_operations 
+ 	.bmdma_status		= ata_bmdma_status,
+ 	.qc_prep		= ata_qc_prep,
+ 	.qc_issue		= ata_qc_issue_prot,
++	.data_xfer		= ata_mmio_data_xfer,
+ 	.eng_timeout		= ata_eng_timeout,
+ 	.irq_handler		= ata_interrupt,
+ 	.irq_clear		= ata_bmdma_irq_clear,
+Index: linux/drivers/scsi/sata_sx4.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_sx4.c
++++ linux/drivers/scsi/sata_sx4.c
+@@ -204,6 +204,7 @@ static const struct ata_port_operations 
+ 	.phy_reset		= pdc_20621_phy_reset,
+ 	.qc_prep		= pdc20621_qc_prep,
+ 	.qc_issue		= pdc20621_qc_issue_prot,
++	.data_xfer		= ata_mmio_data_xfer,
+ 	.eng_timeout		= pdc_eng_timeout,
+ 	.irq_handler		= pdc20621_interrupt,
+ 	.irq_clear		= pdc20621_irq_clear,
+Index: linux/drivers/scsi/sata_uli.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_uli.c
++++ linux/drivers/scsi/sata_uli.c
+@@ -110,6 +110,7 @@ static const struct ata_port_operations 
+ 	.bmdma_status		= ata_bmdma_status,
+ 	.qc_prep		= ata_qc_prep,
+ 	.qc_issue		= ata_qc_issue_prot,
++	.data_xfer		= ata_pio_data_xfer,
+ 
+ 	.eng_timeout		= ata_eng_timeout,
+ 
+Index: linux/drivers/scsi/sata_via.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_via.c
++++ linux/drivers/scsi/sata_via.c
+@@ -124,6 +124,7 @@ static const struct ata_port_operations 
+ 
+ 	.qc_prep		= ata_qc_prep,
+ 	.qc_issue		= ata_qc_issue_prot,
++	.data_xfer		= ata_pio_data_xfer,
+ 
+ 	.eng_timeout		= ata_eng_timeout,
+ 
+Index: linux/drivers/scsi/sata_vsc.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_vsc.c
++++ linux/drivers/scsi/sata_vsc.c
+@@ -290,6 +290,7 @@ static const struct ata_port_operations 
+ 	.bmdma_status		= ata_bmdma_status,
+ 	.qc_prep		= ata_qc_prep,
+ 	.qc_issue		= ata_qc_issue_prot,
++	.data_xfer		= ata_pio_data_xfer,
+ 	.eng_timeout		= ata_eng_timeout,
+ 	.irq_handler		= vsc_sata_interrupt,
+ 	.irq_clear		= ata_bmdma_irq_clear,
+Index: linux/include/linux/libata.h
+===================================================================
+--- linux.orig/include/linux/libata.h
++++ linux/include/linux/libata.h
+@@ -450,6 +450,8 @@ struct ata_port_operations {
+ 	void (*bmdma_setup) (struct ata_queued_cmd *qc);
+ 	void (*bmdma_start) (struct ata_queued_cmd *qc);
+ 
++	void (*data_xfer) (struct ata_port *, unsigned char *, unsigned int, int);
++
+ 	void (*qc_prep) (struct ata_queued_cmd *qc);
+ 	unsigned int (*qc_issue) (struct ata_queued_cmd *qc);
+ 
+@@ -615,6 +617,10 @@ extern int ata_port_start (struct ata_po
+ extern void ata_port_stop (struct ata_port *ap);
+ extern void ata_host_stop (struct ata_host_set *host_set);
+ extern irqreturn_t ata_interrupt (int irq, void *dev_instance, struct pt_regs *regs);
++extern void ata_mmio_data_xfer(struct ata_port *ap, unsigned char *buf,
++			       unsigned int buflen, int write_data);
++extern void ata_pio_data_xfer(struct ata_port *ap, unsigned char *buf,
++			      unsigned int buflen, int write_data);
+ extern void ata_qc_prep(struct ata_queued_cmd *qc);
+ extern void ata_noop_qc_prep(struct ata_queued_cmd *qc);
+ extern unsigned int ata_qc_issue_prot(struct ata_queued_cmd *qc);

@@ -1,0 +1,215 @@
+From 297ec82ddcd8111f8947c86b4f00907ae42742d8 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 22 Apr 2009 09:41:22 +0100
+Subject: [PATCH] stm_nand: Updates to NAND configuration structures
+
+This patch:
+     - Adds template macro for platform NAND devices.
+     - Adds chip_delay parameter to NAND timing data.
+     - Moves 'probe_types' to STM_NAND_EMI driver - we only support cmdline
+       probes, so no need to specify in platform data.
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/common/mb588.c |   57 ++++++-------------------------------
+ drivers/mtd/nand/stm_nand_emi.c  |   15 ++++------
+ include/linux/stm/nand.h         |    2 +
+ include/linux/stm/soc_init.h     |   30 ++++++++++++++++++++
+ 4 files changed, 48 insertions(+), 56 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/mb588.c b/arch/sh/boards/st/common/mb588.c
+index 5ba2455..da5c3d8 100644
+--- a/arch/sh/boards/st/common/mb588.c
++++ b/arch/sh/boards/st/common/mb588.c
+@@ -26,10 +26,11 @@
+ #include <linux/mtd/nand.h>
+ #include <linux/stm/nand.h>
+ #include <linux/stm/soc.h>
++#include <linux/stm/soc_init.h>
+ #include <linux/stm/emi.h>
+ #include <asm/mach/stem.h>
+ 
+-static struct mtd_partition nand_partitions[] = {
++static struct mtd_partition nand_parts[] = {
+ 	{
+ 		.name	= "NAND root",
+ 		.offset	= 0,
+@@ -45,8 +46,8 @@ static struct plat_stmnand_data nand_config = {
+ 	.emi_bank		= STEM_CS0_BANK,
+ 	.emi_withinbankoffset	= STEM_CS0_OFFSET,
+ 	.chip_delay		= 30,
+-	.mtd_parts		= nand_partitions,
+-	.nr_parts		= ARRAY_SIZE(nand_partitions),
++	.mtd_parts		= nand_parts,
++	.nr_parts		= ARRAY_SIZE(nand_parts),
+ 	.rbn_port		= -1,
+ 	.rbn_pin		= -1,
+ 
+@@ -61,11 +62,12 @@ static struct plat_stmnand_data nand_config = {
+ 		.wr_off		= 40,
+ 		.rd_on		= 10,
+ 		.rd_off		= 40,
++		.chip_delay	= 30		/* in us */
+ 	},
+ #else
+ 	/* Legacy Timing data for generic plat_nand driver */
+ 	.emi_timing_data = &(struct emi_timing_data) {
+-		.rd_cycle_time	 = 50,		 /* times in ns */
++		.rd_cycle_time	 = 50,		/* times in ns */
+ 		.rd_oee_start	 = 0,
+ 		.rd_oee_end	 = 10,
+ 		.rd_latchpoint	 = 10,
+@@ -80,52 +82,13 @@ static struct plat_stmnand_data nand_config = {
+ };
+ 
+ #if defined(CONFIG_CPU_SUBTYPE_STX7200)
++
+ /* For SoCs migrated to STM_NAND_EMI/FLEX/AFM drivers, setup template platform
+  * device structure.  SoC setup will configure SoC specific data.
+  */
+-static const char *nand_part_probes[] = { "cmdlinepart", NULL };
+-
+-static struct platform_device nand_device = {
+-	.name		= "stm-nand",
+-	.id		= STEM_CS0_BANK,
+-	.num_resources	= 2,	/* Note: EMI mem configured by driver */
+-	.resource	= (struct resource[]) {
+-		[0] = {
+-			/* NAND controller base address (FLEX/AFM) */
+-			.name		= "flex_mem",
+-			.flags		= IORESOURCE_MEM,
+-		},
+-		[1] = {
+-			/* NAND controller IRQ (FLEX/AFM) */
+-			.name		= "flex_irq",
+-			.flags		= IORESOURCE_IRQ,
+-		},
+-		[2] = {
+-			/* EMI Bank base address */
+-			.name		= "emi_mem",
+-			.flags		= IORESOURCE_MEM,
+-		},
+-
+-	},
+-
+-	.dev		= {
+-		.platform_data = &(struct platform_nand_data) {
+-			.chip =
+-			{
+-				.chip_delay	= 30,
+-				.partitions	= nand_partitions,
+-				.nr_partitions	= ARRAY_SIZE(nand_partitions),
+-				.part_probe_types = nand_part_probes,
+-			},
+-			.ctrl =
+-			{
+-				.priv = &nand_config,
+-			},
+-		},
+-	},
+-};
+-
+-
++static struct platform_device nand_device =
++	STM_NAND_DEVICE(STEM_CS0_BANK, &nand_config,
++			nand_parts, ARRAY_SIZE(nand_parts));
+ 
+ #endif
+ 
+diff --git a/drivers/mtd/nand/stm_nand_emi.c b/drivers/mtd/nand/stm_nand_emi.c
+index d17f698..8742e92 100644
+--- a/drivers/mtd/nand/stm_nand_emi.c
++++ b/drivers/mtd/nand/stm_nand_emi.c
+@@ -75,6 +75,7 @@ struct stm_nand_emi {
+ #endif
+ };
+ 
++static const char *part_probes[] = { "cmdlinepart", NULL };
+ 
+ /*
+  * Routines for FDMA transfers.
+@@ -625,7 +626,7 @@ static int __init stm_nand_emi_probe(struct platform_device *pdev)
+ 
+ 	data->chip.IO_ADDR_R = data->io_base;
+ 	data->chip.IO_ADDR_W = data->io_base;
+-	data->chip.chip_delay = pdata->chip.chip_delay;
++	data->chip.chip_delay = stmdata->chip_delay;
+ 	data->chip.cmd_ctrl = nand_cmd_ctrl_emi;
+ 
+ 	/* Do we have access to NAND_RBn? */
+@@ -682,14 +683,10 @@ static int __init stm_nand_emi_probe(struct platform_device *pdev)
+ 	data->chip.options |= pdata->chip.options;
+ 
+ #ifdef CONFIG_MTD_PARTITIONS
+-	if (pdata->chip.part_probe_types) {
+-		res = parse_mtd_partitions(&data->mtd,
+-					   pdata->chip.part_probe_types,
+-					   &data->parts, 0);
+-		if (res > 0) {
+-			add_mtd_partitions(&data->mtd, data->parts, res);
+-			return 0;
+-		}
++	res = parse_mtd_partitions(&data->mtd, part_probes, &data->parts, 0);
++	if (res > 0) {
++		add_mtd_partitions(&data->mtd, data->parts, res);
++		return 0;
+ 	}
+ 	if (pdata->chip.partitions) {
+ 		data->parts = pdata->chip.partitions;
+diff --git a/include/linux/stm/nand.h b/include/linux/stm/nand.h
+index c001fd0..056c0a8 100644
+--- a/include/linux/stm/nand.h
++++ b/include/linux/stm/nand.h
+@@ -25,6 +25,8 @@ struct nand_timing_data {
+ 
+ 	int rd_on;
+ 	int rd_off;
++
++	int chip_delay;		/* delay in us */
+ };
+ 
+ 
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index ac7c865..47869c1 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -187,6 +187,36 @@
+ 	}									\
+ }
+ 
++#define STM_NAND_DEVICE(_id, _nand_config, _parts, _nr_parts)		\
++{									\
++	.name		= "stm-nand",					\
++	.id		= _id,						\
++	.num_resources	= 2,  /* Note: EMI mem configured by driver */	\
++	.resource	= (struct resource[]) {				\
++		[0] = { /* NAND controller base address (FLEX/AFM) */	\
++			.name		= "flex_mem",			\
++			.flags		= IORESOURCE_MEM,		\
++		},							\
++		[1] = { /* NAND controller IRQ (FLEX/AFM) */		\
++			.name		= "flex_irq",			\
++			.flags		= IORESOURCE_IRQ,		\
++		},							\
++	},								\
++	.dev		= {						\
++		.platform_data = &(struct platform_nand_data) {		\
++			.chip =						\
++			{						\
++				.partitions	= _parts,		\
++				.nr_partitions	= _nr_parts,		\
++			},						\
++			.ctrl =						\
++			{						\
++				.priv = _nand_config,			\
++			},						\
++		},							\
++	},								\
++}
++
+ #define SATA_DEVICE(_port, _base, _irq_hostc, _irq_dmac, _private)	\
+ {									\
+ 	.name = "sata_stm",						\
+-- 
+1.6.0.6
+

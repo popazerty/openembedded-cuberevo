@@ -1,0 +1,29 @@
+From bc45797add0b552d51dd585c0b0160392f56a89e Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 13 May 2009 12:05:35 +0200
+Subject: [PATCH] stm: select the GMAC0 on the mb628 via Kconfig
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ arch/sh/boards/st/mb628/setup.c |    5 +++--
+ 1 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index c0ebee0..188a93d 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -36,8 +36,9 @@
+ #include "../common/common.h"
+ 
+ #define FLASH_NOR
+-/* #define ENABLE_GMAC0 */
+-
++#ifdef CONFIG_STMMAC_DUAL_MAC
++#define ENABLE_GMAC0
++#endif
+ static struct platform_device epld_device;
+ 
+ static int ascs[] __initdata = {
+-- 
+1.6.0.6
+

@@ -1,0 +1,50 @@
+This is the original comment of the patch made by Linus.
+It has been reworked in order to be applied in our STLinux Kernel 
+source tree.
+
+From: Linus Torvalds <torvalds@linux-foundation.org>
+Date: Sun, 22 Jun 2008 19:23:15 +0000 (-0700)
+Subject: Fix performance regression on lmbench select benchmark
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Fdavem%2Fnet-2.6.git;a=commitdiff_plain;h=55d8538498f62ec72b5ba67aa386c7726f630475;hp=481c5346d0981940ee63037eb53e4e37b0735c10
+
+Fix performance regression on lmbench select benchmark
+
+Christian Borntraeger reported that reinstating cond_resched() with
+CONFIG_PREEMPT caused a performance regression on lmbench:
+
+	For example select file 500:
+	23 microseconds
+	32 microseconds
+
+and that's really because we totally unnecessarily do the cond_resched()
+in the innermost loop of select(), which is just silly.
+
+This moves it out from the innermost loop (which only ever loops ove the
+bits in a single "unsigned long" anyway), which makes the performance
+regression go away.
+
+Reported-and-tested-by: Christian Borntraeger <borntraeger@de.ibm.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+
+---
+
+--- linux-sh4/fs/select.c.orig	2008-07-09 10:17:07.000000000 +0200
++++ linux-sh4/fs/select.c	2008-07-09 10:18:14.000000000 +0200
+@@ -256,7 +256,6 @@ int do_select(int n, fd_set_bits *fds, s
+ 						retval++;
+ 					}
+ 				}
+-				cond_resched();
+ 			}
+ 			if (res_in)
+ 				*rinp = res_in;
+@@ -264,6 +263,7 @@ int do_select(int n, fd_set_bits *fds, s
+ 				*routp = res_out;
+ 			if (res_ex)
+ 				*rexp = res_ex;
++			cond_resched();
+ 		}
+ 		wait = NULL;
+ 		if (retval || !*timeout || signal_pending(current))

@@ -1,0 +1,26 @@
+From fef80fa3307febd1e00e735894651157ef2d65f3 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 7 Nov 2008 11:21:28 +0100
+Subject: [PATCH] stmmac: no timer optimization by default
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/Kconfig |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/stmmac/Kconfig b/drivers/net/stmmac/Kconfig
+index af9ce24..ac960a8 100644
+--- a/drivers/net/stmmac/Kconfig
++++ b/drivers/net/stmmac/Kconfig
+@@ -29,7 +29,6 @@ config STMMAC_TIMER
+ choice
+         prompt "Select Timer device"
+         depends on STMMAC_TIMER && EXPERIMENTAL
+-        default no
+ 
+ config STMMAC_TMU_TIMER
+         bool "TMU channel 2"
+-- 
+1.5.3.6
+

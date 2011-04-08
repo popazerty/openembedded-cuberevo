@@ -1,0 +1,832 @@
+From 59395800f317a58aeeee5e99c6a1f383c93486ad Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Wed, 11 Feb 2009 13:51:51 +0000
+Subject: [PATCH] sh_stm: Standardise kernel defconfig debug options on ST boards
+
+Update all the defconfig files for ST board so that CONFIG_DEBUG_FS
+is set and all other debugging options are disabled. This should
+improve the performance of the pre-built kernels.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/configs/cb101_defconfig         |   32 +---------------------------
+ arch/sh/configs/cb101se_defconfig       |   32 +---------------------------
+ arch/sh/configs/cb102se_defconfig       |   31 +--------------------------
+ arch/sh/configs/hms1_defconfig          |   32 +---------------------------
+ arch/sh/configs/hms1se_defconfig        |   32 +---------------------------
+ arch/sh/configs/mb374_defconfig         |   32 +--------------------------
+ arch/sh/configs/mb411_defconfig         |   33 +---------------------------
+ arch/sh/configs/mb442_defconfig         |   31 +--------------------------
+ arch/sh/configs/mb442se_defconfig       |   31 +--------------------------
+ arch/sh/configs/mb448_defconfig         |   33 +---------------------------
+ arch/sh/configs/mb519_mb520_defconfig   |   31 +--------------------------
+ arch/sh/configs/mb519se_mb520_defconfig |   31 +--------------------------
+ arch/sh/configs/mb602_defconfig         |   33 ++--------------------------
+ arch/sh/configs/mb618_defconfig         |    2 +-
+ arch/sh/configs/mb618se_defconfig       |    2 +-
+ arch/sh/configs/mb628_defconfig         |   35 +------------------------------
+ arch/sh/configs/mb671se_defconfig       |   31 +--------------------------
+ arch/sh/configs/mb680_defconfig         |   35 +------------------------------
+ 18 files changed, 23 insertions(+), 496 deletions(-)
+
+diff --git a/arch/sh/configs/cb101_defconfig b/arch/sh/configs/cb101_defconfig
+index d93cd15..745ede6 100644
+--- a/arch/sh/configs/cb101_defconfig
++++ b/arch/sh/configs/cb101_defconfig
+@@ -1407,42 +1407,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-CONFIG_DEBUG_SLAB=y
+-# CONFIG_DEBUG_SLAB_LEAK is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-CONFIG_FORCED_INLINING=y
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/cb101se_defconfig b/arch/sh/configs/cb101se_defconfig
+index b01a5c8..69333f7 100644
+--- a/arch/sh/configs/cb101se_defconfig
++++ b/arch/sh/configs/cb101se_defconfig
+@@ -1407,42 +1407,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-CONFIG_DEBUG_SLAB=y
+-# CONFIG_DEBUG_SLAB_LEAK is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-CONFIG_FORCED_INLINING=y
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/cb102se_defconfig b/arch/sh/configs/cb102se_defconfig
+index 7203a2a..dc23390 100644
+--- a/arch/sh/configs/cb102se_defconfig
++++ b/arch/sh/configs/cb102se_defconfig
+@@ -1008,41 +1008,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-# CONFIG_DETECT_SOFTLOCKUP is not set
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-# CONFIG_DEBUG_PREEMPT is not set
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/hms1_defconfig b/arch/sh/configs/hms1_defconfig
+index 481f4b4..57d2330 100644
+--- a/arch/sh/configs/hms1_defconfig
++++ b/arch/sh/configs/hms1_defconfig
+@@ -1401,42 +1401,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-CONFIG_DEBUG_SLAB=y
+-# CONFIG_DEBUG_SLAB_LEAK is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/hms1se_defconfig b/arch/sh/configs/hms1se_defconfig
+index 5f9c028..30187b6 100644
+--- a/arch/sh/configs/hms1se_defconfig
++++ b/arch/sh/configs/hms1se_defconfig
+@@ -1401,42 +1401,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-CONFIG_DEBUG_SLAB=y
+-# CONFIG_DEBUG_SLAB_LEAK is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb374_defconfig b/arch/sh/configs/mb374_defconfig
+index 609cdf5..2b23d19 100644
+--- a/arch/sh/configs/mb374_defconfig
++++ b/arch/sh/configs/mb374_defconfig
+@@ -757,42 +757,14 @@ CONFIG_TRACE_IRQFLAGS_SUPPORT=y
+ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_MAGIC_SYSRQ is not set
+ # CONFIG_UNUSED_SYMBOLS is not set
+-# CONFIG_DEBUG_FS is not set
++CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-CONFIG_FORCED_INLINING=y
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb411_defconfig b/arch/sh/configs/mb411_defconfig
+index 30a464c..ce9b4ce 100644
+--- a/arch/sh/configs/mb411_defconfig
++++ b/arch/sh/configs/mb411_defconfig
+@@ -1258,43 +1258,14 @@ CONFIG_TRACE_IRQFLAGS_SUPPORT=y
+ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_MAGIC_SYSRQ is not set
+ # CONFIG_UNUSED_SYMBOLS is not set
+-# CONFIG_DEBUG_FS is not set
++CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-# CONFIG_DEBUG_PREEMPT is not set
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb442_defconfig b/arch/sh/configs/mb442_defconfig
+index 2bb7d57..4a4b0f3 100644
+--- a/arch/sh/configs/mb442_defconfig
++++ b/arch/sh/configs/mb442_defconfig
+@@ -1386,41 +1386,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-# CONFIG_DETECT_SOFTLOCKUP is not set
+-# CONFIG_SCHED_DEBUG is not set
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-CONFIG_FRAME_POINTER=y
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb442se_defconfig b/arch/sh/configs/mb442se_defconfig
+index 65bba4f..d37a720 100644
+--- a/arch/sh/configs/mb442se_defconfig
++++ b/arch/sh/configs/mb442se_defconfig
+@@ -1386,41 +1386,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-# CONFIG_DETECT_SOFTLOCKUP is not set
+-# CONFIG_SCHED_DEBUG is not set
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-CONFIG_FRAME_POINTER=y
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb448_defconfig b/arch/sh/configs/mb448_defconfig
+index 0de748c..c83f6e1 100644
+--- a/arch/sh/configs/mb448_defconfig
++++ b/arch/sh/configs/mb448_defconfig
+@@ -1191,43 +1191,14 @@ CONFIG_TRACE_IRQFLAGS_SUPPORT=y
+ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_MAGIC_SYSRQ is not set
+ # CONFIG_UNUSED_SYMBOLS is not set
+-# CONFIG_DEBUG_FS is not set
++CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-CONFIG_FORCED_INLINING=y
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb519_mb520_defconfig b/arch/sh/configs/mb519_mb520_defconfig
+index f36094d..d853da1 100644
+--- a/arch/sh/configs/mb519_mb520_defconfig
++++ b/arch/sh/configs/mb519_mb520_defconfig
+@@ -1152,41 +1152,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-# CONFIG_DETECT_SOFTLOCKUP is not set
+-# CONFIG_SCHED_DEBUG is not set
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-# CONFIG_DEBUG_PREEMPT is not set
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb519se_mb520_defconfig b/arch/sh/configs/mb519se_mb520_defconfig
+index 63615bf..4417901 100644
+--- a/arch/sh/configs/mb519se_mb520_defconfig
++++ b/arch/sh/configs/mb519se_mb520_defconfig
+@@ -1152,41 +1152,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-# CONFIG_DETECT_SOFTLOCKUP is not set
+-# CONFIG_SCHED_DEBUG is not set
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-# CONFIG_DEBUG_PREEMPT is not set
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb602_defconfig b/arch/sh/configs/mb602_defconfig
+index d0b0b2c..720e369 100644
+--- a/arch/sh/configs/mb602_defconfig
++++ b/arch/sh/configs/mb602_defconfig
+@@ -1300,39 +1300,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-# CONFIG_DETECT_SOFTLOCKUP is not set
+-# CONFIG_SCHED_DEBUG is not set
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-CONFIG_FRAME_POINTER=y
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
++# CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
++# CONFIG_UNWIND_INFO is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+-# CONFIG_SH_KGDB is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb618_defconfig b/arch/sh/configs/mb618_defconfig
+index 2815e4d..0459c5a 100644
+--- a/arch/sh/configs/mb618_defconfig
++++ b/arch/sh/configs/mb618_defconfig
+@@ -1216,7 +1216,7 @@ CONFIG_TRACE_IRQFLAGS_SUPPORT=y
+ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_MAGIC_SYSRQ is not set
+ # CONFIG_UNUSED_SYMBOLS is not set
+-# CONFIG_DEBUG_FS is not set
++CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+ # CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+diff --git a/arch/sh/configs/mb618se_defconfig b/arch/sh/configs/mb618se_defconfig
+index 4e6ddb4..4f36145 100644
+--- a/arch/sh/configs/mb618se_defconfig
++++ b/arch/sh/configs/mb618se_defconfig
+@@ -1216,7 +1216,7 @@ CONFIG_TRACE_IRQFLAGS_SUPPORT=y
+ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_MAGIC_SYSRQ is not set
+ # CONFIG_UNUSED_SYMBOLS is not set
+-# CONFIG_DEBUG_FS is not set
++CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+ # CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+diff --git a/arch/sh/configs/mb628_defconfig b/arch/sh/configs/mb628_defconfig
+index 598d639..ae071d2 100644
+--- a/arch/sh/configs/mb628_defconfig
++++ b/arch/sh/configs/mb628_defconfig
+@@ -1146,45 +1146,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-CONFIG_DEBUG_SLAB=y
+-# CONFIG_DEBUG_SLAB_LEAK is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-CONFIG_DEBUG_SPINLOCK=y
+-CONFIG_DEBUG_MUTEXES=y
+-CONFIG_DEBUG_LOCK_ALLOC=y
+-# CONFIG_PROVE_LOCKING is not set
+-CONFIG_LOCKDEP=y
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_LOCKDEP is not set
+-CONFIG_DEBUG_SPINLOCK_SLEEP=y
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-CONFIG_STACKTRACE=y
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-CONFIG_DEBUG_INFO=y
+-# CONFIG_DEBUG_VM is not set
+-CONFIG_DEBUG_LIST=y
+-CONFIG_FRAME_POINTER=y
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-CONFIG_DEBUG_STACKOVERFLOW=y
+-CONFIG_DEBUG_STACK_USAGE=y
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb671se_defconfig b/arch/sh/configs/mb671se_defconfig
+index cfa403b..3f19e57 100644
+--- a/arch/sh/configs/mb671se_defconfig
++++ b/arch/sh/configs/mb671se_defconfig
+@@ -923,41 +923,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-# CONFIG_DETECT_SOFTLOCKUP is not set
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-# CONFIG_DEBUG_SLAB is not set
+-# CONFIG_DEBUG_PREEMPT is not set
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-# CONFIG_DEBUG_SPINLOCK is not set
+-# CONFIG_DEBUG_MUTEXES is not set
+-# CONFIG_DEBUG_LOCK_ALLOC is not set
+-# CONFIG_PROVE_LOCKING is not set
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-# CONFIG_DEBUG_INFO is not set
+-# CONFIG_DEBUG_VM is not set
+-# CONFIG_DEBUG_LIST is not set
+-# CONFIG_FRAME_POINTER is not set
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-# CONFIG_DEBUG_STACKOVERFLOW is not set
+-# CONFIG_DEBUG_STACK_USAGE is not set
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+diff --git a/arch/sh/configs/mb680_defconfig b/arch/sh/configs/mb680_defconfig
+index cf222c4..5370365 100644
+--- a/arch/sh/configs/mb680_defconfig
++++ b/arch/sh/configs/mb680_defconfig
+@@ -1127,45 +1127,12 @@ CONFIG_ENABLE_MUST_CHECK=y
+ # CONFIG_UNUSED_SYMBOLS is not set
+ CONFIG_DEBUG_FS=y
+ # CONFIG_HEADERS_CHECK is not set
+-CONFIG_DEBUG_KERNEL=y
+-# CONFIG_DEBUG_SHIRQ is not set
+-CONFIG_DETECT_SOFTLOCKUP=y
+-CONFIG_SCHED_DEBUG=y
+-# CONFIG_SCHEDSTATS is not set
+-# CONFIG_TIMER_STATS is not set
+-CONFIG_DEBUG_SLAB=y
+-# CONFIG_DEBUG_SLAB_LEAK is not set
+-CONFIG_DEBUG_PREEMPT=y
+-# CONFIG_DEBUG_RT_MUTEXES is not set
+-# CONFIG_RT_MUTEX_TESTER is not set
+-CONFIG_DEBUG_SPINLOCK=y
+-CONFIG_DEBUG_MUTEXES=y
+-CONFIG_DEBUG_LOCK_ALLOC=y
+-# CONFIG_PROVE_LOCKING is not set
+-CONFIG_LOCKDEP=y
+-# CONFIG_LOCK_STAT is not set
+-# CONFIG_DEBUG_LOCKDEP is not set
+-CONFIG_DEBUG_SPINLOCK_SLEEP=y
+-# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+-CONFIG_STACKTRACE=y
+-# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_KERNEL is not set
+ # CONFIG_DEBUG_BUGVERBOSE is not set
+-CONFIG_DEBUG_INFO=y
+-# CONFIG_DEBUG_VM is not set
+-CONFIG_DEBUG_LIST=y
+-CONFIG_FRAME_POINTER=y
+-# CONFIG_FORCED_INLINING is not set
+-# CONFIG_RCU_TORTURE_TEST is not set
+-# CONFIG_FAULT_INJECTION is not set
+ # CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
+ # CONFIG_UNWIND_INFO is not set
+-# CONFIG_KGDB is not set
+ # CONFIG_SH_STANDARD_BIOS is not set
+ # CONFIG_EARLY_SCIF_CONSOLE is not set
+-# CONFIG_DEBUG_BOOTMEM is not set
+-CONFIG_DEBUG_STACKOVERFLOW=y
+-CONFIG_DEBUG_STACK_USAGE=y
+-# CONFIG_4KSTACKS is not set
+ 
+ #
+ # Security options
+-- 
+1.5.6.3
+

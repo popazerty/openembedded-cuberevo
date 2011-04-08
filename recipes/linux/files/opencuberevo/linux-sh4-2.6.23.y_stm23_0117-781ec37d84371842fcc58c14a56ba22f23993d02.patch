@@ -1,0 +1,41 @@
+From 781ec37d84371842fcc58c14a56ba22f23993d02 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 10 Nov 2008 10:51:30 +0100
+Subject: [PATCH] kgdb: fix the asc port initialization
+
+this patch fixes a NULL pointer dereference and the relative panic
+that occours as soon as the kgdbasc_lateinit function is invoked.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/serial/stasc.c |    5 ++---
+ 1 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index 2f0f890..4b76b02 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -1052,8 +1052,9 @@ static irqreturn_t kgdbasc_interrupt(int irq, void *ptr)
+ 
+ static void __init kgdbasc_lateinit(void)
+ {
+-	if (asc_console.index != kgdbasc_portno) {
++	kgdb_asc_port = &asc_ports[kgdbasc_portno];
+ 
++	if (asc_console.index != kgdbasc_portno) {
+ 		kgdbasc_set_termios();
+ 
+ 		if (request_irq(kgdb_asc_port->port.irq, kgdbasc_interrupt,
+@@ -1062,8 +1063,6 @@ static void __init kgdbasc_lateinit(void)
+ 			return;
+ 		}
+ 		asc_enable_rx_interrupts(&kgdb_asc_port->port);
+-
+-		kgdb_asc_port = &asc_ports[kgdbasc_portno];
+ 	}
+ 	return;
+ }
+-- 
+1.5.3.6
+

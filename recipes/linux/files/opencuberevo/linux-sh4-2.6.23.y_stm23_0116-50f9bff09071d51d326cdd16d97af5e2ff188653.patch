@@ -1,0 +1,29 @@
+From 50f9bff09071d51d326cdd16d97af5e2ff188653 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Thu, 4 Sep 2008 17:36:28 +0100
+Subject: [PATCH] stm_fdma: Fixed firmware version decoding.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/stm/710x_fdma2.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/stm/710x_fdma2.c b/drivers/stm/710x_fdma2.c
+index 7f4e632..c60ca6b 100644
+--- a/drivers/stm/710x_fdma2.c
++++ b/drivers/stm/710x_fdma2.c
+@@ -656,8 +656,8 @@ static int fdma_run_initialise_sequence(struct fdma_dev *fd)
+ static void fdma_get_fw_revision(struct fdma_dev * fd, int *major, int *minor)
+ {
+ 	int reg = readl(fd->io_base + fd->regs.fdma_dmem_region);
+-	*major  = (reg & 0xff00) >>8;
+-	*minor  = reg & 0xff;
++	*major  = (reg & 0xff0000) >> 16;
++	*minor  = (reg & 0xff00) >> 8;
+ }
+ 
+ static void fdma_get_hw_revision(struct fdma_dev * fd, int *major, int *minor)
+-- 
+1.5.3.6
+

@@ -1,0 +1,30 @@
+From d1429c6c124e781e7a1e16d352382fe87ba9aacc Mon Sep 17 00:00:00 2001
+From: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Date: Wed, 11 Feb 2009 13:48:28 +0000
+Subject: [PATCH] stmmac: fix a return value check within the probe function
+
+This patch fixes, within the stmmac_dvr_probe function, the
+platform_get_irq_byname return value in case of error.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 26cb166..2b3f917 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -2037,7 +2037,8 @@ static int stmmac_dvr_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	/* Get the MAC information */
+-	if ((ndev->irq = platform_get_irq_byname(pdev, "macirq")) == 0) {
++	ndev->irq = platform_get_irq_byname(pdev, "macirq");
++	if (ndev->irq == -ENXIO) {
+ 		printk(KERN_ERR "%s: ERROR: MAC IRQ configuration "
+ 		       "information not found\n", __FUNCTION__);
+ 		ret = -ENODEV;
+-- 
+1.5.6.3
+

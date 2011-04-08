@@ -1,0 +1,26 @@
+The missing test of result causes that gcc produces a warning message
+constantly.
+
+See bugzilla: 3478
+
+Signed-off-by: Marek Skuczynski <M.Skuczynski@adbglobal.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/drivers/stm/pio.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/pio.c
++++ linux-2.6.23-stm/drivers/stm/pio.c
+@@ -345,8 +345,12 @@ static int __devinit stpio_probe(struct 
+ 		}
+ 	}
+ 
+-	request_irq(pdev->resource[1].start, stpio_interrupt,
+-		    0, pdev->name, (void*)port);
++	if (request_irq(pdev->resource[1].start, stpio_interrupt,
++		    0, pdev->name, (void *)port) < 0) {
++		iounmap(port->base);
++		release_mem_region(pdev->resource[0].start, size);
++		return -EBUSY;
++	}
+ 
+ 	return 0;
+ }

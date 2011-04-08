@@ -1,0 +1,35 @@
+From 4ab0894caa11b224ad78205831a77ecd1be5e510 Mon Sep 17 00:00:00 2001
+From: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Date: Wed, 11 Feb 2009 13:39:34 +0000
+Subject: [PATCH] sh_stm: allow mb628 to build when preemption not enabled
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Kernel, without PREEMT, for the MB628 fails with the error below.
+So added an extra Header to fix that.
+
+In file included from arch/sh/boards/st/mb628/setup.c:21:
+include/linux/spi/spi_bitbang.h:23: error: field ‘work’ has incomplete
+type
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ arch/sh/boards/st/mb628/setup.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index 24e45fd..443d654 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -15,6 +15,7 @@
+ #include <linux/leds.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/soc.h>
++#include <linux/workqueue.h>
+ #include <linux/stm/emi.h>
+ #include <linux/spi/spi.h>
+ #include <linux/spi/spi_bitbang.h>
+-- 
+1.5.6.3
+

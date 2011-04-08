@@ -1,0 +1,367 @@
+From 1dff11554f0b491895ff9110793376c2ec89b19d Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Thu, 11 Jun 2009 12:02:10 +0100
+Subject: [PATCH] stm_pio: Prepare stpio driver for stpio10
+
+STx7105 introduced a new style of PIO block, with 10 normal STM style
+PIO ports, but with all the interrupts OR'ed together and a new register
+indicating which PIO bank is currently asserting its interrupt.
+
+To make it easier to support this new block, refactor the current stpio
+driver slightly. The existing stpio_init_port() function is broken down
+into separate functions to initialise the port and the interrupt, and
+those operations which are not used when called from stpio_early_init()
+are moved into stpio_probe().
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Acked-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/stm/pio.c   |  223 +++++++++++++++++++++++++++++----------------------
+ drivers/stm/pio_i.h |   19 +++++
+ 2 files changed, 145 insertions(+), 97 deletions(-)
+ create mode 100644 drivers/stm/pio_i.h
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index bac26bd..6955f32 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -65,6 +65,8 @@
+ #include <asm/io.h>
+ #include <asm/irq-ilc.h>
+ 
++#include "pio_i.h"
++
+ /* Debug Macros */
+ /* #define DEBUG */
+ #undef DEBUG
+@@ -90,8 +92,6 @@
+ #define STPIO_STATUS_REQ_STPIO	1
+ #define STPIO_STATUS_REQ_GPIO	2
+ 
+-struct stpio_port;
+-
+ struct stpio_pin {
+ 	struct stpio_port *port;
+ 	unsigned int no;
+@@ -204,9 +204,8 @@ unsigned int stpio_get_pin(struct stpio_pin *pin)
+ }
+ EXPORT_SYMBOL(stpio_get_pin);
+ 
+-static void stpio_irq_chip_handler(unsigned int irq, struct irq_desc *desc)
++void stpio_irq_handler(const struct stpio_port *port)
+ {
+-	const struct stpio_port *port = get_irq_data(irq);
+ 	unsigned int portno = port - stpio_ports;
+ 	unsigned long in, mask, comp, active;
+ 	unsigned int pinno;
+@@ -238,6 +237,7 @@ static void stpio_irq_chip_handler(unsigned int irq, struct irq_desc *desc)
+ 	       port->base + STPIO_PCOMP_OFFSET + STPIO_SET_OFFSET);
+ 
+ 	while ((pinno = ffs(active)) != 0) {
++		int irq;
+ 		struct irq_desc *desc;
+ 		struct stpio_pin *pin;
+ 		unsigned long pinmask;
+@@ -307,6 +307,13 @@ static void stpio_irq_chip_handler(unsigned int irq, struct irq_desc *desc)
+ 	DPRINTK("exiting\n");
+ }
+ 
++static void stpio_irq_chip_handler(unsigned int irq, struct irq_desc *desc)
++{
++	const struct stpio_port *port = get_irq_data(irq);
++
++	stpio_irq_handler(port);
++}
++
+ /*
+  * Currently gpio_to_irq and irq_to_gpio don't go through the gpiolib
+  * layer. Hopefully this will change one day...
+@@ -643,105 +650,108 @@ static struct irq_chip stpio_irq_chip = {
+ 	.set_type	= stpio_irq_chip_type,
+ };
+ 
+-static int stpio_init_port(struct platform_device *pdev, int early)
++int stpio_get_resources(struct platform_device *pdev,
++			unsigned long *start, unsigned long *size,
++			int *irq)
++{
++	struct resource *memory_res, *irq_res;
++
++	memory_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	irq_res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	if (!memory_res || !irq_res)
++		return -EINVAL;
++
++	*start = memory_res->start;
++	*size = (memory_res->end - memory_res->start) + 1;
++	*irq = irq_res->start;
++
++	return 0;
++}
++
++struct stpio_port *stpio_init_port(int portno, unsigned long start,
++				   char *name)
+ {
+ 	int result;
+-	int portno = pdev->id;
+ 	struct stpio_port *port = &stpio_ports[portno];
+-	struct resource *memory, *irq;
+-	int size;
++	int pinno;
+ 
+ 	BUG_ON(portno >= STPIO_MAX_PORTS);
+ 
+-	memory = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+-	if (!memory || !irq) {
+-		result = -EINVAL;
+-		goto error_get_resources;
+-	}
+-	size = memory->end - memory->start + 1;
++	if (port->base)
++		goto already_init;
+ 
+-	if (!early) {
+-		port->pdev = pdev; /* link port to pdev */
+-		if (!request_mem_region(memory->start, size, pdev->name)) {
+-			result = -EBUSY;
+-			goto error_request_mem_region;
+-		}
++	port->base = ioremap(start, 0x100);
++	if (!port->base) {
++		result = -ENOMEM;
++		goto error_ioremap;
+ 	}
+ 
+-	if (early || !port->base) {
+-		int pinno;
++	for (pinno = 0; pinno < STPIO_PINS_IN_PORT; pinno++) {
++		port->pins[pinno].no = pinno;
++		port->pins[pinno].port = port;
++	}
+ 
+-		port->base = ioremap(memory->start, size);
+-		if (!port->base) {
+-			result = -ENOMEM;
+-			goto error_ioremap;
+-		}
++#ifdef CONFIG_HAVE_GPIO_LIB
++	port->gpio_chip.label = name;
++	port->gpio_chip.direction_input = stpio_gpio_direction_input;
++	port->gpio_chip.get = stpio_gpio_get;
++	port->gpio_chip.direction_output = stpio_gpio_direction_output;
++	port->gpio_chip.set = stpio_gpio_set;
++	port->gpio_chip.dbg_show = NULL;
++	port->gpio_chip.base = portno * STPIO_PINS_IN_PORT;
++	port->gpio_chip.ngpio = STPIO_PINS_IN_PORT;
++	port->gpio_chip.can_sleep = 0;
++	result = gpiochip_add(&port->gpio_chip);
++	if (result != 0)
++		goto error_gpiochip_add;
++#endif
+ 
+-		for (pinno = 0; pinno < STPIO_PINS_IN_PORT; pinno++) {
+-			port->pins[pinno].no = pinno;
+-			port->pins[pinno].port = port;
+-		}
++already_init:
++	return port;
+ 
+ #ifdef CONFIG_HAVE_GPIO_LIB
+-		port->gpio_chip.label = pdev->dev.bus_id;
+-		port->gpio_chip.direction_input = stpio_gpio_direction_input;
+-		port->gpio_chip.get = stpio_gpio_get;
+-		port->gpio_chip.direction_output = stpio_gpio_direction_output;
+-		port->gpio_chip.set = stpio_gpio_set;
+-		port->gpio_chip.dbg_show = NULL;
+-		port->gpio_chip.base = portno * STPIO_PINS_IN_PORT;
+-		port->gpio_chip.ngpio = STPIO_PINS_IN_PORT;
+-		port->gpio_chip.can_sleep = 0;
+-		result = gpiochip_add(&port->gpio_chip);
+-		if (result != 0)
+-			goto error_gpiochip_add;
++error_gpiochip_add:
++	iounmap(port->base);
+ #endif
+-	}
++error_ioremap:
++	return ERR_PTR(result);
++}
+ 
+-	if (!early) {
+-		int irq;
++void stpio_init_irq(int portno)
++{
++	struct stpio_port *port = &stpio_ports[portno];
++	int irq;
++	int i;
++
++	irq = stpio_irq_base + (portno * STPIO_PINS_IN_PORT);
++	for (i = 0; i < STPIO_PINS_IN_PORT; i++) {
+ 		struct stpio_pin *pin;
+-		int i;
+-
+-		irq = pdev->resource[1].start;
+-		if (irq == -1)
+-			goto no_irq;
+-
+-		set_irq_chained_handler(irq, stpio_irq_chip_handler);
+-		set_irq_data(irq, port);
+-		port->flags |= PORT_IRQ_REGISTERED;
+-
+-		irq = stpio_irq_base + (portno * STPIO_PINS_IN_PORT);
+-		for (i = 0; i < STPIO_PINS_IN_PORT; i++) {
+-			pin = &port->pins[i];
+-			set_irq_chip_and_handler_name(irq,
+-						      &stpio_irq_chip,
+-						      handle_simple_irq,
+-						      "STPIO");
+-			set_irq_chip_data(irq, pin);
+-			stpio_irq_chip_type(irq, IRQ_TYPE_LEVEL_HIGH);
+-			irq++;
+-			pin++;
+-		}
++
++		pin = &port->pins[i];
++		set_irq_chip_and_handler_name(irq,
++					      &stpio_irq_chip,
++					      handle_simple_irq,
++					      "STPIO");
++		set_irq_chip_data(irq, pin);
++		stpio_irq_chip_type(irq, IRQ_TYPE_LEVEL_HIGH);
++		irq++;
++		pin++;
+ 	}
+-no_irq:
+ 
+-	return 0;
++	port->flags |= PORT_IRQ_REGISTERED;
++}
+ 
++int stpio_remove_port(struct stpio_port *port)
++{
+ #ifdef CONFIG_HAVE_GPIO_LIB
+-error_gpiochip_add:
+-	iounmap(port->base);
++	if (gpiochip_remove(&port->gpio_chip) != 0)
++		return -EBUSY;
+ #endif
+-error_ioremap:
+-	if (!early)
+-		release_mem_region(memory->start, size);
+-error_request_mem_region:
+-error_get_resources:
+-	return result;
+-}
+ 
++	iounmap(port->base);
+ 
++	return 0;
++}
+ 
+ /* This is called early to allow board start up code to use PIO
+  * (in particular console devices). */
+@@ -749,39 +759,58 @@ void __init stpio_early_init(struct platform_device *pdev, int num, int irq)
+ {
+ 	int i;
+ 
+-	for (i = 0; i < num; i++)
+-		stpio_init_port(pdev++, 1);
++	for (i = 0; i < num; i++, pdev++) {
++		unsigned long start, size;
++		int irq;
++
++		if (stpio_get_resources(pdev, &start, &size, &irq))
++			continue;
++
++		stpio_init_port(pdev->id, start, pdev->dev.bus_id);
++	}
+ 
+ 	stpio_irq_base = irq;
+ }
+ 
+ static int __devinit stpio_probe(struct platform_device *pdev)
+ {
+-	return stpio_init_port(pdev, 0);
++	unsigned long start, size;
++	int irq;
++	struct stpio_port *port;
++
++	if (stpio_get_resources(pdev, &start, &size, &irq))
++		return -EIO;
++
++	if (!request_mem_region(start, size, pdev->name))
++		return -EBUSY;
++
++	port = stpio_init_port(pdev->id, 0x100, pdev->dev.bus_id);
++	if (IS_ERR(port))
++		return PTR_ERR(port);
++
++	port->pdev = pdev;
++
++	set_irq_chained_handler(irq, stpio_irq_chip_handler);
++	set_irq_data(irq, port);
++	stpio_init_irq(pdev->id);
++
++	return 0;
+ }
+ 
+ static int __devexit stpio_remove(struct platform_device *pdev)
+ {
+ 	struct stpio_port *port = &stpio_ports[pdev->id];
+-	struct resource *resource;
++	unsigned long start, size;
++	int irq;
+ 
+ 	BUG_ON(pdev->id >= STPIO_MAX_PORTS);
+ 
+-#ifdef CONFIG_HAVE_GPIO_LIB
+-	if (gpiochip_remove(&port->gpio_chip) != 0)
+-		return -EBUSY;
+-#endif
++	stpio_remove_port(port);
+ 
+-	resource = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+-	BUG_ON(!resource);
+-	free_irq(resource->start, port);
+-
+-	iounmap(port->base);
++	BUG_ON(stpio_get_resources(pdev, &start, &size, &irq) != 0);
+ 
+-	resource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+-	BUG_ON(!resource);
+-	release_mem_region(resource->start,
+-			resource->end - resource->start + 1);
++	free_irq(irq, port);
++	release_mem_region(start, size);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/stm/pio_i.h b/drivers/stm/pio_i.h
+new file mode 100644
+index 0000000..e28f579
+--- /dev/null
++++ b/drivers/stm/pio_i.h
+@@ -0,0 +1,19 @@
++/*
++ * drivers/stm/pio_i.h
++ *
++ * (c) 2009 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * Internal defintions to allow sharing between pio.c and pio10.c
++ */
++
++struct stpio_port;
++
++void stpio_irq_handler(const struct stpio_port *port);
++int stpio_get_resources(struct platform_device *pdev,
++			unsigned long *start, unsigned long *size,
++			int *irq);
++struct stpio_port *stpio_init_port(int portno, unsigned long start,
++				   char *name);
++void stpio_init_irq(int portno);
++int stpio_remove_port(struct stpio_port *port);
+-- 
+1.6.0.6
+

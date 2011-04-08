@@ -1,0 +1,73 @@
+GCC does not issue unwind information for function epilogues.  Unfortunately
+we can catch a signal during an epilogue.  The signal handler writes the
+current context and signal return code onto the stack overwriting previous
+contents.  During unwinding, libgcc can try to restore registers from the stack
+and restores corrupted ones.  This can lead to segmentation, misaligned access
+and sigbus faults.
+
+For example, consider the following code:
+
+	mov.l   r12,@-r15
+	mov.l   r14,@-r15
+	sts.l   pr,@-r15
+	mov     r15,r14
+
+	<do stuff>
+	
+	mov r14, r15
+ 	lds.l @r15+, pr
+ 		<<< SIGNAL HERE
+ 	mov.l @r15+, r14
+ 	mov.l @r15+, r12
+ 	rts
+
+Unwind is aware that pr was pushed to stack in prolog, so tries to restore it.
+Unfortunately it restores the last word of the signal handler code placed on
+the stack by the kernel.
+
+This patch tries to avoid the problem by adding a guard region on the stack
+between where the function pushes data and where the signal handler pushes its
+return code.  We probably don't see this problem often because exception
+handling unwinding in an epilogue only occurs due to a pthread cancel signal.
+Also the kernel signal stack handler alignment of 8 bytes could hide the
+occurance of this problem sometimes as the stack may not be trampled at a
+particular required word.
+
+This is not guaranteed to always work.  It relies on a frame pointer existing
+for the function (so it can get the correct sp value) which is not always the
+case for the SH4.
+
+Modifications will also be made to libgcc for the case where there is no fp.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux/arch/sh/kernel/signal.c
+===================================================================
+--- linux.orig/arch/sh/kernel/signal.c	2007-07-12 13:49:27.995067000 +0100
++++ linux/arch/sh/kernel/signal.c	2007-07-12 13:51:10.075881000 +0100
+@@ -33,6 +33,16 @@
+ 
+ #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
+ 
++/*
++ * The following define adds a 64 byte gap between the signal
++ * stack frame and previous contents of the stack.  This allows
++ * frame unwinding in a function epilogue but only if a frame
++ * pointer is used in the function.  This is necessary because
++ * current gcc compilers (<4.3) do not generate unwind info on
++ * SH for function epilogues.
++ */
++#define UNWINDGUARD 64
++
+ asmlinkage int do_signal(struct pt_regs *regs, sigset_t *oldset,
+ 			 unsigned int save_r0);
+ 
+@@ -352,7 +362,7 @@
+ 			sp = current->sas_ss_sp + current->sas_ss_size;
+ 	}
+ 
+-	return (void __user *)((sp - frame_size) & -8ul);
++	return (void __user *)((sp - (frame_size+UNWINDGUARD)) & -8ul);
+ }
+ 
+ static void setup_frame(int sig, struct k_sigaction *ka,

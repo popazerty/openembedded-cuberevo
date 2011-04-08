@@ -1,0 +1,19 @@
+From 10058df50ec65d3831aeef19031d03d5fd61ff27 Mon Sep 17 00:00:00 2001
+From: Carl Shaw <car.shaw@st.com>
+Date: Wed, 10 Jun 2009 11:27:57 +0100
+Subject: [PATCH] STM kernel release 121
+
+---
+ localversion-stm |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/localversion-stm b/localversion-stm
+index 0e7c321..574ae04 100644
+--- a/localversion-stm
++++ b/localversion-stm
+@@ -1 +1 @@
+-_stm23_0120
++_stm23_0121
+-- 
+1.6.0.6
+

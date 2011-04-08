@@ -1,0 +1,116 @@
+sh_stm: Fixup lirc support for STi7105
+
+Reserve GPIOs and configure lirc resources
+Enable lircd support in board startup
+
+Signed-off-by: Christopher TOMLINSON <christopher.tomlinson@st.com>
+Hacked-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c	2008-08-06 16:57:37.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/setup-stx7105.c	2008-08-06 17:53:03.000000000 +0100
+@@ -845,32 +845,31 @@
+ }
+ arch_initcall(stx7105_add_asc);
+ 
+-#if 0
+ /* LiRC resources ---------------------------------------------------------- */
+ static struct lirc_pio lirc_pios[] = {
+         [0] = {
+ 		.bank = 3,
+-		.pin  = 3,
++		.pin  = 0,
+ 		.dir  = STPIO_IN,
+-                .pinof= 0x00 | LIRC_IR_RX | LIRC_PIO_ON
++                .pinof= 0x00 | LIRC_UHF_RX | LIRC_PIO_ON
+ 	},
+ 	[1] = {
+ 		.bank = 3,
+-		.pin  = 4,
++		.pin  = 1,
+ 		.dir  = STPIO_IN,
+-                .pinof= 0x00 | LIRC_UHF_RX /* | LIRC_PIO_ON not available */
+-                },
++		.pinof = 0x00 | LIRC_IR_RX | LIRC_PIO_ON /* not available */
++        },
+ 	[2] = {
+ 		.bank = 3,
+-		.pin  = 5,
++		.pin  = 2,
+ 		.dir  = STPIO_ALT_OUT,
+-                .pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
++        .pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
+ 	},
+ 	[3] = {
+ 		.bank = 3,
+-		.pin  = 6,
++		.pin  = 3,
+ 		.dir  = STPIO_ALT_OUT,
+-                .pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
++		.pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
+ 	},
+ };
+ 
+@@ -914,11 +913,15 @@
+ 	}
+ };
+ 
+-void __init stx7105_configure_lirc(void)
++void __init stx7105_configure_lirc(lirc_scd_t *scd)
+ {
++	lirc_private_info.scd_info = scd;
++	stx7105_pio_sysconf(3, 0, 3, "lirc");
++	stx7105_pio_sysconf(3, 1, 3, "lirc");
++	stx7105_pio_sysconf(3, 2, 3, "lirc");
++	stx7105_pio_sysconf(3, 3, 3, "lirc");
+ 	platform_device_register(&lirc_device);
+ }
+-#endif
+ 
+ /* NAND Resources ---------------------------------------------------------- */
+ 
+Index: linux/arch/sh/boards/st/mb680/setup.c
+===================================================================
+--- linux.orig/arch/sh/boards/st/mb680/setup.c	2008-07-31 16:19:33.000000000 +0100
++++ linux/arch/sh/boards/st/mb680/setup.c	2008-08-06 17:51:19.000000000 +0100
+@@ -117,6 +117,15 @@
+ 	&mb680_phy_device,
+ };
+ 
++/* Configuration based on Futarque-RC signals train. */
++lirc_scd_t lirc_scd = {
++	.code = 0x3FFFC028,
++	.codelen = 0x1e,
++	.alt_codelen = 0,
++	.nomtime = 0x1f4,
++	.noiserecov = 0,
++};
++
+ static int __init device_init(void)
+ {
+ 	stx7200_configure_sata(0);
+@@ -138,9 +147,7 @@
+ 	stx7105_configure_usb(0, &usb_init[0]);
+ 	stx7105_configure_usb(1, &usb_init[1]);
+ 	stx7105_configure_ethernet(0, 0, 0, 1, 0, 0);
+-#if 0
+-        stx7105_configure_lirc();
+-#endif
++	stx7105_configure_lirc(&lirc_scd);
+ 
+ 	return platform_add_devices(mb680_devices, ARRAY_SIZE(mb680_devices));
+ }
+
+Index: linux/include/linux/stm/soc.h
+===================================================================
+--- linux-2.6.23.orig/include/linux/stm/soc.h   2008-08-07 08:40:12.000000000 +0200
++++ linux-2.6.23/include/linux/stm/soc.h    2008-08-07 08:40:44.000000000 +0200
+@@ -273,7 +273,7 @@ void stx7105_configure_usb(int port, str
+ void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
+                int ext_mdio, int ext_clk, int phy_bus);
+ void stx7105_configure_nand(struct nand_config_data *data);
+-void stx7105_configure_lirc(void);
++void stx7105_configure_lirc(lirc_scd_t *scd);
+ void stx7105_configure_pata(int bank, int pc_mode, int irq);
+ void stx7105_configure_audio_pins(int pcmout, int spdif, int pcmin);

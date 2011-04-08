@@ -1,0 +1,45 @@
+From 708f306485766215cee302ceecf42f47fe864719 Mon Sep 17 00:00:00 2001
+From: David MCKAY <david.mckay@st.com>
+Date: Tue, 9 Jun 2009 13:15:16 +0100
+Subject: [PATCH] sh_stm: Fix STmicro PCI Reset PIO func
+
+Some boards like the PDK 7105 allow software control of the PCI reset as
+well as generating a power on reset to the PCI. This is done via a diode
+to prevent the software PCI reset resetting the board. Unfortunately if
+the software PIO reset actively drives the line high, it prevents the
+reset circuit from pulling the line low, meaning that reset doesn't work
+properly.
+
+The solution is to either drive the PIO open drain or change the PIO to
+an input. The reset line will be pulled high by the pullup resistor.
+Since the existing code uses the gpio interface, we change the PIO to an
+input as the open drain mode is not available via the gpio interface.
+
+Thanks to Michael Schenk for spotting this.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/drivers/pci/pci-synopsys.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/drivers/pci/pci-synopsys.c b/arch/sh/drivers/pci/pci-synopsys.c
+index 2640593..54725ff 100644
+--- a/arch/sh/drivers/pci/pci-synopsys.c
++++ b/arch/sh/drivers/pci/pci-synopsys.c
+@@ -431,7 +431,12 @@ void pci_stm_pio_reset(void)
+ 
+ 	mdelay(1); /* From PCI spec */
+ 
+-	gpio_set_value(pci_reset_pin, 1);
++	/* Change to input, assumes pullup . This will work for boards like the
++	 * PDK7105 which do a power on reset as well via a diode. If you drive
++	 * this as an output it prevents the reset switch (and the JTAG
++	 * reset!) from working correctly
++	 */
++	gpio_direction_input(pci_reset_pin);
+ 
+ 	/* PCI spec says there should be a one second delay here. This seems a
+ 	 * tad excessive to me! If you really have something that needs a huge
+-- 
+1.6.0.6
+

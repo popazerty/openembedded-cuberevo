@@ -1,0 +1,60 @@
+Index: linux/kernel/kallsyms.c
+===================================================================
+--- linux.orig/kernel/kallsyms.c
++++ linux/kernel/kallsyms.c
+@@ -20,9 +20,6 @@
+ #include <linux/proc_fs.h>
+ #include <linux/sched.h>	/* for cond_resched */
+ #include <linux/mm.h>
+-#ifdef CONFIG_BIGPHYS_AREA
+-#include <linux/bigphysarea.h>
+-#endif
+ 
+ #include <asm/sections.h>
+ 
+@@ -422,10 +419,3 @@ static int __init kallsyms_init(void)
+ __initcall(kallsyms_init);
+ 
+ EXPORT_SYMBOL(__print_symbol);
+-#ifdef CONFIG_BIGPHYS_AREA
+-EXPORT_SYMBOL(bigphysarea_alloc);
+-EXPORT_SYMBOL(bigphysarea_free);
+-EXPORT_SYMBOL(bigphysarea_alloc_pages);
+-EXPORT_SYMBOL(bigphysarea_free_pages);
+-#endif
+-
+Index: linux/mm/bigphysarea.c
+===================================================================
+--- linux.orig/mm/bigphysarea.c
++++ linux/mm/bigphysarea.c
+@@ -237,6 +237,7 @@ caddr_t bigphysarea_alloc_pages(int coun
+ 
+ 	return new_range->base;
+ }
++EXPORT_SYMBOL(bigphysarea_alloc_pages);
+ 
+ /*
+  * Free pages allocated with `bigphysarea_alloc_pages'. `base' must be an
+@@ -295,6 +296,7 @@ void bigphysarea_free_pages(caddr_t base
+ 		kfree(range);
+ 	}
+ }
++EXPORT_SYMBOL(bigphysarea_free_pages);
+ 
+ caddr_t bigphysarea_alloc(int size)
+ {
+@@ -302,12 +304,14 @@ caddr_t bigphysarea_alloc(int size)
+ 
+ 	return bigphysarea_alloc_pages(pages, 1, GFP_KERNEL);
+ }
++EXPORT_SYMBOL(bigphysarea_alloc);
+ 
+ void bigphysarea_free(caddr_t addr, int size)
+ {
+ 	(void)size;
+ 	bigphysarea_free_pages(addr);
+ }
++EXPORT_SYMBOL(bigphysarea_free);
+ 
+ static
+ int get_info(char *buf, char **a, off_t b, int c)

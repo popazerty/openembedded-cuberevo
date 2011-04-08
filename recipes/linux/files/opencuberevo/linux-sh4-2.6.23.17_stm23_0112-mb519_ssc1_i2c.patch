@@ -1,0 +1,21 @@
+commit 8b68296dbfcdda4d6e3b7d639b5b0aa89c2cc809
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Thu Jun 12 12:54:06 2008 +0100
+
+    mb519: SSC1 is configured as I2C now, instead of SPI.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/mb519/setup.c b/arch/sh/boards/st/mb519/setup.c
+index 8be666b..17219bc 100644
+--- a/arch/sh/boards/st/mb519/setup.c
++++ b/arch/sh/boards/st/mb519/setup.c
+@@ -44,7 +44,7 @@ static struct plat_stm_pwm_data pwm_private_info = {
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  = (
+ 			ssc0_has(SSC_I2C_CAPABILITY) |
+-			ssc1_has(SSC_SPI_CAPABILITY) |
++			ssc1_has(SSC_I2C_CAPABILITY) |
+ 			ssc2_has(SSC_I2C_CAPABILITY) |
+ 			ssc3_has(SSC_SPI_CAPABILITY) |
+ 			ssc4_has(SSC_I2C_CAPABILITY)),

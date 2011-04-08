@@ -1,0 +1,17 @@
+A little change that slipped through the net, to make sure the released #120
+kernel is an exact match of the git tag.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+
+diff -Naur --exclude .git /opt/STM/STLinux-2.3/devkit/sources/kernel/linux-sh4-2.6.23.17_stm23_0120/mm/bootmem.c linux-sh4-2.6.23.y/mm/bootmem.c
+--- /opt/STM/STLinux-2.3/devkit/sources/kernel/linux-sh4-2.6.23.17_stm23_0120/mm/bootmem.c	2009-06-09 16:03:48.000000000 +0100
++++ linux-sh4-2.6.23.y/mm/bootmem.c	2009-05-20 12:53:41.000000000 +0100
+@@ -19,8 +19,6 @@
+ 
+ #include "internal.h"
+ 
+-#define CONFIG_DEBUG_BOOTMEM
+-
+ /*
+  * Access to this subsystem has to be serialized externally. (this is
+  * true for the boot process anyway)

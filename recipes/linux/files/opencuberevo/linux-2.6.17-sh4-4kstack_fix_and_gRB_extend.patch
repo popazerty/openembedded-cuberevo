@@ -1,0 +1,135 @@
+ This patch:
+ - extends the gRB support;
+ - fixes a bug in the system.h file;
+ - fixes the arch/sh/Kconfig.debug;
+
+At the moment the gRB __must__ be 
+ turned off because it generates 
+ some problems during the run-time
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+=============================================================
+diff -upNr -X notdiff.txt linux-2.6.17/arch/sh/Kconfig.debug linux-2.6.17-sh4/arch/sh/Kconfig.debug
+--- linux-2.6.17/arch/sh/Kconfig.debug	2006-08-25 10:34:34.483110000 +0000
++++ linux-2.6.17-sh4/arch/sh/Kconfig.debug	2006-08-24 08:00:32.723536000 +0000
+@@ -122,6 +122,8 @@ config DEBUG_STACK_USAGE
+ config DEBUG_STACKOVERFLOW
+ 	bool "Stack Overflow Detection Support"
+ 
++endmenu
++
+ config 4KSTACKS
+ 	depends on CPU_SH4 && EXPERIMENTAL
+         bool "Use 4Kb for kernel stacks instead of 8Kb (EXPERIMENTAL)"
+@@ -147,5 +149,3 @@ config SOFTIRQ_STACK_SIZE
+ 	  Set the Soft irq stack size when the 4K thread stack size is enabled
+ 
+ endmenu
+-
+-endmenu
+diff -upNr -X notdiff.txt linux-2.6.17/include/asm-sh/atomic.h linux-2.6.17-sh4/include/asm-sh/atomic.h
+--- linux-2.6.17/include/asm-sh/atomic.h	2006-08-25 10:34:54.643219000 +0000
++++ linux-2.6.17-sh4/include/asm-sh/atomic.h	2006-08-24 07:54:28.641582000 +0000
+@@ -11,6 +11,8 @@
+                    Francesco Virlinzi <francesco.virlinzi@st.com>
+   1st  Apr 2006  Moved the gKSA in gRB
+ 		   Francesco Virlinzi <francesco.virlinzi@st.com>
++  24th Aug 2006  Extended the gRB support
++		   Francesco Virlinzi <francesco.virlinzi@st.com>
+ */
+ 
+ typedef struct { volatile int counter; } atomic_t;
+@@ -243,6 +245,62 @@ static __inline__ int atomic_sub_return(
+ #define atomic_sub_and_test(i,v) (atomic_sub_return((i), (v)) == 0)
+ #define atomic_dec_and_test(v) (atomic_sub_return(1, (v)) == 0)
+ 
++#if defined(CONFIG_STM_GRB)
++static inline int atomic_cmpxchg(atomic_t *v, int old, int new)
++{
++	int ret;
++/*
++	ret = v->counter;
++	if (likely(ret == old))
++		v->counter = new;
++*/
++	asm volatile(
++		"   .align 2		\n\t"
++		"   mova     1f,  r0	\n\t"
++		"   nop			\n\t"
++		"   mov     r15,  r1	\n\t"
++		"   mov    #-8,  r15	\n\t"
++		"   mov.l   @%1,  %0	\n\t"
++		"   cmp/eq   %2,  %0	\n\t"
++		"   bf	     1f		\n\t"
++		"   mov.l    %3, @%1	\n\t"
++		"1: mov      r1,  r15	\n\t"
++		: "=&r" (ret)
++		: "r" (v), "r" (old), "r" (new)
++		: "memory" , "r0", "r1" , "t" );
++
++	return ret;	
++}
++
++static inline int atomic_add_unless(atomic_t *v, int a, int u)
++{
++	int ret;
++	unsigned long tmp;
++/*
++	ret = v->counter;
++	if (ret != u)
++		v->counter += a;
++*/
++	asm volatile(
++		"   .align 2		\n\t"
++		"   mova    1f,   r0	\n\t"
++		"   nop			\n\t"
++		"   mov    r15,   r1	\n\t"
++		"   mov    #-12,  r15	\n\t"
++		"   mov.l  @%2,   %1	\n\t"
++		"   mov	    %1,   %0    \n\t"
++		"   cmp/eq  %4,   %0	\n\t"
++		"   bt/s    1f		\n\t"
++		"    add    %3,   %1	\n\t"
++		"   mov.l   %1,  @%2	\n\t"
++		"1: mov     r1,   r15	\n\t"
++		: "=&r" (ret), "=&r" (tmp)
++		: "r" (v), "r" (a), "r" (u)
++		: "memory" , "r0", "r1" , "t" );
++
++	return ret != u;
++}
++#else
+ static inline int atomic_cmpxchg(atomic_t *v, int old, int new)
+ {
+ 	int ret;
+@@ -257,8 +315,6 @@ static inline int atomic_cmpxchg(atomic_
+ 	return ret;
+ }
+ 
+-#define atomic_xchg(v, new) (xchg(&((v)->counter), new))
+-
+ static inline int atomic_add_unless(atomic_t *v, int a, int u)
+ {
+ 	int ret;
+@@ -272,6 +328,9 @@ static inline int atomic_add_unless(atom
+ 
+ 	return ret != u;
+ }
++#endif
++
++#define atomic_xchg(v, new) (xchg(&((v)->counter), new))
+ #define atomic_inc_not_zero(v) atomic_add_unless((v), 1, 0)
+ 
+ #if defined(CONFIG_STM_GRB)
+diff -upNr -X notdiff.txt linux-2.6.17/include/asm-sh/system.h linux-2.6.17-sh4/include/asm-sh/system.h
+--- linux-2.6.17/include/asm-sh/system.h	2006-08-25 10:35:01.863256000 +0000
++++ linux-2.6.17-sh4/include/asm-sh/system.h	2006-08-24 08:10:43.246810000 +0000
+@@ -323,7 +323,7 @@ static inline unsigned long xchg_u32(vol
+         return retval;
+ }
+ 
+-static inline unsigned long xchg_u8(volatile unsigned u8 * m, unsigned long
++static inline unsigned long xchg_u8(volatile u8 * m, unsigned long
+  val)
+ {
+        unsigned long retval;

@@ -1,0 +1,196 @@
+From 62dd72f1c54dfe9bcd3b88345c820eb2aeaed79c Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 6 May 2009 12:20:36 +0200
+Subject: [PATCH] stm: clkfw: Registered the clock framework as sysdev device
+
+This patch register the clock framework as sysdev device
+in this manner it simplify the management of each clock
+during a resume from hibernation and moreover it simplifies
+the management during standby
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/clock.c |  130 ++++++++++++++++++++++++++++++++++++++++++++
+ include/asm-sh/clock.h     |    8 +++
+ 2 files changed, 138 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/clock.c b/arch/sh/kernel/cpu/clock.c
+index e80d05c..9b16fec 100644
+--- a/arch/sh/kernel/cpu/clock.c
++++ b/arch/sh/kernel/cpu/clock.c
+@@ -17,6 +17,7 @@
+ #include <linux/kernel.h>
+ #include <linux/init.h>
+ #include <linux/module.h>
++#include <linux/sysdev.h>
+ #include <linux/mutex.h>
+ #include <linux/list.h>
+ #include <linux/kref.h>
+@@ -24,6 +25,7 @@
+ #include <linux/err.h>
+ #include <linux/platform_device.h>
+ #include <linux/proc_fs.h>
++#include <linux/delay.h>
+ #include <asm/clock.h>
+ #include <asm/timer.h>
+ 
+@@ -308,9 +310,137 @@ static int show_clocks(char *buf, char **start, off_t off,
+ 	return p - buf;
+ }
+ 
++/*
++ * The standard pm_clk_ratio rule allowes a default ratio of 1
++ *
++ * pm_ratio = (flags.RATIO + 1 ) << (flags.EXP)
++ */
++static inline int pm_clk_ratio(struct clk *clk)
++{
++	register unsigned int val, exp;
++
++	val = ((clk->flags >> CLK_PM_RATIO_SHIFT) &
++		((1 << CLK_PM_RATIO_NRBITS) -1)) + 1;
++	exp = ((clk->flags >> CLK_PM_EXP_SHIFT) &
++		((1 << CLK_PM_EXP_NRBITS) -1));
++
++	return (val << exp);
++}
++
++static inline int pm_clk_is_off(struct clk *clk)
++{
++	return ((clk->flags & CLK_PM_TURNOFF) == CLK_PM_TURNOFF);
++}
++
++static inline void pm_clk_set(struct clk *clk, int edited)
++{
++#define CLK_PM_EDITED (1<<CLK_PM_EDIT_SHIFT)
++	clk->flags &= ~CLK_PM_EDITED;
++	clk->flags |= (edited ? CLK_PM_EDITED : 0);
++}
++
++static inline int pm_clk_is_modified(struct clk *clk)
++{
++	return ((clk->flags & CLK_PM_EDITED) != 0);
++}
++
++static int clks_sysdev_suspend(struct sys_device *dev, pm_message_t state)
++{
++	static pm_message_t prev_state;
++	unsigned long rate;
++	struct clk *clkp;
++
++	switch (state.event) {
++	case PM_EVENT_ON: /* Resume from: */
++		switch (prev_state.event) {
++		case PM_EVENT_FREEZE: /* Hibernation */
++			list_for_each_entry(clkp, &clock_list, node)
++				if (likely(clkp->ops)) {
++					rate = clkp->rate;
++					if (likely(clkp->ops->set_parent))
++						clkp->ops->set_parent(clkp,
++							clkp->parent);
++					if (likely(clkp->ops->set_rate))
++						clkp->ops->set_rate(clkp,
++							clkp->rate);
++					if (likely(clkp->ops->recalc))
++						clkp->ops->recalc(clkp);
++
++				};
++		break;
++		case PM_EVENT_SUSPEND: /* Suspend/Standby */
++			list_for_each_entry(clkp, &clock_list, node) {
++				if (!likely(clkp->ops))
++					continue;
++				/* check if the pm modified the clock */
++				if (!pm_clk_is_modified(clkp))
++					continue;
++				pm_clk_set(clkp, 0);
++				/* turn-on */
++				if (pm_clk_is_off(clkp) && clkp->ops->enable)
++					clkp->ops->enable(clkp);
++				else
++				if (likely(clkp->ops->set_rate))
++					clkp->ops->set_rate(clkp, clkp->rate *
++						pm_clk_ratio(clkp));
++			};
++		break;
++		}
++	break;
++	case PM_EVENT_FREEZE:
++	break;
++	case PM_EVENT_SUSPEND:
++		/* reduces/turns-off the frequency based
++		 * on the flags directive
++		 */
++		list_for_each_entry_reverse(clkp, &clock_list, node) {
++			if (!clkp->ops)
++				continue;
++			if (!clkp->rate) /* already disabled */
++				continue;
++			pm_clk_set(clkp, 1);
++			/* turn-off */
++			if (pm_clk_is_off(clkp) && clkp->ops->disable)
++					clkp->ops->disable(clkp);
++			else /* reduce */
++			if (likely(clkp->ops->set_rate))
++				clkp->ops->set_rate(clkp, clkp->rate /
++					pm_clk_ratio(clkp));
++
++		}
++	break;
++	}
++
++	prev_state = state;
++	return 0;
++}
++
++static int clks_sysdev_resume(struct sys_device *dev)
++{
++	return clks_sysdev_suspend(dev, PMSG_ON);
++}
++
++static struct sysdev_class clk_sysdev_class = {
++	set_kset_name("clks"),
++};
++
++static struct sysdev_driver clks_sysdev_driver = {
++	.suspend = clks_sysdev_suspend,
++	.resume = clks_sysdev_resume,
++};
++
++static struct sys_device clks_sysdev_dev = {
++	.cls = &clk_sysdev_class,
++};
++
+ static int __init clk_proc_init(void)
+ {
+ 	struct proc_dir_entry *p;
++
++	sysdev_class_register(&clk_sysdev_class);
++	sysdev_driver_register(&clk_sysdev_class, &clks_sysdev_driver);
++	sysdev_register(&clks_sysdev_dev);
++
+ 	p = create_proc_read_entry("clocks", S_IRUSR, NULL,
+ 				   show_clocks, NULL);
+ 	if (unlikely(!p))
+diff --git a/include/asm-sh/clock.h b/include/asm-sh/clock.h
+index dedefd1..682200b 100644
+--- a/include/asm-sh/clock.h
++++ b/include/asm-sh/clock.h
+@@ -46,6 +46,14 @@ struct clk {
+ #define CLK_ALWAYS_ENABLED	(1 << 0)
+ #define CLK_RATE_PROPAGATES	(1 << 1)
+ 
++#define CLK_PM_EXP_SHIFT	(24)
++#define CLK_PM_EXP_NRBITS	(7)
++#define CLK_PM_RATIO_SHIFT	(16)
++#define CLK_PM_RATIO_NRBITS	(8)
++#define CLK_PM_EDIT_SHIFT	(31)
++#define CLK_PM_EDIT_NRBITS	(1)
++#define CLK_PM_TURNOFF		(((1<<CLK_PM_EXP_NRBITS)-1) << CLK_PM_EXP_SHIFT)
++
+ /* Should be defined by processor-specific code */
+ void arch_init_clk_ops(struct clk_ops **, int type);
+ 
+-- 
+1.6.0.6
+

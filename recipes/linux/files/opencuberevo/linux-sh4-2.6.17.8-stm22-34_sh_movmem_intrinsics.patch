@@ -1,0 +1,20 @@
+sh: declare and export the structure assignment intrinsics
+
+Between gcc-4.0 and gcc-4.1 the name of the structure
+assignment intrinsics was altered. This results in missing
+intrinsics in the module interface. Correction is trivial.
+
+Signed-off-by: Daniel R Thompson <daniel.thompson@st.com>
+Index: linux-sh4-2.6.17.8_stm22-34/arch/sh/kernel/sh_ksyms.c
+===================================================================
+--- linux-sh4-2.6.17.8_stm22-34.orig/arch/sh/kernel/sh_ksyms.c	2006-08-25 13:00:46.000000000 +0100
++++ linux-sh4-2.6.17.8_stm22-34/arch/sh/kernel/sh_ksyms.c	2006-08-25 16:21:19.000000000 +0100
+@@ -80,6 +80,8 @@
+ #ifdef CONFIG_CPU_SH4
+ DECLARE_EXPORT(__movstr_i4_even);
+ DECLARE_EXPORT(__movstr_i4_odd);
++DECLARE_EXPORT(__movmem_i4_even); /* movstr became movmem in gcc-4.1 */
++DECLARE_EXPORT(__movmem_i4_odd);
+ DECLARE_EXPORT(__movstrSI12_i4);
+ 
+ /* needed by some modules */

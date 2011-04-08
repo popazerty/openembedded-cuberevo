@@ -1,0 +1,28 @@
+From 6657ed3733cf90c9d2cef64181294c15692af650 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 23 Feb 2009 07:02:51 +0100
+Subject: [PATCH] stm: Fixed platform_pm USB ack on stx7141
+
+Fixed platform USB ack
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c
+index 2d56c35..4516f7c 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx7141.c
+@@ -31,7 +31,7 @@ usb_pwr_ack(struct platform_device *dev, int host_phy, int ack)
+ 	int i;
+ 
+ 	if (!sc[port])
+-		sysconf_claim(SYS_STA, 15, 7+port, 7+port, "USB");
++		sc[port] = sysconf_claim(SYS_STA, 15, 7+port, 7+port, "USB");
+ 
+ 	for (i = 5; i; --i) {
+                 if (sysconf_read(sc[port]) == ack)
+-- 
+1.6.0.6
+

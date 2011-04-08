@@ -1,0 +1,480 @@
+Added platform support to MTD physmap driver based on patch
+http://lists.infradead.org/pipermail/linux-mtd/2006-February/014836.html
+
+This regressed in ST Linux 2.2 (it was present in ST Linux 2.0).
+
+It is now the standard driver in later kernels and will be used as a
+replacement for the proprietary stboards mtd map in future ST Linux
+distributions.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux/drivers/mtd/maps/physmap.c
+===================================================================
+--- linux.orig/drivers/mtd/maps/physmap.c	2007-09-06 15:53:37.631294000 +0100
++++ linux/drivers/mtd/maps/physmap.c	2007-09-07 09:16:51.086642000 +0100
+@@ -1,5 +1,5 @@
+ /*
+- * $Id: physmap.c,v 1.39 2005/11/29 14:49:36 gleixner Exp $
++ * $Id: physmap.c,v 1.37 2004/11/28 09:40:40 dwmw2 Exp $
+  *
+  * Normal mappings of chips in physical memory
+  *
+@@ -7,6 +7,10 @@
+  * Author: Jun Sun, jsun@mvista.com or jsun@junsun.net
+  *
+  * 031022 - [jsun] add run-time configure and partition setup
++ * 24th Feb 2006 Carl Shaw <carl.shaw@st.com>
++ * 	- restored platform support from original driver at
++ * 	http://lists.infradead.org/pipermail/linux-mtd/2006-February/014836.html
++ * 	- added support for COMPLEX_MAPPINGS
+  */
+ 
+ #include <linux/module.h>
+@@ -14,112 +18,252 @@
+ #include <linux/kernel.h>
+ #include <linux/init.h>
+ #include <linux/slab.h>
+-#include <asm/io.h>
++#include <linux/device.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/map.h>
+ #include <linux/config.h>
+-#include <linux/mtd/partitions.h>
+ #include <linux/mtd/physmap.h>
++#include <asm/io.h>
++#include <linux/platform_device.h>
+ 
+-static struct mtd_info *mymtd;
+-
+-struct map_info physmap_map = {
+-	.name = "phys_mapped_flash",
+-	.phys = CONFIG_MTD_PHYSMAP_START,
+-	.size = CONFIG_MTD_PHYSMAP_LEN,
+-	.bankwidth = CONFIG_MTD_PHYSMAP_BANKWIDTH,
++struct physmap_flash_info {
++	struct mtd_info		*mtd;
++	struct map_info		map;
++	struct resource		*res;
++#ifdef CONFIG_MTD_PARTITIONS
++	int			nr_parts;
++	struct mtd_partition	*parts;
++#endif
+ };
+ 
+-#ifdef CONFIG_MTD_PARTITIONS
+-static struct mtd_partition *mtd_parts;
+-static int                   mtd_parts_nb;
++static int physmap_flash_remove(struct device *ddev)
++{
++	struct platform_device *dev = to_platform_device(ddev);
++	struct physmap_flash_info *info;
++	struct physmap_flash_data *physmap_data;
+ 
+-static int num_physmap_partitions;
+-static struct mtd_partition *physmap_partitions;
++	info = dev_get_drvdata(ddev);
++	if (info == NULL)
++		return 0;
++	dev_set_drvdata(ddev, NULL);
+ 
+-static const char *part_probes[] __initdata = {"cmdlinepart", "RedBoot", NULL};
++	physmap_data = dev->dev.platform_data;
+ 
+-void physmap_set_partitions(struct mtd_partition *parts, int num_parts)
+-{
+-	physmap_partitions=parts;
+-	num_physmap_partitions=num_parts;
++	if (info->mtd != NULL) {
++#ifdef CONFIG_MTD_PARTITIONS
++		if (info->nr_parts) {
++			del_mtd_partitions(info->mtd);
++			kfree(info->parts);
++		} else if (physmap_data->nr_parts) {
++			del_mtd_partitions(info->mtd);
++		} else {
++			del_mtd_device(info->mtd);
++		}
++#else
++		del_mtd_device(info->mtd);
++#endif
++		map_destroy(info->mtd);
++	}
++
++	if (info->map.virt != NULL)
++		iounmap((void *)info->map.virt);
++
++	if (info->res != NULL) {
++		release_resource(info->res);
++		kfree(info->res);
++	}
++	return 0;
+ }
+-#endif /* CONFIG_MTD_PARTITIONS */
+ 
+-static int __init init_physmap(void)
++static const char *rom_probe_types[] = { "cfi_probe", "jedec_probe", "map_rom", NULL };
++#ifdef CONFIG_MTD_PARTITIONS
++static const char *part_probe_types[] = { "cmdlinepart", "RedBoot", NULL };
++#endif
++
++static int physmap_flash_probe(struct device *ddev)
+ {
+-	static const char *rom_probe_types[] = { "cfi_probe", "jedec_probe", "map_rom", NULL };
+-	const char **type;
++	struct platform_device *dev = to_platform_device(ddev);
++	struct physmap_flash_data *physmap_data;
++	struct physmap_flash_info *info;
++	const char **probe_type;
++	int err;
++
++	physmap_data = dev->dev.platform_data;
++	if (physmap_data == NULL)
++		return -ENODEV;
++
++	printk(KERN_NOTICE "physmap platform flash device: %.8lx at %.8lx\n",
++		dev->resource->end - dev->resource->start + 1,
++		dev->resource->start);
++
++	info = kmalloc(sizeof(struct physmap_flash_info), GFP_KERNEL);
++	if (info == NULL) {
++		err = -ENOMEM;
++		goto err_out;
++	}
++	memset(info, 0, sizeof(*info));
++
++	dev_set_drvdata(ddev, info);
++
++	info->res = request_mem_region(dev->resource->start,
++			dev->resource->end - dev->resource->start + 1,
++			dev->dev.bus_id);
++	if (info->res == NULL) {
++		dev_err(&dev->dev, "Could not reserve memory region\n");
++		err = -ENOMEM;
++		goto err_out;
++	}
+ 
+-       	printk(KERN_NOTICE "physmap flash device: %lx at %lx\n", physmap_map.size, physmap_map.phys);
+-	physmap_map.virt = ioremap(physmap_map.phys, physmap_map.size);
++	info->map.name = dev->dev.bus_id;
++	info->map.phys = dev->resource->start;
++	info->map.size = dev->resource->end - dev->resource->start + 1;
++	info->map.bankwidth = physmap_data->width;
++	info->map.set_vpp = physmap_data->set_vpp;
++#ifdef CONFIG_MTD_COMPLEX_MAPPINGS
++	info->map.read = physmap_data->read;
++	info->map.write = physmap_data->write;
++	info->map.copy_from = physmap_data->copy_from;
++	info->map.copy_to = physmap_data->copy_to;
++#endif
+ 
+-	if (!physmap_map.virt) {
+-		printk("Failed to ioremap\n");
+-		return -EIO;
++	info->map.virt = ioremap(info->map.phys, info->map.size);
++	if (info->map.virt == NULL) {
++		dev_err(&dev->dev, "Failed to ioremap flash region\n");
++		err = EIO;
++		goto err_out;
+ 	}
+ 
+-	simple_map_init(&physmap_map);
++#ifndef CONFIG_MTD_COMPLEX_MAPPINGS
++	simple_map_init(&info->map);
++#endif
+ 
+-	mymtd = NULL;
+-	type = rom_probe_types;
+-	for(; !mymtd && *type; type++) {
+-		mymtd = do_map_probe(*type, &physmap_map);
++	probe_type = rom_probe_types;
++	for (; info->mtd == NULL && *probe_type != NULL; probe_type++){
++		printk(KERN_NOTICE "physmap-flash: probing %s...\n", *probe_type);
++		info->mtd = do_map_probe(*probe_type, &info->map);
+ 	}
+-	if (mymtd) {
+-		mymtd->owner = THIS_MODULE;
++	if (info->mtd == NULL) {
++		dev_err(&dev->dev, "map_probe failed\n");
++		err = -ENXIO;
++		goto err_out;
++	}
++	printk(KERN_NOTICE "physmap-flash: found\n");
++	info->mtd->owner = THIS_MODULE;
+ 
+ #ifdef CONFIG_MTD_PARTITIONS
+-		mtd_parts_nb = parse_mtd_partitions(mymtd, part_probes,
+-						    &mtd_parts, 0);
++	err = parse_mtd_partitions(info->mtd, part_probe_types, &info->parts, 0);
++	if (err > 0) {
++		add_mtd_partitions(info->mtd, info->parts, err);
++		return 0;
++	}
+ 
+-		if (mtd_parts_nb > 0)
+-		{
+-			add_mtd_partitions (mymtd, mtd_parts, mtd_parts_nb);
+-			return 0;
+-		}
++	if (physmap_data->nr_parts) {
++		printk(KERN_NOTICE "physmap-flash: using physmap partition information\n");
++		add_mtd_partitions(info->mtd, physmap_data->parts,
++						physmap_data->nr_parts);
++		return 0;
++	}
++#endif
+ 
+-		if (num_physmap_partitions != 0)
+-		{
+-			printk(KERN_NOTICE
+-			       "Using physmap partition definition\n");
+-			add_mtd_partitions (mymtd, physmap_partitions, num_physmap_partitions);
+-			return 0;
+-		}
++	add_mtd_device(info->mtd);
++	return 0;
++
++err_out:
++	physmap_flash_remove(ddev);
++	return err;
++}
+ 
++static struct device_driver physmap_flash_driver = {
++	.name		= "physmap-flash",
++	.bus            = &platform_bus_type,
++	.probe		= physmap_flash_probe,
++	.remove		= physmap_flash_remove,
++};
++
++
++#ifdef CONFIG_MTD_PHYSMAP_LEN
++#if CONFIG_MTD_PHYSMAP_LEN != 0
++#warning using PHYSMAP compat code
++#define PHYSMAP_COMPAT
++#endif
+ #endif
+-		add_mtd_device(mymtd);
+ 
+-		return 0;
+-	}
++#ifdef PHYSMAP_COMPAT
++static struct physmap_flash_data physmap_flash_data = {
++	.width		= CONFIG_MTD_PHYSMAP_BANKWIDTH,
++};
++
++static struct resource physmap_flash_resource = {
++	.start		= CONFIG_MTD_PHYSMAP_START,
++	.end		= CONFIG_MTD_PHYSMAP_START + CONFIG_MTD_PHYSMAP_LEN,
++	.flags		= IORESOURCE_MEM,
++};
++
++static struct platform_device physmap_flash = {
++	.name		= "physmap-flash",
++	.id		= 0,
++	.dev		= {
++		.platform_data	= &physmap_flash_data,
++	},
++	.num_resources	= 1,
++	.resource	= &physmap_flash_resource,
++};
+ 
+-	iounmap(physmap_map.virt);
+-	return -ENXIO;
++void physmap_configure(unsigned long addr, unsigned long size,
++		int bankwidth, void (*set_vpp)(struct map_info *, int))
++{
++	physmap_flash_resource.start = addr;
++	physmap_flash_resource.end = addr + size - 1;
++	physmap_flash_data.width = bankwidth;
++	physmap_flash_data.set_vpp = set_vpp;
+ }
+ 
+-static void __exit cleanup_physmap(void)
++#ifdef CONFIG_MTD_COMPLEX_MAPPINGS
++void physmap_configure_complex(map_word (*read)(struct map_info *, unsigned long),
++		void (*copy_from)(struct map_info *, void *,
++		unsigned long, ssize_t), void (*write)(struct map_info *,
++		const map_word, unsigned long), void (*copy_to)(struct map_info *,
++		unsigned long, const void *, ssize_t))
+ {
++	physmap_flash_data.read = read;
++	physmap_flash_data.write = write;
++	physmap_flash_data.copy_from = copy_from;
++	physmap_flash_data.copy_to = copy_to;
++}
++#endif
++
+ #ifdef CONFIG_MTD_PARTITIONS
+-	if (mtd_parts_nb) {
+-		del_mtd_partitions(mymtd);
+-		kfree(mtd_parts);
+-	} else if (num_physmap_partitions) {
+-		del_mtd_partitions(mymtd);
+-	} else {
+-		del_mtd_device(mymtd);
+-	}
+-#else
+-	del_mtd_device(mymtd);
++void physmap_set_partitions(struct mtd_partition *parts, int num_parts)
++{
++	physmap_flash_data.nr_parts = num_parts;
++	physmap_flash_data.parts = parts;
++}
++#endif
++#endif
++
++static int __init physmap_init(void)
++{
++	int err;
++
++	err = driver_register(&physmap_flash_driver);
++#ifdef PHYSMAP_COMPAT
++	if (err == 0)
++		platform_device_register(&physmap_flash);
+ #endif
+-	map_destroy(mymtd);
+ 
+-	iounmap(physmap_map.virt);
+-	physmap_map.virt = NULL;
++	return err;
+ }
+ 
+-module_init(init_physmap);
+-module_exit(cleanup_physmap);
++static void __exit physmap_exit(void)
++{
++#ifdef PHYSMAP_COMPAT
++	platform_device_unregister(&physmap_flash);
++#endif
++	driver_unregister(&physmap_flash_driver);
++}
+ 
++module_init(physmap_init);
++module_exit(physmap_exit);
+ 
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("David Woodhouse <dwmw2@infradead.org>");
+Index: linux/include/linux/mtd/physmap.h
+===================================================================
+--- linux.orig/include/linux/mtd/physmap.h	2007-09-06 15:55:11.301127000 +0100
++++ linux/include/linux/mtd/physmap.h	2007-09-06 15:55:31.211307000 +0100
+@@ -2,7 +2,7 @@
+  * For boards with physically mapped flash and using
+  * drivers/mtd/maps/physmap.c mapping driver.
+  *
+- * $Id: physmap.h,v 1.4 2005/11/07 11:14:55 gleixner Exp $
++ * $Id: physmap.h,v 1.3 2004/07/21 00:16:15 jwboyer Exp $
+  *
+  * Copyright (C) 2003 MontaVista Software Inc.
+  * Author: Jun Sun, jsun@mvista.com or jsun@junsun.net
+@@ -17,29 +17,42 @@
+ #ifndef __LINUX_MTD_PHYSMAP__
+ 
+ #include <linux/config.h>
+-
+-#if defined(CONFIG_MTD_PHYSMAP)
+-
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/map.h>
+ #include <linux/mtd/partitions.h>
+ 
+-/*
+- * The map_info for physmap.  Board can override size, buswidth, phys,
+- * (*set_vpp)(), etc in their initial setup routine.
+- */
+-extern struct map_info physmap_map;
++struct physmap_flash_data {
++	unsigned int		width;
++	void			(*set_vpp)(struct map_info *, int);
++	unsigned int	complex_mappings;
++	map_word 		(*read)(struct map_info *,
++					unsigned long);
++	void 			(*copy_from)(struct map_info *,
++					void *, unsigned long, ssize_t);
++	void 			(*write)(struct map_info *,
++					const map_word, unsigned long);
++	void 			(*copy_to)(struct map_info *,
++					unsigned long, const void *, ssize_t);
++	unsigned int	nr_parts;
++	struct mtd_partition	*parts;
++};
++
++#if defined(CONFIG_MTD_PHYSMAP)
+ 
+ /*
+  * Board needs to specify the exact mapping during their setup time.
+  */
+-static inline void physmap_configure(unsigned long addr, unsigned long size, int bankwidth, void (*set_vpp)(struct map_info *, int) )
+-{
+-	physmap_map.phys = addr;
+-	physmap_map.size = size;
+-	physmap_map.bankwidth = bankwidth;
+-	physmap_map.set_vpp = set_vpp;
+-}
++void physmap_configure(unsigned long addr, unsigned long size,
++		int bankwidth, void (*set_vpp)(struct map_info *, int));
++
++void physmap_configure_complex(map_word (*read)(struct map_info *, unsigned long),
++		void (*copy_from)(struct map_info *, void *,
++					unsigned long, ssize_t),
++		void (*write)(struct map_info *,
++				const map_word, unsigned long),
++		void (*copy_to)(struct map_info *,
++				unsigned long, const void *, ssize_t)
++	);
+ 
+ #if defined(CONFIG_MTD_PARTITIONS)
+ 
+@@ -58,4 +71,3 @@
+ #endif /* defined(CONFIG_MTD) */
+ 
+ #endif /* __LINUX_MTD_PHYSMAP__ */
+-
+Index: linux/drivers/mtd/maps/Kconfig
+===================================================================
+--- linux.orig/drivers/mtd/maps/Kconfig	2007-09-07 09:11:04.362991000 +0100
++++ linux/drivers/mtd/maps/Kconfig	2007-09-07 09:16:57.444636000 +0100
+@@ -25,19 +25,20 @@
+ config MTD_PHYSMAP_START
+ 	hex "Physical start address of flash mapping"
+ 	depends on MTD_PHYSMAP
+-	default "0x8000000"
++	default "0x0000000"
+ 	help
+ 	  This is the physical memory location at which the flash chips
+ 	  are mapped on your particular target board. Refer to the
+ 	  memory map which should hopefully be in the documentation for
+ 	  your board.
+ 	  Ignore this option if you use run-time physmap configuration
+-	  (i.e., run-time calling physmap_configure()).
++	  (i.e., run-time calling physmap_configure()) or use platform
++	  bus support configuration.
+ 
+ config MTD_PHYSMAP_LEN
+ 	hex "Physical length of flash mapping"
+ 	depends on MTD_PHYSMAP
+-	default "0x4000000"
++	default "0x0000000"
+ 	help
+ 	  This is the total length of the mapping of the flash chips on
+ 	  your particular board. If there is space, or aliases, in the
+@@ -46,7 +47,8 @@
+ 	  map which should hopefully be in the documentation for your
+ 	  board.
+ 	  Ignore this option if you use run-time physmap configuration
+-	  (i.e., run-time calling physmap_configure()).
++	  (i.e., run-time calling physmap_configure()) or use platform
++	  bus support configuration.
+ 
+ config MTD_PHYSMAP_BANKWIDTH
+ 	int "Bank width in octets"
+@@ -58,7 +60,8 @@
+ 	  bits, you would set the bus width octect value to 4. This is
+ 	  used internally by the CFI drivers.
+ 	  Ignore this option if you use run-time physmap configuration
+-	  (i.e., run-time calling physmap_configure()).
++	  (i.e., run-time calling physmap_configure()) or use platform
++	  bus support configuration.
+ 
+ config MTD_SUN_UFLASH
+ 	tristate "Sun Microsystems userflash support"

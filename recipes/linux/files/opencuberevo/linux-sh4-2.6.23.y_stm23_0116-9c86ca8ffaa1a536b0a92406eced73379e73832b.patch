@@ -1,0 +1,31 @@
+From 9c86ca8ffaa1a536b0a92406eced73379e73832b Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Mon, 15 Sep 2008 18:41:32 +0200
+Subject: [PATCH] sh: Fix up thread info pointer in syscall_badsys resume path.
+
+Entry to resume_userspace expects r8 to contain current_thread_info,
+which happens in all paths except for syscall_badsys, where r8 was
+being inadvertently trampled. Reload it before the branch.
+
+Signed-off-by: Hideo Saito <saito@densan.co.jp>
+Signed-off-by: Paul Mundt <lethal@linux-sh.org>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/entry-common.S |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/entry-common.S b/arch/sh/kernel/entry-common.S
+index df91031..4c34f8f 100644
+--- a/arch/sh/kernel/entry-common.S
++++ b/arch/sh/kernel/entry-common.S
+@@ -239,6 +239,7 @@ __restore_all:
+ 
+ 	.align	2
+ syscall_badsys:			! Bad syscall number
++	get_current_thread_info r8, r0
+ 	mov	#-ENOSYS, r0
+ 	bra	resume_userspace
+ 	 mov.l	r0, @(OFF_R0,r15)	! Return value
+-- 
+1.5.3.6
+

@@ -1,0 +1,760 @@
+This patch provides a new exported interface to put a naive backtrace into a given buffer.
+
+Signed-of-by: Chris Smith <chris.smith@st.com>
+Index: linux/arch/sh/kernel/traps.c
+===================================================================
+--- linux.orig/arch/sh/kernel/traps.c	2007-08-09 13:52:49.022419000 +0100
++++ linux/arch/sh/kernel/traps.c	2007-08-09 13:56:42.972590000 +0100
+@@ -54,23 +54,24 @@
+ #define TRAP_ILLEGAL_SLOT_INST	13
+ #endif
+ 
+-#if defined(CONFIG_KPROBES)   /* KPROBE-SH */
++#if defined(CONFIG_KPROBES)	/* KPROBE-SH */
+ struct atomic_notifier_head shdie_chain;
+ ATOMIC_NOTIFIER_HEAD(shdie_chain);
+ 
+ int register_die_notifier(struct notifier_block *nb)
+ {
+-      return atomic_notifier_chain_register(&shdie_chain, nb);
++	return atomic_notifier_chain_register(&shdie_chain, nb);
+ }
++
+ EXPORT_SYMBOL(register_die_notifier);
+ 
+ int unregister_die_notifier(struct notifier_block *nb)
+ {
+-      return atomic_notifier_chain_unregister(&shdie_chain, nb);
++	return atomic_notifier_chain_unregister(&shdie_chain, nb);
+ }
+-EXPORT_SYMBOL(unregister_die_notifier);
+-#endif        /* KPROBE-SH */
+ 
++EXPORT_SYMBOL(unregister_die_notifier);
++#endif				/* KPROBE-SH */
+ 
+ /*
+  * These constants are for searching for possible module text
+@@ -82,11 +83,11 @@
+ 
+ DEFINE_SPINLOCK(die_lock);
+ 
+-void die(const char * str, struct pt_regs * regs, long err)
++void die(const char *str, struct pt_regs *regs, long err)
+ {
+ 	static int die_counter;
+ 
+-        kgdb_exception_handler(regs);
++	kgdb_exception_handler(regs);
+ 	console_verbose();
+ 	spin_lock_irq(&die_lock);
+ 	printk("%s: %04lx [#%d]\n", str, err & 0xffff, ++die_counter);
+@@ -95,7 +96,8 @@
+ 	do_exit(SIGSEGV);
+ }
+ 
+-static inline void die_if_kernel(const char * str, struct pt_regs * regs, long err)
++static inline void die_if_kernel(const char *str, struct pt_regs *regs,
++				 long err)
+ {
+ 	if (!user_mode(regs))
+ 		die(str, regs, err);
+@@ -110,10 +112,9 @@
+  * - other kernel errors are bad
+  * - return 0 if fixed-up, -EFAULT if non-fatal (to the kernel) fault
+  */
+-static int die_if_no_fixup(const char * str, struct pt_regs * regs, long err)
++static int die_if_no_fixup(const char *str, struct pt_regs *regs, long err)
+ {
+-	if (!user_mode(regs))
+-	{
++	if (!user_mode(regs)) {
+ 		const struct exception_table_entry *fixup;
+ 		fixup = search_exception_tables(regs->pc);
+ 		if (fixup) {
+@@ -138,23 +139,23 @@
+ 	unsigned long *rm, *rn;
+ 	unsigned char *src, *dst;
+ 
+-	index = (instruction>>8)&15;	/* 0x0F00 */
++	index = (instruction >> 8) & 15;	/* 0x0F00 */
+ 	rn = &regs->regs[index];
+ 
+-	index = (instruction>>4)&15;	/* 0x00F0 */
++	index = (instruction >> 4) & 15;	/* 0x00F0 */
+ 	rm = &regs->regs[index];
+ 
+-	count = 1<<(instruction&3);
++	count = 1 << (instruction & 3);
+ 
+ 	ret = -EFAULT;
+-	switch (instruction>>12) {
+-	case 0: /* mov.[bwl] to/from memory via r0+rn */
++	switch (instruction >> 12) {
++	case 0:		/* mov.[bwl] to/from memory via r0+rn */
+ 		if (instruction & 8) {
+ 			/* from memory */
+-			src = (unsigned char*) *rm;
++			src = (unsigned char *)*rm;
+ 			src += regs->regs[0];
+-			dst = (unsigned char*) rn;
+-			*(unsigned long*)dst = 0;
++			dst = (unsigned char *)rn;
++			*(unsigned long *)dst = 0;
+ 
+ #ifdef __LITTLE_ENDIAN__
+ 			if (copy_from_user(dst, src, count))
+@@ -165,7 +166,7 @@
+ 				dst[3] = 0xff;
+ 			}
+ #else
+-			dst += 4-count;
++			dst += 4 - count;
+ 
+ 			if (__copy_user(dst, src, count))
+ 				goto fetch_fault;
+@@ -177,11 +178,11 @@
+ #endif
+ 		} else {
+ 			/* to memory */
+-			src = (unsigned char*) rm;
++			src = (unsigned char *)rm;
+ #if !defined(__LITTLE_ENDIAN__)
+-			src += 4-count;
++			src += 4 - count;
+ #endif
+-			dst = (unsigned char*) *rn;
++			dst = (unsigned char *)*rn;
+ 			dst += regs->regs[0];
+ 
+ 			if (copy_to_user(dst, src, count))
+@@ -190,47 +191,47 @@
+ 		ret = 0;
+ 		break;
+ 
+-	case 1: /* mov.l Rm,@(disp,Rn) */
+-		src = (unsigned char*) rm;
+-		dst = (unsigned char*) *rn;
+-		dst += (instruction&0x000F)<<2;
++	case 1:		/* mov.l Rm,@(disp,Rn) */
++		src = (unsigned char *)rm;
++		dst = (unsigned char *)*rn;
++		dst += (instruction & 0x000F) << 2;
+ 
+-		if (copy_to_user(dst,src,4))
++		if (copy_to_user(dst, src, 4))
+ 			goto fetch_fault;
+ 		ret = 0;
+- 		break;
++		break;
+ 
+-	case 2: /* mov.[bwl] to memory, possibly with pre-decrement */
++	case 2:		/* mov.[bwl] to memory, possibly with pre-decrement */
+ 		if (instruction & 4)
+ 			*rn -= count;
+-		src = (unsigned char*) rm;
+-		dst = (unsigned char*) *rn;
++		src = (unsigned char *)rm;
++		dst = (unsigned char *)*rn;
+ #if !defined(__LITTLE_ENDIAN__)
+-		src += 4-count;
++		src += 4 - count;
+ #endif
+ 		if (copy_to_user(dst, src, count))
+ 			goto fetch_fault;
+ 		ret = 0;
+ 		break;
+ 
+-	case 5: /* mov.l @(disp,Rm),Rn */
+-		src = (unsigned char*) *rm;
+-		src += (instruction&0x000F)<<2;
+-		dst = (unsigned char*) rn;
+-		*(unsigned long*)dst = 0;
++	case 5:		/* mov.l @(disp,Rm),Rn */
++		src = (unsigned char *)*rm;
++		src += (instruction & 0x000F) << 2;
++		dst = (unsigned char *)rn;
++		*(unsigned long *)dst = 0;
+ 
+-		if (copy_from_user(dst,src,4))
++		if (copy_from_user(dst, src, 4))
+ 			goto fetch_fault;
+ 		ret = 0;
+- 		break;
++		break;
+ 
+-	case 6:	/* mov.[bwl] from memory, possibly with post-increment */
+-		src = (unsigned char*) *rm;
++	case 6:		/* mov.[bwl] from memory, possibly with post-increment */
++		src = (unsigned char *)*rm;
+ 		if (instruction & 4)
+ 			*rm += count;
+-		dst = (unsigned char*) rn;
+-		*(unsigned long*)dst = 0;
+-		
++		dst = (unsigned char *)rn;
++		*(unsigned long *)dst = 0;
++
+ #ifdef __LITTLE_ENDIAN__
+ 		if (copy_from_user(dst, src, count))
+ 			goto fetch_fault;
+@@ -240,8 +241,8 @@
+ 			dst[3] = 0xff;
+ 		}
+ #else
+-		dst += 4-count;
+-		
++		dst += 4 - count;
++
+ 		if (copy_from_user(dst, src, count))
+ 			goto fetch_fault;
+ 
+@@ -254,25 +255,25 @@
+ 		break;
+ 
+ 	case 8:
+-		switch ((instruction&0xFF00)>>8) {
+-		case 0x81: /* mov.w R0,@(disp,Rn) */
+-			src = (unsigned char*) &regs->regs[0];
++		switch ((instruction & 0xFF00) >> 8) {
++		case 0x81:	/* mov.w R0,@(disp,Rn) */
++			src = (unsigned char *)&regs->regs[0];
+ #if !defined(__LITTLE_ENDIAN__)
+ 			src += 2;
+ #endif
+-			dst = (unsigned char*) *rm; /* called Rn in the spec */
+-			dst += (instruction&0x000F)<<1;
++			dst = (unsigned char *)*rm;	/* called Rn in the spec */
++			dst += (instruction & 0x000F) << 1;
+ 
+ 			if (copy_to_user(dst, src, 2))
+ 				goto fetch_fault;
+ 			ret = 0;
+ 			break;
+ 
+-		case 0x85: /* mov.w @(disp,Rm),R0 */
+-			src = (unsigned char*) *rm;
+-			src += (instruction&0x000F)<<1;
+-			dst = (unsigned char*) &regs->regs[0];
+-			*(unsigned long*)dst = 0;
++		case 0x85:	/* mov.w @(disp,Rm),R0 */
++			src = (unsigned char *)*rm;
++			src += (instruction & 0x000F) << 1;
++			dst = (unsigned char *)&regs->regs[0];
++			*(unsigned long *)dst = 0;
+ 
+ #if !defined(__LITTLE_ENDIAN__)
+ 			dst += 2;
+@@ -299,7 +300,7 @@
+ 	}
+ 	return ret;
+ 
+- fetch_fault:
++      fetch_fault:
+ 	/* Argh. Address not only misaligned but also non-existent.
+ 	 * Raise an EFAULT and see if it's trapped
+ 	 */
+@@ -314,16 +315,17 @@
+ {
+ 	u16 instruction;
+ 
+-	if (copy_from_user(&instruction, (u16 *)(regs->pc+2), 2)) {
++	if (copy_from_user(&instruction, (u16 *) (regs->pc + 2), 2)) {
+ 		/* the instruction-fetch faulted */
+ 		if (user_mode(regs))
+ 			return -EFAULT;
+ 
+ 		/* kernel */
+-		die("delay-slot-insn faulting in handle_unaligned_delayslot", regs, 0);
++		die("delay-slot-insn faulting in handle_unaligned_delayslot",
++		    regs, 0);
+ 	}
+ 
+-	return handle_unaligned_ins(instruction,regs);
++	return handle_unaligned_ins(instruction, regs);
+ }
+ 
+ /*
+@@ -347,123 +349,122 @@
+ 	u_int rm;
+ 	int ret, index;
+ 
+-	index = (instruction>>8)&15;	/* 0x0F00 */
++	index = (instruction >> 8) & 15;	/* 0x0F00 */
+ 	rm = regs->regs[index];
+ 
+ 	/* shout about the first ten userspace fixups */
+-	if (user_mode(regs) && handle_unaligned_notify_count>0) {
++	if (user_mode(regs) && handle_unaligned_notify_count > 0) {
+ 		handle_unaligned_notify_count--;
+ 
+-		printk("Fixing up unaligned userspace access in \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
+-		       current->comm,current->pid,(u16*)regs->pc,instruction);
++		printk
++		    ("Fixing up unaligned userspace access in \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
++		     current->comm, current->pid, (u16 *) regs->pc,
++		     instruction);
+ 	}
+ 
+ 	ret = -EFAULT;
+-	switch (instruction&0xF000) {
++	switch (instruction & 0xF000) {
+ 	case 0x0000:
+-		if (instruction==0x000B) {
++		if (instruction == 0x000B) {
+ 			/* rts */
+ 			ret = handle_unaligned_delayslot(regs);
+-			if (ret==0)
++			if (ret == 0)
+ 				regs->pc = regs->pr;
+-		}
+-		else if ((instruction&0x00FF)==0x0023) {
++		} else if ((instruction & 0x00FF) == 0x0023) {
+ 			/* braf @Rm */
+ 			ret = handle_unaligned_delayslot(regs);
+-			if (ret==0)
++			if (ret == 0)
+ 				regs->pc += rm + 4;
+-		}
+-		else if ((instruction&0x00FF)==0x0003) {
++		} else if ((instruction & 0x00FF) == 0x0003) {
+ 			/* bsrf @Rm */
+ 			ret = handle_unaligned_delayslot(regs);
+-			if (ret==0) {
++			if (ret == 0) {
+ 				regs->pr = regs->pc + 4;
+ 				regs->pc += rm + 4;
+ 			}
+-		}
+-		else {
++		} else {
+ 			/* mov.[bwl] to/from memory via r0+rn */
+ 			goto simple;
+ 		}
+ 		break;
+ 
+-	case 0x1000: /* mov.l Rm,@(disp,Rn) */
++	case 0x1000:		/* mov.l Rm,@(disp,Rn) */
+ 		goto simple;
+ 
+-	case 0x2000: /* mov.[bwl] to memory, possibly with pre-decrement */
++	case 0x2000:		/* mov.[bwl] to memory, possibly with pre-decrement */
+ 		goto simple;
+ 
+ 	case 0x4000:
+-		if ((instruction&0x00FF)==0x002B) {
++		if ((instruction & 0x00FF) == 0x002B) {
+ 			/* jmp @Rm */
+ 			ret = handle_unaligned_delayslot(regs);
+-			if (ret==0)
++			if (ret == 0)
+ 				regs->pc = rm;
+-		}
+-		else if ((instruction&0x00FF)==0x000B) {
++		} else if ((instruction & 0x00FF) == 0x000B) {
+ 			/* jsr @Rm */
+ 			ret = handle_unaligned_delayslot(regs);
+-			if (ret==0) {
++			if (ret == 0) {
+ 				regs->pr = regs->pc + 4;
+ 				regs->pc = rm;
+ 			}
+-		}
+-		else {
++		} else {
+ 			/* mov.[bwl] to/from memory via r0+rn */
+ 			goto simple;
+ 		}
+ 		break;
+ 
+-	case 0x5000: /* mov.l @(disp,Rm),Rn */
++	case 0x5000:		/* mov.l @(disp,Rm),Rn */
+ 		goto simple;
+ 
+-	case 0x6000: /* mov.[bwl] from memory, possibly with post-increment */
++	case 0x6000:		/* mov.[bwl] from memory, possibly with post-increment */
+ 		goto simple;
+ 
+-	case 0x8000: /* bf lab, bf/s lab, bt lab, bt/s lab */
+-		switch (instruction&0x0F00) {
+-		case 0x0100: /* mov.w R0,@(disp,Rm) */
++	case 0x8000:		/* bf lab, bf/s lab, bt lab, bt/s lab */
++		switch (instruction & 0x0F00) {
++		case 0x0100:	/* mov.w R0,@(disp,Rm) */
+ 			goto simple;
+-		case 0x0500: /* mov.w @(disp,Rm),R0 */
++		case 0x0500:	/* mov.w @(disp,Rm),R0 */
+ 			goto simple;
+-		case 0x0B00: /* bf   lab - no delayslot*/
++		case 0x0B00:	/* bf   lab - no delayslot */
+ 			break;
+-		case 0x0F00: /* bf/s lab */
++		case 0x0F00:	/* bf/s lab */
+ 			ret = handle_unaligned_delayslot(regs);
+-			if (ret==0) {
++			if (ret == 0) {
+ #if defined(CONFIG_CPU_SH4) || defined(CONFIG_SH7705_CACHE_32KB)
+ 				if ((regs->sr & 0x00000001) != 0)
+-					regs->pc += 4; /* next after slot */
++					regs->pc += 4;	/* next after slot */
+ 				else
+ #endif
+-					regs->pc += SH_PC_8BIT_OFFSET(instruction);
++					regs->pc +=
++					    SH_PC_8BIT_OFFSET(instruction);
+ 			}
+ 			break;
+-		case 0x0900: /* bt   lab - no delayslot */
++		case 0x0900:	/* bt   lab - no delayslot */
+ 			break;
+-		case 0x0D00: /* bt/s lab */
++		case 0x0D00:	/* bt/s lab */
+ 			ret = handle_unaligned_delayslot(regs);
+-			if (ret==0) {
++			if (ret == 0) {
+ #if defined(CONFIG_CPU_SH4) || defined(CONFIG_SH7705_CACHE_32KB)
+ 				if ((regs->sr & 0x00000001) == 0)
+-					regs->pc += 4; /* next after slot */
++					regs->pc += 4;	/* next after slot */
+ 				else
+ #endif
+-					regs->pc += SH_PC_8BIT_OFFSET(instruction);
++					regs->pc +=
++					    SH_PC_8BIT_OFFSET(instruction);
+ 			}
+ 			break;
+ 		}
+ 		break;
+ 
+-	case 0xA000: /* bra label */
++	case 0xA000:		/* bra label */
+ 		ret = handle_unaligned_delayslot(regs);
+-		if (ret==0)
++		if (ret == 0)
+ 			regs->pc += SH_PC_12BIT_OFFSET(instruction);
+ 		break;
+ 
+-	case 0xB000: /* bsr label */
++	case 0xB000:		/* bsr label */
+ 		ret = handle_unaligned_delayslot(regs);
+-		if (ret==0) {
++		if (ret == 0) {
+ 			regs->pr = regs->pc + 4;
+ 			regs->pc += SH_PC_12BIT_OFFSET(instruction);
+ 		}
+@@ -472,9 +473,9 @@
+ 	return ret;
+ 
+ 	/* handle non-delay-slot instruction */
+- simple:
+-	ret = handle_unaligned_ins(instruction,regs);
+-	if (ret==0)
++      simple:
++	ret = handle_unaligned_ins(instruction, regs);
++	if (ret == 0)
+ 		regs->pc += 2;
+ 	return ret;
+ }
+@@ -490,7 +491,7 @@
+  * Unfortuntaly we can't distinguish between instruction address error
+  * and data address errors caused by read acceses.
+  */
+-asmlinkage void do_address_error(struct pt_regs *regs, 
++asmlinkage void do_address_error(struct pt_regs *regs,
+ 				 unsigned long writeaccess,
+ 				 unsigned long address)
+ {
+@@ -498,31 +499,31 @@
+ 	mm_segment_t oldfs;
+ 	u16 instruction;
+ 	int tmp;
+- 	siginfo_t info;
++	siginfo_t info;
+ 
+-	asm volatile("stc       r2_bank,%0": "=r" (error_code));
++	asm volatile ("stc       r2_bank,%0":"=r" (error_code));
+ 
+ 	oldfs = get_fs();
+ 
+-        MARK(kernel_arch_trap_entry, "%ld %ld", (error_code >> 5),
+-                        instruction_pointer(regs));
++	MARK(kernel_arch_trap_entry, "%ld %ld", (error_code >> 5),
++	     instruction_pointer(regs));
+ 
+ 	if (user_mode(regs)) {
+- 		int si_code = BUS_ADRERR;
++		int si_code = BUS_ADRERR;
+ 
+ 		local_irq_enable();
+ 
+ 		/* bad PC is not something we can fix */
+- 		if (regs->pc & 1) {
+- 			si_code = BUS_ADRALN;
+-  			goto uspace_segv;
+- 		}
++		if (regs->pc & 1) {
++			si_code = BUS_ADRALN;
++			goto uspace_segv;
++		}
+ 
+ 		set_fs(USER_DS);
+-		if (copy_from_user(&instruction, (u16 *)(regs->pc), 2)) {
++		if (copy_from_user(&instruction, (u16 *) (regs->pc), 2)) {
+ 			/* Argh. Fault on the instruction itself.
+ 			   This should never happen non-SMP
+-			*/
++			 */
+ 			set_fs(oldfs);
+ 			goto uspace_segv;
+ 		}
+@@ -530,29 +531,28 @@
+ 		tmp = handle_unaligned_access(instruction, regs);
+ 		set_fs(oldfs);
+ 
+-                if (tmp==0) {
++		if (tmp == 0) {
+ 			MARK(kernel_arch_trap_exit, MARK_NOARGS);
+-                        return; /* sorted */
+-                }
++			return;	/* sorted */
++		}
+ 
+-	uspace_segv:
++	      uspace_segv:
+ 		info.si_signo = SIGBUS;
+ 		info.si_errno = 0;
+ 		info.si_code = si_code;
+-		info.si_addr = (void *) address;
++		info.si_addr = (void *)address;
+ 
+ 		force_sig_info(SIGBUS, &info, current);
+ 
+-
+ 	} else {
+ 		if (regs->pc & 1)
+ 			die("unaligned program counter", regs, error_code);
+ 
+ 		set_fs(KERNEL_DS);
+-		if (copy_from_user(&instruction, (u16 *)(regs->pc), 2)) {
++		if (copy_from_user(&instruction, (u16 *) (regs->pc), 2)) {
+ 			/* Argh. Fault on the instruction itself.
+ 			   This should never happen non-SMP
+-			*/
++			 */
+ 			set_fs(oldfs);
+ 			die("insn faulting in do_address_error", regs, 0);
+ 		}
+@@ -578,7 +578,7 @@
+ 	if (!(cpu_data->flags & CPU_HAS_DSP) || (regs->sr & SR_DSP))
+ 		return 0;
+ 
+-	get_user(inst, ((unsigned short *) regs->pc));
++	get_user(inst, ((unsigned short *)regs->pc));
+ 
+ 	inst &= 0xf000;
+ 
+@@ -590,13 +590,13 @@
+ }
+ #else
+ #define is_dsp_inst(regs)	(0)
+-#endif /* CONFIG_SH_DSP */
++#endif				/* CONFIG_SH_DSP */
+ 
+-extern int do_fpu_inst(unsigned short, struct pt_regs*);
++extern int do_fpu_inst(unsigned short, struct pt_regs *);
+ 
+ asmlinkage void do_reserved_inst(unsigned long r4, unsigned long r5,
+-				unsigned long r6, unsigned long r7,
+-				struct pt_regs __regs)
++				 unsigned long r6, unsigned long r7,
++				 struct pt_regs __regs)
+ {
+ 	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	unsigned long error_code;
+@@ -606,7 +606,7 @@
+ 	unsigned short inst;
+ 	int err;
+ 
+-	get_user(inst, (unsigned short*)regs->pc);
++	get_user(inst, (unsigned short *)regs->pc);
+ 
+ 	err = do_fpu_inst(inst, regs);
+ 	if (!err) {
+@@ -618,14 +618,14 @@
+ 
+ #ifdef CONFIG_SH_DSP
+ 	/* Check if it's a DSP instruction */
+- 	if (is_dsp_inst(regs)) {
++	if (is_dsp_inst(regs)) {
+ 		/* Enable DSP mode, and restart instruction. */
+ 		regs->sr |= SR_DSP;
+ 		return;
+ 	}
+ #endif
+ 
+-	asm volatile("stc	r2_bank, %0": "=r" (error_code));
++	asm volatile ("stc	r2_bank, %0":"=r" (error_code));
+ 	local_irq_enable();
+ 	kgdb_exception_handler(regs);
+ 	force_sig(SIGILL, tsk);
+@@ -633,7 +633,7 @@
+ }
+ 
+ #ifdef CONFIG_SH_FPU_EMU
+-static int emulate_branch(unsigned short inst, struct pt_regs* regs)
++static int emulate_branch(unsigned short inst, struct pt_regs *regs)
+ {
+ 	/*
+ 	 * bfs: 8fxx: PC+=d*2+4;
+@@ -676,8 +676,8 @@
+ #endif
+ 
+ asmlinkage void do_illegal_slot_inst(unsigned long r4, unsigned long r5,
+-				unsigned long r6, unsigned long r7,
+-				struct pt_regs __regs)
++				     unsigned long r6, unsigned long r7,
++				     struct pt_regs __regs)
+ {
+ 	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	unsigned long error_code;
+@@ -695,12 +695,12 @@
+ 		get_user(inst, (unsigned short *)regs->pc);
+ 		if (!emulate_branch(inst, regs))
+ 			return;
+-		/* fault in branch.*/
++		/* fault in branch. */
+ 	}
+ 	/* not a FPU inst. */
+ #endif
+ 
+-	asm volatile("stc	r2_bank, %0": "=r" (error_code));
++	asm volatile ("stc	r2_bank, %0":"=r" (error_code));
+ 	local_irq_enable();
+ 	kgdb_exception_handler(regs);
+ 	force_sig(SIGILL, tsk);
+@@ -714,7 +714,7 @@
+ 	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	long ex;
+ 
+-	asm volatile("stc	r2_bank, %0" : "=r" (ex));
++	asm volatile ("stc	r2_bank, %0":"=r" (ex));
+ 	die_if_kernel("exception", regs, ex);
+ }
+ 
+@@ -730,7 +730,7 @@
+ 	 * the vector through which debug and BIOS traps are
+ 	 * delegated by the Linux trap handler.
+ 	 */
+-	asm volatile("stc vbr, %0" : "=r" (vbr));
++	asm volatile ("stc vbr, %0":"=r" (vbr));
+ 
+ 	gdb_vbr_vector = (void *)(vbr + 0x100);
+ 	printk("Setting GDB trap vector to 0x%08lx\n",
+@@ -750,10 +750,9 @@
+ 	   (or P2, virtural "fixed" address space).
+ 	   It's definitely should not in physical address.  */
+ 
+-	asm volatile("ldc	%0, vbr"
+-		     : /* no output */
+-		     : "r" (&vbr_base)
+-		     : "memory");
++	asm volatile ("ldc	%0, vbr":	/* no output */
++		      :"r" (&vbr_base)
++		      :"memory");
+ }
+ 
+ void __init trap_init(void)
+@@ -761,9 +760,9 @@
+ 	extern void *exception_handling_table[];
+ 
+ 	exception_handling_table[TRAP_RESERVED_INST]
+-		= (void *)do_reserved_inst;
++	    = (void *)do_reserved_inst;
+ 	exception_handling_table[TRAP_ILLEGAL_SLOT_INST]
+-		= (void *)do_illegal_slot_inst;
++	    = (void *)do_illegal_slot_inst;
+ 
+ #if defined(CONFIG_CPU_SH4) && !defined(CONFIG_SH_FPU) || \
+     defined(CONFIG_SH_FPU_EMU)
+@@ -776,11 +775,65 @@
+ 	exception_handling_table[64] = (void *)do_reserved_inst;
+ 	exception_handling_table[65] = (void *)do_illegal_slot_inst;
+ #endif
+-		
++
+ 	/* Setup VBR for boot cpu */
+ 	per_cpu_trap_init();
+ }
+ 
++void get_stack(char *buf, unsigned long *sp, size_t size, size_t depth)
++{
++	unsigned long *stack, addr;
++	unsigned long module_start = VMALLOC_START;
++	unsigned long module_end = VMALLOC_END;
++#ifdef CONFIG_KALLSYMS
++	char *modname;
++	const char *name;
++	unsigned long offset, symbolsize;
++	char namebuf[KSYM_NAME_LEN + 1];
++#endif
++	int i = 0;
++	int pos = 0;
++
++	stack = sp;
++
++	while (!kstack_end(stack) && i < depth) {
++		addr = *stack++;
++		if (((addr >= (unsigned int)_text) &&
++		     (addr <= (unsigned int)_etext)) ||
++		    ((addr >= module_start) && (addr <= module_end))) {
++			pos += snprintf(buf + pos, size - pos, "[<%08lx>] ",
++					addr);
++
++#ifdef CONFIG_KALLSYMS
++			name = kallsyms_lookup(addr, &symbolsize, &offset,
++					       &modname, namebuf);
++			if (!name) {
++				pos += snprintf(buf + pos, size - pos,
++						"0x%lx", addr);
++			} else {
++				if (modname) {
++					pos += snprintf(buf + pos,
++							size - pos,
++							"%s+%#lx/%#lx [%s]\n",
++							name, offset,
++							symbolsize, modname);
++				} else {
++					pos += snprintf(buf + pos,
++							size - pos,
++							"%s+%#lx/%#lx\n", name,
++							offset, symbolsize);
++				}
++			}
++#else
++			pos += snprintf(buf + pos, size - pos, "\n");
++#endif
++			i++;
++		}
++	}
++}
++
++EXPORT_SYMBOL_GPL(get_stack);
++
+ void show_stack(struct task_struct *tsk, unsigned long *sp)
+ {
+ 	unsigned long *stack, addr;
+@@ -793,7 +846,7 @@
+ 	}
+ 
+ 	if (!sp) {
+-		register long* r15 __asm__ ("r15");
++		register long *r15 __asm__("r15");
+ 		sp = r15;
+ 	}
+ 
+@@ -835,4 +888,5 @@
+ {
+ 	show_stack(NULL, NULL);
+ }
++
+ EXPORT_SYMBOL(dump_stack);

@@ -1,0 +1,42 @@
+From cfee8b36f722cab3cc377bdb18646cb055b31d73 Mon Sep 17 00:00:00 2001
+From: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Date: Wed, 11 Feb 2009 13:37:59 +0000
+Subject: [PATCH] net: extend range of phy ids to reject when scanning
+
+Using a bad PHY address, the PHY device is erroneously attached to the
+MAC. Unfortunately, broken hardware is sometimes missing the pull down
+resistor on the MDIO line, which results in reads to non-existent devices
+returning 0 rather than 0xffff from the UID PHY registers (see the get_phy_id
+function).
+
+This is caught as soon as the PHY device is attached to the MAC where
+phy_id=0 is treated as a non-existent device.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ drivers/net/phy/phy_device.c |    8 ++++++--
+ 1 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/phy/phy_device.c b/drivers/net/phy/phy_device.c
+index 4266734..b667d2e 100644
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -117,8 +117,12 @@ struct phy_device * get_phy_device(struct mii_bus *bus, int addr)
+ 
+ 	phy_id |= (phy_reg & 0xffff);
+ 
+-	/* If the phy_id is mostly Fs, there is no device there */
+-	if ((phy_id & 0x1fffffff) == 0x1fffffff)
++	/* A non-existent phy should return 0xffffffff as the bus
++	 * pull-ups should mean that all signals are high. Unfortunately
++	 * broken board designs can allow some lines to float or even
++	 * return 0.  Therefore we test for the most obvious problems...
++	 */
++	if ((phy_id & 0x1fffffff) == 0x1fffffff || phy_id == 0)
+ 		return NULL;
+ 
+ 	/*
+-- 
+1.5.6.3
+

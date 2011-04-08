@@ -1,0 +1,30 @@
+From b18cf3b1d6ea1a1ae2077e835d5c972facac5dfe Mon Sep 17 00:00:00 2001
+From: Alexey Korolev <akorolev@infradead.org>
+Date: Fri, 25 Sep 2009 10:26:23 +0100
+Subject: [PATCH] Support Intel P3x flash support with CFI version 1.5
+
+This is commit b1c9c9be6da010510459aca93f5754efb19695ff in mainstream kernel.
+
+Signed-off-by: Alexey Korolev <akorolev@infradead.org>
+Signed-off-by: David Woodhouse <dwmw2@infradead.org>
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/mtd/chips/cfi_cmdset_0001.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/chips/cfi_cmdset_0001.c b/drivers/mtd/chips/cfi_cmdset_0001.c
+index 681b2c5..443c81e 100644
+--- a/drivers/mtd/chips/cfi_cmdset_0001.c
++++ b/drivers/mtd/chips/cfi_cmdset_0001.c
+@@ -283,7 +283,7 @@ read_pri_intelext(struct map_info *map, __u16 adr)
+ 		return NULL;
+ 
+ 	if (extp->MajorVersion != '1' ||
+-	    (extp->MinorVersion < '0' || extp->MinorVersion > '4')) {
++	    (extp->MinorVersion < '0' || extp->MinorVersion > '5')) {
+ 		printk(KERN_ERR "  Unknown Intel/Sharp Extended Query "
+ 		       "version %c.%c.\n",  extp->MajorVersion,
+ 		       extp->MinorVersion);
+-- 
+1.6.0.6
+

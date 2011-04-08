@@ -1,0 +1,130 @@
+From d69a17ca391de6e136dc79b543348fb7cd5c5864 Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 1 Aug 2008 09:07:51 +0100
+Subject: [PATCH] Fix allocation of summary buffer
+
+[JFFS2] Fix allocation of summary buffer
+
+We can't use vmalloc for the buffer we use for writing summaries,
+because some drivers may want to DMA from it. So limit the size to 64KiB
+and use kmalloc for it instead.
+
+Signed-off-by: David Woodhouse <David.Woodhouse@intel.com>
+---
+ fs/jffs2/summary.c |   40 ++++++++++++++++++++++++++--------------
+ fs/jffs2/summary.h |    6 ++++++
+ 2 files changed, 32 insertions(+), 14 deletions(-)
+
+diff --git a/fs/jffs2/summary.c b/fs/jffs2/summary.c
+index d828b29..ae192a5 100644
+--- a/fs/jffs2/summary.c
++++ b/fs/jffs2/summary.c
+@@ -23,6 +23,8 @@
+ 
+ int jffs2_sum_init(struct jffs2_sb_info *c)
+ {
++	uint32_t sum_size = max_t(uint32_t, c->sector_size, MAX_SUMMARY_SIZE);
++
+ 	c->summary = kzalloc(sizeof(struct jffs2_summary), GFP_KERNEL);
+ 
+ 	if (!c->summary) {
+@@ -30,7 +32,7 @@ int jffs2_sum_init(struct jffs2_sb_info *c)
+ 		return -ENOMEM;
+ 	}
+ 
+-	c->summary->sum_buf = vmalloc(c->sector_size);
++	c->summary->sum_buf = kmalloc(sum_size, GFP_KERNEL);
+ 
+ 	if (!c->summary->sum_buf) {
+ 		JFFS2_WARNING("Can't allocate buffer for writing out summary information!\n");
+@@ -49,7 +51,7 @@ void jffs2_sum_exit(struct jffs2_sb_info *c)
+ 
+ 	jffs2_sum_disable_collecting(c->summary);
+ 
+-	vfree(c->summary->sum_buf);
++	kfree(c->summary->sum_buf);
+ 	c->summary->sum_buf = NULL;
+ 
+ 	kfree(c->summary);
+@@ -651,7 +653,7 @@ crc_err:
+ /* Write summary data to flash - helper function for jffs2_sum_write_sumnode() */
+ 
+ static int jffs2_sum_write_data(struct jffs2_sb_info *c, struct jffs2_eraseblock *jeb,
+-					uint32_t infosize, uint32_t datasize, int padsize)
++				uint32_t infosize, uint32_t datasize, int padsize)
+ {
+ 	struct jffs2_raw_summary isum;
+ 	union jffs2_sum_mem *temp;
+@@ -662,6 +664,26 @@ static int jffs2_sum_write_data(struct jffs2_sb_info *c, struct jffs2_eraseblock
+ 	int ret;
+ 	size_t retlen;
+ 
++	if (padsize + datasize > MAX_SUMMARY_SIZE) {
++		/* It won't fit in the buffer. Abort summary for this jeb */
++		jffs2_sum_disable_collecting(c->summary);
++
++		JFFS2_WARNING("Summary too big (%d data, %d pad) in eraseblock at %08x\n",
++			      datasize, padsize, jeb->offset);
++		/* Non-fatal */
++		return 0;
++	}
++	/* Is there enough space for summary? */
++	if (padsize < 0) {
++		/* don't try to write out summary for this jeb */
++		jffs2_sum_disable_collecting(c->summary);
++
++		JFFS2_WARNING("Not enough space for summary, padsize = %d\n",
++			      padsize);
++		/* Non-fatal */
++		return 0;
++	}
++
+ 	memset(c->summary->sum_buf, 0xff, datasize);
+ 	memset(&isum, 0, sizeof(isum));
+ 
+@@ -807,7 +829,7 @@ int jffs2_sum_write_sumnode(struct jffs2_sb_info *c)
+ {
+ 	int datasize, infosize, padsize;
+ 	struct jffs2_eraseblock *jeb;
+-	int ret;
++	int ret = 0;
+ 
+ 	dbg_summary("called\n");
+ 
+@@ -827,16 +849,6 @@ int jffs2_sum_write_sumnode(struct jffs2_sb_info *c)
+ 	infosize += padsize;
+ 	datasize += padsize;
+ 
+-	/* Is there enough space for summary? */
+-	if (padsize < 0) {
+-		/* don't try to write out summary for this jeb */
+-		jffs2_sum_disable_collecting(c->summary);
+-
+-		JFFS2_WARNING("Not enough space for summary, padsize = %d\n", padsize);
+-		spin_lock(&c->erase_completion_lock);
+-		return 0;
+-	}
+-
+ 	ret = jffs2_sum_write_data(c, jeb, infosize, datasize, padsize);
+ 	spin_lock(&c->erase_completion_lock);
+ 	return ret;
+diff --git a/fs/jffs2/summary.h b/fs/jffs2/summary.h
+index 0c6669e..6a0db8a 100644
+--- a/fs/jffs2/summary.h
++++ b/fs/jffs2/summary.h
+@@ -13,6 +13,12 @@
+ #ifndef JFFS2_SUMMARY_H
+ #define JFFS2_SUMMARY_H
+ 
++/* Limit summary size to 64KiB so that we can kmalloc it. If the summary
++   is larger than that, we have to just ditch it and avoid using summary
++   for the eraseblock in question... and it probably doesn't hurt us much
++   anyway. */
++#define MAX_SUMMARY_SIZE 65536
++
+ #include <linux/uio.h>
+ #include <linux/jffs2.h>
+ 
+-- 
+1.6.0.6
+

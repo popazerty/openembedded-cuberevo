@@ -1,0 +1,17 @@
+Change the name of the SH4 clock so that it matches the one used in the SH4
+fast calibrate code (linux-sh4-2.6.23.14_stm23_0107-calibrate_delay.patch).
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/clock-stx7111.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+@@ -319,7 +319,7 @@ static struct clkgenaclk clkgenaclks[] =
+ 	CLKGENA_CLK(1, "fdma0"),
+ 	CLKGENA_CLK(2, "fdma1"),
+ 	/* 3 not used */
+-	CLKGENA_CLK(4, "sh4ick"),
++	CLKGENA_CLK(4, "sh4_clk"),
+ 	CLKGENA_CLK(5, "ic_if_100"),
+ 	CLKGENA_CLK(6, "lx_dmu_cpu"),
+ 	CLKGENA_CLK(7, "lx_aud_cpu"),

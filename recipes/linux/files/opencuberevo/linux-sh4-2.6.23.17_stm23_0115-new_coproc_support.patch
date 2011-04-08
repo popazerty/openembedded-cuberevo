@@ -1,0 +1,46 @@
+Add coprocessor support for the latest SOCs
+
+Signed-off-by: Chris Tomlinson <christopher.tomlinson@st.com>
+Index: linux/drivers/stm/Kconfig
+===================================================================
+--- linux.orig/drivers/stm/Kconfig	2008-07-31 16:19:33.000000000 +0100
++++ linux/drivers/stm/Kconfig	2008-08-07 14:26:54.000000000 +0100
+@@ -74,7 +74,7 @@
+ config STM_COPROCESSOR_SUPPORT
+ 	bool "STMicroelectronics coprocessor support"
+ 	default y
+-	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200
++	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7105 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7141 || CPU_SUBTYPE_STX7200
+ 	---help---
+         Many of the ST system-on-chip devices have multiple CPUs, where a
+         master CPU running Linux has control over a number of slave CPUs,
+@@ -95,6 +95,9 @@
+ 	int
+ 	depends on STM_COPROCESSOR_SUPPORT
+ 	default 2 if CPU_SUBTYPE_STB7100
++	default 2 if CPU_SUBTYPE_STX7105
++	default 2 if CPU_SUBTYPE_STX7111
++	default 2 if CPU_SUBTYPE_STX7141
+ 	default 4 if CPU_SUBTYPE_STX7200
+ 	default 0
+ 
+Index: linux/drivers/stm/copro-st_socs.c
+===================================================================
+--- linux.orig/drivers/stm/copro-st_socs.c	2008-08-07 12:29:02.000000000 +0100
++++ linux/drivers/stm/copro-st_socs.c	2008-08-07 14:26:54.000000000 +0100
+@@ -36,6 +36,15 @@
+ #if defined CONFIG_CPU_SUBTYPE_STB7100
+ 	const unsigned int boot_lookup[] =   { 28, 26 };
+ 	const unsigned int reset_lookup[]  = { 29, 27 };
++#elif defined CONFIG_CPU_SUBTYPE_STX7105
++	const unsigned int boot_lookup[] =   { 28, 26 };
++	const unsigned int reset_lookup[]  = { 29, 27 };
++#elif defined CONFIG_CPU_SUBTYPE_STX7111
++	const unsigned int boot_lookup[] =   { 28, 26 };
++	const unsigned int reset_lookup[]  = { 29, 27 };
++#elif defined CONFIG_CPU_SUBTYPE_STX7141
++	const unsigned int boot_lookup[] =   { 28, 26 };
++	const unsigned int reset_lookup[]  = { 29, 27 };
+ #elif defined CONFIG_CPU_SUBTYPE_STX7200
+ 	const unsigned int boot_lookup[] =   { 28, 36, 26, 34 };
+ 	const unsigned int reset_lookup[]  = { 29, 37, 27, 35 };

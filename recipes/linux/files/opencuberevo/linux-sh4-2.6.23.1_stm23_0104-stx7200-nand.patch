@@ -1,0 +1,517 @@
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb519/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb519/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb519/setup.c
+@@ -14,6 +14,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/soc.h>
++#include <linux/stm/emi.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/physmap.h>
+ #include <linux/mtd/partitions.h>
+@@ -171,6 +172,43 @@ static struct platform_device epld_devic
+ 	},
+ };
+ 
++static struct mtd_partition nand_partitions[] = {
++	{
++		.name	= "NAND root",
++		.offset	= 0,
++		.size 	= 0x00800000
++	}, {
++		.name	= "NAND home",
++		.offset	= MTDPART_OFS_APPEND,
++		.size	= MTDPART_SIZ_FULL
++	},
++};
++
++static struct nand_config_data mb519_nand_config = {
++	.emi_bank		= 1,
++	.emi_withinbankoffset	= 0,
++
++	/* Timing data for STEM Module MB588A (ST-NAND512W3A2C) */
++	.emi_timing_data = &(struct emi_timing_data) {
++		.rd_cycle_time	= 40,		 /* times in ns */
++		.rd_oee_start	= 0,
++		.rd_oee_end	= 10,
++		.rd_latchpoint	= 10,
++		.busreleasetime = 10,
++
++		.wr_cycle_time	= 40,
++		.wr_oee_start	= 0,
++		.wr_oee_end	= 10,
++	},
++
++	.chip_delay		= 20,
++	.mtd_parts		= nand_partitions,
++	.nr_parts		= ARRAY_SIZE(nand_partitions),
++	.rbn_port		= -1,
++	.rbn_pin		= -1,
++};
++
++
+ static struct platform_device *mb519_devices[] __initdata = {
+ 	&epld_device,
+ 	&physmap_flash,
+@@ -195,6 +233,7 @@ static int __init device_init(void)
+ 	stx7200_configure_ethernet(0, 0, 1, 0);
+ 	// stx7200_configure_ethernet(1, 0, 1, 1);
+         stx7200_configure_lirc();
++	stx7200_configure_nand(&mb519_nand_config);
+         
+ 	return platform_add_devices(mb519_devices, ARRAY_SIZE(mb519_devices));
+ }
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -12,6 +12,7 @@
+ #include <linux/init.h>
+ #include <linux/serial.h>
+ #include <linux/io.h>
++#include <linux/stm/emi.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/soc_init.h>
+ #include <linux/stm/pio.h>
+@@ -21,6 +22,8 @@
+ #include <asm/irq-ilc.h>
+ #include <linux/stm/fdma-plat.h>
+ #include <linux/stm/fdma-reqs.h>
++#include <linux/mtd/nand.h>
++#include <linux/mtd/partitions.h>
+ 
+ static unsigned long chip_revision;
+ static struct sysconf_field *sc7_2;
+@@ -549,6 +552,135 @@ void __init stx7200_configure_lirc(void)
+ 	platform_device_register(&lirc_device);
+ }
+ 
++/* NAND Resources ---------------------------------------------------------- */
++
++static void nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
++{
++	struct nand_chip *this = mtd->priv;
++
++	if (ctrl & NAND_CTRL_CHANGE) {
++
++		if (ctrl & NAND_CLE) {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
++						   (unsigned int)(1 << 17));
++		}
++		else {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
++						   ~(unsigned int)(1 << 17));
++		}
++
++		if (ctrl & NAND_ALE) {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
++						   (unsigned int)(1 << 18));
++		}
++		else {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
++						   ~(unsigned int)(1 << 18));
++		}
++	}
++
++	if (cmd != NAND_CMD_NONE) {
++		writeb(cmd, this->IO_ADDR_W);
++	}
++}
++
++static void nand_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* write buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		writeb(*buf++, chip->IO_ADDR_W);
++		len--;
++	}
++
++	writesl(chip->IO_ADDR_W, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++) {
++		writeb(buf[i], chip->IO_ADDR_W);
++	}
++}
++
++static void nand_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* read buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		*buf++ = readb(chip->IO_ADDR_R);
++		len--;
++	}
++
++	readsl(chip->IO_ADDR_R, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++) {
++		buf[i] = readb(chip->IO_ADDR_R);
++	}
++}
++
++static struct stpio_pin *nand_RBn_pio = NULL;
++
++static int nand_device_ready(struct mtd_info *mtd) {
++
++	return stpio_get_pin(nand_RBn_pio);
++}
++
++static const char *nand_part_probes[] = { "cmdlinepart", NULL };
++
++static struct platform_device nand_flash[] = {
++	EMI_NAND_DEVICE(0),
++	EMI_NAND_DEVICE(1),
++	EMI_NAND_DEVICE(2),
++	EMI_NAND_DEVICE(3),
++	EMI_NAND_DEVICE(4),
++ };
++
++
++/*
++ * stx7200_configure_nand - Configures NAND support for the STx7200
++ *
++ * Requires generic platform NAND driver (CONFIG_MTD_NAND_PLATFORM).
++ * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
++ * command line.
++ */
++void __init stx7200_configure_nand(struct nand_config_data *data)
++{
++	unsigned int bank_base;
++	unsigned int emi_bank = data->emi_bank;
++
++	struct platform_nand_data *nand_private_data =
++		nand_flash[emi_bank].dev.platform_data;
++
++	if (data->rbn_port >= 0) {
++		if (nand_RBn_pio == NULL) {
++			nand_RBn_pio = stpio_request_pin(data->rbn_port, data->rbn_pin,
++					 "nand_RBn", STPIO_IN);
++		}
++		if (nand_RBn_pio) {
++			nand_private_data->ctrl.dev_ready = nand_device_ready;
++		}
++	}
++
++	emi_init(0, 0xfdf00000);
++	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
++
++	printk("Configuring EMI Bank%d for NAND device\n", emi_bank);
++	emi_config_nand(data->emi_bank, data->emi_timing_data);
++
++	nand_flash[emi_bank].resource[0].start = bank_base;
++	nand_flash[emi_bank].resource[0].end = bank_base + (1 << 18);
++
++	nand_private_data->chip.chip_delay = data->chip_delay;
++	nand_private_data->chip.partitions = data->mtd_parts;
++	nand_private_data->chip.nr_partitions = data->nr_parts;
++
++	platform_device_register(&nand_flash[emi_bank]);
++}
++
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+Index: linux-2.6.23-stm/drivers/mtd/nand/plat_nand.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/mtd/nand/plat_nand.c
++++ linux-2.6.23-stm/drivers/mtd/nand/plat_nand.c
+@@ -43,6 +43,11 @@ static int __init plat_nand_probe(struct
+ 		return -ENOMEM;
+ 	}
+ 
++	if (!request_mem_region(pdev->resource[0].start,
++				pdev->resource[0].end - pdev->resource[0].start + 1,
++				pdev->name))
++		return -EBUSY;
++
+ 	data->io_base = ioremap(pdev->resource[0].start,
+ 				pdev->resource[0].end - pdev->resource[0].start + 1);
+ 	if (data->io_base == NULL) {
+@@ -55,6 +60,8 @@ static int __init plat_nand_probe(struct
+ 	data->mtd.priv = &data->chip;
+ 	data->mtd.owner = THIS_MODULE;
+ 
++	data->mtd.name = pdev->dev.bus_id;
++
+ 	data->chip.IO_ADDR_R = data->io_base;
+ 	data->chip.IO_ADDR_W = data->io_base;
+ 	data->chip.cmd_ctrl = pdata->ctrl.cmd_ctrl;
+@@ -63,6 +70,9 @@ static int __init plat_nand_probe(struct
+ 	data->chip.chip_delay = pdata->chip.chip_delay;
+ 	data->chip.options |= pdata->chip.options;
+ 
++	data->chip.read_buf = pdata->ctrl.read_buf;
++	data->chip.write_buf = pdata->ctrl.write_buf;
++
+ 	data->chip.ecc.hwctl = pdata->ctrl.hwcontrol;
+ 	data->chip.ecc.layout = pdata->chip.ecclayout;
+ 	data->chip.ecc.mode = NAND_ECC_SOFT;
+Index: linux-2.6.23-stm/drivers/stm/emi.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/emi.c
++++ linux-2.6.23-stm/drivers/stm/emi.c
+@@ -19,6 +19,11 @@ static void __iomem *emi_control;
+ 
+ int __init emi_init(unsigned long memory_base, unsigned long control_base)
+ {
++	static char initialised = 0;
++
++	if (initialised)
++		return 0;
++
+ 	if (!request_mem_region(control_base, 0x864, "EMI"))
+ 		return -EBUSY;
+ 
+@@ -28,6 +33,8 @@ int __init emi_init(unsigned long memory
+ 
+ 	emi_memory_base = memory_base;
+ 
++	initialised = 1;
++
+ 	return 0;
+ }
+ 
+@@ -115,3 +122,40 @@ void __init emi_config_pata(int bank)
+ 	set_read_timings(bank, 120,35,30,20);
+ 	set_write_timings(bank, 120,35,30);
+ }
++
++void set_nand_read_timings(int bank, int cycle_time,int IORD_start,
++				  int IORD_end, int RD_latch, int busreleasetime)
++{
++	cycle_time = cycle_time / 10;		/* cycles */
++	IORD_start = IORD_start / 5;		/* phases */
++	IORD_end   = IORD_end / 5;		/* phases */
++	RD_latch   = RD_latch / 10;		/* cycles */
++	busreleasetime = busreleasetime / 10;   /* cycles */
++
++	writel(0x04000699 | (busreleasetime << 11) | (RD_latch << 20),
++	       emi_control+BANK_EMICONFIGDATA(bank, 0));
++
++	writel((cycle_time << 24) | (IORD_start << 12) | (IORD_end << 8),
++	       emi_control+BANK_EMICONFIGDATA(bank,1));
++}
++
++void set_nand_write_timings(int bank, int cycle_time,int IOWR_start,
++					  int IOWR_end)
++{
++	cycle_time = cycle_time / 10;		/* cycles */
++	IOWR_start = IOWR_start / 5;		/* phases */
++	IOWR_end   = IOWR_end / 5;		/* phases */
++
++	writel((cycle_time << 24) | (IOWR_start << 12) | (IOWR_end << 8),
++	       emi_control+BANK_EMICONFIGDATA(bank,2));
++}
++
++void emi_config_nand(int bank, struct emi_timing_data *timing_data)
++{
++	set_nand_read_timings(bank, timing_data->rd_cycle_time, timing_data->rd_oee_start,
++			      timing_data->rd_oee_end, timing_data->rd_latchpoint,
++			      timing_data->busreleasetime);
++
++	set_nand_write_timings(bank, timing_data->wr_cycle_time, timing_data->wr_oee_start,
++			       timing_data->wr_oee_end);
++}
+Index: linux-2.6.23-stm/include/linux/stm/emi.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/emi.h
++++ linux-2.6.23-stm/include/linux/stm/emi.h
+@@ -6,6 +6,19 @@
+  * License.  See linux/COPYING for more information.
+  */
+ 
++struct emi_timing_data {
++	int rd_cycle_time;
++	int rd_oee_start;
++	int rd_oee_end;
++	int rd_latchpoint;
++	int busreleasetime;
++
++	int wr_cycle_time;
++	int wr_oee_start;
++	int wr_oee_end;
++};
++
+ int emi_init(unsigned long memory_base, unsigned long control_base);
+ unsigned long emi_bank_base(int bank);
+ void emi_config_pata(int bank);
++void emi_config_nand(int bank, struct emi_timing_data *timing_data);
+Index: linux-2.6.23-stm/include/linux/mtd/nand.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/mtd/nand.h
++++ linux-2.6.23-stm/include/linux/mtd/nand.h
+@@ -592,6 +592,8 @@ struct platform_nand_ctrl {
+ 	void		(*select_chip)(struct mtd_info *mtd, int chip);
+ 	void		(*cmd_ctrl)(struct mtd_info *mtd, int dat,
+ 				    unsigned int ctrl);
++	void		(*write_buf)(struct mtd_info *mtd, const uint8_t *buf, int len);
++	void		(*read_buf)(struct mtd_info *mtd, uint8_t *buf, int len);
+ 	void		*priv;
+ };
+ 
+Index: linux-2.6.23-stm/include/linux/stm/soc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc.h
++++ linux-2.6.23-stm/include/linux/stm/soc.h
+@@ -99,6 +99,21 @@ struct plat_sysconf_data {
+ 	int sys_cfg_offset;
+ };
+ 
++/* NAND configuration data */
++struct nand_config_data {
++	unsigned int emi_bank;			/* EMI Bank#			*/
++	unsigned int emi_withinbankoffset;	/* Offset within EMI Bank	*/
++	void *emi_timing_data;			/* Timing data for EMI config   */
++	void *mtd_parts;			/* MTD partition table		*/
++	unsigned int chip_delay;		/* Read busy time for NAND chip */
++	int nr_parts;				/* Number of partitions		*/
++	int rbn_port;				/*  # : 'nand_RBn' PIO port #   */
++						/* -1 : if unconnected		*/
++	int rbn_pin;			        /*      'nand_RBn' PIO pin      */
++						/* (assumes shared RBn signal   */
++						/*  for multiple chips)		*/
++};
++
+ void stx7100_early_device_init(void);
+ void stb7100_configure_asc(const int *ascs, int num_ascs, int console);
+ void sysconf_early_init(struct platform_device *pdev);
+@@ -122,5 +137,6 @@ void stx7200_configure_usb(void);
+ void stx7200_configure_ethernet(int mac, int rmii_mode, int ext_clk,
+ 				int phy_bus);
+ void stx7200_configure_lirc(void);
++void stx7200_configure_nand(struct nand_config_data *data);
+ 
+ #endif /* __LINUX_ST_SOC_H */
+Index: linux-2.6.23-stm/arch/sh/boards/st/cb101/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/cb101/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/cb101/setup.c
+@@ -14,6 +14,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/soc.h>
++#include <linux/stm/emi.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/physmap.h>
+ #include <linux/mtd/partitions.h>
+@@ -121,6 +122,66 @@ static struct platform_device cb101_phy_
+ 	 }
+ };
+ 
++static struct mtd_partition nand1_parts[] = {
++	{
++		.name	= "NAND1 root",
++		.offset	= 0,
++		.size 	= 0x00800000,
++	}, {
++		.name	= "NAND1 home",
++		.offset	= MTDPART_OFS_APPEND,
++		.size	= MTDPART_SIZ_FULL,
++	},
++};
++
++static struct mtd_partition nand2_parts[] = {
++	{
++		.name	= "NAND2 data",
++		.offset	= 0,
++		.size	= MTDPART_SIZ_FULL
++	},
++};
++
++/* Timing data for onboard NAND */
++static struct emi_timing_data nand_timing_data = {
++	.rd_cycle_time	= 40,		 /* times in ns */
++	.rd_oee_start	= 0,
++	.rd_oee_end	= 10,
++	.rd_latchpoint	= 10,
++
++	.busreleasetime = 10,
++	.wr_cycle_time	= 40,
++	.wr_oee_start	= 0,
++	.wr_oee_end	= 10,
++};
++
++static struct nand_config_data cb101_nand_config[] = {
++{
++	.emi_bank		= 1,
++	.emi_withinbankoffset	= 0,
++
++	.emi_timing_data	= &nand_timing_data,
++
++	.chip_delay		= 25,
++	.mtd_parts		= nand1_parts,
++	.nr_parts		= ARRAY_SIZE(nand1_parts),
++	.rbn_port		= 2,
++	.rbn_pin		= 7,
++}, {
++	.emi_bank		= 2,
++	.emi_withinbankoffset	= 0,
++
++	.emi_timing_data	= &nand_timing_data,
++
++	.chip_delay		= 25,
++	.mtd_parts		= nand2_parts,
++	.nr_parts		= ARRAY_SIZE(nand2_parts),
++	.rbn_port		= 2,
++	.rbn_pin		= 7,
++}
++};
++
++
+ static struct platform_device *cb101_devices[] __initdata = {
+ 	&physmap_flash,
+ 	&cb101_phy_device,
+@@ -132,6 +193,8 @@ static int __init device_init(void)
+ 	stx7200_configure_usb();
+ 	stx7200_configure_ethernet(0, 0, 0, 0);
+         stx7200_configure_lirc();
++	stx7200_configure_nand(&cb101_nand_config[0]);
++	stx7200_configure_nand(&cb101_nand_config[1]);
+ 
+ 	return platform_add_devices(cb101_devices, ARRAY_SIZE(cb101_devices));
+ }
+Index: linux-2.6.23-stm/include/linux/stm/soc_init.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc_init.h
++++ linux-2.6.23-stm/include/linux/stm/soc_init.h
+@@ -97,3 +97,32 @@
+ 		}							\
+ 	}								\
+ }
++
++
++#define EMI_NAND_DEVICE(_id)							\
++{										\
++	.name		= "gen_nand",						\
++	.id		= _id,							\
++	.num_resources	= 1,							\
++	.resource	= (struct resource[]) {					\
++		{								\
++			.flags		= IORESOURCE_MEM,			\
++		}								\
++	},									\
++	.dev		= {							\
++		.platform_data	= &(struct platform_nand_data) {		\
++			.chip		=					\
++			{							\
++				.nr_chips		= 1,			\
++				.options		= NAND_NO_AUTOINCR,	\
++				.part_probe_types 	= nand_part_probes,	\
++			},							\
++			.ctrl		=					\
++			{							\
++				.cmd_ctrl		= nand_cmd_ctrl,	\
++				.write_buf		= nand_write_buf,	\
++				.read_buf		= nand_read_buf,	\
++			}							\
++		}								\
++	}									\
++}

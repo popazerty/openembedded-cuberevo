@@ -1,0 +1,33 @@
+commit 0d6a04b4a18aca483174db2c6c34f555a1fd8cf8
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Tue May 27 09:12:39 2008 +0100
+
+    sh: disable initrd defaults in .empty_zero_page.
+    
+    When using initramfs on systems that don't explicitly clear LOADER_TYPE,
+    unpack_to_rootfs() tramples tramples the range with the defaults taken
+    out of .empty_zero_page. This causes kernels with valid initramfs images
+    to bail out with crc or gzip magic mismatch errors after the second
+    unpack takes place on certain platform configurations.
+    
+    Signed-off-by: Paul Mundt <lethal@linux-sh.org>
+    
+    http://git.kernel.org/?p=linux/kernel/git/lethal/sh-2.6.git;a=commit;h=972ad0e0d51b67b862ae6143d858fb7da2f2a5f6
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/kernel/head.S b/arch/sh/kernel/head.S
+index 8e1ea4d..49c12ad 100644
+--- a/arch/sh/kernel/head.S
++++ b/arch/sh/kernel/head.S
+@@ -30,8 +30,8 @@ ENTRY(empty_zero_page)
+ 	.long	0		/* RAMDISK_FLAGS */
+ 	.long	0x0200		/* ORIG_ROOT_DEV */
+ 	.long	1		/* LOADER_TYPE */
+-	.long	0x00360000	/* INITRD_START */
+-	.long	0x000a0000	/* INITRD_SIZE */
++	.long	0x00000000	/* INITRD_START */
++	.long	0x00000000	/* INITRD_SIZE */
+ #ifdef CONFIG_32BIT
+ 	.long	0x53453f00 + 32	/* "SE?" = 32 bit */
+ #else

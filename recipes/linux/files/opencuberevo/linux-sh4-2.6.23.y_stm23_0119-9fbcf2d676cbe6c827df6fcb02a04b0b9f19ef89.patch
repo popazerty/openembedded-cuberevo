@@ -1,0 +1,111 @@
+From 9fbcf2d676cbe6c827df6fcb02a04b0b9f19ef89 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Mon, 18 May 2009 18:32:15 +0100
+Subject: [PATCH] stm_nand_flex: Command line parameter for boot-mode partition
+
+Allow name of boot-mode-ECC partition to be specified as command line parameter.
+---
+ Documentation/kernel-parameters.txt |    2 ++
+ drivers/mtd/nand/stm_nand_flex.c    |   28 +++++++++++++++++++++++++---
+ 2 files changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/Documentation/kernel-parameters.txt b/Documentation/kernel-parameters.txt
+index da681bb..5271eac 100644
+--- a/Documentation/kernel-parameters.txt
++++ b/Documentation/kernel-parameters.txt
+@@ -1046,6 +1046,8 @@ and is between 256 and 4096 characters. It is defined in the file
+ 
+ 	n2=		[NET] SDL Inc. RISCom/N2 synchronous serial card
+ 
++	nbootpart=	[MTD,STM_NAND_FLEX] Specify boot-mode-ECC partition
++
+ 	NCR_D700=	[HW,SCSI]
+ 			See header of drivers/scsi/NCR_D700.c.
+ 
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index f4d83ed..1d88a63 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -133,6 +133,9 @@ struct stm_nand_flex_controller {
+ 	struct stm_dma_params	dma_params[4];		/* FDMA params        */
+ } flex;
+ 
++/* The command line passed to nboot_setup() */
++__initdata static char *cmdline;
++
+ #define flex_writereg(val, reg)	iowrite32(val, flex.base_addr + (reg))
+ #define flex_readreg(reg)	ioread32(flex.base_addr + (reg))
+ 
+@@ -837,6 +840,9 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	uint32_t reg;
+ 	uint32_t prog[8] = {0};
+ 
++	char *boot_part_name;
++	int boot_part_found = 0;
++
+ 	/* Initialise NAND controller */
+ 	res = flex_init_controller(pdev);
+ 	if (res != 0) {
+@@ -920,6 +926,12 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	data->mtd.write = nand_write;
+ 	data->mtd.read_oob = nand_read_oob;
+ 	data->mtd.write_oob = nand_write_oob;
++
++	/* Set name of boot partition */
++	boot_part_name = cmdline ? cmdline : CONFIG_STM_NAND_FLEX_BOOTPARTITION;
++	printk(KERN_INFO NAME ": Using boot partition name [%s] (from %s)\n",
++	       boot_part_name, cmdline ? "command line" : "kernel config");
++
+ #endif
+ 
+ #ifdef CONFIG_MTD_PARTITIONS
+@@ -973,11 +985,11 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 			slave = *data->parts[i].mtdp;
+ 			part = PART(slave);
+ 
+-			if (strcmp(slave->name,
+-				   CONFIG_STM_NAND_FLEX_BOOTPARTITION) == 0) {
++			if (strcmp(slave->name, boot_part_name) == 0) {
+ 				printk(KERN_INFO NAME ": Found BOOT parition"
+ 				       "[%s], updating ECC paramters\n",
+ 				       slave->name);
++				boot_part_found = 1;
+ 
+ 				data->boot_start = part->offset;
+ 				data->boot_end = part->offset + slave->size;
+@@ -993,6 +1005,9 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 			add_mtd_device(slave);
+ 			part->registered = 1;
+ 		}
++		if (!boot_part_found)
++			printk(KERN_WARNING NAME ": Failed to find boot "
++			       "partition [%s]\n", boot_part_name);
+ #endif /* CONFIG_STM_NAND_FLEX_BOOTMODESUPPORT */
+ 	} else
+ #endif
+@@ -1014,7 +1029,6 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	return res;
+ }
+ 
+-
+ static int __devexit stm_nand_flex_remove(struct platform_device *pdev)
+ {
+ 	struct stm_nand_flex_device *data = platform_get_drvdata(pdev);
+@@ -1041,6 +1055,14 @@ static struct platform_driver stm_nand_flex_driver = {
+ 	},
+ };
+ 
++static int __init bootpart_setup(char *s)
++{
++	cmdline = s;
++	return 1;
++}
++
++__setup("nbootpart=", bootpart_setup);
++
+ static int __init stm_nand_flex_init(void)
+ {
+ 	return platform_driver_register(&stm_nand_flex_driver);
+-- 
+1.6.0.6
+

@@ -1,0 +1,270 @@
+From 1ec6daa4d071e58e29ec9c4933b29a3a02922284 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Thu, 14 Aug 2008 12:35:52 +0100
+Subject: [PATCH] sound_stm: 7141 audio glue registers updated.
+
+The old version has been mostly copied from 7111, which was wrong.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/reg_7141_audcfg.h |  239 ++++++++++++++++++++++++++-----------------
+ 1 files changed, 143 insertions(+), 96 deletions(-)
+
+diff --git a/sound/stm/reg_7141_audcfg.h b/sound/stm/reg_7141_audcfg.h
+index 661ac3a..9e0743e 100644
+--- a/sound/stm/reg_7141_audcfg.h
++++ b/sound/stm/reg_7141_audcfg.h
+@@ -13,102 +13,6 @@
+ #define set__7141_AUDCFG_IO_CTRL(ip, value) writel((value), ip->base + \
+ 	offset__7141_AUDCFG_IO_CTRL(ip))
+ 
+-/* PCM_CLK_EN */
+-
+-#define shift__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip) 0
+-#define mask__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip) 0x1
+-#define get__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip) ((readl(ip->base + \
+-	offset__7141_AUDCFG_IO_CTRL(ip)) >> \
+-	shift__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip)) & \
+-	mask__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip, value) \
+-	writel((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) & \
+-	~(mask__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip))) | (((value) & \
+-	mask__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip)) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip)), ip->base + \
+-	offset__7141_AUDCFG_IO_CTRL(ip))
+-
+-#define value__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__INPUT(ip) 0x0
+-#define mask__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__INPUT(ip) \
+-	(value__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__INPUT(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__INPUT(ip) \
+-	set__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip, \
+-	value__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__INPUT(ip))
+-
+-#define value__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__OUTPUT(ip) 0x1
+-#define mask__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__OUTPUT(ip) \
+-	(value__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__OUTPUT(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__OUTPUT(ip) \
+-	set__7141_AUDCFG_IO_CTRL__PCM_CLK_EN(ip, \
+-	value__7141_AUDCFG_IO_CTRL__PCM_CLK_EN__OUTPUT(ip))
+-
+-/* SPDIFHDMI_EN */
+-
+-#define shift__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip) 3
+-#define mask__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip) 0x1
+-#define get__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip) ((readl(ip->base + \
+-	offset__7141_AUDCFG_IO_CTRL(ip)) >> \
+-	shift__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip)) & \
+-	mask__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip, value) \
+-	writel((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) & \
+-	~(mask__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip))) | (((value) & \
+-	mask__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip)) << \
+-	shift__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip)), ip->base + \
+-	offset__7141_AUDCFG_IO_CTRL(ip))
+-
+-#define value__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__INPUT(ip) 0x0
+-#define mask__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__INPUT(ip) \
+-	(value__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__INPUT(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__INPUT(ip) \
+-	set__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip, \
+-	value__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__INPUT(ip))
+-
+-#define value__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__OUTPUT(ip) 0x1
+-#define mask__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__OUTPUT(ip) \
+-	(value__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__OUTPUT(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__OUTPUT(ip) \
+-	set__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN(ip, \
+-	value__7141_AUDCFG_IO_CTRL__SPDIFHDMI_EN__OUTPUT(ip))
+-
+-/* PCMPLHDMI_EN */
+-
+-#define shift__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip) 5
+-#define mask__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip) 0x1
+-#define get__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip) ((readl(ip->base + \
+-	offset__7141_AUDCFG_IO_CTRL(ip)) >> \
+-	shift__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip)) & \
+-	mask__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip, value) \
+-	writel((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) & \
+-	~(mask__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip))) | (((value) & \
+-	mask__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip)) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip)), ip->base + \
+-	offset__7141_AUDCFG_IO_CTRL(ip))
+-
+-#define value__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__INPUT(ip) 0x0
+-#define mask__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__INPUT(ip) \
+-	(value__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__INPUT(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__INPUT(ip) \
+-	set__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip, \
+-	value__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__INPUT(ip))
+-
+-#define value__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__OUTPUT(ip) 0x1
+-#define mask__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__OUTPUT(ip) \
+-	(value__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__OUTPUT(ip) << \
+-	shift__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip))
+-#define set__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__OUTPUT(ip) \
+-	set__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN(ip, \
+-	value__7141_AUDCFG_IO_CTRL__PCMPLHDMI_EN__OUTPUT(ip))
+-
+ /* CLKREC_SEL */
+ 
+ #define shift__7141_AUDCFG_IO_CTRL__CLKREC_SEL(ip) 9
+@@ -157,4 +61,147 @@
+ 	set__7141_AUDCFG_IO_CTRL__CLKREC_SEL(ip, \
+ 	value__7141_AUDCFG_IO_CTRL__CLKREC_SEL__PCMPL0(ip))
+ 
++/* PCMR1_SCLK_INV_SEL */
++
++#define shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip) 12
++#define mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip) 0x1
++#define get__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip) \
++	((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) >> \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip)) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip, value) \
++	writel((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) & \
++	~(mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip))) | (((value) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip)) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip)), ip->base + \
++	offset__7141_AUDCFG_IO_CTRL(ip))
++
++#define \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__NO_INVERSION(ip) 0x0
++#define \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__NO_INVERSION(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__NO_INVERSION(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__NO_INVERSION(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__NO_INVERSION(ip))
++
++#define value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__INVERSION(ip) \
++	0x1
++#define mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__INVERSION(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__INVERSION(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__INVERSION(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_INV_SEL__INVERSION(ip))
++
++/* PCMR1_LRCLK_RET_SEL */
++
++#define shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip) 13
++#define mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip) 0x1
++#define get__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip) \
++	((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) >> \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip)) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip, value) \
++	writel((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) & \
++	~(mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip))) | (((value) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip)) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip)), ip->base + \
++	offset__7141_AUDCFG_IO_CTRL(ip))
++
++#define \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__NO_RETIMIMG(ip) 0x0
++#define \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__NO_RETIMIMG(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__NO_RETIMIMG(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__NO_RETIMIMG(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__NO_RETIMIMG(ip))
++
++#define \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__RETIME_BY_1_CYCLE(ip) \
++	0x1
++#define \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__RETIME_BY_1_CYCLE(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__RETIME_BY_1_CYCLE(ip) \
++	<< shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip))
++#define \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__RETIME_BY_1_CYCLE(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_RET_SEL__RETIME_BY_1_CYCLE(ip))
++
++/* PCMR1_SCLK_SEL */
++
++#define shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip) 14
++#define mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip) 0x1
++#define get__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip) ((readl(ip->base \
++	+ offset__7141_AUDCFG_IO_CTRL(ip)) >> \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip)) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip, value) \
++	writel((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) & \
++	~(mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip))) | (((value) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip)) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip)), ip->base + \
++	offset__7141_AUDCFG_IO_CTRL(ip))
++
++#define value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PAD(ip) 0x0
++#define mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PAD(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PAD(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PAD(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PAD(ip))
++
++#define \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PCM_PLAYER_0(ip) 0x1
++#define \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PCM_PLAYER_0(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PCM_PLAYER_0(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip))
++#define \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PCM_PLAYER_0(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_SCLK_SEL__FROM_PCM_PLAYER_0(ip))
++
++/* PCMR1_LRCLK_SEL */
++
++#define shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip) 15
++#define mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip) 0x1
++#define get__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip) ((readl(ip->base \
++	+ offset__7141_AUDCFG_IO_CTRL(ip)) >> \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip)) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip, value) \
++	writel((readl(ip->base + offset__7141_AUDCFG_IO_CTRL(ip)) & \
++	~(mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip))) | (((value) & \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip)) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip)), ip->base + \
++	offset__7141_AUDCFG_IO_CTRL(ip))
++
++#define value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PAD(ip) 0x0
++#define mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PAD(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PAD(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip))
++#define set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PAD(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PAD(ip))
++
++#define \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PCM_PLAYER_0(ip) 0x1
++#define \
++	mask__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PCM_PLAYER_0(ip) \
++	(value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PCM_PLAYER_0(ip) << \
++	shift__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip))
++#define \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PCM_PLAYER_0(ip) \
++	set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip, \
++	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PCM_PLAYER_0(ip))
++
+ #endif
+-- 
+1.5.3.6
+

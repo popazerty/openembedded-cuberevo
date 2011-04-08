@@ -1,0 +1,48 @@
+From d594b3bab5ca6d25d0d5a0152dbfc2701a1936cd Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Thu, 4 Jun 2009 14:17:36 +0100
+Subject: [PATCH] sh_stm: Fix STx7105 USB configuration parameters
+
+The parameters to configure USB power and over current PIO pin selection
+were incorrect.
+
+See bugzilla 6324.
+
+Signed-off-by: Lionel Landwerlin <lionel.landwerlin@openwide.fr>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ include/linux/stm/soc.h |   18 +++++++++---------
+ 1 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 3d21245..d184a91 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -337,15 +337,15 @@ struct usb_init_data {
+ };
+ 
+ #ifdef CONFIG_CPU_SUBTYPE_STX7105
+-#define USB0_OC_PIO4_4		(0<<0)
+-#define USB0_OC_PIO12_5		(1<<0)
+-#define USB0_PWR_PIO4_5		(0<<1)
+-#define USB0_PWR_PIO12_6	(1<<1)
+-
+-#define USB1_OC_PIO4_6		(0<<0)
+-#define USB1_OC_PIO14_6		(1<<0)
+-#define USB1_PWR_PIO4_7		(0<<1)
+-#define USB1_PWR_PIO14_7	(1<<1)
++#define USB0_OC_PIO4_4		0
++#define USB0_OC_PIO12_5		1
++#define USB0_PWR_PIO4_5		0
++#define USB0_PWR_PIO12_6	1
++
++#define USB1_OC_PIO4_6		0
++#define USB1_OC_PIO14_6		1
++#define USB1_PWR_PIO4_7		0
++#define USB1_PWR_PIO14_7	1
+ #endif
+ 
+ 
+-- 
+1.6.0.6
+

@@ -1,0 +1,111 @@
+From bb39fb5d26df4b303bac15fe0329e47b3c9373f1 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:27 +0200
+Subject: [PATCH] stm: clk: Update the stx7141 to the new clk frmwk
+
+This patch updates the STX7141 clock implementation due to the new clock
+framework
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx7141.c |   30 +++++++++++++++++++++++-------
+ 1 files changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7141.c b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+index ae69735..23553f8 100755
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+@@ -24,7 +24,7 @@
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+ #include <linux/io.h>
+-#include <asm/clock.h>
++#include <linux/stm/clk.h>
+ #include "clock-regs-stx7141.h"
+ #include "clock-stx7141.h"
+ 
+@@ -270,6 +270,13 @@ GENERIC_LINUX_CLKS(clk_clocks[CLKA_SH4_ICK],	/* sh4_clk parent    */
+ 		   clk_clocks[CLKA_IC_IF_100],	/* module_clk parent */
+ 		   clk_clocks[CLKA_IC_IF_100]);	/* comms_clk parent  */
+ 
++SYSCONF(SYS_STA, 1, 0, 0);
++SYSCONF(SYS_CFG, 6, 0, 0);
++SYSCONF(SYS_CFG, 11, 1, 8);
++SYSCONF(SYS_CFG, 11, 9, 11);
++SYSCONF(SYS_CFG, 40, 0, 0);
++SYSCONF(SYS_CFG, 40, 2, 2);
++
+ /*
+  * The Linux clk_init function
+  */
+@@ -277,6 +284,13 @@ int __init clk_init(void)
+ {
+ 	int i;
+ 
++	SYSCONF_CLAIM(SYS_STA, 1, 0, 0);
++	SYSCONF_CLAIM(SYS_CFG, 6, 0, 0);
++	SYSCONF_CLAIM(SYS_CFG, 11, 1, 8);
++	SYSCONF_CLAIM(SYS_CFG, 11, 9, 11);
++	SYSCONF_CLAIM(SYS_CFG, 40, 0, 0);
++	SYSCONF_CLAIM(SYS_CFG, 40, 2, 2);
++
+ 	for (i = 0; i < ARRAY_SIZE(clk_clocks); ++i)
+ 		if (clk_clocks[i].name && !clk_register(&clk_clocks[i]))
+ 			clk_enable(&clk_clocks[i]);
+@@ -561,6 +575,7 @@ static int clkgena_set_div(clk_t *clk_p, U32 *div_p)
+ static int clkgena_set_freq(clk_t *clk_p, U32 freq)
+ {
+ 	U32 div;
++	int err;
+ 
+ 	if (!clk_p)
+ 		return CLK_ERR_BAD_PARAMETER;
+@@ -571,8 +586,9 @@ static int clkgena_set_freq(clk_t *clk_p, U32 freq)
+ 		if (!clk_p->parent)
+ 			return CLK_ERR_INTERNAL;
+ 	div = clk_p->parent->rate / freq;
+-	clkgena_set_div(clk_p, &div);
+-
++	err = clkgena_set_div(clk_p, &div);
++	if (!err)
++		clk_p->rate = clk_p->parent->rate / div;
+ 	return 0;
+ }
+ 
+@@ -924,7 +940,7 @@ static int clkgenb_set_freq(clk_t *clk_p, U32 freq)
+ 	case CLKB_FS0_CH1:
+ 	case CLKB_FS0_CH2:
+ 	case CLKB_FS0_CH3:
+-/*	case CLKB_FS0_CH4:*/
++	case CLKB_FS0_CH4:
+ 	case CLKB_FS1_CH1:
+ 	case CLKB_FS1_CH2:
+ 	case CLKB_FS1_CH3:
+@@ -956,13 +972,13 @@ static int clkgenb_set_fsclock(clk_t *clk_p, U32 freq)
+ 
+ 	/* Computing FSyn params. Should be common function with FSyn type */
+ 	if ((clk_fsyn_get_params
+-	     ((clk_p->parent->rate / 1000000), freq, &md, &pe, &sdiv)) != 0)
++	     (clk_p->parent->rate, freq, &md, &pe, &sdiv)) != 0)
+ 		return CLK_ERR_BAD_PARAMETER;
+ 
+ 	if (clk_p->id < CLKB_FS0_CH1 || clk_p->id > CLKB_FS1_CH4)
+ 		return CLK_ERR_BAD_PARAMETER;
+ 
+-	regs = &clkgenb_regs[clk_p->id - CLKB_FS1_CH4];
++	regs = &clkgenb_regs[clk_p->id - CLKB_FS0_CH1];
+ 
+ 	clkgenb_unlock();
+ 	CLK_WRITE(CKGB_BASE_ADDRESS + regs->md, md);
+@@ -1830,7 +1846,7 @@ static int clkgenc_set_rate(clk_t *clk_p, U32 freq)
+ 	if (!clk_p)
+ 		return CLK_ERR_BAD_PARAMETER;
+ 
+-	ref = clk_p->parent->rate / 1000000;
++	ref = clk_p->parent->rate;
+ 
+ 	/* Computing FSyn params. Should be common function with FSyn type */
+ 	if ((clk_fsyn_get_params(ref, freq, &md, &pe, &sdiv)) != 0)
+-- 
+1.6.0.6
+

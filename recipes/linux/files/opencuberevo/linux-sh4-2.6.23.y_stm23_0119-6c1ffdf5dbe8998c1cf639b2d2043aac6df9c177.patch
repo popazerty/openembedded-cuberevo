@@ -1,0 +1,28 @@
+From 6c1ffdf5dbe8998c1cf639b2d2043aac6df9c177 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 20 May 2009 13:55:50 +0200
+Subject: [PATCH] stm: pm: fixed compilation error on stb7100
+
+This patch fixes a compilation error due a wrong variable name
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c b/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c
+index 7cd1f4b..f390e6a 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stb7100.c
+@@ -79,7 +79,7 @@ emi_pwd_dwn_ack(struct platform_device *pdev, int host_phy, int ack)
+ 	return -EINVAL;
+ }
+ 
+-static struct platform_device_pm stx710x_pm_devices[] = {
++static struct platform_device_pm stx7100_pm_devices[] = {
+ pm_plat_dev(&st_usb_device, NULL, usb_pm_pwd_dwn, usb_pm_pwd_ack,
+ 	usb_pm_sw_reset),
+ pm_plat_dev(&emi, NULL, emi_pwd_dwn_req, emi_pwd_dwn_ack, NULL),
+-- 
+1.6.0.6
+

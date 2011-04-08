@@ -1,0 +1,272 @@
+From 3a4a32fd19e04124e39216641939fa3f8b657b17 Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Thu, 12 Feb 2009 16:33:32 +0100
+Subject: [PATCH] sh: Add platform PM API
+
+Added platform PM API to split generic device driver to
+platform specific PM capability
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/stm/Makefile      |    1 +
+ drivers/stm/platform-pm.c |  147 +++++++++++++++++++++++++++++++++++++++++++++
+ include/linux/stm/pm.h    |   80 ++++++++++++++++++++++++-
+ 3 files changed, 227 insertions(+), 1 deletions(-)
+ create mode 100644 drivers/stm/platform-pm.c
+
+diff --git a/drivers/stm/Makefile b/drivers/stm/Makefile
+index 57e04ee..9c674eb 100644
+--- a/drivers/stm/Makefile
++++ b/drivers/stm/Makefile
+@@ -10,4 +10,5 @@ obj-$(CONFIG_STM_COPROCESSOR)		+= stm-coprocessor.o
+ obj-$(CONFIG_STM_COPROCESSOR_FRMW)	+= stm-coprocessor_frmw.o
+ obj-$(CONFIG_STM_RNG)		+= stm_rng.o
+ obj-y				+= emi.o
++obj-$(CONFIG_PM)		+= platform-pm.o
+ 
+diff --git a/drivers/stm/platform-pm.c b/drivers/stm/platform-pm.c
+new file mode 100644
+index 0000000..d1f0994
+--- /dev/null
++++ b/drivers/stm/platform-pm.c
+@@ -0,0 +1,147 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/platform-pm.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2008  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/delay.h>
++#include <linux/stat.h>
++#include <linux/platform_device.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm-generic/bug.h>
++#include <linux/stm/pm.h>
++
++#undef  dbg_print
++
++#ifdef CONFIG_PM_DEBUG
++#define dbg_print(fmt, args...)			\
++		printk(KERN_INFO "%s: " fmt, __FUNCTION__ , ## args)
++#else
++#define dbg_print(fmt, args...)
++#endif
++
++
++/*
++ * More ST devices have extra capability rooted in the
++ * sysconf registers (i.e.: EMI, SATA, USB can be turn-off
++ * via sysconf register).
++ * Each SOC use different pio and sysconf therefore the
++ * platform-pm tries to link the generic device driver
++ * to the SOCs specific implementation using a
++ * predefeined API:
++ *
++ * - platform_pm_init
++ * - platform_pm_pwdn_req
++ * - platform_pm_pwdn_ack
++ * - platform_pm_reset
++ *
++ * this API allow us to write generic dvice driver able to
++ * use platform specific capability (if supported).
++ */
++enum {
++	RAW_INIT = 0,
++	RAW_PWD_REQ,
++	RAW_PWD_ACK,
++	RAW_RESET,
++};
++
++enum {
++	TYPE_PDEV = 0,
++	TYPE_NAME,
++};
++
++static struct platform_device_pm *pm_devices;
++static unsigned long pm_devices_size;
++
++static struct platform_device_pm*
++platform_pm_idx(int type, void *owner)
++{
++	int i;
++	if (!pm_devices || !pm_devices_size)
++		return NULL;
++
++	for (i = 0; i < pm_devices_size; ++i)
++		if (type == TYPE_PDEV) {
++			if (pm_devices[i].owner == owner)
++				return &(pm_devices[i]);
++		} else /* uses the name only if pdev is NULL */
++		      if (!strcmp((char *)owner, (char *)pm_devices[i].owner))
++				return &(pm_devices[i]);
++	return NULL;
++}
++
++static int _platform_pm(int id_operation, int type, void *owner,
++	int host_phy, int data)
++{
++	struct platform_device_pm *pm_info;
++	int (*fns)(struct platform_device *pdev, int host_phy, int data);
++	long *pfns;
++	pm_info = platform_pm_idx(type, owner);
++	if (!pm_info) /* no pm capability for this device */
++		return 0;
++	pfns = (long *)pm_info;
++	fns = (void *)pfns[id_operation];
++	if (!fns) /* no pm call back */
++		return 0;
++	return fns((struct platform_device *)owner, host_phy, data);
++}
++
++int platform_pm_init(struct platform_device *pdev, int phy)
++{
++	return _platform_pm(RAW_INIT, TYPE_PDEV, (void *)pdev, phy, 0);
++}
++
++int platform_pm_pwdn_req(struct platform_device *pdev, int phy, int pwd)
++{
++	return _platform_pm(RAW_PWD_REQ, TYPE_PDEV, (void *)pdev, phy, pwd);
++}
++
++int platform_pm_pwdn_ack(struct platform_device *pdev, int phy, int ack)
++{
++	return _platform_pm(RAW_PWD_ACK, TYPE_PDEV, (void *)pdev, phy, ack);
++}
++
++int platform_pm_reset(struct platform_device *pdev, int phy)
++{
++	return _platform_pm(RAW_RESET, TYPE_PDEV, (void *)pdev, 0, 0);
++}
++
++int platform_pm_init_n(char *name, int phy)
++{
++	return _platform_pm(RAW_INIT, TYPE_NAME, (void *)name, phy, 0);
++}
++
++int platform_pm_pwdn_req_n(char *name, int phy, int pwd)
++{
++	return _platform_pm(RAW_PWD_REQ, TYPE_NAME, (void *)name, phy, pwd);
++}
++
++int platform_pm_pwdn_ack_n(char *name, int phy, int ack)
++{
++	return _platform_pm(RAW_PWD_ACK, TYPE_NAME, (void *)name, phy, ack);
++}
++
++int platform_pm_reset_n(char *name, int phy)
++{
++	return _platform_pm(RAW_RESET, TYPE_NAME, (void *)name, phy, 0);
++}
++
++int platform_add_pm_devices(struct platform_device_pm *pm, unsigned long size)
++{
++	if (!pm || !size)
++		return -1;
++	dbg_print("\n");
++	pm_devices = pm;
++	pm_devices_size = size;
++	return 0;
++}
+diff --git a/include/linux/stm/pm.h b/include/linux/stm/pm.h
+index ac244be..53953b6 100644
+--- a/include/linux/stm/pm.h
++++ b/include/linux/stm/pm.h
+@@ -14,6 +14,84 @@
+ #ifndef __pm_st_h__
+ #define __pm_st_h__
+ 
+-void *clk_get_iomem(void);
++#include <linux/pm.h>
++
++extern void __iomem *clkgena_base;
++
++/*
++ * Several devices (i.e.: USB-SATA-PCI) have extra power capability
++ * based on sysconf register and pio
++ * the following struct should link the generic device driver
++ * to the platform specific power capability implementation
++ */
++struct platform_device;
++#define HOST_PM				0x1
++#define PHY_PM				0x2
++struct platform_device_pm {
++	int (*pwdn_init)(struct platform_device *pdev, int host_phy);
++	int (*pwdn_req)(struct platform_device *pdev, int host_phy, int down);
++	int (*pwdn_ack)(struct platform_device *pdev, int host_phy, int ack);
++	int (*reset)(struct platform_device *pdev, int host_phy);
++/* pwdn_init:	to register/request pio/sysconf */
++/* pwdn_req:	to raise a power down request */
++/* pwdn_ack: 	to check the status of pwdn request */
++/* reset:	to reset the device (i.e: USB) */
++	void *owner;
++/* owner is (most of the time) the platform_device but
++ * unfortunatelly some device (i.e.: EMI) has no
++ * platform device... In this case I will do a serch by name
++ */
++};
++
++/*
++ * platform_pm_ function
++ *
++ * to enable/disable power down
++ * @pdev: the device
++ * @phy: also the phy is involved in pm activity?
++ * @data: what we require
++ */
++#ifdef CONFIG_PM
++int platform_pm_init(struct platform_device *pdev, int phy);
++int platform_pm_pwdn_req(struct platform_device *pdev, int phy, int pwd);
++int platform_pm_pwdn_ack(struct platform_device *pdev, int phy, int ack);
++int platform_pm_reset(struct platform_device *pdev, int phy);
++
++int platform_pm_init_n(char *name, int phy);
++int platform_pm_pwdn_req_n(char *name, int phy, int pwd);
++int platform_pm_pwdn_ack_n(char *name, int phy, int ack);
++int platform_pm_reset_n(char *name, int phy);
++
++int platform_add_pm_devices(struct platform_device_pm *pm, unsigned long size);
++
++#define pm_plat_dev(_pdev, _p_init, _p_req, _p_ack, _p_reset)	\
++{								\
++	.owner = (void *)_pdev,					\
++	.pwdn_init = _p_init,					\
++	.pwdn_req = _p_req,					\
++	.pwdn_ack = _p_ack,					\
++	.reset = _p_reset,					\
++}
++
++#define pm_plat_name(_pname, _p_init, _p_req, _p_ack, _p_reset)	\
++{								\
++	.owner = (void *)_pname,				\
++	.pwdn_init = _p_init,					\
++	.pwdn_req = _p_req,					\
++	.pwdn_ack = _p_ack,					\
++	.reset = _p_reset,					\
++}
++
++#else
++#define platform_pm_init(pdev, phy)		do { } while (0)
++#define platform_pm_pwdn_req(pdev, phy, pwd)	do { } while (0)
++#define platform_pm_pwdn_ack(pdev, phy, ack)	do { } while (0)
++#define platform_pm_reset(pdev, phy)		do { } while (0)
++#define platform_pm_init_n(pdev, phy)		do { } while (0)
++#define platform_pm_pwdn_req_n(pdev, phy, pwd)	do { } while (0)
++#define platform_pm_pwdn_ack_n(pdev, phy, ack)	do { } while (0)
++#define platform_pm_reset_n(pdev, phy)		do { } while (0)
++#define platform_add_pm_devices(pm, size)	do { } while (0)
++#endif
+ 
+ #endif
+-- 
+1.5.6.3
+

@@ -1,0 +1,34 @@
+From 522f25af3379f559652a11ff67d05d190ca24483 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 15 Oct 2008 11:58:24 +0200
+Subject: [PATCH] sh: Fixed the TMU0 reload value on resume
+
+This patch fixes the TMU0 interrupt frequency on suspend/resume.
+During the resume the kernel reprograms the TMU0.ClockEvent mode
+but if the mode is periodic than the TMU0.TCOR is updated with
+a random wrong value without taking care latest valid saved value.
+
+There was no problem with No_HZ system where TMU0.TCOR isn't used.
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/timers/timer-tmu.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/timers/timer-tmu.c b/arch/sh/kernel/timers/timer-tmu.c
+index a4d9fd9..aba27fd 100644
+--- a/arch/sh/kernel/timers/timer-tmu.c
++++ b/arch/sh/kernel/timers/timer-tmu.c
+@@ -122,7 +122,7 @@ static void tmu_set_mode(enum clock_event_mode mode,
+ {
+ 	switch (mode) {
+ 	case CLOCK_EVT_MODE_PERIODIC:
+-		ctrl_outl(ctrl_inl(TMU0_TCNT), TMU0_TCOR);
++		ctrl_outl(tmu_latest_interval[TMU0], TMU0_TCOR);
+ 		break;
+ 	case CLOCK_EVT_MODE_ONESHOT:
+ 		ctrl_outl(0, TMU0_TCOR);
+-- 
+1.5.3.6
+

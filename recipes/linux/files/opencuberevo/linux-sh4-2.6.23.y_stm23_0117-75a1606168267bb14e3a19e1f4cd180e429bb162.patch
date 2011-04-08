@@ -1,0 +1,28 @@
+From 75a1606168267bb14e3a19e1f4cd180e429bb162 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Tue, 25 Nov 2008 12:24:25 +0100
+Subject: [PATCH] stmmac: removed the __dev_get_by_name while probing the device.
+
+It's not necessary to find a device by its name within the probe method.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index f44df1a..cb3fc0e 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -2085,7 +2085,6 @@ static int stmmac_dvr_probe(struct platform_device *pdev)
+ 		goto out;
+ 	}
+ 	printk(KERN_DEBUG "MDIO bus registered!\n");
+-	ndev = __dev_get_by_name("eth0");
+ 
+       out:
+ 	if (ret < 0) {
+-- 
+1.5.3.6
+

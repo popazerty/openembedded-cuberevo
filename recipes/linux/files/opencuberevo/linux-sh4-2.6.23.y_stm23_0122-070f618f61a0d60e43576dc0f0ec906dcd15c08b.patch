@@ -1,0 +1,29 @@
+From 070f618f61a0d60e43576dc0f0ec906dcd15c08b Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Thu, 19 Nov 2009 12:39:16 +0000
+Subject: [PATCH] sh_stm: Change the clocking framework used by 7108
+
+As the new clocking framework is being compiled for ST parts now,
+it's better to use related header...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx7108.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7108.c b/arch/sh/kernel/cpu/sh4/clock-stx7108.c
+index 62172c7..a4730ec 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7108.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7108.c
+@@ -9,7 +9,7 @@
+ 
+ #include <linux/init.h>
+ #include <linux/kernel.h>
+-#include <asm/clock.h>
++#include <linux/stm/clk.h>
+ 
+ 
+ 
+-- 
+1.6.0.6
+

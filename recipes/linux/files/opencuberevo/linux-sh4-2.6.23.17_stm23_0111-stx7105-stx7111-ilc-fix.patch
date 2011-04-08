@@ -1,0 +1,84 @@
+A further increase in the number of interrupts, in order to support
+the routing of interrupts to both the INTC2 and ILC3 on the stx7111
+and stx7105. This allows some of the bodges (aka bugs) which were
+put in to try and keep the numbers down.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -929,8 +929,7 @@ void __init stx7105_early_device_init(vo
+ 
+ 	sysconf_early_init(&sysconf_device);
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+-			 /* should be: ILC_FIRST_IRQ+ILC_NR_IRQS */
+-			 176);
++			 ILC_FIRST_IRQ+ILC_NR_IRQS);
+ 
+ 	sc = sysconf_claim(SYS_DEV, 0, 0, 31, "devid");
+ 	devid = sysconf_read(sc);
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -715,8 +715,7 @@ void __init stx7111_early_device_init(vo
+ 
+ 	sysconf_early_init(&sysconf_device);
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+-			 /* should be: ILC_FIRST_IRQ+ILC_NR_IRQS */
+-			 176);
++			 ILC_FIRST_IRQ+ILC_NR_IRQS);
+ 
+ 	sc = sysconf_claim(SYS_DEV, 0, 0, 31, "devid");
+ 	devid = sysconf_read(sc);
+Index: linux-2.6.23-stm/include/asm-sh/irq-ilc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/asm-sh/irq-ilc.h
++++ linux-2.6.23-stm/include/asm-sh/irq-ilc.h
+@@ -1,22 +1,23 @@
++/*
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ */
++
+ #ifndef __ASM_SH_IRQ_ILC_H
+ #define __ASM_SH_IRQ_ILC_H
+ 
+ #if defined(CONFIG_CPU_SUBTYPE_STX7105)
+ #define ILC_FIRST_IRQ	176
+-#define ILC_NR_IRQS	(64+16)
++#define ILC_NR_IRQS	(64+35)
+ #define ILC_INT_IRQ(x)	(ILC_FIRST_IRQ + (x))
+ #define ILC_EXT_IRQ(x)	(ILC_FIRST_IRQ + 64 + (x))
+ #define ILC_IRQ(x)	ILC_INT_IRQ(x)
+ #elif	defined(CONFIG_CPU_SUBTYPE_STX7111)
+-/* In an attempt to stick within NR_IRQS (256), and not complicate the
+- * mapping between ILC interrupt number and Linux IRQ number, we cap
+- * the number of external interrupts at 16. This will probably
+- * break one day, at which point we have the option of increasing
+- * NR_IRQS or modifying the ILC code to support an offset (effectivly
+- * ignoring the internal interrupts).
+- */
+ #define ILC_FIRST_IRQ	176
+-#define ILC_NR_IRQS	(64+16)
++#define ILC_NR_IRQS	(64+33)
+ #define ILC_INT_IRQ(x)	(ILC_FIRST_IRQ + (x))
+ #define ILC_EXT_IRQ(x)	(ILC_FIRST_IRQ + 64 + (x))
+ #define ILC_IRQ(x)	ILC_INT_IRQ(x)
+Index: linux-2.6.23-stm/include/asm-sh/irq.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/asm-sh/irq.h
++++ linux-2.6.23-stm/include/asm-sh/irq.h
+@@ -8,7 +8,7 @@
+  * advised to cap this at the hard limit that they're interested in
+  * through the machvec.
+  */
+-#define NR_IRQS 300
++#define NR_IRQS 350
+ 
+ /*
+  * Convert back and forth between INTEVT and IRQ values.

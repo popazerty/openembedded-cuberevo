@@ -1,0 +1,24 @@
+diff -Naur linux-2.6.23.1.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c linux-2.6.23.1/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+--- linux-2.6.23.1.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2007-11-22 14:51:59.000000000 +0000
++++ linux-2.6.23.1/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2007-11-22 14:53:09.000000000 +0000
+@@ -666,7 +666,7 @@
+ 	for (i=0, capability = data->capability;
+ 	     i<3;
+ 	     i++, capability >>= 2) {
+-		if (! (capability & ((SSC_SPI_CAPABILITY|SSC_I2C_CAPABILITY) << (i*2))))
++		if (! (capability & (SSC_SPI_CAPABILITY|SSC_I2C_CAPABILITY)))
+ 			continue;
+ 
+ 		if (i== 0) {
+diff -Naur linux-2.6.23.1.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c linux-2.6.23.1/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+--- linux-2.6.23.1.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c	2007-11-22 14:51:59.000000000 +0000
++++ linux-2.6.23.1/arch/sh/kernel/cpu/sh4/setup-stx7200.c	2007-11-22 14:53:47.000000000 +0000
+@@ -310,7 +310,7 @@
+ 	for (i=0, capability = data->capability;
+ 	     i<5;
+ 	     i++, capability >>= 2) {
+-		if (! (capability & ((SSC_SPI_CAPABILITY|SSC_I2C_CAPABILITY) << (i*2))))
++		if (! (capability & (SSC_SPI_CAPABILITY|SSC_I2C_CAPABILITY)))
+ 			continue;
+ 
+ 		/* We only support SSC as master, so always set up as such.

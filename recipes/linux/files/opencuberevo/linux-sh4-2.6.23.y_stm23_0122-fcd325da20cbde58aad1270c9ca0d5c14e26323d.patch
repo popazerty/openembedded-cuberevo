@@ -1,0 +1,34 @@
+From fcd325da20cbde58aad1270c9ca0d5c14e26323d Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:18 +0200
+Subject: [PATCH] stm: ilc: Fixed the ilc2irq function
+
+This patch fixes the ilc2irq to evaluate correctly the
+irq number on a specific INTEVT value
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+index 8d431e9..0b0098c 100644
+--- a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -127,7 +127,12 @@ int ilc2irq(unsigned int evtcode)
+ 			priority_mask[priority].mask[idx];
+ 	}
+ 
+-	return ILC_FIRST_IRQ + (idx * 32) + ffs(status) - 1;
++	/* decrease idx to be compliant with the index
++	 * where status wasn't zero
++	 */
++	--idx;
++
++	return (status ? (ILC_FIRST_IRQ + (idx * 32) + ffs(status) - 1) : -1);
+ }
+ /*
+  * The interrupt demux function. Check if this was an ILC interrupt, and
+-- 
+1.6.0.6
+

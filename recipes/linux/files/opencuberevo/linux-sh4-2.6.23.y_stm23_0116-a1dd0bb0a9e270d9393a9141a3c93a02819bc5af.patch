@@ -1,0 +1,55 @@
+From a1dd0bb0a9e270d9393a9141a3c93a02819bc5af Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Thu, 4 Sep 2008 17:36:31 +0100
+Subject: [PATCH] genirq: irq_chip->startup() usage in setup_irq and set_irq_chained handler
+
+This patch clarifies usage of irq_chip->startup() callback:
+
+1. The "if (startup) startup(); else enabled();" code in setup_irq()
+   is unnecessary, as startup() falls back to enabled() via
+   default callbacks, set by irq_chip_set_defaults().
+
+2. When using set_irq_chained_handler() the startup() was never called,
+   which is not good at all... Fixed. And again - when startup() is not
+   defined the call will fall back to enable() than to unmask() via
+   default callbacks.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ kernel/irq/chip.c   |    2 +-
+ kernel/irq/manage.c |    5 +----
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/irq/chip.c b/kernel/irq/chip.c
+index 7279484..a32c337 100644
+--- a/kernel/irq/chip.c
++++ b/kernel/irq/chip.c
+@@ -595,7 +595,7 @@ __set_irq_handler(unsigned int irq, irq_flow_handler_t handle, int is_chained,
+ 		desc->status &= ~IRQ_DISABLED;
+ 		desc->status |= IRQ_NOREQUEST | IRQ_NOPROBE;
+ 		desc->depth = 0;
+-		desc->chip->unmask(irq);
++		desc->chip->startup(irq);
+ 	}
+ 	spin_unlock_irqrestore(&desc->lock, flags);
+ }
+diff --git a/kernel/irq/manage.c b/kernel/irq/manage.c
+index fdccfd5..d0af30c 100644
+--- a/kernel/irq/manage.c
++++ b/kernel/irq/manage.c
+@@ -369,10 +369,7 @@ int setup_irq(unsigned int irq, struct irqaction *new)
+ 		if (!(desc->status & IRQ_NOAUTOEN)) {
+ 			desc->depth = 0;
+ 			desc->status &= ~IRQ_DISABLED;
+-			if (desc->chip->startup)
+-				desc->chip->startup(irq);
+-			else
+-				desc->chip->enable(irq);
++			desc->chip->startup(irq);
+ 		} else
+ 			/* Undo nested disables: */
+ 			desc->depth = 1;
+-- 
+1.5.3.6
+

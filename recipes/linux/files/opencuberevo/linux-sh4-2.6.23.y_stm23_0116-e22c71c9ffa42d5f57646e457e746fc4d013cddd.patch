@@ -1,0 +1,63 @@
+From e22c71c9ffa42d5f57646e457e746fc4d013cddd Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Fri, 10 Oct 2008 19:49:30 +0100
+Subject: [PATCH] sh: __copy_user function can corrupt the stack in case of exception
+
+The __copy_user function can corrupt the stack in the case of a
+non-trivial length of data, and either of the first two move instructions
+cause an exception. This is because the fixup for these two instructions
+is mapped to the no_pop case, but these instructions execute after the
+stack is pushed.
+
+This change creates an explicit NO_POP exception mapping macro, and uses
+it for the two instructions executed in the trivial case where no stack
+pushes occur.
+
+See bugzilla 4824.
+
+Signed-off-by: Dylan Reid <dylan_reid@bose.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/mm/copy_page.S |   11 ++++++++---
+ 1 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/arch/sh/mm/copy_page.S b/arch/sh/mm/copy_page.S
+index 70f9c03..607be37 100644
+--- a/arch/sh/mm/copy_page.S
++++ b/arch/sh/mm/copy_page.S
+@@ -141,6 +141,11 @@ ENTRY(__copy_user_page)
+ 	.section __ex_table, "a";	\
+ 	.long 9999b, 6000f	;	\
+ 	.previous
++#define EX_NO_POP(...)			\
++	9999: __VA_ARGS__ ;		\
++	.section __ex_table, "a";	\
++	.long 9999b, 6005f	;	\
++	.previous
+ ENTRY(__copy_user)
+ 	! Check if small number of bytes
+ 	mov	#11,r0
+@@ -200,9 +205,9 @@ EX(	mov.b	r1,@r4		)
+ 	bt	1f
+ 
+ 2:
+-EX(	mov.b	@r5+,r0		)
++EX_NO_POP(	mov.b	@r5+,r0		)
+ 	dt	r6
+-EX(	mov.b	r0,@r4		)
++EX_NO_POP(	mov.b	r0,@r4		)
+ 	bf/s	2b
+ 	 add	#1,r4
+ 
+@@ -211,7 +216,7 @@ EX(	mov.b	r0,@r4		)
+ 
+ # Exception handler:
+ .section .fixup, "ax"
+-6000:
++6005:
+ 	mov.l	8000f,r1
+ 	mov	r3,r0
+ 	jmp	@r1
+-- 
+1.5.3.6
+

@@ -1,0 +1,141 @@
+From 704fa1c694af2cbb925e742459bd86ce9330b297 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Tue, 9 Jun 2009 13:05:26 +0100
+Subject: [PATCH] mb705 reset
+
+sh_stm: Use mb705 reset signal for mb680 MII
+
+When used standalone, the mb680 uses a PIO for MII reset, which is what
+the previous code assumed. However when used with an mb705 the reset comes
+from an EPLD register on the mb705. So provide a generic interface for
+the mb705 reset function, and wire it up to the MII.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/common/mb705-epld.h |   13 +++++++++++++
+ arch/sh/boards/st/common/mb705.c      |   21 +++++++++++++++++++++
+ arch/sh/boards/st/mb680/setup.c       |   29 ++++++++++++++++++++++-------
+ 3 files changed, 56 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/mb705-epld.h b/arch/sh/boards/st/common/mb705-epld.h
+index 0f9ae88..7840a9f 100644
+--- a/arch/sh/boards/st/common/mb705-epld.h
++++ b/arch/sh/boards/st/common/mb705-epld.h
+@@ -17,6 +17,17 @@
+ #define EPLD_EMI_TEST			0x002
+ #define EPLD_EMI_SWITCH			0x004
+ #define EPLD_EMI_SWITCH_BOOTFROMNOR		(1<<8)
++#define EPLD_EMI_RESET			0x006
++#define EPLD_EMI_RESET_SW0			(1<<0)	/* mb680: MII */
++#define EPLD_EMI_RESET_SW1			(1<<1)	/* mb680: PCI */
++#define EPLD_EMI_RESET_SW2			(1<<2)	/* mb680: STEM */
++#define EPLD_EMI_RESET_SW3			(1<<3)	/* mb680: n/c */
++#define EPLD_EMI_RESET_FLASH			(1<<4)
++#define EPLD_EMI_RESET_DVB			(1<<5)
++#define EPLD_EMI_RESET_DISPLAY			(1<<6)
++#define EPLD_EMI_RESET_MAFE			(1<<7)
++#define EPLD_EMI_RESET_SPDIF			(1<<8)
++#define EPLD_EMI_SMARTCARD		0x008
+ #define EPLD_EMI_MISC			0x00a
+ #define EPLD_EMI_MISC_NORFLASHVPPEN		(1<<2)
+ #define EPLD_EMI_MISC_NOTNANDFLASHWP		(1<<3)
+@@ -111,4 +122,6 @@
+ #define EPLD_AUDIO_USERLED_LD10B		(1<<2)
+ #define EPLD_AUDIO_USERLED_LD10T		(1<<3)
+ 
++void mb705_reset(int bit, unsigned long usdelay);
++
+ #endif
+diff --git a/arch/sh/boards/st/common/mb705.c b/arch/sh/boards/st/common/mb705.c
+index 8a88443..97e65b2 100644
+--- a/arch/sh/boards/st/common/mb705.c
++++ b/arch/sh/boards/st/common/mb705.c
+@@ -254,6 +254,27 @@ static struct platform_device nand_device =
+ 
+ #include <linux/delay.h>
+ 
++static DEFINE_SPINLOCK(mb705_reset_lock);
++
++void mb705_reset(int mask, unsigned long usdelay)
++{
++	u16 reg;
++
++	spin_lock(&mb705_reset_lock);
++	reg = epld_read(EPLD_EMI_RESET);
++	reg |= mask;
++	epld_write(reg, EPLD_EMI_RESET);
++	spin_unlock(&mb705_reset_lock);
++
++	udelay(usdelay);
++
++	spin_lock(&mb705_reset_lock);
++	reg = epld_read(EPLD_EMI_RESET);
++	reg &= ~mask;
++	epld_write(reg, EPLD_EMI_RESET);
++	spin_unlock(&mb705_reset_lock);
++}
++
+ static int __init mb705_init(void)
+ {
+ 	int i;
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index bd61785..984ae00 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -27,6 +27,7 @@
+ #include <asm/irl.h>
+ #include <asm/io.h>
+ #include "../common/common.h"
++#include "../common/mb705-epld.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+@@ -95,15 +96,29 @@ static struct platform_device mb680_leds = {
+  */
+ static struct stpio_pin *phy_reset, *switch_en;
+ 
+-static int mb680_phy_reset(void* bus)
++/*
++ * When connected to the mb705, MII reset is controlled by an EPLD register
++ * on the mb705.
++ * When used standalone a PIO pin is used, and J47-C must be fitted.
++ */
++#ifdef CONFIG_SH_ST_MB705
++static void ll_phy_reset(void)
++{
++	mb705_reset(EPLD_EMI_RESET_SW0, 100);
++}
++#else
++static void ll_phy_reset(void)
+ {
+-	stpio_set_pin(phy_reset, 1);
+-	stpio_set_pin(switch_en, 1);
+-	udelay(1);
+ 	stpio_set_pin(phy_reset, 0);
+ 	udelay(100);
+ 	stpio_set_pin(phy_reset, 1);
+-	udelay(1);
++}
++#endif
++
++static int mb680_phy_reset(void *bus)
++{
++	stpio_set_pin(switch_en, 1);
++	ll_phy_reset();
+ 	stpio_set_pin(switch_en, 0);
+ 
+ 	return 0;
+@@ -191,8 +206,8 @@ static int __init device_init(void)
+ 	stx7105_configure_usb(0, &usb_init[0]);
+ 	stx7105_configure_usb(1, &usb_init[1]);
+ 
+-	phy_reset = stpio_request_pin(5, 5, "ResetMII", STPIO_OUT);
+-	switch_en = stpio_request_pin(11, 2, "MIIBusSwitch", STPIO_OUT);
++	phy_reset = stpio_request_set_pin(5, 5, "ResetMII", STPIO_OUT, 1);
++	switch_en = stpio_request_set_pin(11, 2, "MIIBusSwitch", STPIO_OUT, 1);
+ 	stx7105_configure_ethernet(0, 0, 0, 0, 1, 0);
+ 
+ 	stx7105_configure_lirc(&lirc_scd);
+-- 
+1.6.0.6
+

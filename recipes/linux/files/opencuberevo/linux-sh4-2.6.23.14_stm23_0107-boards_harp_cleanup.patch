@@ -1,0 +1,341 @@
+commit 46384a01cfa05abf60d04b2800e41e9831cb5340
+Author: Pawel MOLL <pawel.moll@st.com>
+Date:   Wed Mar 12 14:45:32 2008 +0000
+
+    Cleaned up arch/sh/boards/st HARP-releated dependencies and names.
+    
+    - file "irq.c" renamed to "harp-irq.c" as it is HARP-relevant.
+    - EPLD driver name "harp-epld" changed to "epld" as it is not HARP-relevant ;-)
+    - arch/sh/Makefile references to harp-common removed (harp-irq.o is now
+      referenced in board-specific Makefile)
+    
+    Signed-off-by: Pawel MOLL <pawel.moll@st.com>
+
+diff --git a/arch/sh/Makefile b/arch/sh/Makefile
+index e06ec64..0b1647b 100644
+--- a/arch/sh/Makefile
++++ b/arch/sh/Makefile
+@@ -107,12 +107,12 @@ machdir-$(CONFIG_SH_7722_SOLUTION_ENGINE)	+= se/7722
+ machdir-$(CONFIG_SH_7751_SOLUTION_ENGINE)	+= se/7751
+ machdir-$(CONFIG_SH_7780_SOLUTION_ENGINE)	+= se/7780
+ machdir-$(CONFIG_SH_7343_SOLUTION_ENGINE)	+= se/7343
+-machdir-$(CONFIG_SH_ST_MB360)		+= st/mb360    st/harp-common
+-machdir-$(CONFIG_SH_ST_MB374)		+= st/mb374 st/harp-common
+-machdir-$(CONFIG_SH_ST_MB411)		+= st/mb411 st/harp-common
+-machdir-$(CONFIG_SH_ST_MB442)		+= st/mb442
+-machdir-$(CONFIG_SH_ST_MB448)		+= st/mb448
+-machdir-$(CONFIG_SH_ST_MB618)		+= st/mb618
++machdir-$(CONFIG_SH_ST_MB360)			+= st/mb360
++machdir-$(CONFIG_SH_ST_MB374)			+= st/mb374
++machdir-$(CONFIG_SH_ST_MB411)			+= st/mb411
++machdir-$(CONFIG_SH_ST_MB442)			+= st/mb442
++machdir-$(CONFIG_SH_ST_MB448)			+= st/mb448
++machdir-$(CONFIG_SH_ST_MB618)			+= st/mb618
+ machdir-$(CONFIG_SH_HMS1)			+= st/hms1
+ machdir-$(CONFIG_SH_ST_MB519)			+= st/mb519
+ machdir-$(CONFIG_SH_ST_CB101)			+= st/cb101
+diff --git a/arch/sh/boards/st/common/Makefile b/arch/sh/boards/st/common/Makefile
+deleted file mode 100644
+index 0dba17b..0000000
+--- a/arch/sh/boards/st/common/Makefile
++++ /dev/null
+@@ -1,5 +0,0 @@
+-#
+-# Makefile for STMicroelectronics boards which look like the ST40STB1 HARP.
+-#
+-
+-obj-y := irq.o
+diff --git a/arch/sh/boards/st/common/epld.c b/arch/sh/boards/st/common/epld.c
+index d061e6e..a7ac447 100644
+--- a/arch/sh/boards/st/common/epld.c
++++ b/arch/sh/boards/st/common/epld.c
+@@ -11,7 +11,7 @@
+ #include <asm/io.h>
+ #include "epld.h"
+ 
+-#define DRIVER_NAME "harp-epld"
++#define DRIVER_NAME "epld"
+ 
+ static void __iomem *epld_base;
+ static int epld_opsize;
+diff --git a/arch/sh/boards/st/common/harp-irq.c b/arch/sh/boards/st/common/harp-irq.c
+new file mode 100644
+index 0000000..50a9945
+--- /dev/null
++++ b/arch/sh/boards/st/common/harp-irq.c
+@@ -0,0 +1,98 @@
++/*
++ * Copyright (C) 2000 STMicroelectronics Limited
++ * Author: David J. Mckay (david.mckay@st.com)
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Looks after interrupts on the HARP board.
++ *
++ * Bases on the IPR irq system
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/irq.h>
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <asm/system.h>
++#include <asm/mach/harp.h>
++#include "epld.h"
++
++#define NUM_EXTERNAL_IRQS 16
++
++static void disable_harp_irq(unsigned int irq)
++{
++	unsigned maskReg;
++	unsigned mask;
++	int pri;
++
++	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
++		return;
++
++	pri = 15 - irq;
++
++	if (pri < 8) {
++		maskReg = EPLD_INTMASK0CLR;
++	} else {
++		maskReg = EPLD_INTMASK1CLR;
++		pri -= 8;
++	}
++	mask = 1 << pri;
++
++	epld_write(mask, maskReg);
++
++	/* Read back the value we just wrote to flush any write posting */
++	epld_read(maskReg);
++}
++
++static void enable_harp_irq(unsigned int irq)
++{
++	unsigned maskReg;
++	unsigned mask;
++	int pri;
++
++	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
++		return;
++
++	pri = 15 - irq;
++
++	if (pri < 8) {
++		maskReg = EPLD_INTMASK0SET;
++	} else {
++		maskReg = EPLD_INTMASK1SET;
++		pri -= 8;
++	}
++	mask = 1 << pri;
++
++	epld_write(mask, maskReg);
++}
++
++static void __init disable_all_interrupts(void)
++{
++	epld_write(0x00, EPLD_INTMASK0);
++	epld_write(0x00, EPLD_INTMASK1);
++}
++
++static struct irq_chip harp_chips[NUM_EXTERNAL_IRQS] = {
++	[0 ... NUM_EXTERNAL_IRQS-1] = {
++		.mask = disable_harp_irq,
++		.unmask = enable_harp_irq,
++		.mask_ack = disable_harp_irq,
++		.name = "harp",
++	}
++};
++
++void __init harp_init_irq(void)
++{
++	int irq;
++
++	disable_all_interrupts();
++
++	for (irq = 0; irq < NUM_EXTERNAL_IRQS; irq++) {
++		disable_irq_nosync(irq);
++		set_irq_chip_and_handler_name(irq, &harp_chips[irq],
++			handle_level_irq, "level");
++		disable_harp_irq(irq);
++	}
++}
+diff --git a/arch/sh/boards/st/common/irq.c b/arch/sh/boards/st/common/irq.c
+deleted file mode 100644
+index 50a9945..0000000
+--- a/arch/sh/boards/st/common/irq.c
++++ /dev/null
+@@ -1,98 +0,0 @@
+-/*
+- * Copyright (C) 2000 STMicroelectronics Limited
+- * Author: David J. Mckay (david.mckay@st.com)
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- *
+- * Looks after interrupts on the HARP board.
+- *
+- * Bases on the IPR irq system
+- */
+-
+-#include <linux/init.h>
+-#include <linux/platform_device.h>
+-#include <linux/irq.h>
+-#include <linux/interrupt.h>
+-#include <linux/io.h>
+-#include <asm/system.h>
+-#include <asm/mach/harp.h>
+-#include "epld.h"
+-
+-#define NUM_EXTERNAL_IRQS 16
+-
+-static void disable_harp_irq(unsigned int irq)
+-{
+-	unsigned maskReg;
+-	unsigned mask;
+-	int pri;
+-
+-	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
+-		return;
+-
+-	pri = 15 - irq;
+-
+-	if (pri < 8) {
+-		maskReg = EPLD_INTMASK0CLR;
+-	} else {
+-		maskReg = EPLD_INTMASK1CLR;
+-		pri -= 8;
+-	}
+-	mask = 1 << pri;
+-
+-	epld_write(mask, maskReg);
+-
+-	/* Read back the value we just wrote to flush any write posting */
+-	epld_read(maskReg);
+-}
+-
+-static void enable_harp_irq(unsigned int irq)
+-{
+-	unsigned maskReg;
+-	unsigned mask;
+-	int pri;
+-
+-	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
+-		return;
+-
+-	pri = 15 - irq;
+-
+-	if (pri < 8) {
+-		maskReg = EPLD_INTMASK0SET;
+-	} else {
+-		maskReg = EPLD_INTMASK1SET;
+-		pri -= 8;
+-	}
+-	mask = 1 << pri;
+-
+-	epld_write(mask, maskReg);
+-}
+-
+-static void __init disable_all_interrupts(void)
+-{
+-	epld_write(0x00, EPLD_INTMASK0);
+-	epld_write(0x00, EPLD_INTMASK1);
+-}
+-
+-static struct irq_chip harp_chips[NUM_EXTERNAL_IRQS] = {
+-	[0 ... NUM_EXTERNAL_IRQS-1] = {
+-		.mask = disable_harp_irq,
+-		.unmask = enable_harp_irq,
+-		.mask_ack = disable_harp_irq,
+-		.name = "harp",
+-	}
+-};
+-
+-void __init harp_init_irq(void)
+-{
+-	int irq;
+-
+-	disable_all_interrupts();
+-
+-	for (irq = 0; irq < NUM_EXTERNAL_IRQS; irq++) {
+-		disable_irq_nosync(irq);
+-		set_irq_chip_and_handler_name(irq, &harp_chips[irq],
+-			handle_level_irq, "level");
+-		disable_harp_irq(irq);
+-	}
+-}
+diff --git a/arch/sh/boards/st/mb360/Makefile b/arch/sh/boards/st/mb360/Makefile
+index 5b3819a..abffe2b 100644
+--- a/arch/sh/boards/st/mb360/Makefile
++++ b/arch/sh/boards/st/mb360/Makefile
+@@ -2,4 +2,5 @@
+ # Makefile for STMicroelectronics ST40RA Eval board
+ #
+ 
+-obj-y := setup.o mach.o led.o
++obj-y := setup.o mach.o led.o harp-irq.o
++harp-irq-y := ../common/harp-irq.o
+diff --git a/arch/sh/boards/st/mb374/Makefile b/arch/sh/boards/st/mb374/Makefile
+index 9350afb..7f3cf50 100644
+--- a/arch/sh/boards/st/mb374/Makefile
++++ b/arch/sh/boards/st/mb374/Makefile
+@@ -2,4 +2,5 @@
+ # Makefile for STMicroelectronics ST40RA/ST40STB1 Starter board
+ #
+ 
+-obj-y := setup.o mach.o
++obj-y := setup.o mach.o harp-irq.o
++harp-irq-y := ../common/harp-irq.o
+diff --git a/arch/sh/boards/st/mb411/Makefile b/arch/sh/boards/st/mb411/Makefile
+index ff73abc..34c69eb 100644
+--- a/arch/sh/boards/st/mb411/Makefile
++++ b/arch/sh/boards/st/mb411/Makefile
+@@ -2,5 +2,6 @@
+ # Makefile for STMicroelectronics STb7100 Validation board
+ #
+ 
+-obj-y := setup.o epld.o
++obj-y := setup.o epld.o harp-irq.o
+ epld-y := ../common/epld.o
++harp-irq-y := ../common/harp-irq.o
+diff --git a/arch/sh/boards/st/mb411/setup.c b/arch/sh/boards/st/mb411/setup.c
+index abac329..94c8b65 100644
+--- a/arch/sh/boards/st/mb411/setup.c
++++ b/arch/sh/boards/st/mb411/setup.c
+@@ -142,7 +142,7 @@ static struct platform_device mb411_phy_device = {
+ };
+ 
+ static struct platform_device epld_device = {
+-	.name		= "harp-epld",
++	.name		= "epld",
+ 	.id		= -1,
+ 	.num_resources	= 1,
+ 	.resource	= (struct resource[]) {
+diff --git a/arch/sh/boards/st/mb519/setup.c b/arch/sh/boards/st/mb519/setup.c
+index 61f49d7..b9ed378 100644
+--- a/arch/sh/boards/st/mb519/setup.c
++++ b/arch/sh/boards/st/mb519/setup.c
+@@ -157,7 +157,7 @@ static struct platform_device mb519_phy_devices[2] = {
+ } };
+ 
+ static struct platform_device epld_device = {
+-	.name		= "harp-epld",
++	.name		= "epld",
+ 	.id		= -1,
+ 	.num_resources	= 1,
+ 	.resource	= (struct resource[]) {
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index ef4f25c..eabd216 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -124,7 +124,7 @@ static struct platform_device mb618_phy_device = {
+ 
+ #if 0
+ static struct platform_device epld_device = {
+-	.name		= "harp-epld",
++	.name		= "epld",
+ 	.id		= -1,
+ 	.num_resources	= 1,
+ 	.resource	= (struct resource[]) {

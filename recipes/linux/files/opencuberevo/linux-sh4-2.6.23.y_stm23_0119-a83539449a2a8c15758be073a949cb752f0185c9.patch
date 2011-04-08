@@ -1,0 +1,41 @@
+From a83539449a2a8c15758be073a949cb752f0185c9 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Thu, 4 Jun 2009 14:17:37 +0100
+Subject: [PATCH] sh_stm: Update mb680 USB pin configuration comment
+
+Add to the mb680 comment describing the jumper settings necessary
+for USB operation, that some jumpers need to be removed when using
+alternative pin selections.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/mb680/setup.c |   13 +++++++------
+ 1 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 8dfdfe7..bd61785 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -179,12 +179,13 @@ static int __init device_init(void)
+ 	/*
+ 	 * Note that USB port configuration depends on jumper
+ 	 * settings:
+-	 *		  PORT 0  SW		PORT 1	SW
+-	 *		+----------------------------------------
+-	 * OC	normal	|  4[4]	J5A 2-3		 4[6]	J10A 2-3
+-	 *	alt	| 12[5]	J5A 1-2		14[6]	J10A 1-2
+-	 * PWR	normal	|  4[5]	J5B 2-3		 4[7]	J10B 2-3
+-	 *	alt	| 12[6]	J5B 1-2		14[7]	J10B 1-2
++	 *
++	 *	  PORT 0	       		PORT 1
++	 *	+-----------------------------------------------------------
++	 * norm	|  4[4]	J5A:2-3			 4[6]	J10A:2-3
++	 * alt	| 12[5]	J5A:1-2  J6F:open	14[6]	J10A:1-2  J11G:open
++	 * norm	|  4[5]	J5B:2-3			 4[7]	J10B:2-3
++	 * alt	| 12[6]	J5B:1-2  J6G:open	14[7]	J10B:1-2  J11H:open
+ 	 */
+ 
+ 	stx7105_configure_usb(0, &usb_init[0]);
+-- 
+1.6.0.6
+

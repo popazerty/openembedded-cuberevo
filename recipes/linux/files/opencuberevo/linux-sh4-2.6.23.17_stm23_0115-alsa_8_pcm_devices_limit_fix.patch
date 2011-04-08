@@ -1,0 +1,174 @@
+commit 652e5a9b47ffcd396acd2dd327db27a0193636d8
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Wed Jul 30 12:23:00 2008 +0100
+
+    sound: Fix limit of 8 PCM devices in SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE
+    
+    When compiled with CONFIG_SND_DYNAMIC_MINORS the ALSA core is fine
+    to have more than 8 PCM devices per card, except one place - the
+    SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE ioctl, which will not enumerate
+    devices > 7. This patch fixes the issue, changing the devices list
+    organisation.
+    
+    Instead of adding new device to the tail, the list is now kept always
+    ordered (by card number, then device number). Thus, during enumeration,
+    it is easy to discover the fact that there is no more given card's
+    devices.
+    
+    Additionally the device field of struct snd_pcm had to be changed to int,
+    as its "unsignednity" caused a lot of problems when comparing it to
+    potentially negative signed values. (-1 is 0xffffffff or even more then ;-)
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/include/sound/minors.h b/include/sound/minors.h
+index 46bcd20..a81798a 100644
+--- a/include/sound/minors.h
++++ b/include/sound/minors.h
+@@ -21,6 +21,8 @@
+  *
+  */
+ 
++#define SNDRV_OS_MINORS			256
++
+ #define SNDRV_MINOR_DEVICES		32
+ #define SNDRV_MINOR_CARD(minor)		((minor) >> 5)
+ #define SNDRV_MINOR_DEVICE(minor)	((minor) & 0x001f)
+diff --git a/include/sound/pcm.h b/include/sound/pcm.h
+index 73334e0..8f9183c 100644
+--- a/include/sound/pcm.h
++++ b/include/sound/pcm.h
+@@ -25,6 +25,7 @@
+ 
+ #include <sound/asound.h>
+ #include <sound/memalloc.h>
++#include <sound/minors.h>
+ #include <linux/poll.h>
+ #include <linux/mm.h>
+ #include <linux/bitops.h>
+@@ -84,7 +85,11 @@ struct snd_pcm_ops {
+  *
+  */
+ 
+-#define SNDRV_PCM_DEVICES		8
++#if defined(CONFIG_SND_DYNAMIC_MINORS)
++#define SNDRV_PCM_DEVICES	(SNDRV_OS_MINORS-2)
++#else
++#define SNDRV_PCM_DEVICES	8
++#endif
+ 
+ #define SNDRV_PCM_IOCTL1_FALSE		((void *)0)
+ #define SNDRV_PCM_IOCTL1_TRUE		((void *)1)
+@@ -419,7 +424,7 @@ struct snd_pcm_str {
+ struct snd_pcm {
+ 	struct snd_card *card;
+ 	struct list_head list;
+-	unsigned int device;	/* device number */
++	int device; /* device number */
+ 	unsigned int info_flags;
+ 	unsigned short dev_class;
+ 	unsigned short dev_subclass;
+diff --git a/sound/core/pcm.c b/sound/core/pcm.c
+index 2743414..6c8a801 100644
+--- a/sound/core/pcm.c
++++ b/sound/core/pcm.c
+@@ -43,7 +43,7 @@ static int snd_pcm_dev_free(struct snd_device *device);
+ static int snd_pcm_dev_register(struct snd_device *device);
+ static int snd_pcm_dev_disconnect(struct snd_device *device);
+ 
+-static struct snd_pcm *snd_pcm_search(struct snd_card *card, int device)
++static struct snd_pcm *snd_pcm_get(struct snd_card *card, int device)
+ {
+ 	struct snd_pcm *pcm;
+ 
+@@ -54,6 +54,37 @@ static struct snd_pcm *snd_pcm_search(struct snd_card *card, int device)
+ 	return NULL;
+ }
+ 
++static int snd_pcm_next(struct snd_card *card, int device)
++{
++	struct snd_pcm *pcm;
++
++	list_for_each_entry(pcm, &snd_pcm_devices, list) {
++		if (pcm->card == card && pcm->device > device)
++			return pcm->device;
++		else if (pcm->card->number > card->number)
++			return -1;
++	}
++	return -1;
++}
++
++static int snd_pcm_add(struct snd_pcm *newpcm)
++{
++	struct snd_pcm *pcm;
++
++	list_for_each_entry(pcm, &snd_pcm_devices, list) {
++		if (pcm->card == newpcm->card && pcm->device == newpcm->device)
++			return -EBUSY;
++		if (pcm->card->number > newpcm->card->number ||
++				(pcm->card == newpcm->card &&
++				pcm->device > newpcm->device)) {
++			list_add(&newpcm->list, pcm->list.prev);
++			return 0;
++		}
++	}
++	list_add_tail(&newpcm->list, &snd_pcm_devices);
++	return 0;
++}
++
+ static int snd_pcm_control_ioctl(struct snd_card *card,
+ 				 struct snd_ctl_file *control,
+ 				 unsigned int cmd, unsigned long arg)
+@@ -66,14 +97,7 @@ static int snd_pcm_control_ioctl(struct snd_card *card,
+ 			if (get_user(device, (int __user *)arg))
+ 				return -EFAULT;
+ 			mutex_lock(&register_mutex);
+-			device = device < 0 ? 0 : device + 1;
+-			while (device < SNDRV_PCM_DEVICES) {
+-				if (snd_pcm_search(card, device))
+-					break;
+-				device++;
+-			}
+-			if (device == SNDRV_PCM_DEVICES)
+-				device = -1;
++			device = snd_pcm_next(card, device);
+ 			mutex_unlock(&register_mutex);
+ 			if (put_user(device, (int __user *)arg))
+ 				return -EFAULT;
+@@ -99,7 +123,7 @@ static int snd_pcm_control_ioctl(struct snd_card *card,
+ 			if (get_user(subdevice, &info->subdevice))
+ 				return -EFAULT;
+ 			mutex_lock(&register_mutex);
+-			pcm = snd_pcm_search(card, device);
++			pcm = snd_pcm_get(card, device);
+ 			if (pcm == NULL) {
+ 				err = -ENXIO;
+ 				goto _error;
+@@ -944,11 +968,11 @@ static int snd_pcm_dev_register(struct snd_device *device)
+ 
+ 	snd_assert(pcm != NULL && device != NULL, return -ENXIO);
+ 	mutex_lock(&register_mutex);
+-	if (snd_pcm_search(pcm->card, pcm->device)) {
++	err = snd_pcm_add(pcm);
++	if (err) {
+ 		mutex_unlock(&register_mutex);
+-		return -EBUSY;
++		return err;
+ 	}
+-	list_add_tail(&pcm->list, &snd_pcm_devices);
+ 	for (cidx = 0; cidx < 2; cidx++) {
+ 		int devtype = -1;
+ 		if (pcm->streams[cidx].substream == NULL)
+diff --git a/sound/core/sound.c b/sound/core/sound.c
+index 8dc7a3b..815426d 100644
+--- a/sound/core/sound.c
++++ b/sound/core/sound.c
+@@ -34,8 +34,6 @@
+ #include <linux/kmod.h>
+ #include <linux/mutex.h>
+ 
+-#define SNDRV_OS_MINORS 256
+-
+ static int major = CONFIG_SND_MAJOR;
+ int snd_major;
+ EXPORT_SYMBOL(snd_major);

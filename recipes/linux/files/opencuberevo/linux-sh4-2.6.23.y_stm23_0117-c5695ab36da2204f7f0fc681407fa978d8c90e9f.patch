@@ -1,0 +1,31 @@
+From c5695ab36da2204f7f0fc681407fa978d8c90e9f Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Wed, 3 Dec 2008 16:27:55 +0000
+Subject: [PATCH] sh: remove unnecessary memset from subbuffer switch
+
+This patch removes an unnecessary (and potentially time-consuming) memset from the
+kptrace relay code.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/kptrace.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index 5ee0e96..6313c2e 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -2061,9 +2061,6 @@ static int subbuf_start_handler(struct rchan_buf *buf,
+ 
+ 	subbuf_start_reserve(buf, sizeof(unsigned int));
+ 
+-	if (n_subbufs > 1)
+-		memset(subbuf, '\000', subbuf_size);
+-
+ 	return 1;
+ }
+ 
+-- 
+1.5.3.6
+

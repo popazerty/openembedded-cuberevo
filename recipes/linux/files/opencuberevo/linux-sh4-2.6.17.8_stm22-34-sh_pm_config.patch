@@ -1,0 +1,35 @@
+Fix SH architecture specific build problem with CONFIG_PM enabled. The
+SH kernel directory builds power management code only relevent to the
+SH3 based HP6XX (jordana) device all the time. However necessary defines
+are missing when building for SH4 causing the build to fail. This patch
+makes the configuration more specific, and leaves rearranging the code,
+to remove this from the top level kernel directory, to the SH community.
+
+Signed-off-by: Stephen Gallimore <Stephen.Gallimore@st.com>
+
+Index: linux-2.6.17/arch/sh/Kconfig
+===================================================================
+--- linux-2.6.17.orig/arch/sh/Kconfig
++++ linux-2.6.17/arch/sh/Kconfig
+@@ -856,6 +856,11 @@ config APM
+ 	depends on PM
+ endmenu
+ 
++config PM_SH3_FRQCR
++	bool
++	default y if PM && CPU_SH3
++	default n
++
+ source "net/Kconfig"
+ 
+ source "drivers/Kconfig"
+Index: linux-2.6.17/arch/sh/kernel/Makefile
+===================================================================
+--- linux-2.6.17.orig/arch/sh/kernel/Makefile
++++ linux-2.6.17/arch/sh/kernel/Makefile
+@@ -19,4 +19,4 @@ obj-$(CONFIG_MODULES)		+= module.o
+ obj-$(CONFIG_EARLY_PRINTK)	+= early_printk.o
+ obj-$(CONFIG_KEXEC)		+= machine_kexec.o relocate_kernel.o
+ obj-$(CONFIG_APM)		+= apm.o
+-obj-$(CONFIG_PM)		+= pm.o
++obj-$(CONFIG_PM_SH3_FRQCR)	+= pm.o

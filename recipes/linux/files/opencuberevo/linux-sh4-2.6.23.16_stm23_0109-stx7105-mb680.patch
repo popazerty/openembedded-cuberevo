@@ -1,0 +1,4014 @@
+Add initial support for STx7105 and the mb680 MBoard.
+
+Signed-off by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/Kconfig
++++ linux-2.6.23-stm/arch/sh/Kconfig
+@@ -347,6 +347,15 @@ config SH_ST_MB618
+ 	  ST board ID: mb618). More information at:
+ 	  <http://www.stlinux.com/boards/mb618/>
+ 
++config SH_ST_MB680
++	bool "mb680: STx7105 Validation board"
++	depends on CPU_SUBTYPE_STX7105
++	help
++	  Select STx7105 Validation if configuring for an
++	  STMicroelectronics STx7105 Validation Board (product code: STi7105-MBOARD,
++	  ST board ID: mb680). More information at:
++	  <http://www.stlinux.com/boards/mb680/>
++
+ config SH_ST_CB101
+ 	bool "cb101: ST Customer board 101"
+ 	depends on CPU_SUBTYPE_STX7200
+Index: linux-2.6.23-stm/arch/sh/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/Makefile
++++ linux-2.6.23-stm/arch/sh/Makefile
+@@ -113,6 +113,7 @@ machdir-$(CONFIG_SH_ST_MB411)			+= st/mb
+ machdir-$(CONFIG_SH_ST_MB442)			+= st/mb442
+ machdir-$(CONFIG_SH_ST_MB448)			+= st/mb448
+ machdir-$(CONFIG_SH_ST_MB618)			+= st/mb618
++machdir-$(CONFIG_SH_ST_MB680)			+= st/mb680
+ machdir-$(CONFIG_SH_HMS1)			+= st/hms1
+ machdir-$(CONFIG_SH_ST_MB519)			+= st/mb519
+ machdir-$(CONFIG_SH_ST_MB671)			+= st/mb671
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb680/Makefile
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/boards/st/mb680/Makefile
+@@ -0,0 +1,5 @@
++#
++# Makefile for STMicroelectronics STx7105 Mboard (mb680) board
++#
++
++obj-y := setup.o
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb680/setup.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/boards/st/mb680/setup.c
+@@ -0,0 +1,160 @@
++/*
++ * arch/sh/boards/st/mb680/setup.c
++ *
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy (stuart.menefy@st.com)
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * STMicroelectronics STx7105 Mboard support.
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/leds.h>
++#include <linux/stm/pio.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/emi.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/physmap.h>
++#include <linux/mtd/partitions.h>
++#include <linux/phy.h>
++#include <linux/gpio_keys.h>
++#include <linux/input.h>
++#include <asm/irq-ilc.h>
++#include <asm/irl.h>
++#include <asm/io.h>
++#include "../common/epld.h"
++
++static int ascs[2] __initdata = { 2, 3 };
++
++static void __init mb680_setup(char** cmdline_p)
++{
++	printk("STMicroelectronics STx7105 Mboard initialisation\n");
++
++	stx7105_early_device_init();
++	stx7105_configure_asc(ascs, 2, 0);
++}
++
++static struct plat_stm_pwm_data pwm_private_info = {
++	.flags		= PLAT_STM_PWM_OUT0,
++};
++
++static struct plat_ssc_data ssc_private_info = {
++	.capability  =
++		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc1_has(SSC_I2C_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY) |
++		ssc3_has(SSC_I2C_CAPABILITY),
++	.routing =
++		SSC3_SCLK_PIO3_6 | SSC3_MTSR_PIO3_7 | SSC3_MRST_PIO3_7,
++};
++
++static struct platform_device mb680_leds = {
++	.name = "leds-gpio",
++	.id = -1,
++	.dev.platform_data = &(struct gpio_led_platform_data) {
++		.num_leds = 2,
++		.leds = (struct gpio_led[]) {
++			{
++				.name = "LD5",
++				.default_trigger = "heartbeat",
++				.gpio = stpio_to_gpio(2, 4),
++			},
++			{
++				.name = "LD6",
++				.gpio = stpio_to_gpio(2, 3),
++			},
++		},
++	},
++};
++
++static struct plat_stmmacphy_data phy_private_data = {
++	/* National Semiconductor DP83865 */
++	.bus_id = 0,
++	.phy_addr = 1,
++	.phy_mask = 0,
++	.interface = PHY_INTERFACE_MODE_MII,
++};
++
++static struct platform_device mb680_phy_device = {
++	.name		= "stmmacphy",
++	.id		= 0,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.name	= "phyirq",
++			.start	= -1,/*FIXME, should be ILC_EXT_IRQ(6), */
++			.end	= -1,
++			.flags	= IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = &phy_private_data,
++	}
++};
++
++static struct platform_device *mb680_devices[] __initdata = {
++	&mb680_leds,
++	&mb680_phy_device,
++};
++
++static int __init device_init(void)
++{
++#if 0
++	stx7105_configure_pwm(&pwm_private_info);
++#endif
++	stx7105_configure_ssc(&ssc_private_info);
++
++	/*
++	 * Note that USB port configuration depends on jumper
++	 * settings:
++	 *		  PORT 0  SW		PORT 1	SW
++	 *		+----------------------------------------
++	 * OC	normal	|  4[4]	J5A 2-3		 4[6]	J10A 2-3
++	 *	alt	| 12[5]	J5A 1-2		14[6]	J10A 1-2
++	 * PWR	normal	|  4[5]	J5B 2-3		 4[7]	J10B 2-3
++	 *	alt	| 12[6]	J5B 1-2		14[7]	J10B 1-2
++	 */
++
++	stx7105_configure_usb(0, 1, 0, 0, 1, 0);
++	stx7105_configure_usb(1, 1, 0, 0, 1, 0);
++	stx7105_configure_ethernet(0, 0, 0, 1, 0, 0);
++#if 0
++        stx7105_configure_lirc();
++#endif
++#if 0
++	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
++#endif
++
++	/* Configure BANK2 for the db641 STEM card */
++	emi_init(0, 0xfe700000);
++	emi_bank_configure(2, (unsigned long[4]){ 0x041086f1, 0x0e024400,
++				0x0e024400, 0 });
++
++	return platform_add_devices(mb680_devices, ARRAY_SIZE(mb680_devices));
++}
++arch_initcall(device_init);
++
++static void __iomem *mb680_ioport_map(unsigned long port, unsigned int size)
++{
++	/* However picking somewhere safe isn't as easy as you might think.
++	 * I used to use external ROM, but that can cause problems if you are
++	 * in the middle of updating Flash. So I'm now using the processor core
++	 * version register, which is guaranted to be available, and non-writable.
++	 */
++	return (void __iomem *)CCN_PVR;
++}
++
++static void __init mb680_init_irq(void)
++{
++}
++
++struct sh_machine_vector mv_mb680 __initmv = {
++	.mv_name		= "mb680",
++	.mv_setup		= mb680_setup,
++	.mv_nr_irqs		= NR_IRQS,
++	.mv_init_irq		= mb680_init_irq,
++	.mv_ioport_map		= mb680_ioport_map,
++};
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/Makefile
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/Makefile
+@@ -18,6 +18,7 @@ obj-y	+= irq/ init.o clock.o
+ # new clock architecture in their own processor specific code.
+ archclock-y					:= clock-cpg.o
+ archclock-$(CONFIG_CPU_SUBTYPE_STB7100)	:=
++archclock-$(CONFIG_CPU_SUBTYPE_STX7105)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STX7111)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STX7200)	:=
+ obj-y	+= $(archclock-y)
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/irq/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/irq/Makefile
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/irq/Makefile
+@@ -6,5 +6,6 @@ obj-y	+= imask.o intc.o
+ obj-$(CONFIG_CPU_HAS_IPR_IRQ)		+= ipr.o
+ obj-$(CONFIG_CPU_HAS_MASKREG_IRQ)	+= maskreg.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= st40_ilc_sti5528.o ilc3_common.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7105)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= st40_ilc_stx7200.o ilc3_common.o
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/Makefile
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/Makefile
+@@ -20,6 +20,7 @@ obj-$(CONFIG_CPU_SUBTYPE_SH7760)	+= setu
+ obj-$(CONFIG_CPU_SUBTYPE_SH4_202)	+= setup-sh4-202.o
+ obj-$(CONFIG_CPU_SUBTYPE_ST40STB1)	+= setup-st40ra.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= setup-stb7100.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7105)	+= setup-stx7105.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= setup-stx7111.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= setup-stx7200.o
+ 
+@@ -27,6 +28,7 @@ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= set
+ ifndef CONFIG_CPU_SH4A
+ clock-$(CONFIG_CPU_SH4)			:= clock-sh4.o
+ clock-$(CONFIG_CPU_SUBTYPE_STB7100)	:= clock-stb7100.o
++clock-$(CONFIG_CPU_SUBTYPE_STX7105)	:= clock-stx7105.o
+ clock-$(CONFIG_CPU_SUBTYPE_STX7111)	:= clock-stx7111.o
+ clock-$(CONFIG_CPU_SUBTYPE_STX7200)	:= clock-stx7200.o
+ endif
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/clock-stx7105.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/clock-stx7105.c
+@@ -0,0 +1,397 @@
++/*
++ * Copyright (C) 2008 STMicroelectronics Limited
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Code to handle the clockgen hardware on the STx7105.
++ */
++
++#include <linux/init.h>
++#include <linux/kernel.h>
++#include <linux/stm/sysconf.h>
++#include <asm/clock.h>
++#include <asm/freq.h>
++#include <asm/io.h>
++
++/* Values for mb618 */
++#define SYSACLKIN	30000000
++#define SYSBCLKIN	30000000
++#define SYSAALTCLKIN	0
++
++#define CLOCKGENA_BASE_ADDR	0xfe213000	/* Clockgen A */
++#define CLOCKGENB_BASE_ADDR	0xfe000000	/* Clockgen B */
++
++/* Definitions taken from targetpack sti7105_clockgena_regs.xml */
++#define CKGA_PLL0_CFG			0x000
++#define CKGA_PLL1_CFG			0x004
++#define CKGA_POWER_CFG			0x010
++#define CKGA_CLKOPSRC_SWITCH_CFG(x)	(0x014+((x)*0x10))
++#define CKGA_CLKOBS_MUX1_CFG		0x030
++#define CKGA_CLKOBS_MUX2_CFG		0x048
++/* All the following appear to be offsets into clkgen B, despite the name */
++#define CKGA_OSC_DIV_CFG(x)		(0x800+((x)*4))
++#define CKGA_PLL0HS_DIV_CFG(x)		(0x900+((x)*4))
++#define CKGA_PLL0LS_DIV_CFG(x)		(0xa10+(((x)-4)*4))
++#define CKGA_PLL1_DIV_CFG(x)		(0xb00+((x)*4))
++
++/* Definitions taken from targetpack sti7105_clockgenb_regs.xml */
++#define CLOCKGENB_FS0_CTRL		0x14
++#define CLOCKGENB_FS0_MD1		0x18
++#define CLOCKGENB_FS0_PE1		0x1c
++#define CLOCKGENB_FS0_EN_PRG1		0x20
++#define CLOCKGENB_FS0_SDIV1		0x24
++#define CLOCKGENB_FS0_MD2		0x28
++#define CLOCKGENB_FS0_PE2		0x2c
++#define CLOCKGENB_FS0_EN_PRG2		0x30
++#define CLOCKGENB_FS0_SDIV2		0x34
++#define CLOCKGENB_FS0_MD3		0x38
++#define CLOCKGENB_FS0_PE3		0x3c
++#define CLOCKGENB_FS0_EN_PRG3		0x40
++#define CLOCKGENB_FS0_SDIV3		0x44
++#define CLOCKGENB_FS0_CLOCKOUT_CTRL	0x58
++#define CLOCKGENB_FS1_CTRL		0x5c
++#define CLOCKGENB_FS1_MD1		0x60
++#define CLOCKGENB_FS1_PE1		0x64
++#define CLOCKGENB_FS1_EN_PRG1		0x68
++#define CLOCKGENB_FS1_SDIV1		0x6c
++#define CLOCKGENB_FS1_MD2		0x70
++#define CLOCKGENB_FS1_PE2		0x74
++#define CLOCKGENB_FS1_EN_PRG2		0x78
++#define CLOCKGENB_FS1_SDIV2		0x7c
++#define CLOCKGENB_FS1_MD3		0x80
++#define CLOCKGENB_FS1_PE3		0x84
++#define CLOCKGENB_FS1_EN_PRG3		0x88
++#define CLOCKGENB_FS1_SDIV3		0x8c
++#define CLOCKGENB_FS1_MD4		0x90
++#define CLOCKGENB_FS1_PE4		0x94
++#define CLOCKGENB_FS1_EN_PRG4		0x98
++#define CLOCKGENB_FS1_SDIV4		0x9c
++#define CLOCKGENB_FS1_CLOCKOUT_CTRL	0xa0
++#define CLOCKGENB_DISPLAY_CFG		0xa4
++#define CLOCKGENB_FS_SELECT		0xa8
++#define CLOCKGENB_POWER_DOWN		0xac
++#define CLOCKGENB_POWER_ENABLE		0xb0
++#define CLOCKGENB_OUT_CTRL		0xb4
++#define CLOCKGENB_CRISTAL_SEL		0xb8
++
++
++#if 0
++#define CLOCKGEN_PLL_CFG(pll)	(CLOCKGEN_BASE_ADDR + ((pll)*0x4))
++#define   CLOCKGEN_PLL_CFG_BYPASS		(1<<20)
++#define CLOCKGEN_MUX_CFG	(CLOCKGEN_BASE_ADDR + 0x0c)
++#define   CLOCKGEN_MUX_CFG_SYSCLK_SRC		(1<<0)
++#define   CLOCKGEN_MUX_CFG_PLL_SRC(pll)		(1<<((pll)+1))
++#define   CLOCKGEN_MUX_CFG_DIV_SRC(pll)		(1<<((pll)+4))
++#define   CLOCKGEN_MUX_CFG_FDMA_SRC(fdma)	(1<<((fdma)+7))
++#define   CLOCKGEN_MUX_CFG_IC_REG_SRC		(1<<9)
++#define CLOCKGEN_DIV_CFG	(CLOCKGEN_BASE_ADDR + 0x10)
++#define CLOCKGEN_DIV2_CFG	(CLOCKGEN_BASE_ADDR + 0x14)
++#define CLOCKGEN_CLKOBS_MUX_CFG	(CLOCKGEN_BASE_ADDR + 0x18)
++#define CLOCKGEN_POWER_CFG	(CLOCKGEN_BASE_ADDR + 0x1c)
++
++#define CLOCKGENB_PLL0_CFG	(CLOCKGENB_BASE_ADDR + 0x3c)
++#define CLOCKGENB_IN_MUX_CFG	(CLOCKGENB_BASE_ADDR + 0x44)
++#define   CLOCKGENB_IN_MUX_CFG_PLL_SRC		(1<<0)
++#define CLOCKGENB_OUT_MUX_CFG	(CLOCKGENB_BASE_ADDR + 0x48)
++#define   CLOCKGENB_OUT_MUX_CFG_DIV_SRC		(1<<0)
++#define CLOCKGENB_DIV2_CFG	(CLOCKGENB_BASE_ADDR + 0x50)
++
++#endif
++
++static unsigned long clkin[4] = {
++	SYSACLKIN,	/* clk_osc_a */
++	SYSBCLKIN,	/* clk_osc_b */
++	SYSAALTCLKIN,	/* clk_osc_c */
++	0		/* clk_osc_d */
++};
++
++static struct sysconf_field *clkgena_clkosc_sel_sc;
++
++static void __iomem *clkgena_base, *clkgenb_base;
++
++#if 0
++
++                                    /* 0  1  2  3  4  5  6     7  */
++static const unsigned int ratio1[] = { 1, 2, 3, 4, 6, 8, 1024, 1 };
++
++static unsigned long final_divider(unsigned long input, int div_ratio, int div)
++{
++	switch (div_ratio) {
++	case 1:
++		return input / 1024;
++	case 2:
++	case 3:
++		return input / div;
++	}
++
++	return 0;
++}
++
++#endif
++
++
++/* Clkgen A clk_osc -------------------------------------------------------- */
++
++static void clkgena_clk_osc_init(struct clk *clk)
++{
++	clk->rate = clkin[sysconf_read(clkgena_clkosc_sel_sc)];
++}
++
++static struct clk_ops clkgena_clk_osc_ops = {
++	.init		= clkgena_clk_osc_init,
++};
++
++static struct clk clkgena_clk_osc = {
++	.name		= "clkgena_clk_osc",
++	.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++	.ops		= &clkgena_clk_osc_ops,
++};
++
++/* Clkgen A PLLs ----------------------------------------------------------- */
++
++static unsigned long pll800_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, pdiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0xff;
++	ndiv = (cfg >>  8) & 0xff;
++	pdiv = (cfg >> 16) & 0x7;
++	freq = (((2 * (input / 1000) * ndiv) / mdiv) /
++		(1 << pdiv)) * 1000;
++
++	return freq;
++}
++
++static unsigned long pll1600_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0x7;
++	ndiv = (cfg >>  8) & 0xff;
++	freq = (((input / 1000) * ndiv) / mdiv) * 1000;
++
++	return freq;
++}
++
++static unsigned long clkgena_pll_freq(unsigned long clk_osc, int pll_num)
++{
++	unsigned long data;
++
++	switch (pll_num) {
++	case 0:
++		data = readl(clkgena_base + CKGA_PLL0_CFG);
++		return pll1600_freq(clk_osc, data);
++	case 1:
++		data = readl(clkgena_base + CKGA_PLL1_CFG);
++		return pll800_freq(clk_osc, data);
++	}
++
++	return 0;
++}
++
++struct pllclk
++{
++	struct clk clk;
++	unsigned long pll_num;
++};
++
++static void pll_clk_recalc(struct clk *clk)
++{
++	struct pllclk *pllclk = container_of(clk, struct pllclk, clk);
++
++	clk->rate = clkgena_pll_freq(clk->parent->rate, pllclk->pll_num);
++}
++
++static struct clk_ops pll_clk_ops = {
++	.recalc		= pll_clk_recalc,
++};
++
++static struct pllclk pllclks[2] = {
++	{
++		.clk = {
++			.name		= "clkgena_pll0_clk",
++			.parent		= &clkgena_clk_osc,
++			.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++			.ops		= &pll_clk_ops,
++		},
++		.pll_num = 0
++	}, {
++		.clk = {
++			.name		= "clkgena_pll1_clk",
++			.parent		= &clkgena_clk_osc,
++			.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++			.ops		= &pll_clk_ops,
++		},
++		.pll_num = 1
++	}
++};
++
++/* Clkgen A clocks --------------------------------------------------------- */
++
++struct clkgenaclk
++{
++	struct clk clk;
++	unsigned long num;
++};
++
++static void clkgena_clk_init(struct clk *clk)
++{
++	struct clkgenaclk *clkgenaclk = container_of(clk, struct clkgenaclk, clk);
++	unsigned long num = clkgenaclk->num;
++	unsigned long data;
++	unsigned long src_sel;
++
++	data = readl(clkgena_base + CKGA_CLKOPSRC_SWITCH_CFG(num >> 4));
++	src_sel = (data >> ((num & 0xf) * 2)) & 3;
++
++	switch (src_sel) {
++	case 0:
++		clk->parent = &clkgena_clk_osc;
++		break;
++	case 1:
++		clk->parent = &pllclks[0].clk;
++		break;
++	case 2:
++		clk->parent = &pllclks[1].clk;
++		break;
++	case 3:
++		/* clock is stopped */
++		clk->parent = NULL;
++		break;
++	}
++}
++
++static void clkgena_clk_recalc(struct clk *clk)
++{
++	struct clkgenaclk *clkgenaclk = container_of(clk, struct clkgenaclk, clk);
++	unsigned long num = clkgenaclk->num;
++	unsigned long data;
++	unsigned long src_sel;
++	unsigned long div_cfg = 0;
++	unsigned long ratio;
++
++	data = readl(clkgena_base + CKGA_CLKOPSRC_SWITCH_CFG(num >> 4));
++	src_sel = (data >> ((num & 0xf) * 2)) & 3;
++
++	switch (src_sel) {
++	case 0:
++		div_cfg = readl(clkgena_base + CKGA_OSC_DIV_CFG(num));
++		break;
++	case 1:
++		div_cfg = readl(clkgena_base +
++				((num <= 3) ? CKGA_PLL0HS_DIV_CFG(num) :
++				              CKGA_PLL0LS_DIV_CFG(num)));
++		break;
++	case 2:
++		div_cfg = readl(clkgena_base + CKGA_PLL1_DIV_CFG(num));
++		break;
++	case 3:
++		clk->rate = 0;
++		return;
++	}
++
++	if (div_cfg & 0x10000)
++		ratio = 1;
++	else
++		ratio = (div_cfg & 0x1F) + 1;
++
++	clk->rate = clk->parent->rate / ratio;
++}
++
++static struct clk_ops clkgena_clk_ops = {
++	.init		= clkgena_clk_init,
++	.recalc		= clkgena_clk_recalc,
++};
++
++#define CLKGENA_CLK(_num, _name)				\
++	{							\
++		.clk = {					\
++			.name		= _name,		\
++			.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,	\
++			.ops		= &clkgena_clk_ops,	\
++		},						\
++		.num = _num,					\
++	 }
++
++static struct clkgenaclk clkgenaclks[] = {
++	CLKGENA_CLK(0, "ic_STNOC"),
++	CLKGENA_CLK(1, "fdma0"),
++	CLKGENA_CLK(2, "fdma1"),
++	/* 3 not used */
++	CLKGENA_CLK(4, "sh4_clk"),
++	CLKGENA_CLK(5, "ic_if_100"),
++	CLKGENA_CLK(6, "lx_dmu_cpu"),
++	CLKGENA_CLK(7, "lx_aud_cpu"),
++	CLKGENA_CLK(8, "ic_bdisp_200"),
++	CLKGENA_CLK(9, "ic_disp_200"),
++	CLKGENA_CLK(10, "ic_ts_200"),
++	CLKGENA_CLK(11, "disp_pipe_200"),
++	CLKGENA_CLK(12, "blit_proc"),	/* Note duplicate clock 12 */
++	CLKGENA_CLK(12, "ic_delta_200"),/* Note duplicate clock 12 */
++	CLKGENA_CLK(13, "ethernet_phy"),
++	CLKGENA_CLK(14, "pci"),
++	CLKGENA_CLK(15, "emi_master"),
++	CLKGENA_CLK(16, "ic_compo_200"),
++	CLKGENA_CLK(17, "ic_if_200"),
++};
++
++/* SH4 generic clocks ------------------------------------------------------ */
++
++static void generic_clk_recalc(struct clk *clk)
++{
++	clk->rate = clk->parent->rate;
++}
++
++static struct clk_ops generic_clk_ops = {
++	.recalc		= generic_clk_recalc,
++};
++
++static struct clk generic_module_clk = {
++	.name		= "module_clk",
++	.parent		= &clkgenaclks[4].clk, /* ic_if_100 */
++	.flags		= CLK_ALWAYS_ENABLED,
++	.ops		= &generic_clk_ops,
++};
++
++static struct clk generic_comms_clk = {
++	.name		= "comms_clk",
++	.parent		= &clkgenaclks[4].clk, /* ic_if_100 */
++	.flags		= CLK_ALWAYS_ENABLED,
++	.ops		= &generic_clk_ops,
++};
++
++int __init clk_init(void)
++{
++	int i, ret;
++
++	/* Clockgen A */
++
++	clkgena_clkosc_sel_sc = sysconf_claim(SYS_STA, 1, 0, 1, "clkgena");
++	clkgena_base = ioremap(CLOCKGENA_BASE_ADDR, 0x50);
++	clkgenb_base = ioremap(CLOCKGENB_BASE_ADDR, 0xc00);
++
++	ret = clk_register(&clkgena_clk_osc);
++	clk_enable(&clkgena_clk_osc);
++
++	for (i=0; i<2; i++) {
++		ret |= clk_register(&pllclks[i].clk);
++		clk_enable(&pllclks[i].clk);
++	}
++
++	for (i=0; i<ARRAY_SIZE(clkgenaclks); i++) {
++		ret |= clk_register(&clkgenaclks[i].clk);
++		clk_enable(&clkgenaclks[i].clk);
++	}
++
++	ret = clk_register(&generic_module_clk);
++	clk_enable(&generic_module_clk);
++	ret = clk_register(&generic_comms_clk);
++	clk_enable(&generic_comms_clk);
++
++	/* Propagate the clk osc value down */
++	clk_set_rate(&clkgena_clk_osc, clk_get_rate(&clkgena_clk_osc));
++	clk_put(&clkgena_clk_osc);
++
++	return ret;
++}
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/probe.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/probe.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/probe.c
+@@ -159,6 +159,10 @@ int __init detect_cpu_and_cache_system(v
+ 	case 0x9090 ... 0x9092:
+ 		/* ST40-300 core */
+ 		switch (prr_all) {
++		case 0x10:
++			/* STx7105 */
++			cpu_data->type = CPU_STX7105;
++			break;
+ 		case 0x9500 ... 0x95ff:
+ 			/* CPU_STX7200 cut 2.0 */
+ 			cpu_data->type = CPU_STX7200;
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -0,0 +1,1191 @@
++/*
++ * STx7105 Setup
++ *
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#include <linux/platform_device.h>
++#include <linux/init.h>
++#include <linux/serial.h>
++#include <linux/io.h>
++#include <linux/i2c.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/soc_init.h>
++#include <linux/stm/pio.h>
++#include <linux/phy.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/emi.h>
++#include <linux/pata_platform.h>
++#include <linux/stm/fdma-plat.h>
++#include <linux/stm/fdma-reqs.h>
++#include <linux/mtd/nand.h>
++#include <linux/mtd/partitions.h>
++#include <asm/irq-ilc.h>
++
++static u64 st40_dma_mask = 0xfffffff;
++
++static struct {
++	unsigned char syscfg;
++	unsigned char max_alt;
++	unsigned char bits;
++} pio_sysconf[] = {
++	[0] = { 19, 5, 2},
++	[1] = { 20, 4, 2},
++	[2] = { 21, 3, 2},
++	[3] = { 25, 4, 2},
++	[4] = { 34, 4, 2},
++	[5] = { 37, 4, 2},
++	[6] = { 36, 6, 2},
++	[7] = { 25, 5, 2},
++	[8] = { 46, 3, 2},
++	[9] = { 47, 3, 2},
++	[10] = { 0, 1, 0 },
++	[11] = { 0 /* 5[29] */ , 2, 0 },
++	[12] = { 48, 4, 3},
++	[13] = { 49, 4, 3},
++	[14] = { 0, 2/5, 0},
++	[15] = { 50, 4, 2},
++	[16] = { 0, 2/5, 0},
++};
++
++static void stx7105_pio_sysconf(int bank, int pin, int alt, const char* name)
++{
++	int cfg = pio_sysconf[bank].syscfg;
++	struct sysconf_field *sc[3];
++
++	sc[0] = sysconf_claim(SYS_CFG, cfg, pin, pin, name);
++	sc[1] = sysconf_claim(SYS_CFG, cfg, pin+8, pin+8, name);
++	sc[2] = sysconf_claim(SYS_CFG, cfg, pin+16, pin+16, name);
++	sysconf_write(sc[0], (alt-1) & 1);
++	sysconf_write(sc[1], ((alt-1) >> 1) & 1);
++	sysconf_write(sc[2], ((alt-1) >> 2) & 1);
++}
++
++/* USB resources ----------------------------------------------------------- */
++
++#define UHOST2C_BASE(N)			(0xfe100000 + ((N)*0x00900000))
++#define AHB2STBUS_WRAPPER_GLUE_BASE(N)  (UHOST2C_BASE(N))
++#define AHB2STBUS_OHCI_BASE(N)          (UHOST2C_BASE(N) + 0x000ffc00)
++#define AHB2STBUS_EHCI_BASE(N)          (UHOST2C_BASE(N) + 0x000ffe00)
++#define AHB2STBUS_PROTOCOL_BASE(N)      (UHOST2C_BASE(N) + 0x000fff00)
++
++static struct plat_usb_data usb_wrapper[2] = {
++	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE(0),
++		    AHB2STBUS_PROTOCOL_BASE(0), NULL),
++	USB_WRAPPER(1, AHB2STBUS_WRAPPER_GLUE_BASE(1),
++		    AHB2STBUS_PROTOCOL_BASE(1), NULL),
++};
++
++static struct platform_device st40_ohci_devices[2] = {
++	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE(0), evt2irq(0x1700), &usb_wrapper[0]),
++	USB_OHCI_DEVICE(1, AHB2STBUS_OHCI_BASE(1), evt2irq(0x13c0), &usb_wrapper[1]),
++};
++
++static struct platform_device st40_ehci_devices[2] = {
++	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE(0), evt2irq(0x1720), &usb_wrapper[0]),
++	USB_EHCI_DEVICE(1, AHB2STBUS_EHCI_BASE(1), evt2irq(0x13e0), &usb_wrapper[1]),
++};
++
++
++/**
++ * stx7105_configure_usb - Configure a USB port
++ * @port: USB port number (0 or 1)
++ * @oc_en: enable OC detection (0 or 1)
++ * @oc_actlow: whether OC detection is active low (0 or 1)
++ * @oc_pinsel: use alternate pin for OC detection (0 or 1)
++ * @pwr_en: enable power enable (0 or 1)
++ * @pwr_pinsel: use alternate pin for power enable (0 or 1)
++ *
++ * Configure a USB port. Pins:
++ *		  PORT 0	PORT 1
++ *		+-------------------------
++ * OC	normal	|  4[4]		 4[6]
++ *	alt	| 12[5]		14[6]
++ * PWR	normal	|  4[5]		 4[7]
++ *	alt	| 12[6]		14[7]
++ */
++void __init stx7105_configure_usb(int port, int oc_en, int oc_actlow,
++				  int oc_pinsel, int pwr_en, int pwr_pinsel)
++{
++	static struct stpio_pin *pin;
++	struct sysconf_field *sc;
++
++	/* USB PHY clock from alternate pad? */
++	/* sysconf_claim(SYS_CFG, 40, 2,2, "USB"); */
++
++	/* Power up USB PHY */
++	sc = sysconf_claim(SYS_CFG, 32, 6+port,6+port, "USB");
++	sysconf_write(sc, 0);
++
++	/* Power up USB host */
++	sc = sysconf_claim(SYS_CFG, 32, 4+port,4+port, "USB");
++	sysconf_write(sc, 0);
++
++	/* USB overcurrent enable */
++	sc = sysconf_claim(SYS_CFG, 4, 11+port,11+port, "USBOC");
++	sysconf_write(sc, oc_en);
++
++	if (oc_en) {
++		const struct {
++			int portno;
++			int pinno;
++			int alt;
++		} oc_pio[2][2] = {
++			{ { 4, 4, 4 }, { 12, 5, 3 } },
++			{ { 4, 6, 4 }, { 14, 6, 2 } }
++		};
++
++		int oc_portno = oc_pio[port][oc_pinsel].portno;
++		int oc_pinno  = oc_pio[port][oc_pinsel].pinno;
++		int oc_alt = oc_pio[port][oc_pinsel].alt;
++
++		sc = sysconf_claim(SYS_CFG, 4, 5+port,5+port, "USBOC");
++		sysconf_write(sc, oc_pinsel);
++
++		stx7105_pio_sysconf(oc_portno, oc_pinno, oc_alt, "USBOC");
++		pin = stpio_request_pin(oc_portno, oc_pinno, "USBOC", STPIO_IN);
++
++		sc = sysconf_claim(SYS_CFG, 4, 3+port,3+port, "USBOC");
++		sysconf_write(sc, oc_actlow);
++	}
++
++	if (pwr_en) {
++		const struct {
++			int portno;
++			int pinno;
++			int alt;
++		} pwr_pio[2][2] = {
++			{ { 4, 5, 4 }, { 12, 6, 3 } },
++			{ { 4, 7, 4 }, { 14, 7, 2 } }
++		};
++
++		int pwr_portno = pwr_pio[port][pwr_pinsel].portno;
++		int pwr_pinno  = pwr_pio[port][pwr_pinsel].pinno;
++		int pwr_alt = pwr_pio[port][pwr_pinsel].alt;
++
++		stx7105_pio_sysconf(pwr_portno, pwr_pinno, pwr_alt, "USBPWR");
++		pin = stpio_request_pin(pwr_portno, pwr_pinno, "USBPWR", STPIO_ALT_OUT);
++	}
++
++	platform_device_register(&st40_ohci_devices[port]);
++	platform_device_register(&st40_ehci_devices[port]);
++}
++
++#if 0
++/* FDMA resources ---------------------------------------------------------- */
++
++#ifdef CONFIG_STM_DMA
++
++#include <linux/stm/7200_cut1_fdma2_firmware.h>
++
++static struct fdma_regs stx7105_fdma_regs = {
++	.fdma_id= FDMA2_ID,
++	.fdma_ver = FDAM2_VER,
++	.fdma_en = FDMA2_ENABLE_REG,
++	.fdma_clk_gate = FDMA2_CLOCKGATE,
++	.fdma_rev_id = FDMA2_REV_ID,
++	.fdma_cmd_statn = STB7200_FDMA_CMD_STATn_REG,
++	.fdma_ptrn = STB7200_FDMA_PTR_REG,
++	.fdma_cntn = STB7200_FDMA_COUNT_REG,
++	.fdma_saddrn = STB7200_FDMA_SADDR_REG,
++	.fdma_daddrn = STB7200_FDMA_DADDR_REG,
++	.fdma_req_ctln = STB7200_FDMA_REQ_CTLn_REG,
++	.fdma_cmd_sta = FDMA2_CMD_MBOX_STAT_REG,
++	.fdma_cmd_set = FDMA2_CMD_MBOX_SET_REG,
++	.fdma_cmd_clr = FDMA2_CMD_MBOX_CLR_REG,
++	.fdma_cmd_mask = FDMA2_CMD_MBOX_MASK_REG,
++	.fdma_int_sta = FDMA2_INT_STAT_REG,
++	.fdma_int_set = FDMA2_INT_SET_REG,
++	.fdma_int_clr= FDMA2_INT_CLR_REG,
++	.fdma_int_mask= FDMA2_INT_MASK_REG,
++	.fdma_sync_reg= FDMA2_SYNCREG,
++	.fdma_dmem_region = STX7105_DMEM_OFFSET,
++	.fdma_imem_region = STX7105_IMEM_OFFSET,
++};
++
++static struct fdma_platform_device_data stx7105_fdma0_plat_data = {
++	.registers_ptr = &stx7105_fdma_regs,
++	.min_ch_num = CONFIG_MIN_STM_DMA_CHANNEL_NR,
++	.max_ch_num = CONFIG_MAX_STM_DMA_CHANNEL_NR,
++	.fw_device_name = "stb7200_v1.4.bin",
++	.fw.data_reg = (unsigned long*)&STB7200_DMEM_REGION,
++	.fw.imem_reg = (unsigned long*)&STB7200_IMEM_REGION,
++	.fw.imem_fw_sz = STB7200_IMEM_FIRMWARE_SZ,
++	.fw.dmem_fw_sz = STB7200_DMEM_FIRMWARE_SZ,
++	.fw.dmem_len = STB7200_DMEM_REGION_LENGTH,
++	.fw.imem_len = STB7200_IMEM_REGION_LENGTH
++};
++
++
++static struct fdma_platform_device_data stx7105_fdma1_plat_data = {
++	.registers_ptr = &stx7105_fdma_regs,
++	.min_ch_num = CONFIG_MIN_STM_DMA_CHANNEL_NR,
++	.max_ch_num = CONFIG_MAX_STM_DMA_CHANNEL_NR,
++	.fw_device_name = "stb7200_v1.4.bin",
++	.fw.data_reg = (unsigned long*)&STB7200_DMEM_REGION,
++	.fw.imem_reg = (unsigned long*)&STB7200_IMEM_REGION,
++	.fw.imem_fw_sz = STB7200_IMEM_FIRMWARE_SZ,
++	.fw.dmem_fw_sz = STB7200_DMEM_FIRMWARE_SZ,
++	.fw.dmem_len = STB7200_DMEM_REGION_LENGTH,
++	.fw.imem_len = STB7200_IMEM_REGION_LENGTH
++};
++
++#define stx7105_fdma0_plat_data_addr &stx7105_fdma0_plat_data
++#define stx7105_fdma1_plat_data_addr &stx7105_fdma1_plat_data
++#else
++#define stx7105_fdma0_plat_data_addr NULL
++#define stx7105_fdma1_plat_data_addr NULL
++#endif /* CONFIG_STM_DMA */
++
++static struct platform_device fdma0_device = {
++	.name		= "stmfdma",
++	.id		= 0,
++	.num_resources	= 2,
++	.resource = (struct resource[2]) {
++		[0] = {
++			.start = STX7105_FDMA0_BASE,
++			.end   = STX7105_FDMA0_BASE + 0xffff,
++			.flags = IORESOURCE_MEM,
++		},
++		[1] = {
++			.start = LINUX_FDMA0_STX7105_IRQ_VECT,
++			.end   = LINUX_FDMA0_STX7105_IRQ_VECT,
++			.flags = IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = stx7105_fdma0_plat_data_addr,
++	},
++};
++
++static struct platform_device fdma1_device = {
++	.name		= "stmfdma",
++	.id		= 1,
++	.resource = (struct resource[2]) {
++		[0] = {
++			.start = STX7105_FDMA1_BASE,
++			.end   = STX7105_FDMA1_BASE + 0xffff,
++			.flags = IORESOURCE_MEM,
++		},
++		[1] = {
++			.start = LINUX_FDMA1_STX7105_IRQ_VECT,
++			.end   = LINUX_FDMA1_STX7105_IRQ_VECT,
++			.flags = IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = stx7105_fdma1_plat_data_addr,
++	},
++};
++
++static struct platform_device fdma_xbar_device = {
++	.name		= "fdma-xbar",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[1]) {
++		{
++			.start	= STX7105_XBAR_BASE,
++			.end	= STX7105_XBAR_BASE+(4*1024)-1,
++			.flags	= IORESOURCE_MEM,
++		},
++	},
++};
++#endif
++
++/* SSC resources ----------------------------------------------------------- */
++
++static char i2c_st[] = "i2c_st";
++static char spi_st[] = "spi_st";
++
++static struct platform_device stssc_devices[] = {
++	STSSC_DEVICE(0xfd040000, evt2irq(0x10e0), 2, 2, 3, 4),
++	STSSC_DEVICE(0xfd041000, evt2irq(0x10c0), 2, 5, 6, 7),
++	STSSC_DEVICE(0xfd042000, evt2irq(0x10a0), 0xff, 0xff, 0xff, 0xff),
++	STSSC_DEVICE(0xfd043000, evt2irq(0x1080), 0xff, 0xff, 0xff, 0xff),
++};
++
++void __init stx7105_configure_ssc(struct plat_ssc_data *data)
++{
++	int num_i2c=0;
++	int num_spi=0;
++	int i;
++	int capability = data->capability;
++	int routing = data->routing;
++	int pin;
++	struct sysconf_field* sc;
++
++	const struct {
++		unsigned char port, pin, alt;
++	} ssc_pios[2][3][4] = { {
++		/* SSC2 */
++		{ { 3, 4, 3 }, {  3, 4, 3 }, { 12, 0, 3 }, { 13, 4, 2 } },
++		{ { 3, 5, 3 }, { 12, 1, 3 }, { 13, 5, 2 }, { 13, 5, 2 } },
++		{ { 2, 0, 3 }, {  3, 5, 3 }, { 12, 1, 3 }, { 13, 5, 2 } }
++	}, {
++		/* SSC3 */
++		{ { 3, 6, 3 }, { 13, 2, 3 }, { 13, 6, 2 }, { 13, 6, 2 } },
++		{ { 3, 7, 3 }, { 13, 3, 3 }, { 13, 7, 2 }, { 13, 7, 2 } },
++		{ { 2, 1, 3 }, {  3, 7, 3 }, { 13, 3, 3 }, { 13, 7, 2 } }
++	} };
++
++	for (i=0; i < ARRAY_SIZE(stssc_devices);
++	     i++, capability >>= 2, routing >>= 6) {
++		struct ssc_pio_t *ssc_pio = stssc_devices[i].dev.platform_data;
++
++		if(capability & SSC_UNCONFIGURED)
++			continue;
++
++		switch (i) {
++		case 0:
++		case 1:
++			/* These have fixed routing */
++			for (pin = 0; pin < 3; pin++) {
++				int portno = ssc_pio->pio[pin].pio_port;
++				int pinno  = ssc_pio->pio[pin].pio_pin;
++
++				if ((pin==2) && !(capability & SSC_SPI_CAPABILITY))
++					continue;
++
++				stx7105_pio_sysconf(portno, pinno, 3, "ssc");
++			}
++
++			sc = sysconf_claim(SYS_CFG, 16, 3*i, 3*i, "ssc");
++			sysconf_write(sc,
++				      (capability & SSC_SPI_CAPABILITY) ? 1 : 0);
++			break;
++		case 2:
++		case 3:
++			/* Complex routing */
++			for (pin = 0; pin < 3; pin++) {
++				int bit = ((i==2) ? 11 : 18) - (pin * 2);
++				int r = (routing >> (pin*2)) & 3;
++				int portno = ssc_pios[i-2][pin][r].port;
++				int pinno  = ssc_pios[i-2][pin][r].pin;
++				int alt    = ssc_pios[i-2][pin][r].alt;
++
++				sc = sysconf_claim(SYS_CFG, 16,
++						   bit, bit+1, "ssc");
++				sysconf_write(sc, r);
++				ssc_pio->pio[pin].pio_port = portno;
++				ssc_pio->pio[pin].pio_pin  = pinno;
++
++printk("%s: ssc %d, pin %d, bit %d = r %d, port %d, pin %d\n",
++       __FUNCTION__, i, pin, bit, r, ssc_pio->pio[pin].pio_port, ssc_pio->pio[pin].pio_pin);
++
++				if ((pin==2) && !(capability & SSC_SPI_CAPABILITY))
++					continue;
++
++				stx7105_pio_sysconf(portno, pinno, alt, "ssc");
++			}
++			break;
++		}
++
++		if(capability & SSC_SPI_CAPABILITY){
++			stssc_devices[i].name = spi_st;
++			stssc_devices[i].id = num_spi++;
++		} else {
++			stssc_devices[i].name = i2c_st;
++			stssc_devices[i].id = num_i2c++;
++		}
++
++		platform_device_register(&stssc_devices[i]);
++	}
++
++	/* I2C buses number reservation (to prevent any hot-plug device
++	 * from using it) */
++#ifdef CONFIG_I2C_BOARDINFO
++	i2c_register_board_info(num_i2c - 1, NULL, 0);
++#endif
++}
++
++/* Ethernet MAC resources -------------------------------------------------- */
++
++static struct sysconf_field *mac_speed_sc;
++
++static void fix_mac_speed(void* priv, unsigned int speed)
++{
++printk("%s: speed %d\n", __FUNCTION__, speed);
++	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 0 : 1);
++}
++
++static struct plat_stmmacenet_data stx7105eth_private_data = {
++	.bus_id = 0,
++	.pbl = 32,
++	.has_gmac = 1,
++	.fix_mac_speed = fix_mac_speed,
++};
++
++static struct platform_device stx7105eth_device = {
++        .name           = "stmmaceth",
++        .id             = 0,
++        .num_resources  = 2,
++        .resource       = (struct resource[]) {
++        	{
++	                .start = 0xfd110000,
++        	        .end   = 0xfd117fff,
++                	.flags  = IORESOURCE_MEM,
++        	},
++        	{
++			.name   = "macirq",
++                	.start  = evt2irq(0x12c0),
++                	.end    = evt2irq(0x12c0),
++                	.flags  = IORESOURCE_IRQ,
++        	},
++	},
++	.dev = {
++		.platform_data = &stx7105eth_private_data,
++	}
++};
++
++void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
++				int ext_mdio, int ext_clk, int phy_bus)
++{
++	static struct stpio_pin *pin;
++	struct sysconf_field *sc;
++
++	stx7105eth_private_data.bus_id = phy_bus;
++
++	/* Ethernet ON */
++	sc = sysconf_claim(SYS_CFG, 7, 16, 16, "stmmac");
++	sysconf_write(sc, 1);
++
++	/* MII M-DIO select: 1: miim_dio from external input, 0: from GMAC */
++	sc = sysconf_claim(SYS_CFG, 7, 17, 17, "stmmac");
++	sysconf_write(sc, ext_mdio ? 1 : 0);
++
++	/* RMII pin multiplexing: 0: RMII interface active, 1: MII interface */
++	sc = sysconf_claim(SYS_CFG, 7, 18, 18, "stmmac");
++	sysconf_write(sc, rmii_mode ? 0 : 1);
++
++	/* PHY EXT CLOCK: 0: provided by STx7105; 1: external */
++	sc = sysconf_claim(SYS_CFG, 7, 19, 19, "stmmac");
++	sysconf_write(sc, ext_clk ? 1 : 0);
++
++	/* MAC speed*/
++	mac_speed_sc = sysconf_claim(SYS_CFG, 7, 20, 20, "stmmac");
++
++	/* Default GMII/MII selection */
++	sc = sysconf_claim(SYS_CFG, 7, 25, 26, "stmmac");
++	sysconf_write(sc, mode & 0x3);
++
++	/* MII mode */
++	sc = sysconf_claim(SYS_CFG, 7, 27, 27, "stmmac");
++	sysconf_write(sc, reverse_mii ? 0 : 1);
++
++	/* Pin configuration... */
++
++	/* MIIRX_DV/MII_EXCRS */
++	stx7105_pio_sysconf(7, 4, 1, "eth");
++	pin = stpio_request_pin(7, 4, "eth", STPIO_ALT_BIDIR);
++
++	/* MIIRX_ER/MII_EXCOL */
++	stx7105_pio_sysconf(7, 5, 1, "eth");
++	pin = stpio_request_pin(7, 5, "eth", STPIO_ALT_BIDIR);
++
++	/* MIITXD[0] */
++	stx7105_pio_sysconf(7, 6, 1, "eth");
++	pin = stpio_request_pin(7, 6, "eth", STPIO_ALT_OUT);
++
++	/* MIITXD[1] */
++	stx7105_pio_sysconf(7, 7, 1, "eth");
++	pin = stpio_request_pin(7, 7, "eth", STPIO_ALT_OUT);
++
++	/* MIITXD[2] */
++	stx7105_pio_sysconf(8, 0, 1, "eth");
++	pin = stpio_request_pin(8, 0, "eth", STPIO_ALT_OUT);
++
++	/* MIITXD[3] */
++	stx7105_pio_sysconf(8, 1, 1, "eth");
++	pin = stpio_request_pin(8, 1, "eth", STPIO_ALT_OUT);
++
++	/* MIITX_EN */
++	stx7105_pio_sysconf(8, 2, 1, "eth");
++	pin = stpio_request_pin(8, 2, "eth", STPIO_ALT_OUT);
++
++	/* MIIMDIO */
++	stx7105_pio_sysconf(8, 3, 1, "eth");
++	pin = stpio_request_pin(8, 3, "eth", STPIO_ALT_BIDIR);
++
++	/* MIIMDC */
++	stx7105_pio_sysconf(8, 4, 1, "eth");
++	pin = stpio_request_pin(8, 4, "eth", STPIO_ALT_OUT);
++
++	/* MIIRXCLK */
++	stx7105_pio_sysconf(8, 5, 1, "eth");
++	pin = stpio_request_pin(8, 5, "eth", STPIO_ALT_BIDIR);
++
++	/* MIIRXD[0] */
++	stx7105_pio_sysconf(8, 6, 1, "eth");
++	pin = stpio_request_pin(8, 6, "eth", STPIO_ALT_BIDIR);
++
++	/* MIIRXD[1] */
++	stx7105_pio_sysconf(8, 7, 1, "eth");
++	pin = stpio_request_pin(8, 7, "eth", STPIO_ALT_BIDIR);
++
++	/* MIIRXD[2] */
++	stx7105_pio_sysconf(9, 0, 1, "eth");
++	pin = stpio_request_pin(9, 0, "eth", STPIO_ALT_BIDIR);
++
++	/* MIIRXD[3] */
++	stx7105_pio_sysconf(9, 1, 1, "eth");
++	pin = stpio_request_pin(9, 1, "eth", STPIO_ALT_BIDIR);
++
++	/* MIITXCLK */
++	stx7105_pio_sysconf(9, 2, 1, "eth");
++	pin = stpio_request_pin(9, 2, "eth", STPIO_ALT_BIDIR);
++
++	/* MIICOL */
++	stx7105_pio_sysconf(9, 3, 1, "eth");
++	pin = stpio_request_pin(9, 3, "eth", STPIO_ALT_BIDIR);
++
++	/* MIICRS */
++	stx7105_pio_sysconf(9, 4, 1, "eth");
++	pin = stpio_request_pin(9, 4, "eth", STPIO_ALT_BIDIR);
++
++	/* MIIPHYCLK */
++	stx7105_pio_sysconf(9, 5, 1, "eth");
++	pin = stpio_request_pin(9, 5, "eth", STPIO_ALT_OUT);
++
++	/* MIIMDINT */
++	stx7105_pio_sysconf(9, 6, 1, "eth");
++	pin = stpio_request_pin(9, 6, "eth", STPIO_ALT_BIDIR);
++
++	/* MDO_EN */
++	stx7105_pio_sysconf(9, 7, 1, "eth");
++	pin = stpio_request_pin(9, 7, "eth", STPIO_ALT_OUT);
++
++	platform_device_register(&stx7105eth_device);
++}
++#if 0
++
++/* PWM resources ----------------------------------------------------------- */
++
++static struct resource stm_pwm_resource[]= {
++	[0] = {
++		.start	= 0xfd010000,
++		.end	= 0xfd010000 + 0x67,
++		.flags	= IORESOURCE_MEM
++	},
++	[1] = {
++		.start	= evt2irq(0x11c0),
++		.end	= evt2irq(0x11c0),
++		.flags	= IORESOURCE_IRQ
++	}
++};
++
++static struct platform_device stm_pwm_device = {
++	.name		= "stm-pwm",
++	.id		= -1,
++	.num_resources	= ARRAY_SIZE(stm_pwm_resource),
++	.resource	= stm_pwm_resource,
++};
++
++void stx7105_configure_pwm(struct plat_stm_pwm_data *data)
++{
++	stm_pwm_device.dev.platform_data = data;
++
++	if (data->flags & PLAT_STM_PWM_OUT0) {
++		/* Route UART2 (in and out) and PWM_OUT0 instead of SCI to pins
++		 * ssc2_mux_sel = 0 */
++		if (!sc7_3)
++			sc7_3 = sysconf_claim(SYS_CFG, 7, 3, 3, "pwm");
++		sysconf_write(sc7_3, 0);
++		stpio_request_pin(4, 6, "PWM", STPIO_ALT_OUT);
++	}
++
++	if (data->flags & PLAT_STM_PWM_OUT1) {
++		stpio_request_pin(4, 7, "PWM", STPIO_ALT_OUT);
++	}
++
++	platform_device_register(&stm_pwm_device);
++}
++
++#endif
++
++/* ASC resources ----------------------------------------------------------- */
++
++static struct platform_device stm_stasc_devices[] = {
++	/* 7105: Checked except pacing */
++	STASC_DEVICE(0xfd030000, evt2irq(0x1160), 11, 15,
++		     0, 0, 1, 4, 3), /* oe pin: 2 */
++	STASC_DEVICE(0xfd031000, evt2irq(0x1140), 12, 16,
++		     1, 0, 1, 4, 3),
++	STASC_DEVICE(0xfd032000, evt2irq(0x1120), 13, 17,
++		     4, 0, 1, 2, 3), /* or 12, 0, 1, 2, 3 */
++	STASC_DEVICE(0xfd033000, evt2irq(0x1100), 14, 18,
++		     5, 0, 1, 3, 2),
++};
++
++/*
++ * Note these three variables are global, and shared with the stasc driver
++ * for console bring up prior to platform initialisation.
++ */
++
++/* the serial console device */
++int stasc_console_device __initdata;
++
++/* Platform devices to register */
++struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
++unsigned int stasc_configured_devices_count __initdata = 0;
++
++/* Configure the ASC's for this board.
++ * This has to be called before console_init().
++ */
++void __init stx7105_configure_asc(const int *ascs, int num_ascs, int console)
++{
++	int i;
++	static const int alt_conf[4] = { 4, 4, 3, 3 };
++
++	for (i=0; i<num_ascs; i++) {
++		int port;
++		unsigned char flags;
++		struct platform_device *pdev;
++		struct stasc_uart_data *uart_data;
++
++		port = ascs[i];
++		flags = ascs[i] >> 8;
++		pdev = &stm_stasc_devices[port];
++		uart_data = pdev->dev.platform_data;
++
++		/* Tx */
++		stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[0],
++				    alt_conf[port], "asc");
++		/* Rx */
++		stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[1],
++				    alt_conf[port], "asc");
++
++		if (! (flags & STASC_FLAG_NORTSCTS)) {
++			/* CTS */
++			stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[2],
++					    alt_conf[port], "asc");
++			/* RTS */
++			stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[3],
++					    alt_conf[port], "asc");
++		}
++		pdev->id = i;
++		((struct stasc_uart_data*)(pdev->dev.platform_data))->flags = flags;
++		stasc_configured_devices[stasc_configured_devices_count++] = pdev;
++	}
++
++	stasc_console_device = console;
++}
++
++/* Add platform device as configured by board specific code */
++static int __init stx7105_add_asc(void)
++{
++	return platform_add_devices(stasc_configured_devices,
++				    stasc_configured_devices_count);
++}
++arch_initcall(stx7105_add_asc);
++
++#if 0
++/* LiRC resources ---------------------------------------------------------- */
++static struct lirc_pio lirc_pios[] = {
++        [0] = {
++		.bank = 3,
++		.pin  = 3,
++		.dir  = STPIO_IN,
++                .pinof= 0x00 | LIRC_IR_RX | LIRC_PIO_ON
++	},
++	[1] = {
++		.bank = 3,
++		.pin  = 4,
++		.dir  = STPIO_IN,
++                .pinof= 0x00 | LIRC_UHF_RX /* | LIRC_PIO_ON not available */
++                },
++	[2] = {
++		.bank = 3,
++		.pin  = 5,
++		.dir  = STPIO_ALT_OUT,
++                .pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
++	},
++	[3] = {
++		.bank = 3,
++		.pin  = 6,
++		.dir  = STPIO_ALT_OUT,
++                .pinof= 0x00 | LIRC_IR_TX | LIRC_PIO_ON
++	},
++};
++
++static struct plat_lirc_data lirc_private_info = {
++	/* For the 7105, the clock settings will be calculated by the driver
++	 * from the system clock
++	 */
++	.irbclock	= 0, /* use current_cpu data */
++	.irbclkdiv      = 0, /* automatically calculate */
++	.irbperiodmult  = 0,
++	.irbperioddiv   = 0,
++	.irbontimemult  = 0,
++	.irbontimediv   = 0,
++	.irbrxmaxperiod = 0x5000,
++	.sysclkdiv	= 1,
++	.rxpolarity	= 1,
++	.pio_pin_arr  = lirc_pios,
++	.num_pio_pins = ARRAY_SIZE(lirc_pios)
++};
++
++static struct resource lirc_resource[]= {
++        [0] = {
++		.start = 0xfd018000,
++		.end   = 0xfd018000 + 0xa0,
++	        .flags = IORESOURCE_MEM
++	},
++	[1] = {
++		.start = evt2irq(0x11a0),
++		.end   = evt2irq(0x11a0),
++	        .flags = IORESOURCE_IRQ
++	},
++};
++
++static struct platform_device lirc_device = {
++	.name           = "lirc",
++	.id             = -1,
++	.num_resources  = ARRAY_SIZE(lirc_resource),
++	.resource       = lirc_resource,
++	.dev = {
++	           .platform_data = &lirc_private_info
++	}
++};
++
++void __init stx7105_configure_lirc(void)
++{
++	platform_device_register(&lirc_device);
++}
++
++/* NAND Resources ---------------------------------------------------------- */
++
++static void nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
++{
++	struct nand_chip *this = mtd->priv;
++
++	if (ctrl & NAND_CTRL_CHANGE) {
++
++		if (ctrl & NAND_CLE) {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
++						   (unsigned int)(1 << 17));
++		}
++		else {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
++						   ~(unsigned int)(1 << 17));
++		}
++
++		if (ctrl & NAND_ALE) {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
++						   (unsigned int)(1 << 18));
++		}
++		else {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
++						   ~(unsigned int)(1 << 18));
++		}
++	}
++
++	if (cmd != NAND_CMD_NONE) {
++		writeb(cmd, this->IO_ADDR_W);
++	}
++}
++
++static void nand_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* write buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		writeb(*buf++, chip->IO_ADDR_W);
++		len--;
++	}
++
++	writesl(chip->IO_ADDR_W, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++) {
++		writeb(buf[i], chip->IO_ADDR_W);
++	}
++}
++
++static void nand_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* read buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		*buf++ = readb(chip->IO_ADDR_R);
++		len--;
++	}
++
++	readsl(chip->IO_ADDR_R, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++) {
++		buf[i] = readb(chip->IO_ADDR_R);
++	}
++}
++
++static const char *nand_part_probes[] = { "cmdlinepart", NULL };
++
++static struct platform_device nand_flash[] = {
++	EMI_NAND_DEVICE(0),
++	EMI_NAND_DEVICE(1),
++	EMI_NAND_DEVICE(2),
++	EMI_NAND_DEVICE(3),
++	EMI_NAND_DEVICE(4),
++ };
++
++
++/*
++ * stx7105_configure_nand - Configures NAND support for the STx7105
++ *
++ * Requires generic platform NAND driver (CONFIG_MTD_NAND_PLATFORM).
++ * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
++ * command line.
++ */
++void __init stx7105_configure_nand(struct nand_config_data *data)
++{
++	unsigned int bank_base, bank_end;
++	unsigned int emi_bank = data->emi_bank;
++
++	struct platform_nand_data *nand_private_data =
++		nand_flash[emi_bank].dev.platform_data;
++
++	emi_init(0, 0xfe700000);
++	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
++	if (emi_bank == 4)
++		bank_end = 0x07ffffff;
++	else
++		bank_end = emi_bank_base(emi_bank+1) - 1;
++
++	printk("Configuring EMI Bank%d for NAND device\n", emi_bank);
++	emi_config_nand(data->emi_bank, data->emi_timing_data);
++
++	nand_flash[emi_bank].resource[0].start = bank_base;
++	nand_flash[emi_bank].resource[0].end = bank_end;
++
++	nand_private_data->chip.chip_delay = data->chip_delay;
++	nand_private_data->chip.partitions = data->mtd_parts;
++	nand_private_data->chip.nr_partitions = data->nr_parts;
++
++	platform_device_register(&nand_flash[emi_bank]);
++}
++
++#endif
++
++/* Early resources (sysconf and PIO) --------------------------------------- */
++
++static struct platform_device sysconf_device = {
++	.name		= "sysconf",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfe001000,
++			.end	= 0xfe001000 + 0x1df,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++	.dev = {
++		.platform_data = &(struct plat_sysconf_data) {
++			.sys_device_offset = 0,
++			.sys_sta_offset = 8,
++			.sys_cfg_offset = 0x100,
++		}
++	}
++};
++
++static struct platform_device stpio_devices[] = {
++	STPIO_DEVICE(0, 0xfd020000, evt2irq(0xc00)),
++	STPIO_DEVICE(1, 0xfd021000, evt2irq(0xc80)),
++	STPIO_DEVICE(2, 0xfd022000, evt2irq(0xd00)),
++	STPIO_DEVICE(3, 0xfd023000, evt2irq(0x1060)),
++	STPIO_DEVICE(4, 0xfd024000, evt2irq(0x1040)),
++	STPIO_DEVICE(5, 0xfd025000, evt2irq(0x1020)),
++	STPIO_DEVICE(6, 0xfd026000, evt2irq(0x1000)),
++
++	STPIO_DEVICE(7, 0xfe010000, -1),
++	STPIO_DEVICE(8, 0xfe011000, -1),
++	STPIO_DEVICE(9, 0xfe012000, -1),
++	STPIO_DEVICE(10, 0xfe013000, -1),
++	STPIO_DEVICE(11, 0xfe014000, -1),
++	STPIO_DEVICE(12, 0xfe015000, -1),
++	STPIO_DEVICE(13, 0xfe016000, -1),
++	STPIO_DEVICE(14, 0xfe017000, -1),
++	STPIO_DEVICE(15, 0xfe018000, -1),
++	STPIO_DEVICE(16, 0xfe019000, -1),
++};
++
++/* Standalone PIO at fe01 - fe01ffff */
++/* Int evt2irq(0xb40)) */
++
++/* Initialise devices which are required early in the boot process. */
++void __init stx7105_early_device_init(void)
++{
++	struct sysconf_field *sc;
++	unsigned long devid;
++	unsigned long chip_revision;
++
++	/* Initialise PIO and sysconf drivers */
++
++	sysconf_early_init(&sysconf_device);
++	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
++			 /* should be: ILC_FIRST_IRQ+ILC_NR_IRQS */
++			 176);
++
++	sc = sysconf_claim(SYS_DEV, 0, 0, 31, "devid");
++	devid = sysconf_read(sc);
++	chip_revision = (devid >> 28) +1;
++	boot_cpu_data.cut_major = chip_revision;
++
++	printk("STx7105 version %ld.x\n", chip_revision);
++
++	/* We haven't configured the LPC, so the sleep instruction may
++	 * do bad things. Thus we disable it here. */
++	disable_hlt();
++}
++
++static void __init pio_late_setup(void)
++{
++	int i;
++	struct platform_device *pdev = stpio_devices;
++
++	for (i=0; i<ARRAY_SIZE(stpio_devices); i++,pdev++) {
++		platform_device_register(pdev);
++	}
++}
++
++static struct platform_device ilc3_device = {
++	.name		= "ilc3",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd000000,
++			.end	= 0xfd000000 + 0x900,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++};
++
++/* Late resources ---------------------------------------------------------- */
++
++static int __init stx7105_subsys_setup(void)
++{
++	/* we need to do PIO setup before module init, because some
++	 * drivers (eg gpio-keys) require that the interrupts
++	 * are available. */
++	pio_late_setup();
++	return 0;
++}
++subsys_initcall(stx7105_subsys_setup);
++
++static struct platform_device *stx7105_devices[] __initdata = {
++	//&fdma0_device,
++	//&fdma1_device,
++	//&fdma_xbar_device,
++	&sysconf_device,
++	&ilc3_device,
++};
++
++static int __init stx7105_devices_setup(void)
++{
++	return platform_add_devices(stx7105_devices,
++				    ARRAY_SIZE(stx7105_devices));
++}
++device_initcall(stx7105_devices_setup);
++
++/* Interrupt initialisation ------------------------------------------------ */
++
++enum {
++	UNUSED = 0,
++
++	/* interrupt sources */
++	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
++	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
++	WDT,
++	HUDI,
++
++	PCI_DEV0, PCI_DEV1, PCI_DEV2, PCI_DEV3,		/* Group 0 */
++	I2S2SPDIF1, I2S2SPDIF2, I2S2SPDIF3,
++	AUX_VDP_END_PROC, AUX_VDP_FIFO_EMPTY,
++	COMPO_CAP_BF, COMPO_CAP_TF,
++	STANDALONE_PIO,
++	PIO0, PIO1, PIO2,
++	PIO6, PIO5, PIO4, PIO3,				/* Group 1 */
++	SSC3, SSC2, SSC1, SSC0,				/* Group 2 */
++	UART3, UART2, UART1, UART0,			/* Group 3 */
++	IRB_WAKEUP, IRB, PWM, MAFE,			/* Group 4 */
++	PCI_ERROR, FE900, DAA, TTXT,			/* Group 5 */
++	EMPI_PCI_DMA, GMAC, TS_MERGER,			/* Group 6 */
++	LX_DELTAMU, LX_AUD, DCXO, PMT,			/* Group 7 */
++	FDMA0, FDMA1, I2S2SPDIF, HDMI_CEC,		/* Group 8 */
++	PCMPLYR0, PCMPLYR1, PCMRDR, SPDIFPLYR,		/* Group 9 */
++	DELPHI_PRE0, NAND, DELPHI_MBE,			/* Group 10 */
++	MAIN_VDP_FIFO_EMPTY, MAIN_VDP_END_PROCESSING,	/* Group 11 */
++	MAIN_VTG, AUX_VTG,
++	BDISP_AQ, DVP, HDMI, HDCP,			/* Group 12 */
++	PTI,						/* Group 13 */
++	OHCI, EHCI, BDISP_CQ,				/* Group 15 */
++	KEY_SCANNER,					/* Group 16 */
++
++	/* interrupt groups */
++	TMU2, RTC,
++	GROUP0_1, GROUP0_2, GROUP1, GROUP2, GROUP3,
++	GROUP4, GROUP5, GROUP6, GROUP7,
++	GROUP8, GROUP9, GROUP10, GROUP11,
++	GROUP12, GROUP13, GROUP14, GROUP15,
++	GROUP16
++};
++
++static struct intc_vect vectors[] = {
++	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
++	INTC_VECT(WDT, 0x560),
++	INTC_VECT(HUDI, 0x600),
++
++	INTC_VECT(PCI_DEV0, 0xa00), INTC_VECT(PCI_DEV1, 0xa20),
++	INTC_VECT(PCI_DEV2, 0xa40), INTC_VECT(PCI_DEV3, 0xa60),
++	INTC_VECT(I2S2SPDIF1, 0xa80), INTC_VECT(I2S2SPDIF2, 0xb00),
++	INTC_VECT(I2S2SPDIF3, 0xb20),
++	INTC_VECT(AUX_VDP_END_PROC, 0xb40), INTC_VECT(AUX_VDP_FIFO_EMPTY, 0xb60),
++	INTC_VECT(COMPO_CAP_BF, 0xb80), INTC_VECT(COMPO_CAP_TF, 0xba0),
++	INTC_VECT(STANDALONE_PIO, 0xbc0),
++	INTC_VECT(PIO0, 0xc00), INTC_VECT(PIO1, 0xc80),
++	INTC_VECT(PIO2, 0xd00),
++	INTC_VECT(PIO6, 0x1000), INTC_VECT(PIO5, 0x1020),
++	INTC_VECT(PIO4, 0x1040), INTC_VECT(PIO3, 0x1060),
++	INTC_VECT(SSC3, 0x1080), INTC_VECT(SSC2, 0x10a0),
++	INTC_VECT(SSC1, 0x10c0), INTC_VECT(SSC0, 0x10e0),
++	INTC_VECT(UART3, 0x1100), INTC_VECT(UART2, 0x1120),
++	INTC_VECT(UART1, 0x1140), INTC_VECT(UART0, 0x1160),
++	INTC_VECT(IRB_WAKEUP, 0x1180), INTC_VECT(IRB, 0x11a0),
++	INTC_VECT(PWM, 0x11c0), INTC_VECT(MAFE, 0x11e0),
++	INTC_VECT(PCI_ERROR, 0x1200), INTC_VECT(FE900, 0x1220),
++	INTC_VECT(DAA, 0x1240), INTC_VECT(TTXT, 0x1260),
++	INTC_VECT(EMPI_PCI_DMA, 0x1280), INTC_VECT(GMAC, 0x12a0),
++	INTC_VECT(TS_MERGER, 0x12c0),
++	INTC_VECT(LX_DELTAMU, 0x1300), INTC_VECT(LX_AUD, 0x1320),
++	INTC_VECT(DCXO, 0x1340), INTC_VECT(PMT, 0x1360),
++	INTC_VECT(FDMA0, 0x1380), INTC_VECT(FDMA1, 0x13a0),
++	INTC_VECT(I2S2SPDIF, 0x13c0), INTC_VECT(HDMI_CEC, 0x13e0),
++	INTC_VECT(PCMPLYR0, 0x1400), INTC_VECT(PCMPLYR1, 0x1420),
++	INTC_VECT(PCMRDR, 0x1440), INTC_VECT(SPDIFPLYR, 0x1460),
++	INTC_VECT(DELPHI_PRE0, 0x14a0), INTC_VECT(NAND, 0x14c0),
++	INTC_VECT(DELPHI_MBE, 0x14e0),
++	INTC_VECT(MAIN_VDP_FIFO_EMPTY, 0x1500), INTC_VECT(MAIN_VDP_END_PROCESSING, 0x1520),
++	INTC_VECT(MAIN_VTG, 0x1540), INTC_VECT(AUX_VTG, 0x1560),
++	INTC_VECT(BDISP_AQ, 0x1580), INTC_VECT(DVP, 0x15a0),
++	INTC_VECT(HDMI, 0x15c0), INTC_VECT(HDCP, 0x15e0),
++	INTC_VECT(PTI, 0x1600),
++	INTC_VECT(OHCI, 0x1700), INTC_VECT(EHCI, 0x1720),
++	INTC_VECT(BDISP_CQ, 0x1760),
++	INTC_VECT(KEY_SCANNER, 0x17c0),
++};
++
++static struct intc_group groups[] = {
++	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
++
++	/* PCI_DEV0 is not grouped */
++	INTC_GROUP(GROUP0_1, PCI_DEV1, PCI_DEV2, PCI_DEV3,
++		   I2S2SPDIF1),
++	INTC_GROUP(GROUP0_2, I2S2SPDIF2, I2S2SPDIF3,
++		   AUX_VDP_END_PROC, AUX_VDP_FIFO_EMPTY,
++		   COMPO_CAP_BF, COMPO_CAP_TF, STANDALONE_PIO),
++	/* PIO0, PIO1, PIO2 are not part of any group */
++	INTC_GROUP(GROUP1, PIO6, PIO5, PIO4, PIO3),
++	INTC_GROUP(GROUP2, SSC3, SSC2, SSC1, SSC0),
++	INTC_GROUP(GROUP3, UART3, UART2, UART1, UART0),
++	INTC_GROUP(GROUP4, IRB_WAKEUP, IRB, PWM, MAFE),
++	INTC_GROUP(GROUP5, PCI_ERROR, FE900, DAA, TTXT),
++	INTC_GROUP(GROUP6, EMPI_PCI_DMA, GMAC, TS_MERGER),
++	INTC_GROUP(GROUP7, LX_DELTAMU, LX_AUD, DCXO, PMT),
++	INTC_GROUP(GROUP8, FDMA0, FDMA1, I2S2SPDIF, HDMI_CEC),
++	INTC_GROUP(GROUP9, PCMPLYR0, PCMPLYR1, PCMRDR, SPDIFPLYR),
++	INTC_GROUP(GROUP10, DELPHI_PRE0, NAND, DELPHI_MBE),
++	INTC_GROUP(GROUP11, MAIN_VDP_FIFO_EMPTY, MAIN_VDP_END_PROCESSING,
++		   MAIN_VTG, AUX_VTG),
++	INTC_GROUP(GROUP12, BDISP_AQ, DVP, HDMI, HDCP),
++	INTC_GROUP(GROUP13, PTI),
++	INTC_GROUP(GROUP15, OHCI, EHCI, BDISP_CQ),
++	INTC_GROUP(GROUP16, KEY_SCANNER),
++};
++
++static struct intc_prio priorities[] = {
++};
++
++static struct intc_prio_reg prio_registers[] = {
++					   /*   15-12, 11-8,  7-4,   3-0 */
++	{ 0xffd00004, 0, 16, 4, /* IPRA */     { TMU0, TMU1, TMU2,       } },
++	{ 0xffd00008, 0, 16, 4, /* IPRB */     {  WDT,    0,    0,     0 } },
++	{ 0xffd0000c, 0, 16, 4, /* IPRC */     {    0,    0,    0,  HUDI } },
++	{ 0xffd00010, 0, 16, 4, /* IPRD */     { IRL0, IRL1,  IRL2, IRL3 } },
++						/* 31-28,   27-24,   23-20,   19-16 */
++						/* 15-12,    11-8,     7-4,     3-0 */
++	{ 0x00000300, 0, 32, 4, /* INTPRI00 */ {       0,       0,    PIO2,    PIO1,
++						    PIO0, GROUP0_2, GROUP0_1, PCI_DEV0 } },
++	{ 0x00000304, 0, 32, 4, /* INTPRI04 */ {  GROUP8,  GROUP7,  GROUP6,  GROUP5,
++						  GROUP4,  GROUP3,  GROUP2,  GROUP1 } },
++	{ 0x00000308, 0, 32, 4, /* INTPRI08 */ { GROUP16, GROUP15, GROUP14, GROUP13,
++						 GROUP12, GROUP11, GROUP10,  GROUP9 } },
++};
++
++static struct intc_mask_reg mask_registers[] = {
++	{ 0x00000340, 0x00000360, 32, /* INTMSK00 / INTMSKCLR00 */
++	  { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	/* 31..16 */
++	    0, PIO2, PIO1, PIO0,				/* 15..12 */
++	    STANDALONE_PIO, COMPO_CAP_TF, COMPO_CAP_BF,	AUX_VDP_FIFO_EMPTY, /* 11...8 */
++	    AUX_VDP_END_PROC, I2S2SPDIF3, I2S2SPDIF2, I2S2SPDIF1, /*  7...4 */
++	    PCI_DEV3, PCI_DEV2, PCI_DEV1, PCI_DEV0 } },		/*  3...0 */
++	{ 0x00000344, 0x00000364, 32, /* INTMSK04 / INTMSKCLR04 */
++	  { HDMI_CEC, I2S2SPDIF, FDMA1, FDMA0,			/* 31..28 */
++	    PMT, DCXO, LX_AUD, LX_DELTAMU,			/* 27..24 */
++	    0, TS_MERGER, GMAC, EMPI_PCI_DMA,			/* 23..20 */
++	    TTXT, DAA, FE900, PCI_ERROR,			/* 19..16 */
++	    MAFE, PWM, IRB, IRB_WAKEUP,				/* 15..12 */
++	    UART0, UART1, UART2, UART3,				/* 11...8 */
++	    SSC0, SSC1, SSC2, SSC3,				/*  7...4 */
++	    PIO3, PIO4, PIO5, PIO6 } },				/*  3...0 */
++	{ 0x00000348, 0x00000368, 32, /* INTMSK08 / INTMSKCLR08 */
++	  { 0, KEY_SCANNER, 0, 0,				/* 31..28 */
++	    BDISP_CQ, 0, EHCI, OHCI,				/* 27..24 */
++	    0, 0, 0, 0,						/* 23..20 */
++	    0, 0, 0, PTI,					/* 19..16 */
++	    HDCP, HDMI, DVP, BDISP_AQ,				/* 15..12 */
++	    AUX_VTG, MAIN_VTG, MAIN_VDP_END_PROCESSING, MAIN_VDP_FIFO_EMPTY, /* 11...8 */
++	    DELPHI_MBE, NAND, DELPHI_PRE0, 0,			/*  7...4 */
++	    SPDIFPLYR, PCMRDR, PCMPLYR1, PCMPLYR0 } }		/*  3...0 */
++};
++
++static DECLARE_INTC_DESC(intc_desc, "stx7105", vectors, groups,
++			 priorities, mask_registers, prio_registers, NULL);
++
++void __init plat_irq_setup(void)
++{
++	struct sysconf_field *sc;
++	unsigned long intc2_base = (unsigned long)ioremap(0xfe001000, 0x400);
++	int i;
++
++	ilc_early_init(&ilc3_device);
++
++	for (i=4; i<=6; i++)
++		prio_registers[i].set_reg += intc2_base;
++	for (i=0; i<=2; i++) {
++		mask_registers[i].set_reg += intc2_base;
++		mask_registers[i].clr_reg += intc2_base;
++	}
++
++	/* Configure the external interrupt pins as inputs */
++	sc = sysconf_claim(SYS_CFG, 10, 0, 3, "irq");
++	sysconf_write(sc, 0xf);
++
++	register_intc_controller(&intc_desc);
++
++	for (i = 0; i < 16; i++) {
++		set_irq_chip(i, &dummy_irq_chip);
++		set_irq_chained_handler(i, ilc_irq_demux);
++	}
++
++	ilc_demux_init();
++}
+Index: linux-2.6.23-stm/arch/sh/kernel/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/setup.c
++++ linux-2.6.23-stm/arch/sh/kernel/setup.c
+@@ -324,7 +324,8 @@ static const char *cpu_name[] = {
+ 	[CPU_SH7751]	= "SH7751",	[CPU_SH7751R]	= "SH7751R",
+ 	[CPU_SH7760]	= "SH7760",
+ 	[CPU_ST40RA]	= "ST40RA",	[CPU_ST40GX1]	= "ST40GX1",
+-	[CPU_STB7100]	= "STb7100",	[CPU_STB7109]	= "STb7109",
++	[CPU_STB7100]	= "STb7100",	[CPU_STX7105]	= "STx7105",
++	[CPU_STB7109]	= "STb7109",
+ 	[CPU_STX7200]	= "STx7200",    [CPU_ST40_300]	= "ST40-300",
+ 	[CPU_SH4_202]	= "SH4-202",	[CPU_SH4_501]	= "SH4-501",
+ 	[CPU_SH7770]	= "SH7770",	[CPU_SH7780]	= "SH7780",
+Index: linux-2.6.23-stm/arch/sh/mm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/mm/Kconfig
++++ linux-2.6.23-stm/arch/sh/mm/Kconfig
+@@ -176,6 +176,13 @@ config CPU_SUBTYPE_STB7100
+ 	help
+ 	  Select STB7100 if you have an STb7100 or STb7109 CPU.
+ 
++config CPU_SUBTYPE_STX7105
++	bool "Support STx7105 processors"
++	select CPU_SUBTYPE_ST40
++	select SUPPORTS_32BIT
++	help
++	  Select STX7105 if you have an STx7105 CPU.
++
+ config CPU_SUBTYPE_STX7111
+ 	bool "Support STx7111 processors"
+ 	select CPU_SUBTYPE_ST40
+Index: linux-2.6.23-stm/drivers/net/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/Kconfig
++++ linux-2.6.23-stm/drivers/net/Kconfig
+@@ -2499,7 +2499,7 @@ config STMMAC_ETH
+ 	tristate "STMicroelectronics 10/100/1000 Ethernet driver"
+ 	select MII
+ 	select PHYLIB
+-	depends on NETDEVICES && (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7200)
++	depends on NETDEVICES && (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7105 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7200)
+ 	---help---
+ 	  This is the driver for the MAC 10/100/1000 on-chip Ethernet 
+ 	  controller (Synopsys Core).
+Index: linux-2.6.23-stm/drivers/net/smsc_911x/st40.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/smsc_911x/st40.c
++++ linux-2.6.23-stm/drivers/net/smsc_911x/st40.c
+@@ -87,6 +87,25 @@
+ #define PLATFORM_CSBASE		(0x02800000UL)
+ #define PLATFORM_IRQ		ILC_EXT_IRQ(1)
+ #endif
++#elif defined(CONFIG_SH_ST_MB680)
++/* db641 STEM card plugged into mb680 */
++#include <asm/irq-ilc.h>
++#include <linux/stm/emi.h>
++#ifdef DB641_USE_PORT0
++/* STEM CS0 = BANK2 */
++/* Need to set J14A to 1-2 (notStemCS(0) <= notEMICSC) and
++ * J4 to 1-2 and fit J2A (notStemIntr(0) <= SysIRQ2) if mb680 used
++ * standalone. */
++#define PLATFORM_CSBASE		emi_bank_base(2)
++#define PLATFORM_IRQ		ILC_EXT_IRQ(2)
++#else
++/* STEM CS1 = BANK3 */
++/* Need to set J14B to 1-2 (notStemCS(1) <= notEMICSD) and
++ * fit J2B (notStemIntr(1) <= SysIRQ1) if mb680 used
++ * standalone. */
++#define PLATFORM_CSBASE		emi_bank_base(3)
++#define PLATFORM_IRQ		ILC_EXT_IRQ(1)
++#endif
+ #elif defined(CONFIG_SH_HMS1)
+ /* SD HMS1 with in-built SMSC 911x */
+ #undef PLATFORM_IRQ_POL
+Index: linux-2.6.23-stm/drivers/stm/emi.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/emi.c
++++ linux-2.6.23-stm/drivers/stm/emi.c
+@@ -44,6 +44,13 @@ unsigned long __init emi_bank_base(int b
+ 	return emi_memory_base + (reg << 22);
+ }
+ 
++void __init emi_bank_configure(int bank, unsigned long data[4])
++{
++	int i;
++	for (i=0; i<4; i++)
++		writel(data[i], emi_control+BANK_EMICONFIGDATA(bank,i));
++}
++
+ /*
+                ______________________________
+ FMIADDR    ___/                              \________
+Index: linux-2.6.23-stm/drivers/stm/sysconf.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/sysconf.c
++++ linux-2.6.23-stm/drivers/stm/sysconf.c
+@@ -18,14 +18,17 @@
+ struct sysconf_field {
+ 	u16 offset;
+ 	u8 lsb, msb;
++	char* dev;
++	struct list_head list;
+ };
+ 
+ static void __iomem *sysconf_base;
+ static int sysconf_offsets[3];
+ static DEFINE_SPINLOCK(sysconf_lock);
++static LIST_HEAD(sysconf_fields);
+ 
+ /* We need a small stash of allocations before kmalloc becomes available */
+-#define NUM_EARLY_FIELDS 10
++#define NUM_EARLY_FIELDS 50
+ static struct sysconf_field early_fields[NUM_EARLY_FIELDS];
+ static int next_early_field = 0;
+ 
+@@ -40,18 +43,47 @@ static struct sysconf_field* field_alloc
+ struct sysconf_field* sysconf_claim(int regtype, int regnum, int lsb, int msb,
+ 				    const char *dev)
+ {
+-	struct sysconf_field *field;
++	struct sysconf_field *field, *new_field;
++	int offset = sysconf_offsets[regtype] + (regnum * 4);
++
++
++#if 0
++	spin_lock(&sysconf_lock);
++
++	list_for_each(field, sysconf_fields) {
++		if (field->offset < offset)
++			continue;
++		if (field->offset > offset)
++			break;
++		if (field->lsb > msb)
++			continue;
++		if (field->msb < lsb)
++			break;
++
++	}
++
++	/* Insert before field */
++	list_add_tail(new_field, field);
++#endif
++
+ 
+ 	field = field_alloc();
+ 	if (!field)
+ 		return NULL;
+ 
+-	field->offset = sysconf_offsets[regtype] + (regnum * 4);
++	field->offset = offset;
+ 	field->lsb = lsb;
+ 	field->msb = msb;
+ 
+ 	return field;
+ }
++EXPORT_SYMBOL(sysconf_claim);
++
++void sysconf_release(struct sysconf_field *field)
++{
++
++}
++EXPORT_SYMBOL(sysconf_release);
+ 
+ void sysconf_write(struct sysconf_field *field, u64 value)
+ {
+@@ -77,6 +109,7 @@ void sysconf_write(struct sysconf_field 
+ 		spin_unlock(&sysconf_lock);
+ 	}
+ }
++EXPORT_SYMBOL(sysconf_write);
+ 
+ u64 sysconf_read(struct sysconf_field *field)
+ {
+@@ -95,6 +128,7 @@ u64 sysconf_read(struct sysconf_field *f
+ 
+ 	return (u64)tmp;
+ }
++EXPORT_SYMBOL(sysconf_read);
+ 
+ /* This is called early to allow board start up code to use sysconf
+  * registers (in particular console devices). */
+Index: linux-2.6.23-stm/drivers/usb/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/Kconfig
++++ linux-2.6.23-stm/drivers/usb/Kconfig
+@@ -43,6 +43,7 @@ config USB_ARCH_HAS_OHCI
+ 	default y if SOC_AU1X00
+ 	# SH
+ 	default y if CPU_SUBTYPE_STB7100
++	default y if CPU_SUBTYPE_STX7105
+ 	default y if CPU_SUBTYPE_STX7111
+ 	default y if CPU_SUBTYPE_STX7200
+ 	# more:
+@@ -54,6 +55,7 @@ config USB_ARCH_HAS_EHCI
+ 	default y if PPC_83xx
+ 	default y if SOC_AU1200
+ 	default y if CPU_SUBTYPE_STB7100
++	default y if CPU_SUBTYPE_STX7105
+ 	default y if CPU_SUBTYPE_STX7111
+ 	default y if CPU_SUBTYPE_STX7200
+ 	default PCI
+Index: linux-2.6.23-stm/drivers/usb/host/ehci-hcd.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/ehci-hcd.c
++++ linux-2.6.23-stm/drivers/usb/host/ehci-hcd.c
+@@ -951,6 +951,7 @@ MODULE_LICENSE ("GPL");
+ #endif
+ 
+ #if defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++    defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+     defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+     defined(CONFIG_CPU_SUBTYPE_STX7200)
+ #include "ehci-stcore.c"
+Index: linux-2.6.23-stm/drivers/usb/host/ohci-hcd.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/ohci-hcd.c
++++ linux-2.6.23-stm/drivers/usb/host/ohci-hcd.c
+@@ -916,6 +916,7 @@ MODULE_LICENSE ("GPL");
+ #endif
+ 
+ #if defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ #include "ohci-stcore.c"
+Index: linux-2.6.23-stm/drivers/usb/host/stb7100-common.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/stb7100-common.c
++++ linux-2.6.23-stm/drivers/usb/host/stb7100-common.c
+@@ -68,6 +68,22 @@ int ST40_start_host_control(struct platf
+ 	if (!protocol_base)
+ 		goto err4;
+ 
++
++#if	defined(CONFIG_CPU_SUBTYPE_STX7105)
++	req_reg =
++		(1<<21) |  /* Turn on read-ahead */
++		(5<<16) |  /* Opcode is store/load 32 */
++		(0<<15) |  /* Turn off write posting */
++		(1<<14) |  /* Enable threshold */
++		(3<<9)  |  /* 2**3 Packets in a chunk */
++		(0<<4)  |  /* No messages */
++		7;         /* Threshold is 128 */
++
++	do {
++		writel(req_reg, protocol_base + AHB2STBUS_STBUS_CONFIG);
++		reg = readl(protocol_base + AHB2STBUS_STBUS_CONFIG);
++	} while ((reg & 0x7FFFFFFF) != req_reg);
++#else
+ 	/* Set strap mode */
+ 	reg = readl(wrapper_base + AHB2STBUS_STRAP_OFFSET);
+ 	reg &= ~AHB2STBUS_STRAP_16_BIT;
+@@ -97,7 +113,7 @@ int ST40_start_host_control(struct platf
+ 	writel(CHUNKSIZE,
+ 	       protocol_base + AHB2STBUS_CHUNKSIZE_OFFSET);
+ 
+-#elif defined(CONFIG_CPU_SUBTYPE_STX7111)
++#elif	defined(CONFIG_CPU_SUBTYPE_STX7111)
+ 
+ 	req_reg =
+ 		(1<<21) |  /* Turn on read-ahead */
+@@ -113,6 +129,9 @@ int ST40_start_host_control(struct platf
+ 		reg = readl(protocol_base + AHB2STBUS_STBUS_CONFIG);
+ 	} while ((reg & 0x7FFFFFFF) != req_reg);
+ 
++#else
++#error Unknown CPU
++#endif
+ #endif
+ 
+ 	if (usb_wrapper->power_up)
+Index: linux-2.6.23-stm/drivers/usb/host/stb7100-common.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/stb7100-common.h
++++ linux-2.6.23-stm/drivers/usb/host/stb7100-common.h
+@@ -49,11 +49,14 @@
+ #define AHB2STBUS_PC_STATUS		(AHB2STBUS_PROTOCOL_BASE + 0x10)
+ #define AHB2STBUS_PC_STATUS_IDLE	1
+ 
+-#elif defined(CONFIG_CPU_SUBTYPE_STX7111)
++#elif	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7111)
+ 
+ /* No documentation for this */
+ #define AHB2STBUS_STBUS_CONFIG		0x04	/* From AHB2STBUS_PROTOCOL_BASE */
+ 
++#else
++#error Unknown CPU
+ #endif
+ 
+ /* This register implements interrupt status for the OHCI controller */
+Index: linux-2.6.23-stm/include/asm-sh/irq-ilc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/asm-sh/irq-ilc.h
++++ linux-2.6.23-stm/include/asm-sh/irq-ilc.h
+@@ -1,4 +1,10 @@
+-#if defined(CONFIG_CPU_SUBTYPE_STX7111)
++#if defined(CONFIG_CPU_SUBTYPE_STX7105)
++#define ILC_FIRST_IRQ	176
++#define ILC_NR_IRQS	(64+16)
++#define ILC_INT_IRQ(x)	(ILC_FIRST_IRQ + (x))
++#define ILC_EXT_IRQ(x)	(ILC_FIRST_IRQ + 64 + (x))
++#define ILC_IRQ(x)	ILC_INT_IRQ(x)
++#elif	defined(CONFIG_CPU_SUBTYPE_STX7111)
+ /* In an attempt to stick within NR_IRQS (256), and not complicate the
+  * mapping between ILC interrupt number and Linux IRQ number, we cap
+  * the number of external interrupts at 16. This will probably
+Index: linux-2.6.23-stm/include/asm-sh/processor.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/asm-sh/processor.h
++++ linux-2.6.23-stm/include/asm-sh/processor.h
+@@ -51,7 +51,7 @@ enum cpu_type {
+ 	/* SH-4 types */
+ 	CPU_SH7750, CPU_SH7750S, CPU_SH7750R, CPU_SH7751, CPU_SH7751R,
+ 	CPU_SH7760, CPU_ST40RA, CPU_ST40GX1, CPU_STI5528, CPU_STM8000,
+-	CPU_STB7100, CPU_STB7109, CPU_STX7200, CPU_ST40_300,
++	CPU_STB7100, CPU_STX7105, CPU_STB7109, CPU_STX7200, CPU_ST40_300,
+ 	CPU_SH4_202, CPU_SH4_501,
+ 
+ 	/* SH-4A types */
+Index: linux-2.6.23-stm/include/linux/stm/emi.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/emi.h
++++ linux-2.6.23-stm/include/linux/stm/emi.h
+@@ -20,5 +20,7 @@ struct emi_timing_data {
+ 
+ int emi_init(unsigned long memory_base, unsigned long control_base);
+ unsigned long emi_bank_base(int bank);
++void emi_bank_configure(int bank, unsigned long data[4]);
++
+ void emi_config_pata(int bank);
+ void emi_config_nand(int bank, struct emi_timing_data *timing_data);
+Index: linux-2.6.23-stm/include/linux/stm/soc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc.h
++++ linux-2.6.23-stm/include/linux/stm/soc.h
+@@ -3,8 +3,10 @@
+ 
+ /* This is the private platform data for the ssc driver */
+ struct ssc_pio_t {
+-	unsigned char pio_port;
+-	unsigned char pio_pin[3];
++	struct {
++		unsigned char pio_port;
++		unsigned char pio_pin;
++	} pio[3]; /* clk, in, out */
+ 	struct stpio_pin* clk;
+ 	struct stpio_pin* sdout;
+ 	struct stpio_pin* sdin;
+@@ -33,8 +35,39 @@ struct ssc_pio_t {
+ 
+ struct plat_ssc_data {
+ 	unsigned short		capability;	/* bitmask on the ssc capability */
++	unsigned long		routing;
+ };
+ 
++#define SSC_SCLK_SHIFT(n)	(0+(n*6))
++#define SSC_MTSR_SHIFT(n)	(2+(n*6))
++#define SSC_MRST_SHIFT(n)	(4+(n*6))
++
++#define SSC2_SCLK_PIO3_4	(0 << SSC_SCLK_SHIFT(2))
++#define SSC2_SCLK_PIO12_0	(2 << SSC_SCLK_SHIFT(2))
++#define SSC2_SCLK_PIO13_4	(3 << SSC_SCLK_SHIFT(2))
++
++#define SSC2_MTSR_PIO3_5	(0 << SSC_MTSR_SHIFT(2))
++#define SSC2_MTSR_PIO12_1	(1 << SSC_MTSR_SHIFT(2))
++#define SSC2_MTSR_PIO13_5	(2 << SSC_MTSR_SHIFT(2))
++
++#define SSC2_MRST_PIO2_0	(0 << SSC_MRST_SHIFT(2))
++#define SSC2_MRST_PIO3_5	(1 << SSC_MRST_SHIFT(2))
++#define SSC2_MRST_PIO12_1	(2 << SSC_MRST_SHIFT(2))
++#define SSC2_MRST_PIO13_5	(3 << SSC_MRST_SHIFT(2))
++
++#define SSC3_SCLK_PIO3_6	(0 << SSC_SCLK_SHIFT(3))
++#define SSC3_SCLK_PIO13_2	(1 << SSC_SCLK_SHIFT(3))
++#define SSC3_SCLK_PIO13_6	(2 << SSC_SCLK_SHIFT(3))
++
++#define SSC3_MTSR_PIO3_7	(0 << SSC_MTSR_SHIFT(3))
++#define SSC3_MTSR_PIO13_3	(1 << SSC_MTSR_SHIFT(3))
++#define SSC3_MTSR_PIO13_7	(2 << SSC_MTSR_SHIFT(3))
++
++#define SSC3_MRST_PIO2_1	(0 << SSC_MRST_SHIFT(3))
++#define SSC3_MRST_PIO3_7	(1 << SSC_MRST_SHIFT(3))
++#define SSC3_MRST_PIO13_3	(2 << SSC_MRST_SHIFT(3))
++#define SSC3_MRST_PIO13_7	(3 << SSC_MRST_SHIFT(3))
++
+ #define SPI_LINE_SHIFT		0x0
+ #define SPI_LINE_MASK		0x7
+ #define SPI_BANK_SHIFT		0x3
+@@ -173,6 +206,17 @@ void stx7100_configure_ethernet(int rmii
+ void stx7100_configure_lirc(void);
+ void stx7100_configure_pata(int bank, int irq);
+ 
++void stx7105_early_device_init(void);
++void stx7105_configure_asc(const int *ascs, int num_ascs, int console);
++void stx7105_configure_pwm(struct plat_stm_pwm_data *data);
++void stx7105_configure_ssc(struct plat_ssc_data *data);
++void stx7105_configure_usb(int port, int oc_en, int oc_actlow, int oc_pinsel,
++			   int pwr_en, int pwr_pinsel);
++void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
++				int ext_mdio, int ext_clk, int phy_bus);
++void stx7105_configure_nand(struct nand_config_data *data);
++void stx7105_configure_lirc(void);
++
+ void stx7111_early_device_init(void);
+ void stx7111_configure_asc(const int *ascs, int num_ascs, int console);
+ void stx7111_configure_pwm(struct plat_stm_pwm_data *data);
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb618/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb618/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb618/setup.c
+@@ -29,6 +29,8 @@
+ 
+ /* Whether the hardware supports NOR or NAND Flash depends on J34.
+  * In position 1-2 CSA selects NAND, in position 2-3 is selects NOR.
++ * Note that J30A must be in position 2-3 to select the on board Flash
++ * (both NOR and NAND).
+  */
+ #define FLASH_NOR
+ 
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -81,7 +81,8 @@ void ilc_irq_demux(unsigned int irq, str
+ {
+ #if	defined(CONFIG_CPU_SUBTYPE_STX7111)
+ 	const unsigned int priority = 7;
+-#elif	defined(CONFIG_CPU_SUBTYPE_STX7200)
++#elif	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	unsigned int priority = 14 - irq;
+ #endif
+ 	unsigned int irq_offset;
+@@ -138,7 +139,8 @@ static unsigned int startup_ilc_irq(unsi
+ 	/* ILC_EXT_OUT[6] -> IRL[2] (default priority  7 = irq  8) */
+ 	/* ILC_EXT_OUT[7] -> IRL[3] (default priority  4 = irq 11) */
+ 	ILC_SET_PRI(irq_offset, 0x8007);
+-#elif	defined(CONFIG_CPU_SUBTYPE_STX7200)
++#elif	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	ILC_SET_PRI(irq_offset, priority);
+ #endif
+ 
+@@ -150,6 +152,11 @@ static unsigned int startup_ilc_irq(unsi
+ 	if ((irq_offset == 93)  ||  (irq_offset == 95)) {
+ 		ILC_SET_TRIGMODE(irq_offset, ILC_TRIGGERMODE_LOW);
+ 	}
++#elif defined(CONFIG_CPU_SUBTYPE_STX7105)
++	/* Similarly for STEM interrupts which are active low */
++	if ((irq == ILC_EXT_IRQ(2)) || (irq == ILC_EXT_IRQ(3))) {
++		ILC_SET_TRIGMODE(irq_offset, ILC_TRIGGERMODE_LOW);
++	}
+ #endif
+ 
+ 	ILC_SET_ENABLE(irq_offset);
+Index: linux-2.6.23-stm/drivers/net/phy/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/phy/Kconfig
++++ linux-2.6.23-stm/drivers/net/phy/Kconfig
+@@ -70,6 +70,11 @@ config STE10XP
+           Say Y if you want it compiled into the kernel. To compile this
+           driver as a module, choose M here.
+ 
++config NATIONAL_PHY
++	tristate "Drivers for National Semiconductor PHYs"
++	---help---
++	  Currently supports the DP83865 PHY.
++
+ config FIXED_PHY
+ 	tristate "Drivers for PHY emulation on fixed speed/link"
+ 	---help---
+Index: linux-2.6.23-stm/drivers/net/phy/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/phy/Makefile
++++ linux-2.6.23-stm/drivers/net/phy/Makefile
+@@ -13,5 +13,5 @@ obj-$(CONFIG_VITESSE_PHY)	+= vitesse.o
+ obj-$(CONFIG_BROADCOM_PHY)	+= broadcom.o
+ obj-$(CONFIG_ICPLUS_PHY)	+= icplus.o
+ obj-$(CONFIG_STE10XP)		+= ste10Xp.o
+-obj-$(CONFIG_LAN8700)		+= smsc8700.o
++obj-$(CONFIG_NATIONAL_PHY)	+= national.o
+ obj-$(CONFIG_FIXED_PHY)		+= fixed.o
+Index: linux-2.6.23-stm/drivers/net/stmmac/common.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/stmmac/common.h
++++ linux-2.6.23-stm/drivers/net/stmmac/common.h
+@@ -57,6 +57,11 @@
+ /* ****************************
+  *  DMA Status register defines
+  * ****************************/
++#define DMA_STATUS_GPI		0x10000000	/* PMT interrupt */
++#define DMA_STATUS_GMI		0x08000000	/* MMC interrupt */
++#define DMA_STATUS_GLI		0x04000000	/* GMAC Line interface interrupt */
++#define DMA_STATUS_GMI		0x08000000
++#define DMA_STATUS_GLI		0x04000000
+ #define DMA_STATUS_EB_MASK	0x00380000	/* Error Bits Mask */
+ #define DMA_STATUS_EB_TX_ABORT	0x00080000	/* Error Bits - TX Abort */
+ #define DMA_STATUS_EB_RX_ABORT	0x00100000	/* Error Bits - RX Abort */
+@@ -103,6 +108,17 @@
+ #define MAC_ENABLE_TX		0x00000008	/* Transmitter Enable */
+ #define MAC_RNABLE_RX		0x00000004	/* Receiver Enable */
+ 
++/* MAC Management Counters register */
++#define MMC_CONTROL		0x00000100	/* MMC Control */
++#define MMC_HIGH_INTR		0x00000104	/* MMC High Interrupt */
++#define MMC_LOW_INTR		0x00000108	/* MMC Low Interrupt */
++#define MMC_HIGH_INTR_MASK	0x0000010c	/* MMC High Interrupt Mask */
++#define MMC_LOW_INTR_MASK	0x00000110	/* MMC Low Interrupt Mask */
++
++#define MMC_CONTROL_MAX_FRM_MASK	0x0003ff8	/* Maximum Frame Size */
++#define MMC_CONTROL_MAX_FRM_SHIFT	3
++#define MMC_CONTROL_MAX_FRAME		0x7FF
++
+ struct stmmac_extra_stats {
+ 	unsigned long tx_underflow;
+ 	unsigned long tx_carrier;
+Index: linux-2.6.23-stm/drivers/net/stmmac/gmac.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/stmmac/gmac.h
++++ linux-2.6.23-stm/drivers/net/stmmac/gmac.h
+@@ -133,11 +133,6 @@ enum rx_tx_priority_ratio {
+ #define DMA_BUS_PR_RATIO_SHIFT	  14
+ #define DMA_BUS_FB	  	  0x00010000	/* Fixed Burst */
+ 
+-/* DMA Status register defines */
+-#define DMA_STATUS_GPI		0x10000000	/* PMT interrupt */
+-#define DMA_STATUS_GMI		0x08000000	/* MMC interrupt */
+-#define DMA_STATUS_GLI		0x04000000	/* GMAC Line interface interrupt */
+-
+ /* DMA operation mode defines (start/stop tx/rx are placed in common header)*/
+ #define DMA_CONTROL_DT		0x04000000	/* Disable Drop TCP/IP csum error */
+ #define DMA_CONTROL_RSF		0x02000000	/* Receive Store and Forward */
+Index: linux-2.6.23-stm/drivers/net/stmmac/mac100.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/stmmac/mac100.h
++++ linux-2.6.23-stm/drivers/net/stmmac/mac100.h
+@@ -53,17 +53,6 @@
+ #define MAC_MII_ADDR_WRITE	0x00000002	/* MII Write */
+ #define MAC_MII_ADDR_BUSY	0x00000001	/* MII Busy */
+ 
+-/* MAC Management Counters register */
+-#define MMC_CONTROL		0x00000100	/* MMC Control */
+-#define MMC_HIGH_INTR		0x00000104	/* MMC High Interrupt */
+-#define MMC_LOW_INTR		0x00000108	/* MMC Low Interrupt */
+-#define MMC_HIGH_INTR_MASK	0x0000010c	/* MMC High Interrupt Mask */
+-#define MMC_LOW_INTR_MASK	0x00000110	/* MMC Low Interrupt Mask */
+-
+-#define MMC_CONTROL_MAX_FRM_MASK	0x0003ff8	/* Maximum Frame Size */
+-#define MMC_CONTROL_MAX_FRM_SHIFT	3
+-#define MMC_CONTROL_MAX_FRAME		0x7FF
+-
+ /*----------------------------------------------------------------------------
+  * 				DMA BLOCK defines
+  *---------------------------------------------------------------------------*/
+Index: linux-2.6.23-stm/drivers/net/stmmac/stmmac_main.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/stmmac/stmmac_main.c
++++ linux-2.6.23-stm/drivers/net/stmmac/stmmac_main.c
+@@ -295,6 +295,7 @@ static void stmmac_adjust_link(struct ne
+ 				} else {
+ 					ctrl &= ~lp->mac_type->hw.link.port;
+ 				}
++				lp->fix_mac_speed(lp->bsp_priv, phydev->speed);
+ 				break;
+ 			default:
+ 				if (netif_msg_link(lp))
+@@ -1026,6 +1029,13 @@ static void stmmac_dma_interrupt(struct 
+ 			stmmac_tx(dev);
+ 		}
+ 	}
++
++	/* Optional hardware blocks, interrupts should be disabled */
++	if (unlikely(intr_status &
++		    (DMA_STATUS_GPI | DMA_STATUS_GMI | DMA_STATUS_GLI))) {
++		    printk("%s: unexpected status %08x\n", __FUNCTION__, intr_status);
++	}
++
+ 	DBG(intr, INFO, "\n\n");
+ 
+ 	return;
+@@ -1089,6 +1099,10 @@ static int stmmac_enable(struct net_devi
+ 	lp->mac_type->ops->core_init(ioaddr);
+ 	lp->tx_aggregation = 0;
+ 
++	/* Initialise the MMC (if present) to disable all interrupts */
++	writel(0xffffffff, ioaddr+MMC_HIGH_INTR_MASK);
++	writel(0xffffffff, ioaddr+MMC_LOW_INTR_MASK);
++
+ 	/* Enable the MAC Rx/Tx */
+ 	stmmac_mac_enable_rx(dev);
+ 	stmmac_mac_enable_tx(dev);
+Index: linux-2.6.23-stm/drivers/net/stmmac/stmmac_mdio.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/stmmac/stmmac_mdio.c
++++ linux-2.6.23-stm/drivers/net/stmmac/stmmac_mdio.c
+@@ -59,6 +59,7 @@ int stmmac_mdio_read(struct mii_bus *bus
+ 
+ 	/* Read the data from the MII data register */
+ 	data = (int)readl(ioaddr + mii_data);
++
+ 	return data;
+ }
+ 
+Index: linux-2.6.23-stm/drivers/stm/pio.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/pio.c
++++ linux-2.6.23-stm/drivers/stm/pio.c
+@@ -618,6 +618,13 @@ static int stpio_init_port(struct platfo
+ 		struct stpio_pin *pin;
+ 		int i;
+ 
++		irq = pdev->resource[1].start;
++		if (irq == -1)
++			goto no_irq;
++
++		set_irq_chained_handler(irq, stpio_irq_chip_handler);
++		set_irq_data(irq, port);
++
+ 		irq = stpio_irq_base + (portno * STPIO_PINS_IN_PORT);
+ 		for (i = 0; i < STPIO_PINS_IN_PORT; i++) {
+ 			pin = &port->pins[i];
+@@ -630,11 +637,8 @@ static int stpio_init_port(struct platfo
+ 			irq++;
+ 			pin++;
+ 		}
+-
+-		irq = pdev->resource[1].start;
+-		set_irq_chained_handler(irq, stpio_irq_chip_handler);
+-		set_irq_data(irq, port);
+ 	}
++no_irq:
+ 
+ 	return 0;
+ 
+Index: linux-2.6.23-stm/include/linux/stm/pio.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/pio.h
++++ linux-2.6.23-stm/include/linux/stm/pio.h
+@@ -30,7 +30,7 @@
+ #define STPIO_ALT_BIDIR		7	/* Alt bidir open drain (arch defn) */
+ 
+ /* Constant numbers */
+-#define STPIO_MAX_PORTS		8
++#define STPIO_MAX_PORTS		20
+ #define STPIO_PINS_IN_PORT	8
+ 
+ struct stpio_pin;
+Index: linux-2.6.23-stm/drivers/i2c/busses/i2c-stm.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/i2c/busses/i2c-stm.c
++++ linux-2.6.23-stm/drivers/i2c/busses/i2c-stm.c
+@@ -805,14 +805,16 @@ static int __init iic_stm_probe(struct p
+ 		return -ENODEV;
+ 	}
+ 
+-	pio_info->clk = stpio_request_set_pin(pio_info->pio_port,pio_info->pio_pin[0],
++	pio_info->clk = stpio_request_set_pin(pio_info->pio[0].pio_port,
++					  pio_info->pio[0].pio_pin,
+ 				"I2C Clock", STPIO_ALT_BIDIR, 1);
+ 	if(!pio_info->clk){
+ 		printk(KERN_ERR "i2c-stm: %s: Failed to get clk pin allocation\n",__FUNCTION__);
+ 		return -ENODEV;
+ 	}
+ 
+-	pio_info->sdout = stpio_request_set_pin(pio_info->pio_port,pio_info->pio_pin[1],
++	pio_info->sdout = stpio_request_set_pin(pio_info->pio[1].pio_port,
++					    pio_info->pio[1].pio_pin,
+ 				"I2C Data", STPIO_ALT_BIDIR, 1);
+ 	if(!pio_info->sdout){
+ 		printk(KERN_ERR "%s: Faild to sda pin allocation\n",__FUNCTION__);
+Index: linux-2.6.23-stm/drivers/net/phy/national.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/drivers/net/phy/national.c
+@@ -0,0 +1,119 @@
++/*
++ * drivers/net/phy/national.c
++ *
++ * Driver for National Semiconductor PHYs
++ *
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * Copyright (c) 2008 STMicroelectronics Limited
++ *
++ * This program is free software; you can redistribute  it and/or modify it
++ * under  the terms of  the GNU General  Public License as published by the
++ * Free Software Foundation;  either version 2 of the  License, or (at your
++ * option) any later version.
++ *
++ * Changelog:
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/mii.h>
++#include <linux/ethtool.h>
++#include <linux/phy.h>
++#include <linux/netdevice.h>
++
++/* DP83865 phy identifier values */
++#define DP83865_PHY_ID		0x20005c7a
++
++#define NS_EXP_MEM_CTL	0x16
++#define NS_EXP_MEM_DATA	0x1d
++#define NS_EXP_MEM_ADD	0x1e
++
++static u8 ns_exp_read(struct phy_device *phydev, u16 reg)
++{
++	phy_write(phydev, NS_EXP_MEM_ADD, reg);
++	return phy_read(phydev, NS_EXP_MEM_DATA);
++}
++
++static void ns_exp_write(struct phy_device *phydev, u16 reg, u8 data)
++{
++	phy_write(phydev, NS_EXP_MEM_ADD, reg);
++	phy_write(phydev, NS_EXP_MEM_DATA, data);
++}
++
++static int ns_config_intr(struct phy_device *phydev)
++{
++#if 0
++	int rc = phy_write (phydev, MII_SMSC_IM,
++			((PHY_INTERRUPT_ENABLED == phydev->interrupts)
++			? MII_SMSC_ISF_INT_PHYLIB_EVENTS
++			: 0));
++
++	return rc < 0 ? rc : 0;
++#endif
++	return 0;
++}
++
++static int ns_ack_interrupt(struct phy_device *phydev)
++{
++#if 0
++	int rc = phy_read (phydev, MII_SMSC_ISF);
++
++	return rc < 0 ? rc : 0;
++#endif
++	return 0;
++}
++
++static int ns_config_init(struct phy_device *phydev)
++{
++	/* Enable 8 bit expended memory read/write (no auto increment) */
++	phy_write(phydev, NS_EXP_MEM_CTL, 0);
++
++	/* Check 10Mb loopback mode */
++	printk("%s: 10BASE-T Half duplex loopback %d\n", __FUNCTION__,
++	       ns_exp_read(phydev, 0x1c0));
++
++//	ns_exp_write(phydev, 0x1c0, ns_exp_read(phydev, 0x1c0) | 1);
++
++	printk("%s: 10BASE-T Half duplex loopback %d\n", __FUNCTION__,
++	       ns_exp_read(phydev, 0x1c0));
++
++	return ns_ack_interrupt (phydev);
++}
++
++static struct phy_driver dp83865_driver = {
++        .phy_id         = DP83865_PHY_ID,
++        .phy_id_mask    = 0xfffffff0,
++        .name           = "NatSemi DP83865",
++        .features       = PHY_BASIC_FEATURES | SUPPORTED_Pause
++				| SUPPORTED_Asym_Pause,
++        .flags          = PHY_HAS_INTERRUPT,
++	.config_init    = ns_config_init,
++        .config_aneg    = genphy_config_aneg,
++        .read_status    = genphy_read_status,
++        .ack_interrupt  = ns_ack_interrupt,
++        .config_intr    = ns_config_intr,
++	.suspend 	= genphy_suspend,
++	.resume  	= genphy_resume,
++	.driver         = { .owner = THIS_MODULE, }
++};
++
++
++static int __init ns_init(void)
++{
++	int retval;
++
++	return phy_driver_register(&dp83865_driver);
++}
++
++static void __exit ns_exit(void)
++{
++	phy_driver_unregister (&dp83865_driver);
++}
++
++MODULE_DESCRIPTION("NatSemi PHY driver");
++MODULE_AUTHOR("Herbert Valerio Riedel");
++MODULE_LICENSE("GPL");
++
++module_init(ns_init);
++module_exit(ns_exit);
+Index: linux-2.6.23-stm/drivers/net/stmmac/gmac.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/stmmac/gmac.c
++++ linux-2.6.23-stm/drivers/net/stmmac/gmac.c
+@@ -24,7 +24,7 @@
+ #include "gmac.h"
+ 
+ #undef GMAC_DEBUG
+-/*#define GMAC_DEBUG*/
++#define GMAC_DEBUG
+ #ifdef GMAC_DEBUG
+ #define DBG(fmt,args...)  printk(fmt, ## args)
+ #else
+@@ -203,22 +203,24 @@ static int gmac_get_tx_frame_status(void
+ 			gmac_flush_tx_fifo(ioaddr);
+ 			x->tx_underflow++;
+ 		}
++		ret = -1;
++	}
+ 
+ 		if (unlikely(p->des01.etx.payload_error)) {
+ 			DBG(KERN_ERR "%s: TX Addr/Payload csum error\n",
+ 			    __FUNCTION__);
+ 			x->tx_payload_error++;
+ 			gmac_flush_tx_fifo(ioaddr);
++			ret = -1;
+ 		}
+ 
+ 		if (unlikely(p->des01.etx.ip_header_error)) {
+ 			DBG(KERN_ERR "%s: TX IP header csum error\n",
+-			    __FUNCTION__);
++		    __FUNCTION__);
+ 			x->tx_ip_header_error++;
++			ret = -1;
+ 		}
+ 
+-		ret = -1;
+-	}
+ 
+ 	if (unlikely(p->des01.etx.deferred)) {
+ 		x->tx_deferred++;
+Index: linux-2.6.23-stm/drivers/spi/spi_stm_ssc.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/spi/spi_stm_ssc.c
++++ linux-2.6.23-stm/drivers/spi/spi_stm_ssc.c
+@@ -451,8 +451,8 @@ static int __init spi_stm_probe(struct p
+ 	}
+ 
+ 	/* Get PIO pins */
+-	pio_info->clk = stpio_request_set_pin(pio_info->pio_port,
+-					      pio_info->pio_pin[0],
++	pio_info->clk = stpio_request_set_pin(pio_info->pio[0].pio_port,
++					  pio_info->pio[0].pio_pin,
+ 					      "SPI Clock", STPIO_BIDIR, 0);
+ 	if (!pio_info->clk) {
+ 		printk(KERN_ERR NAME
+@@ -460,8 +460,8 @@ static int __init spi_stm_probe(struct p
+ 		       pio_info->pio_port, pio_info->pio_pin[0]);
+ 		return -ENODEV;
+ 	}
+-	pio_info->sdout = stpio_request_set_pin(pio_info->pio_port,
+-						pio_info->pio_pin[1],
++	pio_info->sdout = stpio_request_set_pin(pio_info->pio[1].pio_port,
++					    pio_info->pio[1].pio_pin,
+ 						"SPI Data out", STPIO_BIDIR, 0);
+ 	if (!pio_info->sdout) {
+ 		printk(KERN_ERR NAME
+@@ -469,8 +469,8 @@ static int __init spi_stm_probe(struct p
+ 		       pio_info->pio_port, pio_info->pio_pin[1]);
+ 		return -ENODEV;
+ 	}
+-	pio_info->sdin = stpio_request_pin(pio_info->pio_port,
+-					   pio_info->pio_pin[2],
++	pio_info->sdin = stpio_request_pin(pio_info->pio[2].pio_port,
++					   pio_info->pio[2].pio_pin,
+ 					   "SPI Data in", STPIO_IN);
+ 	if (!pio_info->sdin) {
+ 		printk(KERN_ERR NAME
+Index: linux-2.6.23-stm/include/linux/stm/soc_init.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc_init.h
++++ linux-2.6.23-stm/include/linux/stm/soc_init.h
+@@ -64,8 +64,11 @@
+ 	},								\
+ 	.dev = {							\
+ 		.platform_data = &(struct ssc_pio_t ) {			\
+-			.pio_port       = _pio_port,			\
+-			.pio_pin        = { _pclk, _pdin, _pdout },	\
++			.pio = {					\
++				{ _pio_port, _pclk },			\
++				{ _pio_port, _pdin },			\
++				{ _pio_port, _pdout }			\
++			}						\
+ 		}                                                       \
+ 	}								\
+ }
+Index: linux-2.6.23-stm/include/linux/stm/sysconf.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/sysconf.h
++++ linux-2.6.23-stm/include/linux/stm/sysconf.h
+@@ -33,6 +33,15 @@ struct sysconf_field* sysconf_claim(int 
+ 				    const char* dev);
+ 
+ /**
++ * sysconf_release - Release ownership of a field of a sysconfig register
++ * @field: the sysconfig field to write to
++ *
++ * Release ownership of a field from a sysconf register.
++ * @field must have been claimed using sysconf_claim().
++ */
++void sysconf_release(struct sysconf_field *field);
++
++/**
+  * sysconf_write - Write a value into a field of a sysconfig register
+  * @field: the sysconfig field to write to
+  * @value: the value to write into the field
+Index: linux-2.6.23-stm/arch/sh/configs/mb680_defconfig
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/configs/mb680_defconfig
+@@ -0,0 +1,1192 @@
++#
++# Automatically generated make config: don't edit
++# Linux kernel version: 2.6.23.16
++# Tue Apr 29 16:18:37 2008
++#
++CONFIG_SUPERH=y
++CONFIG_RWSEM_GENERIC_SPINLOCK=y
++CONFIG_GENERIC_BUG=y
++CONFIG_GENERIC_FIND_NEXT_BIT=y
++CONFIG_GENERIC_GPIO=y
++CONFIG_GENERIC_HWEIGHT=y
++CONFIG_GENERIC_HARDIRQS=y
++CONFIG_GENERIC_IRQ_PROBE=y
++CONFIG_GENERIC_TIME=y
++CONFIG_GENERIC_CLOCKEVENTS=y
++CONFIG_STACKTRACE_SUPPORT=y
++CONFIG_LOCKDEP_SUPPORT=y
++# CONFIG_ARCH_HAS_ILOG2_U32 is not set
++# CONFIG_ARCH_HAS_ILOG2_U64 is not set
++CONFIG_ARCH_NO_VIRT_TO_BUS=y
++CONFIG_ARCH_SUPPORTS_LTT_CLOCK=y
++CONFIG_ARCH_NEEDS_LTT_SYNTHETIC_TSC=y
++CONFIG_DEFCONFIG_LIST="/lib/modules/$UNAME_RELEASE/.config"
++
++#
++# General setup
++#
++CONFIG_EXPERIMENTAL=y
++CONFIG_BROKEN_ON_SMP=y
++CONFIG_LOCK_KERNEL=y
++CONFIG_INIT_ENV_ARG_LIMIT=32
++CONFIG_LOCALVERSION="-mb680"
++# CONFIG_LOCALVERSION_AUTO is not set
++CONFIG_SWAP=y
++CONFIG_SYSVIPC=y
++CONFIG_SYSVIPC_SYSCTL=y
++# CONFIG_POSIX_MQUEUE is not set
++# CONFIG_BSD_PROCESS_ACCT is not set
++# CONFIG_TASKSTATS is not set
++# CONFIG_USER_NS is not set
++# CONFIG_AUDIT is not set
++CONFIG_IKCONFIG=y
++CONFIG_IKCONFIG_PROC=y
++CONFIG_LOG_BUF_SHIFT=14
++CONFIG_SYSFS_DEPRECATED=y
++# CONFIG_RELAY is not set
++CONFIG_BLK_DEV_INITRD=y
++CONFIG_INITRAMFS_SOURCE=""
++# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_SYSCTL=y
++CONFIG_EMBEDDED=y
++CONFIG_UID16=y
++CONFIG_SYSCTL_SYSCALL=y
++CONFIG_KALLSYMS=y
++CONFIG_KALLSYMS_ALL=y
++# CONFIG_KALLSYMS_EXTRA_PASS is not set
++CONFIG_HOTPLUG=y
++CONFIG_PRINTK=y
++CONFIG_BUG=y
++CONFIG_ELF_CORE=y
++CONFIG_BASE_FULL=y
++CONFIG_FUTEX=y
++CONFIG_ANON_INODES=y
++CONFIG_EPOLL=y
++CONFIG_SIGNALFD=y
++CONFIG_EVENTFD=y
++CONFIG_SHMEM=y
++CONFIG_VM_EVENT_COUNTERS=y
++CONFIG_SLAB=y
++# CONFIG_SLUB is not set
++# CONFIG_SLOB is not set
++CONFIG_RT_MUTEXES=y
++# CONFIG_TINY_SHMEM is not set
++CONFIG_BASE_SMALL=0
++CONFIG_MODULES=y
++CONFIG_MODULE_UNLOAD=y
++# CONFIG_MODULE_FORCE_UNLOAD is not set
++# CONFIG_MODVERSIONS is not set
++# CONFIG_MODULE_SRCVERSION_ALL is not set
++CONFIG_KMOD=y
++CONFIG_BLOCK=y
++# CONFIG_LBD is not set
++# CONFIG_BLK_DEV_IO_TRACE is not set
++# CONFIG_LSF is not set
++# CONFIG_BLK_DEV_BSG is not set
++
++#
++# IO Schedulers
++#
++CONFIG_IOSCHED_NOOP=y
++CONFIG_IOSCHED_AS=y
++CONFIG_IOSCHED_DEADLINE=y
++CONFIG_IOSCHED_CFQ=y
++CONFIG_DEFAULT_AS=y
++# CONFIG_DEFAULT_DEADLINE is not set
++# CONFIG_DEFAULT_CFQ is not set
++# CONFIG_DEFAULT_NOOP is not set
++CONFIG_DEFAULT_IOSCHED="anticipatory"
++
++#
++# System type
++#
++CONFIG_CPU_SH4=y
++CONFIG_CPU_SUBTYPE_ST40=y
++# CONFIG_CPU_SUBTYPE_SH7619 is not set
++# CONFIG_CPU_SUBTYPE_SH7206 is not set
++# CONFIG_CPU_SUBTYPE_SH7705 is not set
++# CONFIG_CPU_SUBTYPE_SH7706 is not set
++# CONFIG_CPU_SUBTYPE_SH7707 is not set
++# CONFIG_CPU_SUBTYPE_SH7708 is not set
++# CONFIG_CPU_SUBTYPE_SH7709 is not set
++# CONFIG_CPU_SUBTYPE_SH7710 is not set
++# CONFIG_CPU_SUBTYPE_SH7712 is not set
++# CONFIG_CPU_SUBTYPE_SH7720 is not set
++# CONFIG_CPU_SUBTYPE_SH7750 is not set
++# CONFIG_CPU_SUBTYPE_SH7091 is not set
++# CONFIG_CPU_SUBTYPE_SH7750R is not set
++# CONFIG_CPU_SUBTYPE_SH7750S is not set
++# CONFIG_CPU_SUBTYPE_SH7751 is not set
++# CONFIG_CPU_SUBTYPE_SH7751R is not set
++# CONFIG_CPU_SUBTYPE_SH7760 is not set
++# CONFIG_CPU_SUBTYPE_SH4_202 is not set
++# CONFIG_CPU_SUBTYPE_ST40STB1 is not set
++# CONFIG_CPU_SUBTYPE_ST40GX1 is not set
++# CONFIG_CPU_SUBTYPE_STB7100 is not set
++CONFIG_CPU_SUBTYPE_STX7105=y
++# CONFIG_CPU_SUBTYPE_STX7111 is not set
++# CONFIG_CPU_SUBTYPE_STX7200 is not set
++# CONFIG_CPU_SUBTYPE_SH7770 is not set
++# CONFIG_CPU_SUBTYPE_SH7780 is not set
++# CONFIG_CPU_SUBTYPE_SH7785 is not set
++# CONFIG_CPU_SUBTYPE_SHX3 is not set
++# CONFIG_CPU_SUBTYPE_SH7343 is not set
++# CONFIG_CPU_SUBTYPE_SH7722 is not set
++
++#
++# Memory management options
++#
++CONFIG_QUICKLIST=y
++CONFIG_MMU=y
++CONFIG_PAGE_OFFSET=0x80000000
++CONFIG_MEMORY_START=0x0c000000
++CONFIG_MEMORY_SIZE=0x08000000
++CONFIG_SUPPORTS_32BIT=y
++# CONFIG_32BIT is not set
++# CONFIG_VSYSCALL is not set
++CONFIG_ARCH_FLATMEM_ENABLE=y
++CONFIG_ARCH_SPARSEMEM_ENABLE=y
++CONFIG_ARCH_SPARSEMEM_DEFAULT=y
++CONFIG_MAX_ACTIVE_REGIONS=1
++CONFIG_ARCH_POPULATES_NODE_MAP=y
++CONFIG_ARCH_SELECT_MEMORY_MODEL=y
++CONFIG_PAGE_SIZE_4KB=y
++# CONFIG_PAGE_SIZE_8KB is not set
++# CONFIG_PAGE_SIZE_64KB is not set
++CONFIG_SELECT_MEMORY_MODEL=y
++CONFIG_FLATMEM_MANUAL=y
++# CONFIG_DISCONTIGMEM_MANUAL is not set
++# CONFIG_SPARSEMEM_MANUAL is not set
++CONFIG_FLATMEM=y
++CONFIG_FLAT_NODE_MEM_MAP=y
++CONFIG_SPARSEMEM_STATIC=y
++CONFIG_SPLIT_PTLOCK_CPUS=4
++# CONFIG_RESOURCES_64BIT is not set
++CONFIG_ZONE_DMA_FLAG=0
++CONFIG_NR_QUICK=2
++# CONFIG_BPA2 is not set
++
++#
++# Cache configuration
++#
++# CONFIG_SH_DIRECT_MAPPED is not set
++CONFIG_CACHE_WRITEBACK=y
++# CONFIG_CACHE_WRITETHROUGH is not set
++# CONFIG_CACHE_OFF is not set
++
++#
++# Processor features
++#
++CONFIG_CPU_LITTLE_ENDIAN=y
++# CONFIG_CPU_BIG_ENDIAN is not set
++CONFIG_SH_FPU=y
++# CONFIG_SH_STORE_QUEUES is not set
++CONFIG_CPU_HAS_INTEVT=y
++CONFIG_CPU_HAS_SR_RB=y
++CONFIG_CPU_HAS_FPU=y
++# CONFIG_SH_GRB is not set
++
++#
++# Board support
++#
++CONFIG_SH_ST_MB680=y
++
++#
++# Timer and clock configuration
++#
++CONFIG_SH_TMU=y
++CONFIG_SH_TIMER_IRQ=16
++CONFIG_SH_PCLK_FREQ=66000000
++# CONFIG_TICK_ONESHOT is not set
++# CONFIG_NO_HZ is not set
++# CONFIG_HIGH_RES_TIMERS is not set
++# CONFIG_SH_FAST_HZ is not set
++CONFIG_GENERIC_CALIBRATE_DELAY=y
++# CONFIG_SH4_CALIBRATE_DELAY is not set
++
++#
++# CPU Frequency scaling
++#
++# CONFIG_CPU_FREQ is not set
++
++#
++# DMA support
++#
++
++#
++# Companion Chips
++#
++
++#
++# Additional SuperH Device Drivers
++#
++# CONFIG_HEARTBEAT is not set
++# CONFIG_PUSH_SWITCH is not set
++
++#
++# Kernel features
++#
++# CONFIG_HZ_100 is not set
++CONFIG_HZ_250=y
++# CONFIG_HZ_300 is not set
++# CONFIG_HZ_1000 is not set
++CONFIG_HZ=250
++# CONFIG_KEXEC is not set
++# CONFIG_CRASH_DUMP is not set
++# CONFIG_PREEMPT_NONE is not set
++# CONFIG_PREEMPT_VOLUNTARY is not set
++CONFIG_PREEMPT=y
++CONFIG_PREEMPT_BKL=y
++CONFIG_GUSA=y
++
++#
++# Boot options
++#
++CONFIG_ZERO_PAGE_OFFSET=0x00001000
++CONFIG_BOOT_LINK_OFFSET=0x00800000
++# CONFIG_UBC_WAKEUP is not set
++# CONFIG_CMDLINE_BOOL is not set
++
++#
++# Bus options
++#
++# CONFIG_ARCH_SUPPORTS_MSI is not set
++
++#
++# PCCARD (PCMCIA/CardBus) support
++#
++# CONFIG_PCCARD is not set
++
++#
++# Executable file formats
++#
++CONFIG_BINFMT_ELF=y
++# CONFIG_BINFMT_MISC is not set
++# CONFIG_PM_SH3_FRQCR is not set
++
++#
++# Networking
++#
++CONFIG_NET=y
++
++#
++# Networking options
++#
++CONFIG_PACKET=y
++# CONFIG_PACKET_MMAP is not set
++CONFIG_UNIX=y
++CONFIG_XFRM=y
++# CONFIG_XFRM_USER is not set
++# CONFIG_XFRM_SUB_POLICY is not set
++# CONFIG_XFRM_MIGRATE is not set
++# CONFIG_NET_KEY is not set
++CONFIG_INET=y
++# CONFIG_IP_MULTICAST is not set
++# CONFIG_IP_ADVANCED_ROUTER is not set
++CONFIG_IP_FIB_HASH=y
++CONFIG_IP_PNP=y
++# CONFIG_IP_PNP_DHCP is not set
++# CONFIG_IP_PNP_BOOTP is not set
++# CONFIG_IP_PNP_RARP is not set
++# CONFIG_NET_IPIP is not set
++# CONFIG_NET_IPGRE is not set
++# CONFIG_ARPD is not set
++# CONFIG_SYN_COOKIES is not set
++# CONFIG_INET_AH is not set
++# CONFIG_INET_ESP is not set
++# CONFIG_INET_IPCOMP is not set
++# CONFIG_INET_XFRM_TUNNEL is not set
++# CONFIG_INET_TUNNEL is not set
++CONFIG_INET_XFRM_MODE_TRANSPORT=y
++CONFIG_INET_XFRM_MODE_TUNNEL=y
++CONFIG_INET_XFRM_MODE_BEET=y
++CONFIG_INET_DIAG=y
++CONFIG_INET_TCP_DIAG=y
++# CONFIG_TCP_CONG_ADVANCED is not set
++CONFIG_TCP_CONG_CUBIC=y
++CONFIG_DEFAULT_TCP_CONG="cubic"
++# CONFIG_TCP_MD5SIG is not set
++# CONFIG_IP_VS is not set
++# CONFIG_IPV6 is not set
++# CONFIG_INET6_XFRM_TUNNEL is not set
++# CONFIG_INET6_TUNNEL is not set
++# CONFIG_NETWORK_SECMARK is not set
++CONFIG_NETFILTER=y
++# CONFIG_NETFILTER_DEBUG is not set
++
++#
++# Core Netfilter Configuration
++#
++# CONFIG_NETFILTER_NETLINK is not set
++# CONFIG_NF_CONNTRACK_ENABLED is not set
++# CONFIG_NF_CONNTRACK is not set
++# CONFIG_NETFILTER_XTABLES is not set
++
++#
++# IP: Netfilter Configuration
++#
++# CONFIG_IP_NF_QUEUE is not set
++# CONFIG_IP_NF_IPTABLES is not set
++# CONFIG_IP_NF_ARPTABLES is not set
++# CONFIG_IP_DCCP is not set
++# CONFIG_IP_SCTP is not set
++# CONFIG_TIPC is not set
++# CONFIG_ATM is not set
++# CONFIG_BRIDGE is not set
++# CONFIG_VLAN_8021Q is not set
++# CONFIG_DECNET is not set
++# CONFIG_LLC2 is not set
++# CONFIG_IPX is not set
++# CONFIG_ATALK is not set
++# CONFIG_X25 is not set
++# CONFIG_LAPB is not set
++# CONFIG_ECONET is not set
++# CONFIG_WAN_ROUTER is not set
++
++#
++# QoS and/or fair queueing
++#
++# CONFIG_NET_SCHED is not set
++
++#
++# Network testing
++#
++# CONFIG_NET_PKTGEN is not set
++# CONFIG_HAMRADIO is not set
++# CONFIG_IRDA is not set
++# CONFIG_BT is not set
++# CONFIG_AF_RXRPC is not set
++
++#
++# Wireless
++#
++# CONFIG_CFG80211 is not set
++# CONFIG_WIRELESS_EXT is not set
++# CONFIG_MAC80211 is not set
++# CONFIG_IEEE80211 is not set
++# CONFIG_RFKILL is not set
++# CONFIG_NET_9P is not set
++
++#
++# Device Drivers
++#
++
++#
++# Generic Driver Options
++#
++CONFIG_STANDALONE=y
++CONFIG_PREVENT_FIRMWARE_BUILD=y
++CONFIG_FW_LOADER=y
++# CONFIG_DEBUG_DRIVER is not set
++# CONFIG_DEBUG_DEVRES is not set
++# CONFIG_SYS_HYPERVISOR is not set
++# CONFIG_CONNECTOR is not set
++CONFIG_MTD=y
++# CONFIG_MTD_DEBUG is not set
++# CONFIG_MTD_CONCAT is not set
++CONFIG_MTD_PARTITIONS=y
++# CONFIG_MTD_REDBOOT_PARTS is not set
++CONFIG_MTD_CMDLINE_PARTS=y
++
++#
++# User Modules And Translation Layers
++#
++CONFIG_MTD_CHAR=y
++CONFIG_MTD_BLKDEVS=y
++CONFIG_MTD_BLOCK=y
++# CONFIG_FTL is not set
++# CONFIG_NFTL is not set
++# CONFIG_INFTL is not set
++# CONFIG_RFD_FTL is not set
++# CONFIG_SSFDC is not set
++
++#
++# RAM/ROM/Flash chip drivers
++#
++CONFIG_MTD_CFI=y
++# CONFIG_MTD_JEDECPROBE is not set
++CONFIG_MTD_GEN_PROBE=y
++# CONFIG_MTD_CFI_ADV_OPTIONS is not set
++CONFIG_MTD_MAP_BANK_WIDTH_1=y
++CONFIG_MTD_MAP_BANK_WIDTH_2=y
++CONFIG_MTD_MAP_BANK_WIDTH_4=y
++# CONFIG_MTD_MAP_BANK_WIDTH_8 is not set
++# CONFIG_MTD_MAP_BANK_WIDTH_16 is not set
++# CONFIG_MTD_MAP_BANK_WIDTH_32 is not set
++CONFIG_MTD_CFI_I1=y
++CONFIG_MTD_CFI_I2=y
++# CONFIG_MTD_CFI_I4 is not set
++# CONFIG_MTD_CFI_I8 is not set
++CONFIG_MTD_CFI_INTELEXT=y
++# CONFIG_MTD_CFI_AMDSTD is not set
++# CONFIG_MTD_CFI_STAA is not set
++CONFIG_MTD_CFI_UTIL=y
++# CONFIG_MTD_RAM is not set
++# CONFIG_MTD_ROM is not set
++# CONFIG_MTD_ABSENT is not set
++
++#
++# Mapping drivers for chip access
++#
++# CONFIG_MTD_COMPLEX_MAPPINGS is not set
++CONFIG_MTD_PHYSMAP=y
++CONFIG_MTD_PHYSMAP_START=0x0
++CONFIG_MTD_PHYSMAP_LEN=0
++CONFIG_MTD_PHYSMAP_BANKWIDTH=0
++# CONFIG_MTD_PLATRAM is not set
++
++#
++# Self-contained MTD device drivers
++#
++# CONFIG_MTD_SLRAM is not set
++# CONFIG_MTD_PHRAM is not set
++# CONFIG_MTD_MTDRAM is not set
++# CONFIG_MTD_BLOCK2MTD is not set
++
++#
++# Disk-On-Chip Device Drivers
++#
++# CONFIG_MTD_DOC2000 is not set
++# CONFIG_MTD_DOC2001 is not set
++# CONFIG_MTD_DOC2001PLUS is not set
++CONFIG_MTD_NAND=y
++# CONFIG_MTD_NAND_VERIFY_WRITE is not set
++# CONFIG_MTD_NAND_ECC_SMC is not set
++# CONFIG_MTD_NAND_MUSEUM_IDS is not set
++CONFIG_MTD_NAND_IDS=y
++# CONFIG_MTD_NAND_DISKONCHIP is not set
++# CONFIG_MTD_NAND_NANDSIM is not set
++CONFIG_MTD_NAND_PLATFORM=y
++# CONFIG_MTD_ONENAND is not set
++
++#
++# UBI - Unsorted block images
++#
++# CONFIG_MTD_UBI is not set
++# CONFIG_PARPORT is not set
++CONFIG_BLK_DEV=y
++# CONFIG_BLK_DEV_COW_COMMON is not set
++# CONFIG_BLK_DEV_LOOP is not set
++# CONFIG_BLK_DEV_NBD is not set
++# CONFIG_BLK_DEV_UB is not set
++CONFIG_BLK_DEV_RAM=y
++CONFIG_BLK_DEV_RAM_COUNT=16
++CONFIG_BLK_DEV_RAM_SIZE=4096
++CONFIG_BLK_DEV_RAM_BLOCKSIZE=1024
++# CONFIG_CDROM_PKTCDVD is not set
++# CONFIG_ATA_OVER_ETH is not set
++CONFIG_MISC_DEVICES=y
++# CONFIG_EEPROM_93CX6 is not set
++# CONFIG_IDE is not set
++
++#
++# SCSI device support
++#
++# CONFIG_RAID_ATTRS is not set
++CONFIG_SCSI=y
++CONFIG_SCSI_DMA=y
++# CONFIG_SCSI_TGT is not set
++# CONFIG_SCSI_NETLINK is not set
++# CONFIG_SCSI_PROC_FS is not set
++
++#
++# SCSI support type (disk, tape, CD-ROM)
++#
++CONFIG_BLK_DEV_SD=y
++# CONFIG_CHR_DEV_ST is not set
++# CONFIG_CHR_DEV_OSST is not set
++CONFIG_BLK_DEV_SR=y
++# CONFIG_BLK_DEV_SR_VENDOR is not set
++CONFIG_CHR_DEV_SG=y
++# CONFIG_CHR_DEV_SCH is not set
++
++#
++# Some SCSI devices (e.g. CD jukebox) support multiple LUNs
++#
++# CONFIG_SCSI_MULTI_LUN is not set
++# CONFIG_SCSI_CONSTANTS is not set
++# CONFIG_SCSI_LOGGING is not set
++# CONFIG_SCSI_SCAN_ASYNC is not set
++CONFIG_SCSI_WAIT_SCAN=m
++
++#
++# SCSI Transports
++#
++# CONFIG_SCSI_SPI_ATTRS is not set
++# CONFIG_SCSI_FC_ATTRS is not set
++# CONFIG_SCSI_ISCSI_ATTRS is not set
++# CONFIG_SCSI_SAS_LIBSAS is not set
++CONFIG_SCSI_LOWLEVEL=y
++# CONFIG_ISCSI_TCP is not set
++# CONFIG_SCSI_DEBUG is not set
++# CONFIG_ATA is not set
++# CONFIG_MD is not set
++CONFIG_NETDEVICES=y
++# CONFIG_NETDEVICES_MULTIQUEUE is not set
++# CONFIG_DUMMY is not set
++# CONFIG_BONDING is not set
++# CONFIG_MACVLAN is not set
++# CONFIG_EQUALIZER is not set
++# CONFIG_TUN is not set
++CONFIG_NWHW_CONFIG=y
++CONFIG_PHYLIB=y
++
++#
++# PHY device drivers
++#
++# CONFIG_MARVELL_PHY is not set
++# CONFIG_DAVICOM_PHY is not set
++# CONFIG_QSEMI_PHY is not set
++# CONFIG_LXT_PHY is not set
++# CONFIG_CICADA_PHY is not set
++# CONFIG_VITESSE_PHY is not set
++# CONFIG_SMSC_PHY is not set
++# CONFIG_BROADCOM_PHY is not set
++# CONFIG_ICPLUS_PHY is not set
++# CONFIG_STE10XP is not set
++CONFIG_NATIONAL_PHY=y
++# CONFIG_FIXED_PHY is not set
++CONFIG_NET_ETHERNET=y
++CONFIG_MII=y
++# CONFIG_STNIC is not set
++CONFIG_SMSC911x=y
++CONFIG_SMSC911x_DMA_NONE=y
++# CONFIG_SMSC911x_DMA_FIFOSEL is not set
++# CONFIG_SMSC911x_DMA_2D is not set
++# CONFIG_SMSC911x_DMA_PACED is not set
++# CONFIG_SMC91X is not set
++CONFIG_NETDEV_1000=y
++CONFIG_STMMAC_ETH=y
++# CONFIG_STMMAC_DA is not set
++CONFIG_NETDEV_10000=y
++
++#
++# Wireless LAN
++#
++# CONFIG_WLAN_PRE80211 is not set
++# CONFIG_WLAN_80211 is not set
++
++#
++# USB Network Adapters
++#
++# CONFIG_USB_CATC is not set
++# CONFIG_USB_KAWETH is not set
++# CONFIG_USB_PEGASUS is not set
++# CONFIG_USB_RTL8150 is not set
++# CONFIG_USB_USBNET_MII is not set
++# CONFIG_USB_USBNET is not set
++# CONFIG_WAN is not set
++# CONFIG_PPP is not set
++# CONFIG_SLIP is not set
++# CONFIG_SHAPER is not set
++# CONFIG_NETCONSOLE is not set
++# CONFIG_NETPOLL is not set
++# CONFIG_NET_POLL_CONTROLLER is not set
++# CONFIG_ISDN is not set
++# CONFIG_PHONE is not set
++
++#
++# Input device support
++#
++CONFIG_INPUT=y
++# CONFIG_INPUT_FF_MEMLESS is not set
++# CONFIG_INPUT_POLLDEV is not set
++
++#
++# Userland interfaces
++#
++CONFIG_INPUT_MOUSEDEV=y
++CONFIG_INPUT_MOUSEDEV_PSAUX=y
++CONFIG_INPUT_MOUSEDEV_SCREEN_X=1024
++CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
++# CONFIG_INPUT_JOYDEV is not set
++# CONFIG_INPUT_TSDEV is not set
++CONFIG_INPUT_EVDEV=y
++CONFIG_INPUT_EVBUG=y
++
++#
++# Input Device Drivers
++#
++CONFIG_INPUT_KEYBOARD=y
++# CONFIG_KEYBOARD_ATKBD is not set
++# CONFIG_KEYBOARD_SUNKBD is not set
++# CONFIG_KEYBOARD_LKKBD is not set
++# CONFIG_KEYBOARD_XTKBD is not set
++# CONFIG_KEYBOARD_NEWTON is not set
++# CONFIG_KEYBOARD_STOWAWAY is not set
++CONFIG_KEYBOARD_GPIO=y
++CONFIG_INPUT_MOUSE=y
++# CONFIG_MOUSE_PS2 is not set
++# CONFIG_MOUSE_SERIAL is not set
++# CONFIG_MOUSE_APPLETOUCH is not set
++# CONFIG_MOUSE_VSXXXAA is not set
++# CONFIG_MOUSE_GPIO is not set
++# CONFIG_INPUT_JOYSTICK is not set
++# CONFIG_INPUT_TABLET is not set
++# CONFIG_INPUT_TOUCHSCREEN is not set
++# CONFIG_INPUT_MISC is not set
++
++#
++# Hardware I/O ports
++#
++CONFIG_SERIO=y
++# CONFIG_SERIO_I8042 is not set
++CONFIG_SERIO_SERPORT=y
++# CONFIG_SERIO_LIBPS2 is not set
++# CONFIG_SERIO_RAW is not set
++# CONFIG_GAMEPORT is not set
++
++#
++# Character devices
++#
++CONFIG_VT=y
++# CONFIG_VT_CONSOLE is not set
++CONFIG_HW_CONSOLE=y
++# CONFIG_VT_HW_CONSOLE_BINDING is not set
++# CONFIG_SERIAL_NONSTANDARD is not set
++
++#
++# Serial drivers
++#
++# CONFIG_SERIAL_8250 is not set
++
++#
++# Non-8250 serial port support
++#
++# CONFIG_SERIAL_SH_SCI is not set
++CONFIG_SERIAL_CORE=y
++CONFIG_SERIAL_CORE_CONSOLE=y
++CONFIG_SERIAL_ST_ASC=y
++CONFIG_SERIAL_ST_ASC_CONSOLE=y
++CONFIG_UNIX98_PTYS=y
++# CONFIG_LEGACY_PTYS is not set
++
++#
++# Linux InfraRed Controller
++#
++# CONFIG_LIRC_SUPPORT is not set
++# CONFIG_IPMI_HANDLER is not set
++# CONFIG_WATCHDOG is not set
++CONFIG_HW_RANDOM=y
++# CONFIG_R3964 is not set
++# CONFIG_RAW_DRIVER is not set
++# CONFIG_TCG_TPM is not set
++CONFIG_I2C=y
++CONFIG_I2C_BOARDINFO=y
++CONFIG_I2C_CHARDEV=y
++
++#
++# I2C Algorithms
++#
++CONFIG_I2C_ALGOBIT=y
++# CONFIG_I2C_ALGOPCF is not set
++# CONFIG_I2C_ALGOPCA is not set
++
++#
++# I2C Hardware Bus support
++#
++# CONFIG_I2C_GPIO is not set
++# CONFIG_I2C_OCORES is not set
++# CONFIG_I2C_PARPORT_LIGHT is not set
++# CONFIG_I2C_SIMTEC is not set
++# CONFIG_I2C_TAOS_EVM is not set
++# CONFIG_I2C_STUB is not set
++# CONFIG_I2C_TINY_USB is not set
++# CONFIG_I2C_ST40_PIO is not set
++CONFIG_I2C_STM=y
++# CONFIG_I2C_STM_HW_FIFO is not set
++# CONFIG_I2C_STM_GLITCH_SUPPORT is not set
++
++#
++# Miscellaneous I2C Chip support
++#
++# CONFIG_SENSORS_DS1337 is not set
++# CONFIG_SENSORS_DS1374 is not set
++# CONFIG_DS1682 is not set
++# CONFIG_I2C_AT24C is not set
++# CONFIG_SENSORS_EEPROM is not set
++# CONFIG_SENSORS_PCF8574 is not set
++# CONFIG_SENSORS_PCA9539 is not set
++# CONFIG_SENSORS_PCF8591 is not set
++# CONFIG_SENSORS_MAX6875 is not set
++# CONFIG_SENSORS_TSL2550 is not set
++# CONFIG_I2C_DEBUG_CORE is not set
++# CONFIG_I2C_DEBUG_ALGO is not set
++# CONFIG_I2C_DEBUG_BUS is not set
++# CONFIG_I2C_DEBUG_CHIP is not set
++
++#
++# SPI support
++#
++# CONFIG_SPI is not set
++# CONFIG_SPI_MASTER is not set
++CONFIG_HAVE_GPIO_LIB=y
++
++#
++# GPIO Support
++#
++CONFIG_DEBUG_GPIO=y
++
++#
++# I2C GPIO expanders:
++#
++# CONFIG_GPIO_PCA9539 is not set
++# CONFIG_GPIO_PCF857X is not set
++
++#
++# SPI GPIO expanders:
++#
++# CONFIG_W1 is not set
++# CONFIG_POWER_SUPPLY is not set
++# CONFIG_HWMON is not set
++
++#
++# Multifunction device drivers
++#
++# CONFIG_MFD_SM501 is not set
++
++#
++# Multimedia devices
++#
++# CONFIG_VIDEO_DEV is not set
++# CONFIG_DVB_CORE is not set
++CONFIG_DAB=y
++# CONFIG_USB_DABUSB is not set
++
++#
++# Graphics support
++#
++# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
++
++#
++# Display device support
++#
++# CONFIG_DISPLAY_SUPPORT is not set
++# CONFIG_VGASTATE is not set
++# CONFIG_VIDEO_OUTPUT_CONTROL is not set
++# CONFIG_FB is not set
++
++#
++# Console display driver support
++#
++CONFIG_DUMMY_CONSOLE=y
++
++#
++# Sound
++#
++# CONFIG_SOUND is not set
++CONFIG_HID_SUPPORT=y
++CONFIG_HID=y
++# CONFIG_HID_DEBUG is not set
++
++#
++# USB Input Devices
++#
++CONFIG_USB_HID=y
++# CONFIG_USB_HIDINPUT_POWERBOOK is not set
++# CONFIG_HID_FF is not set
++# CONFIG_USB_HIDDEV is not set
++CONFIG_USB_SUPPORT=y
++CONFIG_USB_ARCH_HAS_HCD=y
++CONFIG_USB_ARCH_HAS_OHCI=y
++CONFIG_USB_ARCH_HAS_EHCI=y
++CONFIG_USB=y
++CONFIG_USB_DEBUG=y
++
++#
++# Miscellaneous USB options
++#
++CONFIG_USB_DEVICEFS=y
++# CONFIG_USB_DEVICE_CLASS is not set
++# CONFIG_USB_DYNAMIC_MINORS is not set
++# CONFIG_USB_OTG is not set
++
++#
++# USB Host Controller Drivers
++#
++CONFIG_USB_EHCI_HCD=y
++# CONFIG_USB_EHCI_SPLIT_ISO is not set
++# CONFIG_USB_EHCI_ROOT_HUB_TT is not set
++# CONFIG_USB_EHCI_TT_NEWSCHED is not set
++# CONFIG_USB_ISP116X_HCD is not set
++CONFIG_USB_OHCI_HCD=y
++# CONFIG_USB_OHCI_BIG_ENDIAN_DESC is not set
++# CONFIG_USB_OHCI_BIG_ENDIAN_MMIO is not set
++CONFIG_USB_OHCI_LITTLE_ENDIAN=y
++# CONFIG_USB_SL811_HCD is not set
++# CONFIG_USB_R8A66597_HCD is not set
++CONFIG_USB_STM_COMMON=y
++
++#
++# USB Device Class drivers
++#
++# CONFIG_USB_ACM is not set
++# CONFIG_USB_PRINTER is not set
++
++#
++# NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support'
++#
++
++#
++# may also be needed; see USB_STORAGE Help for more information
++#
++CONFIG_USB_STORAGE=y
++# CONFIG_USB_STORAGE_DEBUG is not set
++# CONFIG_USB_STORAGE_DATAFAB is not set
++# CONFIG_USB_STORAGE_FREECOM is not set
++# CONFIG_USB_STORAGE_DPCM is not set
++# CONFIG_USB_STORAGE_USBAT is not set
++# CONFIG_USB_STORAGE_SDDR09 is not set
++# CONFIG_USB_STORAGE_SDDR55 is not set
++# CONFIG_USB_STORAGE_JUMPSHOT is not set
++# CONFIG_USB_STORAGE_ALAUDA is not set
++# CONFIG_USB_STORAGE_ONETOUCH is not set
++# CONFIG_USB_STORAGE_KARMA is not set
++# CONFIG_USB_LIBUSUAL is not set
++
++#
++# USB Imaging devices
++#
++# CONFIG_USB_MDC800 is not set
++# CONFIG_USB_MICROTEK is not set
++CONFIG_USB_MON=y
++
++#
++# USB port drivers
++#
++
++#
++# USB Serial Converter support
++#
++# CONFIG_USB_SERIAL is not set
++
++#
++# USB Miscellaneous drivers
++#
++# CONFIG_USB_EMI62 is not set
++# CONFIG_USB_EMI26 is not set
++# CONFIG_USB_ADUTUX is not set
++# CONFIG_USB_AUERSWALD is not set
++# CONFIG_USB_RIO500 is not set
++# CONFIG_USB_LEGOTOWER is not set
++# CONFIG_USB_LCD is not set
++# CONFIG_USB_BERRY_CHARGE is not set
++# CONFIG_USB_LED is not set
++# CONFIG_USB_CYPRESS_CY7C63 is not set
++# CONFIG_USB_CYTHERM is not set
++# CONFIG_USB_PHIDGET is not set
++# CONFIG_USB_IDMOUSE is not set
++# CONFIG_USB_FTDI_ELAN is not set
++# CONFIG_USB_APPLEDISPLAY is not set
++# CONFIG_USB_SISUSBVGA is not set
++# CONFIG_USB_LD is not set
++# CONFIG_USB_TRANCEVIBRATOR is not set
++# CONFIG_USB_IOWARRIOR is not set
++# CONFIG_USB_TEST is not set
++
++#
++# USB DSL modem support
++#
++
++#
++# USB Gadget Support
++#
++# CONFIG_USB_GADGET is not set
++# CONFIG_MMC is not set
++CONFIG_NEW_LEDS=y
++CONFIG_LEDS_CLASS=y
++
++#
++# LED drivers
++#
++CONFIG_LEDS_GPIO=y
++
++#
++# LED Triggers
++#
++CONFIG_LEDS_TRIGGERS=y
++# CONFIG_LEDS_TRIGGER_TIMER is not set
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
++# CONFIG_RTC_CLASS is not set
++
++#
++# DMA Engine support
++#
++# CONFIG_DMA_ENGINE is not set
++
++#
++# DMA Clients
++#
++
++#
++# DMA Devices
++#
++
++#
++# Userspace I/O
++#
++# CONFIG_UIO is not set
++CONFIG_STM_DRIVERS=y
++
++#
++# STM specific devices
++#
++CONFIG_STM_PIO=y
++# CONFIG_STM_SPI is not set
++
++#
++# File systems
++#
++CONFIG_EXT2_FS=y
++CONFIG_EXT2_FS_XATTR=y
++# CONFIG_EXT2_FS_POSIX_ACL is not set
++# CONFIG_EXT2_FS_SECURITY is not set
++# CONFIG_EXT2_FS_XIP is not set
++CONFIG_EXT3_FS=y
++CONFIG_EXT3_FS_XATTR=y
++# CONFIG_EXT3_FS_POSIX_ACL is not set
++# CONFIG_EXT3_FS_SECURITY is not set
++# CONFIG_EXT4DEV_FS is not set
++CONFIG_JBD=y
++# CONFIG_JBD_DEBUG is not set
++CONFIG_FS_MBCACHE=y
++# CONFIG_REISERFS_FS is not set
++# CONFIG_JFS_FS is not set
++# CONFIG_FS_POSIX_ACL is not set
++# CONFIG_XFS_FS is not set
++# CONFIG_GFS2_FS is not set
++# CONFIG_OCFS2_FS is not set
++# CONFIG_MINIX_FS is not set
++CONFIG_ROMFS_FS=y
++CONFIG_INOTIFY=y
++CONFIG_INOTIFY_USER=y
++# CONFIG_QUOTA is not set
++CONFIG_DNOTIFY=y
++# CONFIG_AUTOFS_FS is not set
++# CONFIG_AUTOFS4_FS is not set
++# CONFIG_FUSE_FS is not set
++
++#
++# CD-ROM/DVD Filesystems
++#
++CONFIG_ISO9660_FS=y
++CONFIG_JOLIET=y
++# CONFIG_ZISOFS is not set
++CONFIG_UDF_FS=y
++CONFIG_UDF_NLS=y
++
++#
++# DOS/FAT/NT Filesystems
++#
++CONFIG_FAT_FS=y
++CONFIG_MSDOS_FS=y
++CONFIG_VFAT_FS=y
++CONFIG_FAT_DEFAULT_CODEPAGE=437
++CONFIG_FAT_DEFAULT_IOCHARSET="iso8859-1"
++# CONFIG_NTFS_FS is not set
++
++#
++# Pseudo filesystems
++#
++CONFIG_PROC_FS=y
++CONFIG_PROC_KCORE=y
++CONFIG_PROC_SYSCTL=y
++CONFIG_SYSFS=y
++CONFIG_TMPFS=y
++# CONFIG_TMPFS_POSIX_ACL is not set
++# CONFIG_HUGETLBFS is not set
++# CONFIG_HUGETLB_PAGE is not set
++CONFIG_RAMFS=y
++# CONFIG_CONFIGFS_FS is not set
++
++#
++# Miscellaneous filesystems
++#
++# CONFIG_ADFS_FS is not set
++# CONFIG_AFFS_FS is not set
++# CONFIG_HFS_FS is not set
++# CONFIG_HFSPLUS_FS is not set
++# CONFIG_BEFS_FS is not set
++# CONFIG_BFS_FS is not set
++# CONFIG_EFS_FS is not set
++CONFIG_JFFS2_FS=y
++CONFIG_JFFS2_FS_DEBUG=0
++CONFIG_JFFS2_FS_WRITEBUFFER=y
++# CONFIG_JFFS2_SUMMARY is not set
++# CONFIG_JFFS2_FS_XATTR is not set
++# CONFIG_JFFS2_COMPRESSION_OPTIONS is not set
++CONFIG_JFFS2_ZLIB=y
++CONFIG_JFFS2_RTIME=y
++# CONFIG_JFFS2_RUBIN is not set
++CONFIG_CRAMFS=y
++# CONFIG_SQUASHFS is not set
++# CONFIG_VXFS_FS is not set
++# CONFIG_HPFS_FS is not set
++# CONFIG_QNX4FS_FS is not set
++# CONFIG_SYSV_FS is not set
++# CONFIG_UFS_FS is not set
++
++#
++# Network File Systems
++#
++CONFIG_NFS_FS=y
++CONFIG_NFS_V3=y
++# CONFIG_NFS_V3_ACL is not set
++# CONFIG_NFS_V4 is not set
++# CONFIG_NFS_DIRECTIO is not set
++# CONFIG_NFSD is not set
++CONFIG_ROOT_NFS=y
++CONFIG_LOCKD=y
++CONFIG_LOCKD_V4=y
++CONFIG_NFS_COMMON=y
++CONFIG_SUNRPC=y
++# CONFIG_SUNRPC_BIND34 is not set
++# CONFIG_RPCSEC_GSS_KRB5 is not set
++# CONFIG_RPCSEC_GSS_SPKM3 is not set
++# CONFIG_SMB_FS is not set
++# CONFIG_CIFS is not set
++# CONFIG_NCP_FS is not set
++# CONFIG_CODA_FS is not set
++# CONFIG_AFS_FS is not set
++
++#
++# Partition Types
++#
++# CONFIG_PARTITION_ADVANCED is not set
++CONFIG_MSDOS_PARTITION=y
++
++#
++# Native Language Support
++#
++CONFIG_NLS=y
++CONFIG_NLS_DEFAULT="iso8859-1"
++CONFIG_NLS_CODEPAGE_437=y
++# CONFIG_NLS_CODEPAGE_737 is not set
++# CONFIG_NLS_CODEPAGE_775 is not set
++# CONFIG_NLS_CODEPAGE_850 is not set
++# CONFIG_NLS_CODEPAGE_852 is not set
++# CONFIG_NLS_CODEPAGE_855 is not set
++# CONFIG_NLS_CODEPAGE_857 is not set
++# CONFIG_NLS_CODEPAGE_860 is not set
++# CONFIG_NLS_CODEPAGE_861 is not set
++# CONFIG_NLS_CODEPAGE_862 is not set
++# CONFIG_NLS_CODEPAGE_863 is not set
++# CONFIG_NLS_CODEPAGE_864 is not set
++# CONFIG_NLS_CODEPAGE_865 is not set
++# CONFIG_NLS_CODEPAGE_866 is not set
++# CONFIG_NLS_CODEPAGE_869 is not set
++# CONFIG_NLS_CODEPAGE_936 is not set
++# CONFIG_NLS_CODEPAGE_950 is not set
++# CONFIG_NLS_CODEPAGE_932 is not set
++# CONFIG_NLS_CODEPAGE_949 is not set
++# CONFIG_NLS_CODEPAGE_874 is not set
++# CONFIG_NLS_ISO8859_8 is not set
++# CONFIG_NLS_CODEPAGE_1250 is not set
++# CONFIG_NLS_CODEPAGE_1251 is not set
++# CONFIG_NLS_ASCII is not set
++CONFIG_NLS_ISO8859_1=y
++# CONFIG_NLS_ISO8859_2 is not set
++# CONFIG_NLS_ISO8859_3 is not set
++# CONFIG_NLS_ISO8859_4 is not set
++# CONFIG_NLS_ISO8859_5 is not set
++# CONFIG_NLS_ISO8859_6 is not set
++# CONFIG_NLS_ISO8859_7 is not set
++# CONFIG_NLS_ISO8859_9 is not set
++# CONFIG_NLS_ISO8859_13 is not set
++# CONFIG_NLS_ISO8859_14 is not set
++# CONFIG_NLS_ISO8859_15 is not set
++# CONFIG_NLS_KOI8_R is not set
++# CONFIG_NLS_KOI8_U is not set
++# CONFIG_NLS_UTF8 is not set
++
++#
++# Distributed Lock Manager
++#
++# CONFIG_DLM is not set
++
++#
++# Profiling support
++#
++# CONFIG_PROFILING is not set
++
++#
++# Instrumentation Support
++#
++# CONFIG_KPROBES is not set
++# CONFIG_KPTRACE is not set
++# CONFIG_MARKERS is not set
++CONFIG_LTT_TIMESTAMP=y
++
++#
++# Kernel hacking
++#
++CONFIG_TRACE_IRQFLAGS_SUPPORT=y
++# CONFIG_PRINTK_TIME is not set
++CONFIG_ENABLE_MUST_CHECK=y
++# CONFIG_MAGIC_SYSRQ is not set
++# CONFIG_UNUSED_SYMBOLS is not set
++CONFIG_DEBUG_FS=y
++# CONFIG_HEADERS_CHECK is not set
++CONFIG_DEBUG_KERNEL=y
++# CONFIG_DEBUG_SHIRQ is not set
++CONFIG_DETECT_SOFTLOCKUP=y
++CONFIG_SCHED_DEBUG=y
++# CONFIG_SCHEDSTATS is not set
++# CONFIG_TIMER_STATS is not set
++CONFIG_DEBUG_SLAB=y
++# CONFIG_DEBUG_SLAB_LEAK is not set
++CONFIG_DEBUG_PREEMPT=y
++# CONFIG_DEBUG_RT_MUTEXES is not set
++# CONFIG_RT_MUTEX_TESTER is not set
++CONFIG_DEBUG_SPINLOCK=y
++CONFIG_DEBUG_MUTEXES=y
++CONFIG_DEBUG_LOCK_ALLOC=y
++# CONFIG_PROVE_LOCKING is not set
++CONFIG_LOCKDEP=y
++# CONFIG_LOCK_STAT is not set
++# CONFIG_DEBUG_LOCKDEP is not set
++CONFIG_DEBUG_SPINLOCK_SLEEP=y
++# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
++CONFIG_STACKTRACE=y
++# CONFIG_DEBUG_KOBJECT is not set
++# CONFIG_DEBUG_BUGVERBOSE is not set
++CONFIG_DEBUG_INFO=y
++# CONFIG_DEBUG_VM is not set
++CONFIG_DEBUG_LIST=y
++CONFIG_FRAME_POINTER=y
++# CONFIG_FORCED_INLINING is not set
++# CONFIG_RCU_TORTURE_TEST is not set
++# CONFIG_FAULT_INJECTION is not set
++# CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
++# CONFIG_UNWIND_INFO is not set
++# CONFIG_KGDB is not set
++# CONFIG_SH_STANDARD_BIOS is not set
++# CONFIG_EARLY_SCIF_CONSOLE is not set
++# CONFIG_DEBUG_BOOTMEM is not set
++CONFIG_DEBUG_STACKOVERFLOW=y
++CONFIG_DEBUG_STACK_USAGE=y
++# CONFIG_4KSTACKS is not set
++
++#
++# Security options
++#
++# CONFIG_KEYS is not set
++# CONFIG_SECURITY is not set
++# CONFIG_CRYPTO is not set
++
++#
++# Library routines
++#
++CONFIG_BITREVERSE=y
++# CONFIG_CRC_CCITT is not set
++# CONFIG_CRC16 is not set
++# CONFIG_CRC_ITU_T is not set
++CONFIG_CRC32=y
++# CONFIG_CRC7 is not set
++# CONFIG_LIBCRC32C is not set
++CONFIG_ZLIB_INFLATE=y
++CONFIG_ZLIB_DEFLATE=y
++CONFIG_PLIST=y
++CONFIG_HAS_IOMEM=y
++CONFIG_HAS_IOPORT=y
++CONFIG_HAS_DMA=y
+Index: linux-2.6.23-stm/drivers/i2c/busses/i2c-st40-pio.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/i2c/busses/i2c-st40-pio.c
++++ linux-2.6.23-stm/drivers/i2c/busses/i2c-st40-pio.c
+@@ -85,14 +85,16 @@ static int __init i2c_st40_probe(struct 
+ 	if (!algo)
+ 		return -1;
+ 
+-	pio_info->clk = stpio_request_pin(pio_info->pio_port,
+-			pio_info->pio_pin[0], "I2C Clock", STPIO_BIDIR);
++	pio_info->clk = stpio_request_pin(pio_info->pio[0].pio_port,
++			pio_info->pio[0].pio_pin,
++			"I2C Clock", STPIO_BIDIR);
+ 
+ 	if (!pio_info->clk) {
+ 		printk(KERN_ERR NAME"Failed to clk pin allocation\n");
+ 		return -1;
+ 	}
+-	pio_info->sdout = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[1],
++	pio_info->sdout = stpio_request_pin(pio_info->pio[1].pio_port,
++			pio_info->pio[1].pio_pin,
+ 			"I2C Data", STPIO_BIDIR);
+ 	if (!pio_info->sdout){
+ 		printk(KERN_ERR NAME"Failed to sda pin allocation\n");
+@@ -103,10 +105,12 @@ static int __init i2c_st40_probe(struct 
+ 	stpio_set_pin(pio_info->sdout, 1);
+ 
+ 	printk(KERN_INFO NAME": allocated pin (%d,%d) for scl (0x%p)\n",
+-			pio_info->pio_port, pio_info->pio_pin[0],
++			pio_info->pio[0].pio_port,
++			pio_info->pio[0].pio_pin,
+ 			pio_info->clk);
+ 	printk(KERN_INFO NAME": allocated pin (%d,%d) for sda (0x%p)\n",
+-			pio_info->pio_port, pio_info->pio_pin[1],
++			pio_info->pio[1].pio_port,
++			pio_info->pio[1].pio_pin,
+ 			pio_info->sdout);
+ 
+ 	sprintf(i2c_bus->name, "i2c_pio_%d", pdev->id);

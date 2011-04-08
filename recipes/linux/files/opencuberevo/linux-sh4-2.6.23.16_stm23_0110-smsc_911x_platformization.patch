@@ -1,0 +1,297 @@
+commit aedaa0777de1c95c234bfab328e6c4e1c533e664
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Fri May 9 17:12:01 2008 +0100
+
+    smsc_911x driver is using platform bus now.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/hms1/setup.c b/arch/sh/boards/st/hms1/setup.c
+index ffe7e87..1154fe5 100644
+--- a/arch/sh/boards/st/hms1/setup.c
++++ b/arch/sh/boards/st/hms1/setup.c
+@@ -87,8 +87,41 @@ static struct platform_device physmap_flash = {
+ 	.resource	= &physmap_flash_resource,
+ };
+ 
++static struct platform_device smsc_lan9117 = {
++	.name		= "smc911x",
++	.id		= -1,
++	.num_resources	= 4,
++	.resource	= (struct resource []) {
++		{
++			.flags = IORESOURCE_MEM,
++			.start = 0x01000000,
++			.end   = 0x010000ff,
++		},
++		{
++			.flags = IORESOURCE_IRQ,
++			.start = IRL0_IRQ,
++			.end   = IRL0_IRQ,
++		},
++		/* See end of "drivers/net/smsc_911x/smsc9118.c" file
++		 * for description of two following resources. */
++		{
++			.flags = IORESOURCE_IRQ,
++			.name  = "polarity",
++			.start = 1,
++			.end   = 1,
++		},
++		{
++			.flags = IORESOURCE_IRQ,
++			.name  = "type",
++			.start = 1,
++			.end   = 1,
++		},
++	},
++};
++
+ static struct platform_device *hms1_devices[] __initdata = {
+ 	&physmap_flash,
++	&smsc_lan9117,
+ };
+ 
+ static int __init hms1_device_init(void)
+diff --git a/drivers/net/smsc_911x/smsc9118.c b/drivers/net/smsc_911x/smsc9118.c
+index 7ed36a4..5b0daeb 100644
+--- a/drivers/net/smsc_911x/smsc9118.c
++++ b/drivers/net/smsc_911x/smsc9118.c
+@@ -42,6 +42,7 @@
+ #include <linux/mii.h>
+ #include <linux/timer.h>
+ #include <linux/string.h>
++#include <linux/platform_device.h>
+ #include <asm/irq.h>
+ #include <asm/dma.h>
+ #include <asm/bitops.h>
+@@ -1078,8 +1079,6 @@ MODULE_PARM_DESC(max_work_load,"See Readme.txt");
+ 
+ MODULE_LICENSE("GPL");
+ 
+-int Smsc9118_init_module(void);
+-void Smsc9118_cleanup_module(void);
+ int Smsc9118_init(struct net_device *dev);
+ int Smsc9118_open(struct net_device *dev);
+ int Smsc9118_stop(struct net_device *dev);
+@@ -1095,12 +1094,46 @@ struct net_device SMSC9118;
+ struct net_device SMSC9118 = {init: Smsc9118_init,};
+ #endif //not USING_LINT
+ 
+-int Smsc9118_init_module(void)
++static int Smsc9118_probe(struct platform_device *pdev)
+ {
+ 	int result=0;
+ 	int device_present=0;
+ 
+-	SMSC_TRACE("--> init_module()");
++	SMSC_TRACE("--> probe()");
++
++	if (lan_base == 0) {
++		struct resource *res = platform_get_resource(pdev,
++				IORESOURCE_MEM, 0);
++
++		if (res)
++			lan_base = res->start;
++	}
++
++	if (irq == PLATFORM_IRQ) {
++		int res = platform_get_irq(pdev, 0);
++
++		if (res >= 0)
++			irq = res;
++	}
++
++	if (irq_pol == PLATFORM_IRQ_POL) {
++		int res = platform_get_irq_byname(pdev, "polarity");
++
++		if (res >= 0)
++			irq_pol = res;
++		else
++			irq_pol = 0;
++	}
++
++	if (irq_type == PLATFORM_IRQ_TYPE) {
++		int res = platform_get_irq_byname(pdev, "type");
++
++		if (res >= 0)
++			irq_type = res;
++		else
++			irq_type = 0;
++	}
++
+ 	SMSC_TRACE("Driver Version = %lX.%02lX",
+ 		(DRIVER_VERSION>>8),(DRIVER_VERSION&0xFFUL));
+ 	SMSC_TRACE("Compiled: %s, %s",__DATE__,__TIME__);
+@@ -1289,13 +1322,13 @@ int Smsc9118_init_module(void)
+ 		SMSC_TRACE("  Interface Name = \"%s\"",SMSC9118.name);
+ 	}
+ 	result=result;//make lint happy
+-	SMSC_TRACE("<-- init_module()");
++	SMSC_TRACE("<-- probe()");
+ 	return device_present ? 0 : -ENODEV;
+ }
+ 
+-void Smsc9118_cleanup_module(void)
++static int Smsc9118_remove(struct platform_device *pdev)
+ {
+-	SMSC_TRACE("--> cleanup_module()");
++	SMSC_TRACE("--> remove()");
+ 	if(SMSC9118.priv!=NULL) {
+ 		PPRIVATE_DATA privateData=(PPRIVATE_DATA)SMSC9118.priv;
+ 		PPLATFORM_DATA platformData=(PPLATFORM_DATA)&(privateData->PlatformData);
+@@ -1304,7 +1337,8 @@ void Smsc9118_cleanup_module(void)
+ 		SMSC9118.priv=NULL;
+ 	}
+ 	unregister_netdev(&SMSC9118);
+-	SMSC_TRACE("<-- cleanup_module()");
++	SMSC_TRACE("<-- remove()");
++	return 0;
+ }
+ 
+ int Smsc9118_init(struct net_device *dev)
+@@ -5560,6 +5594,35 @@ void Vl_ReleaseLock(PVERIFIABLE_LOCK pVl,VL_KEY keyCode,DWORD *pdwIntFlags)
+ }
+ 
+ #ifndef USING_LINT
++/* Platform device registration */
++
++static struct platform_driver Smsc9118_driver = {
++	.probe = Smsc9118_probe,
++	.remove = Smsc9118_remove,
++	/* Driver name is intentionally identical to the one used
++	 * by "driver/net/smc911x.c", so you can define common
++	 * platform device and decide which driver you want to use
++	 * later... The only difference is that in case of this
++	 * driver you can provide additional IRQ resources,
++	 * following IRQ number; name them "polarity" and "type" -
++	 * they will be used as IRQ_POL and IRQ_TYPE values (both
++	 * in IRQ_CFG register). If not defined default value (zero)
++	 * will be used. */
++	.driver = {
++		.name = "smc911x",
++	},
++};
++
++static int __init Smsc9118_init_module(void)
++{
++	return platform_driver_register(&Smsc9118_driver);
++}
++
++static void __exit Smsc9118_cleanup_module(void)
++{
++	platform_driver_unregister(&Smsc9118_driver);
++}
++
+ module_init(Smsc9118_init_module);
+ module_exit(Smsc9118_cleanup_module);
+ #endif
+diff --git a/drivers/net/smsc_911x/st40.c b/drivers/net/smsc_911x/st40.c
+index 2c14fa4..2aa42ae 100644
+--- a/drivers/net/smsc_911x/st40.c
++++ b/drivers/net/smsc_911x/st40.c
+@@ -42,82 +42,15 @@
+ #ifndef ST40_H
+ #define ST40_H
+ 
+-#include <asm-sh/irl.h>
+ 
+ //for a description of these MACROs see readme.txt
+ 
+-#define PLATFORM_IRQ_POL	(0UL)
+-#define PLATFORM_IRQ_TYPE	(0UL)
+-
+-#define DB641_USE_PORT0
+-#if defined(CONFIG_SH_ST_MB411)
+-/* db641 STEM card plugged */
+-#ifdef DB641_USE_PORT0
+-/* STEM CS0 = BankB, A23=0 */
+-#define PLATFORM_CSBASE		(0x01000000UL)
+-#define PLATFORM_IRQ		(12UL)
+-#else
+-/* STEM CS1 = BankB, A23=1 */
+-#define PLATFORM_CSBASE		(0x01800000UL)
+-#define PLATFORM_IRQ		(11UL)
+-#endif
+-#elif defined(CONFIG_SH_ST_MB519)
+-/* db641 STEM card plugged into mb519 */
+-#ifdef DB641_USE_PORT0
+-/* STEM CS0 = BANK1 and A23=0 */
+-/* Make sure you read the comment about bodges in mb519/stx7200mboard_init_irq */
+-#define PLATFORM_CSBASE		(0x02000000UL)
+-#define PLATFORM_IRQ		(MUXED_IRQ_BASE+4)
+-#else
+-/* STEM CS1 = BANK4 */
+-#define PLATFORM_CSBASE		(0x02800000UL)
+-#define PLATFORM_IRQ		(MUXED_IRQ_BASE+4)
+-#endif
+-#elif defined(CONFIG_SH_ST_MB618)
+-#include <asm/irq-ilc.h>
+-/* db641 STEM card plugged into mb618 */
+-#ifdef DB641_USE_PORT0
+-/* STEM CS0 = BANK1 (notCSB). This assumes J30-B is in the 4-5 position */
+-/* Note R100 needs to be fitted */
+-#define PLATFORM_CSBASE		(0x02000000UL)
+-#define PLATFORM_IRQ		ILC_EXT_IRQ(2)
+-#else
+-/* STEM CS1 = BANK3 (notCSD). This assumes J11 is in the 1-2 position. */
+-/* Note R109 needs to be fitted */
+-#define PLATFORM_CSBASE		(0x02800000UL)
+-#define PLATFORM_IRQ		ILC_EXT_IRQ(1)
+-#endif
+-#elif defined(CONFIG_SH_ST_MB680)
+-/* db641 STEM card plugged into mb680 */
+-#include <asm/irq-ilc.h>
+-#include <linux/stm/emi.h>
+-#ifdef DB641_USE_PORT0
+-/* STEM CS0 = BANK2 */
+-/* Need to set J14A to 1-2 (notStemCS(0) <= notEMICSC) and
+- * J4 to 1-2 and fit J2A (notStemIntr(0) <= SysIRQ2) if mb680 used
+- * standalone. */
+-#define PLATFORM_CSBASE		emi_bank_base(2)
+-#define PLATFORM_IRQ		ILC_EXT_IRQ(2)
+-#else
+-/* STEM CS1 = BANK3 */
+-/* Need to set J14B to 1-2 (notStemCS(1) <= notEMICSD) and
+- * fit J2B (notStemIntr(1) <= SysIRQ1) if mb680 used
+- * standalone. */
+-#define PLATFORM_CSBASE		emi_bank_base(3)
+-#define PLATFORM_IRQ		ILC_EXT_IRQ(1)
+-#endif
+-#elif defined(CONFIG_SH_ST_HMS1)
+-/* SD HMS1 with in-built SMSC 911x */
+-#undef PLATFORM_IRQ_POL
+-#undef PLATFORM_IRQ_TYPE
+-
+-#define PLATFORM_CSBASE		(0x01000000UL)
+-#define PLATFORM_IRQ		IRL0_IRQ
+-#define PLATFORM_IRQ_POL	(1UL)
+-#define PLATFORM_IRQ_TYPE	(1UL)
+-#else
+-#error Unknown board
+-#endif
++/* Following informations are now passed as platform device resources
++ * (see Smsc9118_probe() in smsc9118.c) */
++#define PLATFORM_CSBASE -1
++#define PLATFORM_IRQ -1
++#define PLATFORM_IRQ_POL -1
++#define PLATFORM_IRQ_TYPE -1
+ 
+ #define PLATFORM_CACHE_LINE_BYTES (32UL)
+ #ifndef CONFIG_SMSC911x_DMA_NONE
+@@ -461,14 +394,14 @@ void Platform_WriteFifo(
+ 	DWORD *pdwBuf,
+ 	DWORD dwDwordCount)
+ {
+-	writesl(dwLanBase+TX_DATA_FIFO, pdwBuf, dwDwordCount);
++	writesl((void *)(dwLanBase + TX_DATA_FIFO), pdwBuf, dwDwordCount);
+ }
+ void Platform_ReadFifo(
+ 	DWORD dwLanBase,
+ 	DWORD *pdwBuf,
+ 	DWORD dwDwordCount)
+ {
+-	readsl(dwLanBase+RX_DATA_FIFO, pdwBuf, dwDwordCount);
++	readsl((void *)(dwLanBase + RX_DATA_FIFO), pdwBuf, dwDwordCount);
+ }
+ #endif
+ 

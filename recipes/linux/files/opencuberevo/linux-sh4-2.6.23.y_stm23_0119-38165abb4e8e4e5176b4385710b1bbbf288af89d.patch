@@ -1,0 +1,38 @@
+From 38165abb4e8e4e5176b4385710b1bbbf288af89d Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 4 Jun 2009 16:50:17 +0200
+Subject: [PATCH] stm: do not use the delay slot inst in __raw_writesl for CPU_ST40_300 only
+
+We can put the mov.l into the delay slot while compiling without the
+CONFIG_CPU_ST40_300 option.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ arch/sh/kernel/io.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/io.c b/arch/sh/kernel/io.c
+index b6b4810..3f41687 100644
+--- a/arch/sh/kernel/io.c
++++ b/arch/sh/kernel/io.c
+@@ -216,12 +216,17 @@ void __raw_writesl(void __iomem *addrp, const void *data, int len)
+ 			"1:			\n\t"
+ 			"mov.l	@%0+, %1	\n\t"
+ 			"dt	%3		\n\t"
++#ifdef CONFIG_CPU_ST40_300
+ 			"mov.l	%1, @%4		\n\t"
+ 			"bf	1b		\n\t"
+ 			/*
+ 			 * Note we cannot put the mov.l into the delay slot
+ 			 * here, because of a bug in the SH4-300 (GNBvd67168).
+ 			 */
++#else
++			"bf.s	1b		\n\t"
++			" mov.l %1, @%4         \n\t"
++#endif
+ 			: "=&r" (data), "=&r" (tmp1)
+ 			: "0" (data), "r" (len), "r"(addr)
+ 			: "t", "memory");
+-- 
+1.6.0.6
+

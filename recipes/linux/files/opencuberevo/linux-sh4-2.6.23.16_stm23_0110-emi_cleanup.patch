@@ -1,0 +1,445 @@
+commit d51cef4f8f6ba1296657a07bc8a06cf29fdd1263
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Fri May 9 10:48:36 2008 +0100
+
+    General EMI usage cleanup.
+    
+    (linux-sh4-2.6.23.16_stm23_0110-emi_cleanup.patch)
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index d817626..97af7dd 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -129,7 +129,6 @@ static int __init device_init(void)
+ #endif
+ 
+ 	/* Configure BANK2 for the db641 STEM card */
+-	emi_init(0, 0xfe700000);
+ 	emi_bank_configure(2, (unsigned long[4]){ 0x041086f1, 0x0e024400,
+ 				0x0e024400, 0 });
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index 8f7a87e..0dcbf5a 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -426,7 +426,6 @@ void __init stx7100_configure_pata(int bank, int irq)
+ {
+ 	unsigned long bank_base;
+ 
+-	emi_init(0, 0x1a100000);
+ 	bank_base = emi_bank_base(bank);
+ 	pata_resources[0].start += bank_base;
+ 	pata_resources[0].end   += bank_base;
+@@ -874,6 +873,16 @@ static struct platform_device ilc3_device = {
+ 	},
+ };
+ 
++/* Pre-arch initialisation ------------------------------------------------- */
++
++static int __init stx710x_postcore_setup(void)
++{
++	emi_init(0, 0x1a100000);
++
++	return 0;
++}
++postcore_initcall(stx710x_postcore_setup);
++
+ /* Late resources ---------------------------------------------------------- */
+ 
+ static struct platform_device *stx710x_devices[] __initdata = {
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index d3ca0f1..f5e3d75 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -852,7 +852,6 @@ void __init stx7105_configure_nand(struct nand_config_data *data)
+ 	struct platform_nand_data *nand_private_data =
+ 		nand_flash[emi_bank].dev.platform_data;
+ 
+-	emi_init(0, 0xfe700000);
+ 	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
+ 	if (emi_bank == 4)
+ 		bank_end = 0x07ffffff;
+@@ -969,6 +968,16 @@ static struct platform_device ilc3_device = {
+ 	},
+ };
+ 
++/* Pre-arch initialisation ------------------------------------------------- */
++
++static int __init stx7105_postcore_setup(void)
++{
++	emi_init(0, 0xfe700000);
++
++	return 0;
++}
++postcore_initcall(stx7105_postcore_setup);
++
+ /* Late resources ---------------------------------------------------------- */
+ 
+ static int __init stx7105_subsys_setup(void)
+@@ -977,6 +986,7 @@ static int __init stx7105_subsys_setup(void)
+ 	 * drivers (eg gpio-keys) require that the interrupts
+ 	 * are available. */
+ 	pio_late_setup();
++
+ 	return 0;
+ }
+ subsys_initcall(stx7105_subsys_setup);
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 97645df..8a677ba 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -654,7 +654,6 @@ void __init stx7111_configure_nand(struct nand_config_data *data)
+ 	struct platform_nand_data *nand_private_data =
+ 		nand_flash[emi_bank].dev.platform_data;
+ 
+-	emi_init(0, 0xfe700000);
+ 	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
+ 	if (emi_bank == 4)
+ 		bank_end = 0x07ffffff;
+@@ -755,6 +754,16 @@ static struct platform_device ilc3_device = {
+ 	},
+ };
+ 
++/* Pre-arch initialisation ------------------------------------------------- */
++
++static int __init stx7111_postcore_setup(void)
++{
++	emi_init(0, 0xfe700000);
++
++	return 0;
++}
++postcore_initcall(stx7111_postcore_setup);
++
+ /* Late resources ---------------------------------------------------------- */
+ 
+ static int __init stx7111_subsys_setup(void)
+@@ -763,6 +772,7 @@ static int __init stx7111_subsys_setup(void)
+ 	 * drivers (eg gpio-keys) require that the interrupts
+ 	 * are available. */
+ 	pio_late_setup();
++
+ 	return 0;
+ }
+ subsys_initcall(stx7111_subsys_setup);
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 74a08ae..67636af 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -19,6 +19,7 @@
+ #include <linux/stm/pio.h>
+ #include <linux/phy.h>
+ #include <linux/stm/sysconf.h>
++#include <linux/stm/emi.h>
+ #include <asm/sci.h>
+ #include <asm/irq-ilc.h>
+ #include <linux/stm/fdma-plat.h>
+@@ -930,7 +931,6 @@ void __init stx7200_configure_nand(struct nand_config_data *data)
+ 		}
+ 	}
+ 
+-	emi_init(0, 0xfdf00000);
+ 	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
+ 
+ 	printk("Configuring EMI Bank%d for NAND device\n", emi_bank);
+@@ -1168,6 +1168,16 @@ static struct platform_device ilc3_device = {
+ 	},
+ };
+ 
++/* Pre-arch initialisation ------------------------------------------------- */
++
++static int __init stx7200_postcore_setup(void)
++{
++	emi_init(0, 0xfdf00000);
++
++	return 0;
++}
++postcore_initcall(stx7200_postcore_setup);
++
+ /* Late resources ---------------------------------------------------------- */
+ 
+ static struct platform_device *stx7200_devices[] __initdata = {
+diff --git a/drivers/stm/emi.c b/drivers/stm/emi.c
+index 044ee2c..defc25b 100644
+--- a/drivers/stm/emi.c
++++ b/drivers/stm/emi.c
+@@ -11,18 +11,22 @@
+ #include <linux/io.h>
+ #include <linux/stm/emi.h>
+ 
++
++
++#define BANK_BASEADDRESS(b)		(0x800 + (0x10 * b))
++#define BANK_EMICONFIGDATA(b, r)	(0x100 + (0x40 * b) + (8 * r))
++
++
++
++static char emi_initialised;
+ static unsigned long emi_memory_base;
+ static void __iomem *emi_control;
+ 
+-#define BANK_BASEADDRESS(b)		(0x800 + (0x10*b))
+-#define BANK_EMICONFIGDATA(b, r)	(0x100 + (0x40*b) + (8*r))
++
+ 
+ int __init emi_init(unsigned long memory_base, unsigned long control_base)
+ {
+-	static char initialised = 0;
+-
+-	if (initialised)
+-		return 0;
++	BUG_ON(emi_initialised);
+ 
+ 	if (!request_mem_region(control_base, 0x864, "EMI"))
+ 		return -EBUSY;
+@@ -33,136 +37,156 @@ int __init emi_init(unsigned long memory_base, unsigned long control_base)
+ 
+ 	emi_memory_base = memory_base;
+ 
+-	initialised = 1;
++	emi_initialised = 1;
+ 
+ 	return 0;
+ }
+ 
+-unsigned long __init emi_bank_base(int bank)
++unsigned long emi_bank_base(int bank)
+ {
+-	unsigned long reg = readl(emi_control + BANK_BASEADDRESS(bank));
++	unsigned long reg;
++
++	BUG_ON(!emi_initialised);
++
++	reg = readl(emi_control + BANK_BASEADDRESS(bank));
++
+ 	return emi_memory_base + (reg << 22);
+ }
+ 
+ void __init emi_bank_configure(int bank, unsigned long data[4])
+ {
+ 	int i;
+-	for (i=0; i<4; i++)
+-		writel(data[i], emi_control+BANK_EMICONFIGDATA(bank,i));
+-}
+-
+-/*
+-               ______________________________
+-FMIADDR    ___/                              \________
+-              \______________________________/
+-
+ 
+-(The cycle time specified in nano seconds)
++	BUG_ON(!emi_initialised);
+ 
+-               |-----------------------------| cycle_time
+-                ______________                ___________
+-CYCLE_TIME     /              \______________/
+-
+-
+-(IORD_start the number of nano seconds after the start of the cycle the
+-RD strobe is asserted
+- IORD_end   the number of nano seconds before the end of the cycle the
+-RD strob is de-asserted.)
+-                  _______________________
+-IORD       ______/                       \________
+-
+-              |--|                       |---|
+-                ^--- IORD_start            ^----- IORD_end
++	for (i = 0; i < 4; i++)
++		writel(data[i], emi_control + BANK_EMICONFIGDATA(bank, i));
++}
+ 
+-(RD_latch the number of nano seconds at the end of the cycle the read
+-data is latched)
+-                                 __
+-RD_LATCH  ______________________/__\________
+ 
+-                                |------------|
+-                                     ^---------- RD_latch
+ 
+-(IOWR_start the number of nano seconds after the start of the cycle the
+-WR strobe is asserted
+- IOWR_end   the number of nano seconds before the end of the cycle the
+-WR strob is de-asserted.)
+-                  _______________________
+-IOWR       ______/                       \________
++/*
++ *                ______________________________
++ * EMIADDR    ___/                              \________
++ *               \______________________________/
++ *
++ * (The cycle time specified in nano seconds)
++ *
++ *                |-----------------------------| cycle_time
++ *                 ______________                ___________
++ * CYCLE_TIME     /              \______________/
++ *
++ *
++ * (IORD_start the number of nano seconds after the start of the cycle the
++ * RD strobe is asserted IORD_end the number of nano seconds before the
++ * end of the cycle the RD strobe is de-asserted.)
++ *                   _______________________
++ * IORD       ______/                       \________
++ *
++ *               |--|                       |---|
++ *                 ^--- IORD_start            ^----- IORD_end
++ *
++ * (RD_latch the number of nano seconds at the end of the cycle the read
++ * data is latched)
++ *                                  __
++ * RD_LATCH  ______________________/__\________
++ *
++ *                                 |------------|
++ *                                      ^---------- RD_latch
++ *
++ * (IOWR_start the number of nano seconds after the start of the cycle the
++ * WR strobe is asserted IOWR_end the number of nano seconds before the
++ * end of the cycle the WR strobe is de-asserted.)
++ *                   _______________________
++ * IOWR       ______/                       \________
++ *
++ *               |--|                       |---|
++ *                 ^--- IOWR_start            ^----- IOWR_end
++ */
+ 
+-              |--|                       |---|
+-                ^--- IOWR_start            ^----- IOWR_end
+ 
+ 
++/* NOTE: these calculations assume a 100MHZ clock */
+ 
+-*/
+ 
+-/* NOTE: these calculations assume a 100MHZ clock */
+ 
+-static void __init set_read_timings(int bank, int cycle_time,int IORD_start,
+-				    int IORD_end,int RD_latch)
++static void __init set_pata_read_timings(int bank, int cycle_time,
++		int IORD_start, int IORD_end, int RD_latch)
+ {
+ 	cycle_time = cycle_time / 10;
+-	IORD_start = IORD_start / 5 ;
+-	IORD_end   = IORD_end / 5 ;
+-	RD_latch   = RD_latch / 10;
++	IORD_start = IORD_start / 5;
++	IORD_end = IORD_end / 5;
++	RD_latch = RD_latch / 10;
+ 
+ 	writel((cycle_time << 24) | (IORD_start << 8) | (IORD_end << 12),
+-	       emi_control+BANK_EMICONFIGDATA(bank,1));
++			emi_control + BANK_EMICONFIGDATA(bank, 1));
+ 	writel(0x791 | (RD_latch << 20),
+-	       emi_control+BANK_EMICONFIGDATA(bank,0));
++			emi_control + BANK_EMICONFIGDATA(bank, 0));
+ }
+ 
+-static void __init set_write_timings(int bank, int cycle_time,int IOWR_start,
+-				     int IOWR_end)
++static void __init set_pata_write_timings(int bank, int cycle_time,
++		int IOWR_start, int IOWR_end)
+ {
+ 	cycle_time = cycle_time / 10;
+-	IOWR_start = IOWR_start / 5 ;
+-	IOWR_end   = IOWR_end / 5 ;
++	IOWR_start = IOWR_start / 5;
++	IOWR_end = IOWR_end / 5;
+ 
+ 	writel((cycle_time << 24) | (IOWR_start << 8) | (IOWR_end << 12),
+-	       emi_control+BANK_EMICONFIGDATA(bank,2));
++			emi_control + BANK_EMICONFIGDATA(bank, 2));
+ }
+ 
+ void __init emi_config_pata(int bank)
+ {
++	BUG_ON(!emi_initialised);
++
+ 	/* Set timings for PIO4 */
+-	set_read_timings(bank, 120,35,30,20);
+-	set_write_timings(bank, 120,35,30);
++	set_pata_read_timings(bank, 120, 35, 30, 20);
++	set_pata_write_timings(bank, 120, 35, 30);
+ }
+ 
+-void set_nand_read_timings(int bank, int cycle_time,int IORD_start,
+-				  int IORD_end, int RD_latch, int busreleasetime)
++
++
++static void __init set_nand_read_timings(int bank, int cycle_time,
++		int IORD_start, int IORD_end,
++		int RD_latch, int busreleasetime)
+ {
+ 	cycle_time = cycle_time / 10;		/* cycles */
+ 	IORD_start = IORD_start / 5;		/* phases */
+-	IORD_end   = IORD_end / 5;		/* phases */
+-	RD_latch   = RD_latch / 10;		/* cycles */
++	IORD_end = IORD_end / 5;		/* phases */
++	RD_latch = RD_latch / 10;		/* cycles */
+ 	busreleasetime = busreleasetime / 10;   /* cycles */
+ 
+ 	writel(0x04000699 | (busreleasetime << 11) | (RD_latch << 20),
+-	       emi_control+BANK_EMICONFIGDATA(bank, 0));
++			emi_control + BANK_EMICONFIGDATA(bank, 0));
+ 
+ 	writel((cycle_time << 24) | (IORD_start << 12) | (IORD_end << 8),
+-	       emi_control+BANK_EMICONFIGDATA(bank,1));
++			emi_control + BANK_EMICONFIGDATA(bank, 1));
+ }
+ 
+-void set_nand_write_timings(int bank, int cycle_time,int IOWR_start,
+-					  int IOWR_end)
++static void __init set_nand_write_timings(int bank, int cycle_time,
++		int IOWR_start, int IOWR_end)
+ {
+ 	cycle_time = cycle_time / 10;		/* cycles */
+ 	IOWR_start = IOWR_start / 5;		/* phases */
+ 	IOWR_end   = IOWR_end / 5;		/* phases */
+ 
+ 	writel((cycle_time << 24) | (IOWR_start << 12) | (IOWR_end << 8),
+-	       emi_control+BANK_EMICONFIGDATA(bank,2));
++			emi_control + BANK_EMICONFIGDATA(bank, 2));
+ }
+ 
+-void emi_config_nand(int bank, struct emi_timing_data *timing_data)
++void __init emi_config_nand(int bank, struct emi_timing_data *timing_data)
+ {
+-	set_nand_read_timings(bank, timing_data->rd_cycle_time, timing_data->rd_oee_start,
+-			      timing_data->rd_oee_end, timing_data->rd_latchpoint,
+-			      timing_data->busreleasetime);
+-
+-	set_nand_write_timings(bank, timing_data->wr_cycle_time, timing_data->wr_oee_start,
+-			       timing_data->wr_oee_end);
++	BUG_ON(!emi_initialised);
++
++	set_nand_read_timings(bank,
++			timing_data->rd_cycle_time,
++			timing_data->rd_oee_start,
++			timing_data->rd_oee_end,
++			timing_data->rd_latchpoint,
++			timing_data->busreleasetime);
++
++	set_nand_write_timings(bank,
++			timing_data->wr_cycle_time,
++			timing_data->wr_oee_start,
++			timing_data->wr_oee_end);
+ }
+diff --git a/include/linux/stm/emi.h b/include/linux/stm/emi.h
+index 6b8696e..df29b85 100644
+--- a/include/linux/stm/emi.h
++++ b/include/linux/stm/emi.h
+@@ -6,6 +6,9 @@
+  * License.  See linux/COPYING for more information.
+  */
+ 
++#ifndef __LINUX_STM_EMI_H
++#define __LINUX_STM_EMI_H
++
+ struct emi_timing_data {
+ 	int rd_cycle_time;
+ 	int rd_oee_start;
+@@ -24,3 +27,5 @@ void emi_bank_configure(int bank, unsigned long data[4]);
+ 
+ void emi_config_pata(int bank);
+ void emi_config_nand(int bank, struct emi_timing_data *timing_data);
++
++#endif

@@ -1,0 +1,1092 @@
+This patch is a performance optimistaion to how simple TLB misses are
+handled. Many of these changes are inspired by similar code in the MIPS
+and SPARC code.
+
+There are several aspects to this patch:
+ - Set up correct siginfo structures for page faults. Remove the previous
+   saving of fault codes into the thread_struct as they are never used,
+   and appeared to be inherited from x86.
+ - Start using the TTB register as a pointer to the current pgd.
+ - Remove extra bits from the pmd structure and store a kernel logical
+   address rather than a physical address. This allows it to be directly
+   dereferenced. Another piece of wiredness inherited from x86.
+ - Make the upper half of user pgd's a copy of the kernel's pgd, and
+   lazily fill in missing entries as required.
+ - Handle simple TLB miss faults which can be resolved completely from
+   the page table in assembler.
+ - Switch D-cache aliasing detection to use the technique described
+   in Documentation/cachetlb.txt. This removes a significant number
+   of user/kernel synchronisation flushes.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux/arch/sh/mm/init.c
+===================================================================
+--- linux.orig/arch/sh/mm/init.c
++++ linux/arch/sh/mm/init.c
+@@ -85,30 +85,22 @@ static void set_pte_phys(unsigned long a
+ 	pmd_t *pmd;
+ 	pte_t *pte;
+ 
+-	pgd = swapper_pg_dir + pgd_index(addr);
++	pgd = pgd_offset_k(addr);
+ 	if (pgd_none(*pgd)) {
+ 		pgd_ERROR(*pgd);
+ 		return;
+ 	}
+ 
+-	pud = pud_offset(pgd, addr);
+-	if (pud_none(*pud)) {
+-		pmd = (pmd_t *)get_zeroed_page(GFP_ATOMIC);
+-		set_pud(pud, __pud(__pa(pmd) | _KERNPG_TABLE | _PAGE_USER));
+-		if (pmd != pmd_offset(pud, 0)) {
+-			pud_ERROR(*pud);
+-			return;
+-		}
++	pud = pud_alloc(NULL, pgd, addr);
++	if (!pud) {
++		pud_ERROR(*pud);
++		return;
+ 	}
+ 
+-	pmd = pmd_offset(pud, addr);
+-	if (pmd_none(*pmd)) {
+-		pte = (pte_t *)get_zeroed_page(GFP_ATOMIC);
+-		set_pmd(pmd, __pmd(__pa(pte) | _KERNPG_TABLE | _PAGE_USER));
+-		if (pte != pte_offset_kernel(pmd, 0)) {
+-			pmd_ERROR(*pmd);
+-			return;
+-		}
++	pmd = pmd_alloc(NULL, pud, addr);
++	if (!pmd) {
++		pmd_ERROR(*pmd);
++		return;
+ 	}
+ 
+ 	pte = pte_offset_kernel(pmd, addr);
+@@ -156,9 +148,6 @@ extern char __init_begin, __init_end;
+ 
+ /*
+  * paging_init() sets up the page tables
+- *
+- * This routines also unmaps the page at virtual kernel address 0, so
+- * that we can trap those pesky NULL-reference errors in the kernel.
+  */
+ void __init paging_init(void)
+ {
+@@ -181,14 +170,11 @@ void __init paging_init(void)
+ 	 */
+ 	{
+ 		unsigned long max_dma, low, start_pfn;
+-		pgd_t *pg_dir;
+-		int i;
+-
+-		/* We don't need kernel mapping as hardware support that. */
+-		pg_dir = swapper_pg_dir;
+ 
+-		for (i = 0; i < PTRS_PER_PGD; i++)
+-			pgd_val(pg_dir[i]) = 0;
++		/* We don't need to map the kernel through the TLB, as
++		 * it is permanatly mapped using P1. So clear the
++		 * entire pgd. */
++		memset(swapper_pg_dir, 0, sizeof (swapper_pg_dir));
+ 
+ 		/* Turn on the MMU */
+ 		enable_mmu();
+@@ -207,6 +193,10 @@ void __init paging_init(void)
+ 		}
+ 	}
+ 
++	/* Set an initial value for the MMU.TTB so we don't have to
++	 * check for a null value. */
++	set_TTB(swapper_pg_dir);
++
+ #elif defined(CONFIG_CPU_SH3) || defined(CONFIG_CPU_SH4)
+ 	/*
+ 	 * If we don't have CONFIG_MMU set and the processor in question
+Index: linux/include/asm-sh/fixmap.h
+===================================================================
+--- linux.orig/include/asm-sh/fixmap.h
++++ linux/include/asm-sh/fixmap.h
+@@ -6,8 +6,6 @@
+  * for more details.
+  *
+  * Copyright (C) 1998 Ingo Molnar
+- *
+- * Support of BIGMEM added by Gerhard Wichert, Siemens AG, July 1999
+  */
+ 
+ #ifndef _ASM_FIXMAP_H
+@@ -25,8 +23,8 @@
+  * Here we define all the compile-time 'special' virtual
+  * addresses. The point is to have a constant address at
+  * compile time, but to set the physical address only
+- * in the boot process. We allocate these special  addresses
+- * from the end of virtual memory (0xfffff000) backwards.
++ * in the boot process. We allocate these special addresses
++ * from the end of P3 backwards.
+  * Also this lets us do fail-safe vmalloc(), we
+  * can guarantee that these special addresses and
+  * vmalloc()-ed addresses never overlap.
+Index: linux/include/asm-sh/pgalloc.h
+===================================================================
+--- linux.orig/include/asm-sh/pgalloc.h
++++ linux/include/asm-sh/pgalloc.h
+@@ -1,13 +1,16 @@
+ #ifndef __ASM_SH_PGALLOC_H
+ #define __ASM_SH_PGALLOC_H
+ 
+-#define pmd_populate_kernel(mm, pmd, pte) \
+-		set_pmd(pmd, __pmd(_PAGE_TABLE + __pa(pte)))
++static inline void pmd_populate_kernel(struct mm_struct *mm, pmd_t *pmd,
++				       pte_t *pte)
++{
++	set_pmd(pmd, __pmd((unsigned long)pte));
++}
+ 
+ static inline void pmd_populate(struct mm_struct *mm, pmd_t *pmd,
+ 				struct page *pte)
+ {
+-	set_pmd(pmd, __pmd(_PAGE_TABLE + page_to_phys(pte)));
++	set_pmd(pmd, __pmd((unsigned long)page_address(pte)));
+ }
+ 
+ /*
+@@ -15,7 +18,16 @@ static inline void pmd_populate(struct m
+  */
+ static inline pgd_t *pgd_alloc(struct mm_struct *mm)
+ {
+-	return (pgd_t *)__get_free_page(GFP_KERNEL | __GFP_REPEAT | __GFP_ZERO);
++	pgd_t *pgd = (pgd_t *)__get_free_page(GFP_KERNEL | __GFP_REPEAT);
++
++	if (pgd) {
++		memset(pgd, 0, USER_PTRS_PER_PGD * sizeof(pgd_t));
++		memcpy(pgd + USER_PTRS_PER_PGD,
++		       swapper_pg_dir + USER_PTRS_PER_PGD,
++		       (PTRS_PER_PGD - USER_PTRS_PER_PGD)*sizeof(pgd_t));
++	}
++
++	return pgd;
+ }
+ 
+ static inline void pgd_free(pgd_t *pgd)
+Index: linux/include/asm-sh/cpu-sh4/cacheflush.h
+===================================================================
+--- linux.orig/include/asm-sh/cpu-sh4/cacheflush.h
++++ linux/include/asm-sh/cpu-sh4/cacheflush.h
+@@ -37,7 +37,7 @@ void flush_icache_user_range(struct vm_a
+ /* Initialization of P3 area for copy_user_page */
+ void p3_cache_init(void);
+ 
+-#define PG_mapped	PG_arch_1
++#define PG_dcache_dirty			PG_arch_1
+ 
+ /* We provide our own get_unmapped_area to avoid cache alias issue */
+ #define HAVE_ARCH_UNMAPPED_AREA
+Index: linux/include/asm-sh/pgtable-2level.h
+===================================================================
+--- linux.orig/include/asm-sh/pgtable-2level.h
++++ linux/include/asm-sh/pgtable-2level.h
+@@ -50,9 +50,6 @@ static inline void pgd_clear (pgd_t * pg
+ #define set_pmd(pmdptr, pmdval) (*(pmdptr) = pmdval)
+ #define set_pgd(pgdptr, pgdval) (*(pgdptr) = pgdval)
+ 
+-#define pgd_page(pgd) \
+-((unsigned long) __va(pgd_val(pgd) & PAGE_MASK))
+-
+ static inline pmd_t * pmd_offset(pgd_t * dir, unsigned long address)
+ {
+ 	return (pmd_t *) dir;
+Index: linux/include/asm-sh/pgtable.h
+===================================================================
+--- linux.orig/include/asm-sh/pgtable.h
++++ linux/include/asm-sh/pgtable.h
+@@ -124,8 +124,6 @@ extern unsigned long empty_zero_page[PAG
+ #define _PAGE_SZHUGE	(_PAGE_SZ0 | _PAGE_SZ1)
+ #endif
+ 
+-#define _PAGE_TABLE	(_PAGE_PRESENT | _PAGE_RW | _PAGE_USER | _PAGE_ACCESSED | _PAGE_DIRTY)
+-#define _KERNPG_TABLE	(_PAGE_PRESENT | _PAGE_RW | _PAGE_ACCESSED | _PAGE_DIRTY)
+ #define _PAGE_CHG_MASK	(PTE_MASK | _PAGE_ACCESSED | _PAGE_CACHABLE | _PAGE_DIRTY)
+ 
+ #ifndef __ASSEMBLY__
+@@ -202,9 +200,9 @@ extern unsigned long empty_zero_page[PAG
+ #define pte_clear(mm,addr,xp)	do { set_pte_at(mm, addr, xp, __pte(0)); } while (0)
+ 
+ #define pmd_none(x)	(!pmd_val(x))
+-#define pmd_present(x)	(pmd_val(x) & _PAGE_PRESENT)
++#define pmd_present(x)	(pmd_val(x))
+ #define pmd_clear(xp)	do { set_pmd(xp, __pmd(0)); } while (0)
+-#define	pmd_bad(x)	((pmd_val(x) & (~PAGE_MASK & ~_PAGE_USER)) != _KERNPG_TABLE)
++#define	pmd_bad(x)	(pmd_val(x) & ~PAGE_MASK)
+ 
+ #define pages_to_mb(x)	((x) >> (20-PAGE_SHIFT))
+ #define pte_page(x)	phys_to_page(pte_val(x)&PTE_PHYS_MASK)
+@@ -253,19 +251,15 @@ static inline pgprot_t pgprot_noncached(
+ /*
+  * Conversion functions: convert a page and protection to a page entry,
+  * and a page entry and page directory to the page they refer to.
+- *
+- * extern pte_t mk_pte(struct page *page, pgprot_t pgprot)
+  */
+ #define mk_pte(page, pgprot)	pfn_pte(page_to_pfn(page), (pgprot))
+ 
+ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
+ { set_pte(&pte, __pte((pte_val(pte) & _PAGE_CHG_MASK) | pgprot_val(newprot))); return pte; }
+ 
+-#define pmd_page_kernel(pmd) \
+-((unsigned long) __va(pmd_val(pmd) & PAGE_MASK))
++#define pmd_page_kernel(pmd)	pmd_val(pmd)
+ 
+-#define pmd_page(pmd) \
+-	(phys_to_page(pmd_val(pmd)))
++#define pmd_page(pmd)		(virt_to_page(pmd_val(pmd)))
+ 
+ /* to find an entry in a page-table-directory. */
+ #define pgd_index(address) (((address) >> PGDIR_SHIFT) & (PTRS_PER_PGD-1))
+@@ -333,11 +327,6 @@ struct mm_struct;
+ extern unsigned int kobjsize(const void *objp);
+ #endif /* !CONFIG_MMU */
+ 
+-#if defined(CONFIG_CPU_SH4) || defined(CONFIG_SH7705_CACHE_32KB)
+-#define __HAVE_ARCH_PTEP_GET_AND_CLEAR
+-extern pte_t ptep_get_and_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep);
+-#endif
+-
+ #include <asm-generic/pgtable.h>
+ 
+ #endif /* !__ASSEMBLY__ */
+Index: linux/arch/sh/mm/fault.c
+===================================================================
+--- linux.orig/arch/sh/mm/fault.c
++++ linux/arch/sh/mm/fault.c
+@@ -31,9 +31,44 @@ asmlinkage void do_page_fault(struct pt_
+ 	struct mm_struct *mm;
+ 	struct vm_area_struct * vma;
+ 	unsigned long page;
++	int si_code;
++	siginfo_t info;
+ 
+ 	tsk = current;
+ 	mm = tsk->mm;
++	si_code = SEGV_MAPERR;
++
++	if (unlikely(address >= TASK_SIZE)) {
++		/*
++		 * Synchronize this task's top level page-table
++		 * with the 'reference' page table.
++		 *
++                 * Do _not_ use "tsk" here. We might be inside
++                 * an interrupt in the middle of a task switch..
++		 */
++		int offset = pgd_index(address);
++		pgd_t *pgd, *pgd_k;
++		pmd_t *pmd, *pmd_k;
++
++		pgd = get_TTB() + offset;
++		pgd_k = swapper_pg_dir + offset;
++
++		/* This will never happen with the folded page table. */
++		if (!pgd_present(*pgd)) {
++			if (!pgd_present(*pgd_k))
++				goto bad_area_nosemaphore;
++			set_pgd(pgd, *pgd_k);
++			return;
++		}
++
++		pmd = pmd_offset(pgd, address);
++		pmd_k = pmd_offset(pgd_k, address);
++		if (pmd_present(*pmd) || !pmd_present(*pmd_k))
++			goto bad_area_nosemaphore;
++		set_pmd(pmd, *pmd_k);
++
++		return;
++	}
+ 
+ 	/*
+ 	 * If we're in an interrupt or have no user
+@@ -58,6 +93,7 @@ asmlinkage void do_page_fault(struct pt_
+  * we can handle it..
+  */
+ good_area:
++	si_code = SEGV_ACCERR;
+ 	if (writeaccess) {
+ 		if (!(vma->vm_flags & VM_WRITE))
+ 			goto bad_area;
+@@ -97,10 +133,13 @@ survive:
+ bad_area:
+ 	up_read(&mm->mmap_sem);
+ 
++bad_area_nosemaphore:
+ 	if (user_mode(regs)) {
+-		tsk->thread.address = address;
+-		tsk->thread.error_code = writeaccess;
+-		force_sig(SIGSEGV, tsk);
++ 		info.si_signo = SIGSEGV;
++ 		info.si_errno = 0;
++ 		info.si_code = si_code;
++ 		info.si_addr = (void *) address;
++ 		force_sig_info(SIGSEGV, &info, tsk);
+ 		return;
+ 	}
+ 
+@@ -160,92 +199,14 @@ do_sigbus:
+ 	 * Send a sigbus, regardless of whether we were in kernel
+ 	 * or user mode.
+ 	 */
+-	tsk->thread.address = address;
+-	tsk->thread.error_code = writeaccess;
+-	tsk->thread.trap_no = 14;
+-	force_sig(SIGBUS, tsk);
++ 	info.si_signo = SIGBUS;
++ 	info.si_errno = 0;
++ 	info.si_code = BUS_ADRERR;
++ 	info.si_addr = (void *) address;
++ 	force_sig_info(SIGBUS, &info, tsk);
+ 
+ 	/* Kernel mode? Handle exceptions or die */
+ 	if (!user_mode(regs))
+ 		goto no_context;
+ }
+ 
+-#ifdef CONFIG_SH_STORE_QUEUES
+-/*
+- * This is a special case for the SH-4 store queues, as pages for this
+- * space still need to be faulted in before it's possible to flush the
+- * store queue cache for writeout to the remapped region.
+- */
+-#define P3_ADDR_MAX		(P4SEG_STORE_QUE + 0x04000000)
+-#else
+-#define P3_ADDR_MAX		P4SEG
+-#endif
+-
+-/*
+- * Called with interrupts disabled.
+- */
+-asmlinkage int __do_page_fault(struct pt_regs *regs, unsigned long writeaccess,
+-			       unsigned long address)
+-{
+-	pgd_t *pgd;
+-	pud_t *pud;
+-	pmd_t *pmd;
+-	pte_t *pte;
+-	pte_t entry;
+-	struct mm_struct *mm;
+-	spinlock_t *ptl;
+-	int ret = 1;
+-
+-	/*
+-	 * We don't take page faults for P1, P2, and parts of P4, these
+-	 * are always mapped, whether it be due to legacy behaviour in
+-	 * 29-bit mode, or due to PMB configuration in 32-bit mode.
+-	 */
+-	if (address >= P3SEG && address < P3_ADDR_MAX) {
+-		pgd = pgd_offset_k(address);
+-		mm = NULL;
+-	} else {
+-		if (unlikely(address >= TASK_SIZE || !(mm = current->mm)))
+-			return 1;
+-
+-		pgd = pgd_offset(current->mm, address);
+-	}
+-
+-	pud = pud_offset(pgd, address);
+-	if (pud_none_or_clear_bad(pud))
+-		return 1;
+-	pmd = pmd_offset(pud, address);
+-	if (pmd_none_or_clear_bad(pmd))
+-		return 1;
+-
+-	if (mm)
+-		pte = pte_offset_map_lock(mm, pmd, address, &ptl);
+-	else
+-		pte = pte_offset_kernel(pmd, address);
+-
+-	entry = *pte;
+-	if (unlikely(pte_none(entry) || pte_not_present(entry)))
+-		goto unlock;
+-	if (unlikely(writeaccess && !pte_write(entry)))
+-		goto unlock;
+-
+-	if (writeaccess)
+-		entry = pte_mkdirty(entry);
+-	entry = pte_mkyoung(entry);
+-
+-#ifdef CONFIG_CPU_SH4
+-	/*
+-	 * ITLB is not affected by "ldtlb" instruction.
+-	 * So, we need to flush the entry by ourselves.
+-	 */
+-	__flush_tlb_page(get_asid(), address & PAGE_MASK);
+-#endif
+-
+-	set_pte(pte, entry);
+-	update_mmu_cache(NULL, address, entry);
+-	ret = 0;
+-unlock:
+-	if (mm)
+-		pte_unmap_unlock(pte, ptl);
+-	return ret;
+-}
+Index: linux/include/asm-sh/mmu_context.h
+===================================================================
+--- linux.orig/include/asm-sh/mmu_context.h
++++ linux/include/asm-sh/mmu_context.h
+@@ -126,18 +126,23 @@ static __inline__ void activate_context(
+ 	set_asid(mm->context & MMU_CONTEXT_ASID_MASK);
+ }
+ 
+-/* MMU_TTB can be used for optimizing the fault handling.
+-   (Currently not used) */
++/* MMU_TTB is used for optimizing the fault handling. */
++static __inline__ void set_TTB(pgd_t* pgd)
++{
++	ctrl_outl((unsigned long)pgd, MMU_TTB);
++}
++
++static __inline__ pgd_t* get_TTB(void)
++{
++	return (pgd_t*)ctrl_inl(MMU_TTB);
++}
++
+ static __inline__ void switch_mm(struct mm_struct *prev,
+ 				 struct mm_struct *next,
+ 				 struct task_struct *tsk)
+ {
+ 	if (likely(prev != next)) {
+-		unsigned long __pgdir = (unsigned long)next->pgd;
+-
+-		__asm__ __volatile__("mov.l	%0, %1"
+-				     : /* no output */
+-				     : "r" (__pgdir), "m" (__m(MMU_TTB)));
++		set_TTB(next->pgd);
+ 		activate_context(next);
+ 	}
+ }
+Index: linux/include/asm-sh/processor.h
+===================================================================
+--- linux.orig/include/asm-sh/processor.h
++++ linux/include/asm-sh/processor.h
+@@ -138,12 +138,11 @@ union sh_fpu_union {
+ #define CPU_HAS_PTEA		0x0020	/* PTEA register */
+ 
+ struct thread_struct {
++	/* Saved registers when thread is descheduled */
+ 	unsigned long sp;
+ 	unsigned long pc;
+ 
+-	unsigned long trap_no, error_code;
+-	unsigned long address;
+-	/* Hardware debugging registers may come here */
++	/* Hardware debugging registers */
+ 	unsigned long ubc_pc;
+ 
+ 	/* floating point info */
+@@ -158,12 +157,7 @@ typedef struct {
+ extern int ubc_usercnt;
+ 
+ #define INIT_THREAD  {						\
+-	sizeof(init_stack) + (long) &init_stack, /* sp */	\
+-	0,					 /* pc */	\
+-	0, 0,							\
+-	0,							\
+-	0,							\
+-	{{{0,}},}				/* fpu state */	\
++	.sp = sizeof(init_stack) + (long) &init_stack,		\
+ }
+ 
+ /*
+Index: linux/arch/sh/mm/cache-sh4.c
+===================================================================
+--- linux.orig/arch/sh/mm/cache-sh4.c
++++ linux/arch/sh/mm/cache-sh4.c
+@@ -239,12 +239,25 @@ static inline void flush_cache_4096(unsi
+ }
+ 
+ /*
++ * Called just before the kernel reads a page cache page, or has written
++ * to a page cache page, which may have been mapped into user space.
+  * Write back & invalidate the D-cache of the page.
+  * (To avoid "alias" issues)
+  */
+ void flush_dcache_page(struct page *page)
+ {
+-	if (test_bit(PG_mapped, &page->flags)) {
++	struct address_space *mapping = page_mapping(page);
++
++	if ((mapping != NULL) && (! mapping_mapped(mapping))) {
++		/* There are no user mappings for this page, so we can
++		 * defer the flush. */
++		__set_bit(PG_dcache_dirty, &page->flags);
++	} else {
++		/* page->mapping is NULL for argv/env pages, which
++		 * must be flushed here (there is no call to
++		 * update_mmu_cache in this case). Or there is a user
++		 * mapping for this page, so we flush. */
++
+ 		unsigned long phys = PHYSADDR(page_address(page));
+ 		unsigned long addr = CACHE_OC_ADDRESS_ARRAY;
+ 		int i, n;
+Index: linux/arch/sh/mm/clear_page.S
+===================================================================
+--- linux.orig/arch/sh/mm/clear_page.S
++++ linux/arch/sh/mm/clear_page.S
+@@ -51,8 +51,56 @@ ENTRY(clear_page_slow)
+ 	!
+ 	rts
+ 	 nop
++
+ .Llimit:	.word	(4096-28)
+ 
++#if defined(CONFIG_CPU_SH4)
++/*
++ * __clear_page_wb
++ * @to: P1 address
++ *
++ * void __clear_page_wb(void *to)
++ */
++
++/*
++ * r0 --- zero
++ * r3 --- scratch
++ * r4 --- to
++ * r5 --- current pointer
++ */
++ENTRY(__clear_page_wb)
++	mov	#0x10, r5		!   6 EX
++	mov	r4, r3			!   5 MT (latency=0)
++
++	shll8	r5			! 102 EX
++	add	#-4, r3			!  50 EX
++	add	r5, r3			!  49 EX
++	mov	#0, r0			!   6 EX
++
++1:
++	movca.l	r0, @r3			!  40 LS (latency=3-7)
++	mov	r3, r5			!   5 MT (latency=0)
++
++	mov.l	r0,@-r5			!  30 LS
++	add	#-32, r3		!  50 EX
++
++	mov.l	r0,@-r5			!  30 LS
++	mov.l	r0,@-r5			!  30 LS
++	mov.l	r0,@-r5			!  30 LS
++	mov.l	r0,@-r5			!  30 LS
++
++	mov.l	r0,@-r5			!  30 LS
++	cmp/hi	r4, r3			!  57 MT
++
++	mov.l	r0,@-r5			!  30 LS
++	bt/s	1b			! 111 BR
++
++	 ocbwb	@r5			!  44 LS (latency=1-5)
++
++ 	rts
++ 	 nop
++#endif
++
+ ENTRY(__clear_user)
+ 	!
+ 	mov	#0, r0
+@@ -155,7 +203,7 @@ ENTRY(__clear_user)
+ #if defined(CONFIG_CPU_SH4)
+ /*
+  * __clear_user_page
+- * @to: P3 address (with same color)
++ * @to: P3 address (with same color as user page)
+  * @orig_to: P1 address
+  *
+  * void __clear_user_page(void *to, void *orig_to)
+Index: linux/arch/sh/mm/copy_page.S
+===================================================================
+--- linux.orig/arch/sh/mm/copy_page.S
++++ linux/arch/sh/mm/copy_page.S
+@@ -24,6 +24,7 @@
+  * r11 --- from
+  */
+ ENTRY(copy_page_slow)
++ENTRY(__copy_page_wb)
+ 	mov.l	r8,@-r15
+ 	mov.l	r10,@-r15
+ 	mov.l	r11,@-r15
+@@ -71,7 +72,7 @@ ENTRY(copy_page_slow)
+ #if defined(CONFIG_CPU_SH4)
+ /*
+  * __copy_user_page
+- * @to: P1 address (with same color)
++ * @to: P1 address (with same color as user page)
+  * @from: P1 address
+  * @orig_to: P1 address
+  *
+Index: linux/arch/sh/mm/pg-sh4.c
+===================================================================
+--- linux.orig/arch/sh/mm/pg-sh4.c
++++ linux/arch/sh/mm/pg-sh4.c
+@@ -34,9 +34,10 @@ extern struct semaphore p3map_sem[];
+  */
+ void clear_user_page(void *to, unsigned long address, struct page *page)
+ {
+-	__set_bit(PG_mapped, &page->flags);
++	void __clear_page_wb(void *to);
++
+ 	if (((address ^ (unsigned long)to) & CACHE_ALIAS) == 0)
+-		clear_page(to);
++		__clear_page_wb(to);
+ 	else {
+ 		pgprot_t pgprot = __pgprot(_PAGE_PRESENT |
+ 					   _PAGE_RW | _PAGE_CACHABLE |
+@@ -74,9 +75,10 @@ void clear_user_page(void *to, unsigned 
+ void copy_user_page(void *to, void *from, unsigned long address,
+ 		    struct page *page)
+ {
+-	__set_bit(PG_mapped, &page->flags);
++	extern void __copy_page_wb(void *to, void *from);
++
+ 	if (((address ^ (unsigned long)to) & CACHE_ALIAS) == 0)
+-		copy_page(to, from);
++		__copy_page_wb(to, from);
+ 	else {
+ 		pgprot_t pgprot = __pgprot(_PAGE_PRESENT |
+ 					   _PAGE_RW | _PAGE_CACHABLE |
+@@ -103,24 +105,3 @@ void copy_user_page(void *to, void *from
+ 		up(&p3map_sem[(address & CACHE_ALIAS)>>12]);
+ 	}
+ }
+-
+-/*
+- * For SH-4, we have our own implementation for ptep_get_and_clear
+- */
+-inline pte_t ptep_get_and_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
+-{
+-	pte_t pte = *ptep;
+-
+-	pte_clear(mm, addr, ptep);
+-	if (!pte_not_present(pte)) {
+-		unsigned long pfn = pte_pfn(pte);
+-		if (pfn_valid(pfn)) {
+-			struct page *page = pfn_to_page(pfn);
+-			struct address_space *mapping = page_mapping(page);
+-			if (!mapping || !mapping_writably_mapped(mapping))
+-				__clear_bit(PG_mapped, &page->flags);
+-		}
+-	}
+-	return pte;
+-}
+-
+Index: linux/arch/sh/mm/tlb-sh4.c
+===================================================================
+--- linux.orig/arch/sh/mm/tlb-sh4.c
++++ linux/arch/sh/mm/tlb-sh4.c
+@@ -37,17 +37,22 @@ void update_mmu_cache(struct vm_area_str
+ 	struct page *page;
+ 	unsigned long pfn;
+ 
+-	/* Ptrace may call this routine. */
++	/* FIXME SIM: Do I need this test at all? Sparc doesn't */
++
++	/* vma can be null when called for a P3 address from
++	 * copy_user_page. Also ptrace may call this routine
++	 * to access an address in the process being debugged. */
+ 	if (vma && current->active_mm != vma->vm_mm)
+ 		return;
+ 
+ 	pfn = pte_pfn(pte);
+ 	if (pfn_valid(pfn)) {
+ 		page = pfn_to_page(pfn);
+-		if (!test_bit(PG_mapped, &page->flags)) {
++		if (page_mapping(page) &&
++		    test_bit(PG_dcache_dirty, &page->flags)) {
+ 			unsigned long phys = pte_val(pte) & PTE_PHYS_MASK;
+ 			__flush_wback_region((void *)P1SEGADDR(phys), PAGE_SIZE);
+-			__set_bit(PG_mapped, &page->flags);
++			__clear_bit(PG_dcache_dirty, &page->flags);
+ 		}
+ 	}
+ 
+Index: linux/include/asm-sh/io.h
+===================================================================
+--- linux.orig/include/asm-sh/io.h
++++ linux/include/asm-sh/io.h
+@@ -24,7 +24,6 @@
+  *        define it to __inb if it chooses.
+  */
+ #include <linux/config.h>
+-#include <asm/cache.h>
+ #include <asm/system.h>
+ #include <asm/addrspace.h>
+ #include <asm/machvec.h>
+Index: linux/arch/sh/kernel/entry.S
+===================================================================
+--- linux.orig/arch/sh/kernel/entry.S
++++ linux/arch/sh/kernel/entry.S
+@@ -18,6 +18,9 @@
+ #include <asm/thread_info.h>
+ #include <asm/cpu/mmu_context.h>
+ #include <asm/unistd.h>
++#include <asm/cpu/mmu_context.h>
++#include <asm/pgtable.h>
++#include <asm/page.h>
+ 
+ ! NOTE:
+ ! GNU as (as of 2.9.1) changes bf/s into bt/s and bra, when the address
+@@ -163,29 +166,14 @@ ENTRY(tlb_protection_violation_store)
+ 
+ call_dpf:
+ 	mov.l	1f, r0
+-	mov	r5, r8
+-	mov.l	@r0, r6
+-	mov	r6, r9
+-	mov.l	2f, r0
+-	sts	pr, r10
+-	jsr	@r0
+-	 mov	r15, r4
+-	!
+-	tst	r0, r0
+-	bf/s	0f
+-	 lds	r10, pr
+-	rts
+-	 nop
+-0:	STI()
++	mov.l	@r0, r6		! address
+ 	mov.l	3f, r0
+-	mov	r9, r6
+-	mov	r8, r5
++	STI()
+ 	jmp	@r0
+-	 mov	r15, r4
++	 mov	r15, r4		! regs
+ 
+ 	.align 2
+ 1:	.long	MMU_TEA
+-2:	.long	__do_page_fault
+ 3:	.long	do_page_fault
+ 
+ 	.align	2
+@@ -725,9 +713,187 @@ general_exception:
+ 2:	.long	ret_from_exception
+ !
+ !
++
++/* This code makes some assumptions to improve performance.
++ * Make sure they are stil true. */
++#if PTRS_PER_PGD != PTRS_PER_PTE
++#error PDG and PTE sizes don't match
++#endif
++#if PTRS_PER_PMD != 1
++#error PMD is not folded into pgd
++#endif
++
++/* gas doesn't flag impossible values for mov #immediate as an error */
++#if (_PAGE_PRESENT >> 2) > 0x7f
++#error cannot load PAGE_PRESENT as an immediate
++#endif
++#if _PAGE_DIRTY > 0x7f
++#error cannot load PAGE_DIRTY as an immediate
++#endif
++#if (_PAGE_PRESENT << 2) != _PAGE_ACCESSED
++#error cannot derive PAGE_ACCESSED from PAGE_PRESENT
++#endif
++
++#if defined(CONFIG_CPU_SH4)
++#define ldmmupteh(r)	mov.l	8f, r
++#else
++#define ldmmupteh(r)	mov	#MMU_PTEH, r
++#endif
++
++#if defined(CONFIG_CPU_SH4) && ! defined(CONFIG_CPU_SUBTYPE_ST40)
++/* Try not to use this if possible. It adds almost 50% extra cycles to the
++ * TLB miss handler. */
++#define PCC_MASK
++#endif
++
+ 	.balign 	1024,0,1024
+ tlb_miss:
+-	mov.l	1f, k2
++#ifdef COUNT_EXCEPTIONS
++	! Increment the counts
++	mov.l	9f, k1
++	mov.l	@k1, k2
++	add	#1, k2
++	mov.l	k2, @k1
++#endif
++
++	! k0 scratch
++	! k1 pgd and pte pointers
++	! k2 faulting address
++	! k3 pgd and pte index masks
++	! k4 shift
++
++	! Load up the pgd entry (k1)
++
++	ldmmupteh(k0)			!  9 LS (latency=2)	MMU_PTEH
++
++	mov.w	4f, k3			!  8 LS (latency=2)	(PTRS_PER_PGD-1) << 2
++	mov	#-(PGDIR_SHIFT-2), k4	!  6 EX
++
++	mov.l	@(MMU_TEA-MMU_PTEH,k0), k2	! 18 LS (latency=2)
++
++	mov.l	@(MMU_TTB-MMU_PTEH,k0), k1	! 18 LS (latency=2)
++
++	mov	k2, k0			!   5 MT (latency=0)
++	shld	k4, k0			!  99 EX
++
++	and	k3, k0			!  78 EX
++
++	mov.l	@(k0, k1), k1		!  21 LS (latency=2)
++	mov	#-(PAGE_SHIFT-2), k4	!   6 EX
++
++	! Load up the pte entry (k2)
++
++	mov	k2, k0			!   5 MT (latency=0)
++	shld	k4, k0			!  99 EX
++
++	tst	k1, k1			!  86 MT
++
++	bt	20f			! 110 BR
++
++	and	k3, k0			!  78 EX
++	mov.w	5f, k4			!   8 LS (latency=2)	_PAGE_PRESENT
++
++	mov.l	@(k0, k1), k2		!  21 LS (latency=2)
++	add	k0, k1			!  49 EX
++
++#ifdef PCC_MASK
++#error not yet checked
++
++	! Test the entry for present and _PAGE_ACCESSED
++
++	mov	#-28, k3		!   6 EX
++	mov	k2, k0			!   5 MT (latency=0)
++
++	tst	k4, k2			!  68 MT
++	shld	k3, k0			!  99 EX
++
++	bt	20f			! 110 BR
++
++	! Set PTEA register
++	! MMU_PTEA = ((pteval >> 28) & 0xe) | (pteval & 0x1)
++	!
++	! k0=pte>>28, k1=pte*, k2=pte, k3=<unused>, k4=_PAGE_PRESENT
++
++	and	#0xe, k0		!  79 EX
++
++	mov	k0, k3			!   5 MT (latency=0)
++	mov	k2, k0			!   5 MT (latency=0)
++
++	and	#1, k0			!  79 EX
++
++	or	k0, k3			!  82 EX
++
++	ldmmupteh(k0)			!   9 LS (latency=2)
++	shll2	k4			! 101 EX		_PAGE_ACCESSED
++
++	tst	k4, k2			!  68 MT
++
++	mov.l	k3, @(MMU_PTEA-MMU_PTEH,k0)	! 27 LS
++
++	mov.l	7f, k3			!   9 LS (latency=2)	_PAGE_FLAGS_HARDWARE_MASK
++
++	! k0=MMU_PTEH, k1=pte*, k2=pte, k3=_PAGE_FLAGS_HARDWARE, k4=_PAGE_ACCESSED
++#else
++
++	! Test the entry for present and _PAGE_ACCESSED
++
++	mov.l	7f, k3			!   9 LS (latency=2)	_PAGE_FLAGS_HARDWARE_MASK
++	tst	k4, k2			!  68 MT
++
++	shll2	k4			! 101 EX		_PAGE_ACCESSED
++	ldmmupteh(k0)			!   9 LS (latency=2)
++
++	bt	20f			! 110 BR
++	tst	k4, k2			!  68 MT
++
++	! k0=MMU_PTEH, k1=pte*, k2=pte, k3=_PAGE_FLAGS_HARDWARE, k4=_PAGE_ACCESSED
++
++#endif
++
++	! Set up the entry
++
++	and	k2, k3			!  78 EX
++	bt/s	10f			! 108 BR
++
++	 mov.l	k3, @(MMU_PTEL-MMU_PTEH,k0)	! 27 LS
++
++	ldtlb				! 128 CO
++
++	! At least one instruction between ldtlb and rte
++	nop				! 119 NOP
++
++	rte				! 126 CO
++
++	 nop				! 119 NOP
++
++
++10:	or	k4, k2			!  82 EX
++
++	ldtlb				! 128 CO
++
++	! At least one instruction between ldtlb and rte
++	mov.l	k2, @k1			!  27 LS
++
++	rte				! 126 CO
++
++	! Note we cannot execute mov here, because it is executed after
++	! restoring SSR, so would be executed in user space.
++	 nop				! 119 NOP
++
++
++	.align 5
++	! Once cache line if possible...
++1:	.long	swapper_pg_dir
++4:	.short	(PTRS_PER_PGD-1) << 2
++5:	.short	_PAGE_PRESENT
++7:	.long	_PAGE_FLAGS_HARDWARE_MASK
++8:	.long	MMU_PTEH
++#ifdef COUNT_EXCEPTIONS
++9:	.long	exception_count_miss
++#endif
++
++	! Either pgd or pte not present
++20:	mov.l	1f, k2
+ 	mov.l	4f, k3
+ 	bra	handle_exception
+ 	 mov.l	@k2, k2
+@@ -883,6 +1049,15 @@ skip_save:
+ 	stc	k_ex_code, r8
+ 	shlr2	r8
+ 	shlr	r8
++
++#ifdef COUNT_EXCEPTIONS
++	mov.l	5f, r9
++	add	r8, r9
++	mov.l	@r9, r10
++	add	#1, r10
++	mov.l	r10, @r9
++#endif
++
+ 	mov.l	4f, r9
+ 	add	r8, r9
+ 	mov.l	@r9, r9
+@@ -894,6 +1069,9 @@ skip_save:
+ 2:	.long	0x000080f0	! FD=1, IMASK=15
+ 3:	.long	0xcfffffff	! RB=0, BL=0
+ 4:	.long	exception_handling_table
++#ifdef COUNT_EXCEPTIONS
++5:	.long	exception_count_table
++#endif
+ 
+ 	.align	2
+ ENTRY(exception_none)
+Index: linux/arch/sh/kernel/traps.c
+===================================================================
+--- linux.orig/arch/sh/kernel/traps.c
++++ linux/arch/sh/kernel/traps.c
+@@ -458,7 +458,15 @@ static int handle_unaligned_access(u16 i
+ }
+ 
+ /*
+- * Handle various address error exceptions
++ * Handle various address error exceptions:
++ *  - instruction address error:
++ *       misaligned PC
++ *       PC >= 0x80000000 in user mode
++ *  - data address error (read and write)
++ *       misaligned data access
++ *       access to >= 0x80000000 is user mode
++ * Unfortuntaly we can't distinguish between instruction address error
++ * and data address errors caused by read acceses.
+  */
+ asmlinkage void do_address_error(struct pt_regs *regs, 
+ 				 unsigned long writeaccess,
+@@ -468,19 +476,22 @@ asmlinkage void do_address_error(struct 
+ 	mm_segment_t oldfs;
+ 	u16 instruction;
+ 	int tmp;
++ 	siginfo_t info;
+ 
+ 	asm volatile("stc       r2_bank,%0": "=r" (error_code));
+ 
+ 	oldfs = get_fs();
+ 
+ 	if (user_mode(regs)) {
++ 		int si_code = BUS_ADRERR;
++
+ 		local_irq_enable();
+-		current->thread.error_code = error_code;
+-		current->thread.trap_no = (writeaccess) ? 8 : 7;
+ 
+ 		/* bad PC is not something we can fix */
+-		if (regs->pc & 1)
+-			goto uspace_segv;
++ 		if (regs->pc & 1) {
++ 			si_code = BUS_ADRALN;
++  			goto uspace_segv;
++ 		}
+ 
+ 		set_fs(USER_DS);
+ 		if (copy_from_user(&instruction, (u16 *)(regs->pc), 2)) {
+@@ -498,8 +509,11 @@ asmlinkage void do_address_error(struct 
+ 			return; /* sorted */
+ 
+ 	uspace_segv:
+-		printk(KERN_NOTICE "Killing process \"%s\" due to unaligned access\n", current->comm);
+-		force_sig(SIGSEGV, current);
++		info.si_signo = SIGBUS;
++		info.si_errno = 0;
++		info.si_code = si_code;
++		info.si_addr = (void *) address;
++		force_sig_info(SIGBUS, &info, current);
+ 	} else {
+ 		if (regs->pc & 1)
+ 			die("unaligned program counter", regs, error_code);
+@@ -582,8 +596,6 @@ asmlinkage void do_reserved_inst(unsigne
+ 
+ 	asm volatile("stc	r2_bank, %0": "=r" (error_code));
+ 	local_irq_enable();
+-	tsk->thread.error_code = error_code;
+-	tsk->thread.trap_no = TRAP_RESERVED_INST;
+ 	kgdb_exception_handler(regs);
+ 	force_sig(SIGILL, tsk);
+ 	die_if_no_fixup("reserved instruction", regs, error_code);
+@@ -654,8 +666,6 @@ asmlinkage void do_illegal_slot_inst(uns
+ 
+ 	asm volatile("stc	r2_bank, %0": "=r" (error_code));
+ 	local_irq_enable();
+-	tsk->thread.error_code = error_code;
+-	tsk->thread.trap_no = TRAP_RESERVED_INST;
+ 	kgdb_exception_handler(regs);
+ 	force_sig(SIGILL, tsk);
+ 	die_if_no_fixup("illegal slot instruction", regs, error_code);
+Index: linux/arch/sh/kernel/cpu/sh4/probe.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/probe.c
++++ linux/arch/sh/kernel/cpu/sh4/probe.c
+@@ -106,17 +106,18 @@ int __init detect_cpu_and_cache_system(v
+ 		break;
+ 	case 0x8000:
+ 		cpu_data->type = CPU_ST40RA;
+-		cpu_data->flags |= CPU_HAS_FPU | CPU_HAS_PTEA;
++		cpu_data->flags |= CPU_HAS_FPU;
+ 		break;
+ 	case 0x8001 ... 0x8004:
+ 		/* 0x8003: cut 4 */
+ 		/* 0x8004: cut 5 */
+ 		cpu_data->type = CPU_STM8000;
++		cpu_data->flags |= CPU_HAS_FPU;
+ 		break;
+ 	case 0x8100:
+ 		/* Some bright spark used this same ID for the STi5528 */
+ 		cpu_data->type = CPU_ST40GX1;
+-		cpu_data->flags |= CPU_HAS_FPU | CPU_HAS_PTEA;
++		cpu_data->flags |= CPU_HAS_FPU;
+ 		break;
+ 	case 0x700:
+ 		cpu_data->type = CPU_SH4_501;
+@@ -136,6 +137,7 @@ int __init detect_cpu_and_cache_system(v
+ 		cpu_data->type = CPU_STB7100;
+ 		cpu_data->icache.ways = 2;
+ 		cpu_data->dcache.ways = 2;
++		cpu_data->flags |= CPU_HAS_FPU;
+ 		break;
+ 	case 0x500 ... 0x501:
+ 		switch (prr) {

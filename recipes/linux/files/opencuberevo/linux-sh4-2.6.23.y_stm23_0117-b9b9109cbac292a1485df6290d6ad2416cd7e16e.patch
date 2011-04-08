@@ -1,0 +1,77 @@
+From b9b9109cbac292a1485df6290d6ad2416cd7e16e Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Fri, 28 Nov 2008 13:13:42 +0000
+Subject: [PATCH] sh: Fix the consistent alloc/free behaviour for compound page
+
+split_page() must not be used in case of compound page allocation
+(set by __GFP_COMP flag). So in this case unused pages sadly will
+not be released, but at least it will work.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/mm/consistent.c |   31 +++++++++++++++++++++----------
+ 1 files changed, 21 insertions(+), 10 deletions(-)
+
+diff --git a/arch/sh/mm/consistent.c b/arch/sh/mm/consistent.c
+index 819a410..9539ba2 100644
+--- a/arch/sh/mm/consistent.c
++++ b/arch/sh/mm/consistent.c
+@@ -206,7 +206,7 @@ static struct page *__consistent_unmap(void *vaddr, size_t size)
+ 
+ void *consistent_alloc(gfp_t gfp, size_t size, dma_addr_t *handle)
+ {
+-	struct page *page, *end;
++	struct page *page;
+ 	void *ret;
+ 	int order;
+ 	unsigned long phys_addr;
+@@ -237,11 +237,16 @@ void *consistent_alloc(gfp_t gfp, size_t size, dma_addr_t *handle)
+ 	 */
+ 	dma_cache_wback_inv(kernel_addr, size);
+ 
+-	/* Free the otherwise unused pages */
+-	split_page(page, order);
+-	end = page + (1 << order);
+-	for (page += size >> PAGE_SHIFT; page < end; page++) {
+-		__free_page(page);
++	/*
++	 * Free the otherwise unused pages, unless got compound page
++	 */
++	if (!PageCompound(page)) {
++		struct page *end = page + (1 << order);
++
++		split_page(page, order);
++
++		for (page += size >> PAGE_SHIFT; page < end; page++)
++			__free_page(page);
+ 	}
+ 
+ 	*handle = phys_addr;
+@@ -251,13 +256,19 @@ void *consistent_alloc(gfp_t gfp, size_t size, dma_addr_t *handle)
+ void consistent_free(void *vaddr, size_t size)
+ {
+ 	struct page *page;
+-	int i;
+ 
+ 	size = PAGE_ALIGN(size);
+ 	page = __consistent_unmap(vaddr, size);
+-	if (page)
+-		for (i = 0; i < (size>>PAGE_SHIFT); i++)
+-			__free_page(page+i);
++	if (page) {
++		if (PageCompound(page)) {
++			__free_pages(page, get_order(size));
++		} else {
++			int i;
++
++			for (i = 0; i < (size >> PAGE_SHIFT); i++)
++				__free_page(page + i);
++		}
++	}
+ }
+ 
+ void consistent_sync(void *vaddr, size_t size, int direction)
+-- 
+1.5.3.6
+

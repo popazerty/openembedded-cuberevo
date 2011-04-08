@@ -1,0 +1,52 @@
+From 3c21040a06ef083e9b41baf0ca37c3ab3d960ebd Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 15 Jun 2009 09:06:24 +0200
+Subject: [PATCH] sh: fix sys_cacheflush error checking
+
+sys_cacheflush should return with EINVAL if the cache parameter is not
+one of ICACHE, DCACHE or BCACHE.
+So, we need to include 0 in the first check.
+
+It also adds the three definitions above as wrapper of the existent macros.
+
+PS: ltp cacheflush01 test now passes.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/sys_sh.c   |    2 +-
+ include/asm-sh/cachectl.h |    7 +++++++
+ 2 files changed, 8 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/sys_sh.c b/arch/sh/kernel/sys_sh.c
+index b74775b..0085d89 100644
+--- a/arch/sh/kernel/sys_sh.c
++++ b/arch/sh/kernel/sys_sh.c
+@@ -288,7 +288,7 @@ sys_cacheflush (unsigned long addr, unsigned long len, int op)
+ {
+ 	struct vm_area_struct *vma;
+ 
+-	if ((op < 0) || (op > (CACHEFLUSH_D_PURGE|CACHEFLUSH_I)))
++	if ((op <= 0) || (op > (CACHEFLUSH_D_PURGE|CACHEFLUSH_I)))
+ 		return -EINVAL;
+ 
+ 	/*
+diff --git a/include/asm-sh/cachectl.h b/include/asm-sh/cachectl.h
+index 305dd70..6ffb4b7 100644
+--- a/include/asm-sh/cachectl.h
++++ b/include/asm-sh/cachectl.h
+@@ -9,4 +9,11 @@
+ 
+ #define CACHEFLUSH_I		0x4
+ 
++/*
++ * Options for cacheflush system call
++ */
++#define ICACHE	CACHEFLUSH_I		/* flush instruction cache */
++#define DCACHE	CACHEFLUSH_D_PURGE	/* writeback and flush data cache */
++#define BCACHE	(ICACHE|DCACHE)		/* flush both caches */
++
+ #endif /* _SH_CACHECTL_H */
+-- 
+1.6.0.6
+

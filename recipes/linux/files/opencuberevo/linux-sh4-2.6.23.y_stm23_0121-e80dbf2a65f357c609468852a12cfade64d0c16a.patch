@@ -1,0 +1,33 @@
+From e80dbf2a65f357c609468852a12cfade64d0c16a Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 12 Jun 2009 11:36:44 +0100
+Subject: [PATCH] sound_stm: Disable 16-bits format in PCM Player driver for STx7100
+
+STx7100's PCM Players don't want to work properly in 16/16 FIFO
+organisation, therefore the 16 bit format must be disabled in
+hardware capabilities description.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/pcm_player.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index f63c2e4..57e3937 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -993,6 +993,11 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 		snd_stm_printd(0, "Player capable of playing %u-channels PCM."
+ 				"\n", pcm_player->channels_constraint.list[i]);
+ 
++	/* STx7100 has a problem with 16/16 bits FIFO organization,
++	 * so we disable the 16 bits samples capability... */
++	if (pcm_player->ver <= ver__AUD_PCMOUT__90_1_3)
++		snd_stm_pcm_player_hw.formats &= ~SNDRV_PCM_FMTBIT_S16_LE;
++
+ 	/* Create ALSA lowlevel device */
+ 
+ 	result = snd_device_new(card, SNDRV_DEV_LOWLEVEL, pcm_player,
+-- 
+1.6.0.6
+

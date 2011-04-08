@@ -1,0 +1,26 @@
+sh_stm: Move #include <linux/delay.h> to correct place
+
+Move #include <linux/delay.h> to the file header, which is the correct place,
+and fixes a compilation problem following a previous patch.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -24,6 +24,7 @@
+ #include <linux/stm/fdma-reqs.h>
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/partitions.h>
++#include <linux/delay.h>
+ #include <asm/irq-ilc.h>
+ 
+ static u64 st40_dma_mask = 0xfffffff;
+@@ -817,7 +818,6 @@ unsigned int stasc_configured_devices_co
+ /* Configure the ASC's for this board.
+  * This has to be called before console_init().
+  */
+-#include <linux/delay.h>
+ void __init stx7141_configure_asc(const int *ascs, int num_ascs, int console)
+ {
+ 	int i;

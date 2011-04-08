@@ -1,0 +1,2209 @@
+From b37d5bbe15ef324a1b26109da111b89d989f8f3e Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Fri, 13 Feb 2009 09:18:48 +0100
+Subject: [PATCH] sh_stm: PM StandBy SoC specific code
+
+SoC specific PM Standby code and instruction tables
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c |   62 +++++++-
+ arch/sh/kernel/cpu/sh4/Makefile           |    6 +
+ arch/sh/kernel/cpu/sh4/cpufreq-stm.c      |    2 +
+ arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c  |  120 +++++++++++++
+ arch/sh/kernel/cpu/sh4/soc-stb7100.h      |   41 +++++
+ arch/sh/kernel/cpu/sh4/soc-stx5197.h      |  108 +++++++++++
+ arch/sh/kernel/cpu/sh4/soc-stx7105.h      |   48 +++++
+ arch/sh/kernel/cpu/sh4/soc-stx7111.h      |   53 ++++++
+ arch/sh/kernel/cpu/sh4/soc-stx7141.h      |   51 ++++++
+ arch/sh/kernel/cpu/sh4/soc-stx7200.h      |   62 +++++++
+ arch/sh/kernel/cpu/sh4/suspend-stb7100.c  |  277 +++++++++++++++++++++++++++++
+ arch/sh/kernel/cpu/sh4/suspend-stx5197.c  |  192 ++++++++++++++++++++
+ arch/sh/kernel/cpu/sh4/suspend-stx7105.c  |  238 +++++++++++++++++++++++++
+ arch/sh/kernel/cpu/sh4/suspend-stx7111.c  |  237 ++++++++++++++++++++++++
+ arch/sh/kernel/cpu/sh4/suspend-stx7141.c  |  237 ++++++++++++++++++++++++
+ arch/sh/kernel/cpu/sh4/suspend-stx7200.c  |  273 ++++++++++++++++++++++++++++
+ include/asm-sh/irq-ilc.h                  |    1 +
+ include/linux/stm/pm.h                    |    1 +
+ 18 files changed, 2008 insertions(+), 1 deletions(-)
+ create mode 100644 arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/soc-stb7100.h
+ create mode 100644 arch/sh/kernel/cpu/sh4/soc-stx5197.h
+ create mode 100644 arch/sh/kernel/cpu/sh4/soc-stx7105.h
+ create mode 100644 arch/sh/kernel/cpu/sh4/soc-stx7111.h
+ create mode 100644 arch/sh/kernel/cpu/sh4/soc-stx7141.h
+ create mode 100644 arch/sh/kernel/cpu/sh4/soc-stx7200.h
+ create mode 100644 arch/sh/kernel/cpu/sh4/suspend-stb7100.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/suspend-stx5197.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/suspend-stx7200.c
+
+diff --git a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+index 7858435..c88ec0a 100644
+--- a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -35,11 +35,19 @@ struct ilc_data {
+ #define ilc_set_used(_ilc)		((_ilc)->state |= ILC_STATE_USED)
+ #define ilc_set_unused(_ilc)		((_ilc)->state &= ~(ILC_STATE_USED))
+ 	unsigned char state;
++/*
++ * trigger_mode is used to restore the right mode
++ * after a resume from hibernation
++ */
++	unsigned char trigger_mode;
+ };
+ 
+ static struct ilc_data ilc_data[ILC_NR_IRQS] =
+ {
+-	[0 ... ILC_NR_IRQS-1 ] = { .priority = 7 }
++	[0 ... ILC_NR_IRQS-1 ] = {
++			.priority = 7,
++			.trigger_mode = ILC_TRIGGERMODE_HIGH,
++			 }
+ };
+ 
+ static DEFINE_SPINLOCK(ilc_data_lock);
+@@ -78,6 +86,34 @@ static struct pr_mask priority_mask[16];
+ #endif
+ 
+ /*
++ * From evt2irq to ilc2irq
++ */
++int ilc2irq(unsigned int evtcode)
++{
++
++#if	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7141)
++	unsigned int priority = 7;
++#elif	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7200)
++	unsigned int priority = 14 - evt2irq(evtcode);
++#endif
++	int idx;
++	unsigned long status;
++	for (idx = 0, status = 0;
++	     idx < ILC_PRIORITY_MASK_SIZE;
++	     ++idx) {
++		status = readl(ilc_base + ILC_BASE_STATUS + (idx << 2)) &
++			readl(ilc_base + ILC_BASE_ENABLE + (idx << 2)) &
++			priority_mask[priority].mask[idx];
++		if (status)
++			break;
++	}
++
++	return ILC_FIRST_IRQ + (idx * 32) + ffs(status) - 1;
++}
++/*
+  * The interrupt demux function. Check if this was an ILC interrupt, and
+  * if so which device generated the interrupt.
+  */
+@@ -265,6 +301,7 @@ static int set_type_ilc_irq(unsigned int irq, unsigned int flow_type)
+ 	}
+ 
+ 	ILC_SET_TRIGMODE(irq_offset, mode);
++	ilc_data[irq_offset].trigger_mode = (unsigned char)mode;
+ 
+ 	return 0;
+ }
+@@ -295,6 +332,29 @@ void __init ilc_demux_init(void)
+ 					      "ILC");
+ }
+ 
++#ifdef CONFIG_PM
++int ilc_pm_state(pm_message_t state)
++{
++	int idx;
++	long flag;
++	static pm_message_t prev_state = {.event = PM_EVENT_ON,};
++	switch (state.event) {
++	case PM_EVENT_ON:
++		if (prev_state.event == PM_EVENT_FREEZE){
++			local_irq_save(flag);
++			for (idx = 0; idx < ARRAY_SIZE(ilc_data); ++idx) {
++				ILC_SET_PRI(idx, ilc_data[idx].priority);
++				ILC_SET_TRIGMODE(idx, ilc_data[idx].trigger_mode);
++				}
++			local_irq_restore(flag);
++		}
++	default:
++		prev_state = state;
++	}
++	return 0;
++}
++#endif
++
+ #if defined(CONFIG_PROC_FS)
+ 
+ static void *ilc_seq_start(struct seq_file *s, loff_t *pos)
+diff --git a/arch/sh/kernel/cpu/sh4/Makefile b/arch/sh/kernel/cpu/sh4/Makefile
+index 56f0f05..82ace09 100644
+--- a/arch/sh/kernel/cpu/sh4/Makefile
++++ b/arch/sh/kernel/cpu/sh4/Makefile
+@@ -46,4 +46,10 @@ obj-$(CONFIG_STM_CPU_FREQ)		+= cpufreq-stm.o
+ 
+ ifdef CONFIG_SUSPEND
+ obj-y					+= suspend.o suspend-core.o
++obj-$(CONFIG_CPU_SUBTYPE_STX5197)	+= suspend-stx5197.o
++obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= suspend-stb7100.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7105)	+= suspend-stx7105.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= suspend-stx7111.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7141)	+= suspend-stx7141.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= suspend-stx7200.o
+ endif
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stm.c b/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
+index cda5604..654ceb0 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
+@@ -50,6 +50,8 @@ static inline unsigned long _1_ms_lpj(void)
+  #include "./cpufreq-stx7200.c"
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7105)
+  #include "./cpufreq-stx7105.c"
++#elif defined(CONFIG_CPU_SUBTYPE_STX5197)
++ #include "./cpufreq-stx5197.c"
+ #else
+  #error "The CPUFrequency scaling isn't supported on this SOC"
+ #endif
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c b/arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c
+new file mode 100644
+index 0000000..9698a37
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c
+@@ -0,0 +1,120 @@
++/*
++ * arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c
++ *
++ * Cpufreq driver for the ST40 processors.
++ * Version: 0.1 (Jan 22 2009)
++ *
++ * Copyright (C) 2009 STMicroelectronics
++ * Author: Francesco M. Virlinzi <francesco.virlinzi@st.com>
++ *
++ * This program is under the terms of the
++ * General Public License version 2 ONLY
++ *
++ */
++#include <linux/types.h>
++#include <linux/cpufreq.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/time.h>
++#include <linux/delay.h>	/* loops_per_jiffy */
++#include <linux/cpumask.h>
++#include <linux/smp.h>
++#include <linux/sched.h>	/* set_cpus_allowed() */
++#include <linux/stm/pm.h>
++
++#include <asm/processor.h>
++#include <asm/freq.h>
++#include <asm/io.h>
++#include <asm/clock.h>
++
++#include "./soc-stx5197.h"
++
++#ifdef CONFIG_STM_CPU_FREQ_OBSERVE
++#include <linux/stm/sysconf.h>
++#include <linux/stm/pio.h>
++#endif
++
++
++struct __ratios {
++	unsigned short cfg_0;
++	unsigned char  cfg_1;
++	unsigned char  cfg_2;
++} ratios[] = {
++#define COMBINE_DIVIDER(_depth, _seq, _hno, _even)	\
++	.cfg_0 = (_seq) & 0xffff,			\
++	.cfg_1 = (_seq) >> 16,				\
++	.cfg_2 = (_depth) | ((_even) << 5) | ((_hno) << 6) | (1<<4)
++
++	{ COMBINE_DIVIDER(0x01, 0x00AAA, 0x1, 0x1) }, /* : 2 */
++	{ COMBINE_DIVIDER(0x05, 0x0CCCC, 0x1, 0x1) }, /* : 4 */
++	{ COMBINE_DIVIDER(0x05, 0x0F0F0, 0x1, 0x1) }, /* : 8 */
++};
++
++static void st_cpufreq_update_clocks(unsigned int set,
++				     int not_used_on_this_platform)
++{
++	static unsigned int current_set = 0;
++	unsigned long flag;
++	unsigned long addr_cfg_base = CLKDIV_CONF0(9) + SYS_SERV_BASE_ADDR;
++	unsigned long addr_clk_mode = CLK_MODE_CTRL + SYS_SERV_BASE_ADDR;
++	unsigned long cfg_0 = ratios[set].cfg_0;
++	unsigned long cfg_1 = ratios[set].cfg_1;
++	unsigned long cfg_2 = ratios[set].cfg_2;
++	unsigned long l_p_j = _1_ms_lpj();
++
++	cpufreq_debug_printk(CPUFREQ_DEBUG_DRIVER,
++		"st_cpufreq_update_clocks", "\n");
++	l_p_j >>= 2;	/* l_p_j = 250 usec (for each HZ) */
++
++	local_irq_save(flag);
++
++	if (set > current_set) {	/* down scaling... */
++		/* it scales l_p_j based on the new frequency */
++		l_p_j >>= 1;	/* 350 -> 175 or 175 -> 87 */
++		if ((set + current_set) == 2)
++			l_p_j >>= 1;	/* 350 -> 87 */
++	} else {
++		/* it scales l_p_j based on the new frequency */
++		l_p_j <<= 1;	/* 175   -> 350 or 87 -> 175 */
++		if ((set + current_set) == 2)
++			l_p_j <<= 1;	/* 87 -> 350 */
++	}
++	CLK_UNLOCK();
++	asm volatile (".balign  32	\n"
++		      "mov.l	%6, @%5 \n" /* in X1 mode */
++		      "mov.l	%1, @(0,%0)\n" /* set	  */
++		      "mov.l	%2, @(4,%0)\n" /*  the	  */
++		      "mov.l	%3, @(8,%0)\n" /*   ratio */
++		      "mov.l	%7, @%5 \n" /* in Prog mode */
++		      "tst	%4, %4  \n"
++		      "2:		\n"
++		      "bf/s	2b	\n"
++		      " dt	%4	\n"
++		::    "r" (addr_cfg_base),
++		      "r" (cfg_0),
++		      "r" (cfg_1),
++		      "r" (cfg_2),
++		      "r" (l_p_j),
++		      "r" (addr_clk_mode),
++		      "r" (CLK_MODE_CTRL_X1),
++		      "r" (CLK_MODE_CTRL_PROG)
++		:     "memory", "t");
++	CLK_LOCK();
++	current_set = set;
++	sh4_clk->rate = (cpu_freqs[set].frequency << 3) * 125;
++	local_irq_restore(flag);
++}
++
++#ifdef CONFIG_STM_CPU_FREQ_OBSERVE
++static void __init st_cpufreq_observe_init(void)
++{
++	CLK_UNLOCK();
++	writel(0x29, CLK_OBSERVE + SYS_SERV_BASE_ADDR);
++	CLK_LOCK();
++}
++#endif
++
++static int __init st_cpufreq_platform_init(void)
++{
++	return 0;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stb7100.h b/arch/sh/kernel/cpu/sh4/soc-stb7100.h
+new file mode 100644
+index 0000000..2d6faa3
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/soc-stb7100.h
+@@ -0,0 +1,41 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/soc-stb7100.h
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++#ifndef __soc_stb7100_h__
++#define __soc_stb7100_h__
++
++#define CLKA_LOCK			0x00
++#define CLKA_PLL0			0x08
++  #define CLKA_PLL0_BYPASS		(1 << 20)
++  #define CLKA_PLL0_ENABLE		(1 << 19)
++  #define CLKA_PLL0_SUSPEND		((5 << 16) | (100 << 8) | \
++	(CONFIG_SH_EXTERNAL_CLOCK / 1000000))
++#define CLKA_ST40			0x14
++#define CLKA_ST40_IC			0x18
++#define CLKA_ST40_PER			0x1c
++#define CLKA_FDMA			0x20
++#define CLKA_PLL1			0x24
++  #define CLKA_PLL1_ENABLE		(1 << 19)
++  #define CLKA_PLL1_SUSPEND		((5 << 16) | (100 << 8) | \
++	(CONFIG_SH_EXTERNAL_CLOCK / 1000000))
++#define CLKA_CLK_DIV			0x30
++#define CLKA_CLK_EN			0x34
++  #define CLKA_CLK_EN_ST231_AUD		(1 << 0)
++  #define CLKA_CLK_EN_ST231_VID		(1 << 1)
++  #define CLKA_CLK_EN_LMI_SYS		(1 << 4)
++  #define CLKA_CLK_EN_LMI_VID		(1 << 5)
++  #define CLKA_CLK_EN_DEFAULT		(CLKA_CLK_EN_ST231_AUD |	\
++					 CLKA_CLK_EN_ST231_VID |	\
++					 CLKA_CLK_EN_LMI_SYS   |	\
++					 CLKA_CLK_EN_LMI_VID)
++#define CLKA_PLL1_BYPASS		0x3c
++
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stx5197.h b/arch/sh/kernel/cpu/sh4/soc-stx5197.h
+new file mode 100644
+index 0000000..ce132ea
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/soc-stx5197.h
+@@ -0,0 +1,108 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/soc-stx5197.h
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * -------------------------------------------------------------------------
++ */
++
++#ifndef __soc_stx5197_h__
++#define __soc_stx5197_h__
++
++/* Values for mb704 */
++#define XTAL	30000000
++
++#define SYS_SERV_BASE_ADDR	0xfdc00000
++
++#define CLK_PLL_CONFIG0(x)	((x*8)+0x0)
++#define CLK_PLL_CONFIG1(x)	((x*8)+0x4)
++  #define CLK_PLL_CONFIG1_POFF	(1<<13)
++
++#define CLKDIV0_CONFIG0		0x90
++#define CLKDIV1_4_CONFIG0(n)	(0x0a0 + ((n-1)*0xc))
++#define CLKDIV6_10_CONFIG0(n)	(0x0d0 + ((n-6)*0xc))
++
++#define CLKDIV_CONF0(x)		(((x) == 0) ? CLKDIV0_CONFIG0 : ((x) < 5) ? \
++			CLKDIV1_4_CONFIG0(x) : CLKDIV6_10_CONFIG0(x))
++
++#define CLKDIV_CONF1(x)		(CLKDIV_CONF0(x) + 0x4)
++#define CLKDIV_CONF2(x)		(CLKDIV_CONF0(x) + 0x8)
++
++
++#define CLK_MODE_CTRL		0x110
++ #define CLK_MODE_CTRL_NULL	0x0
++ #define CLK_MODE_CTRL_X1	0x1
++ #define CLK_MODE_CTRL_PROG	0x2
++ #define CLK_MODE_CTRL_STDB	0x3
++
++/*
++ * The REDUCED_PM is used in CLK_MODE_CTRL_PROG...
++ */
++#define CLK_REDUCED_PM_CTRL	0x114
++ #define CLK_REDUCED_ON_XTAL_MEMSTDBY	(1<<11)
++ #define CLK_REDUCED_ON_XTAL_STDBY	(~(0x22))
++
++#define CLK_LP_MODE_DIS0	0x118
++  #define CLK_LP_MODE_DIS0_VALUE	((0x3 << 11) | (0x7ff & ~(1<<9)))
++
++#define CLK_LP_MODE_DIS2	0x11C
++
++#define CLK_DYNAMIC_PWR		0x128
++
++#define CLK_PLL_SELECT_CFG	0x180
++#define CLK_DIV_FORCE_CFG	0x184
++#define CLK_OBSERVE		0x188
++
++#define CLK_LOCK_CFG		0x300
++
++/*
++ * Utility macros
++ */
++#define CLK_UNLOCK()	{	writel(0xf0, SYS_SERV_BASE_ADDR + CLK_LOCK_CFG); \
++				writel(0x0f, SYS_SERV_BASE_ADDR + CLK_LOCK_CFG); }
++
++#define CLK_LOCK()		writel(0x100, SYS_SERV_BASE_ADDR + CLK_LOCK_CFG);
++
++
++#define CFG_CONTROL_C   (0x00 / 4)
++#define CFG_CONTROL_D   (0x04 / 4)
++#define CFG_CONTROL_E   (0x08 / 4)
++#define CFG_CONTROL_F   (0x0c / 4)
++#define CFG_CONTROL_G   (0x10 / 4)
++#define CFG_CONTROL_H   (0x14 / 4)
++#define CFG_CONTROL_I   (0x18 / 4)
++#define CFG_CONTROL_J   (0x1c / 4)
++
++#define CFG_CONTROL_K   (0x40 / 4)
++#define CFG_CONTROL_L   (0x44 / 4)
++#define CFG_CONTROL_M   (0x48 / 4)
++#define CFG_CONTROL_N   (0x4c / 4)
++#define CFG_CONTROL_O   (0x50 / 4)
++#define CFG_CONTROL_P   (0x54 / 4)
++#define CFG_CONTROL_Q   (0x58 / 4)
++#define CFG_CONTROL_R   (0x5c / 4)
++
++#define CFG_MONITOR_C   (0x20 / 4)
++#define CFG_MONITOR_D   (0x24 / 4)
++#define CFG_MONITOR_E   (0x28 / 4)
++#define CFG_MONITOR_F   (0x2c / 4)
++#define CFG_MONITOR_G   (0x30 / 4)
++#define CFG_MONITOR_H   (0x34 / 4)
++#define CFG_MONITOR_I   (0x38 / 4)
++#define CFG_MONITOR_J   (0x3c / 4)
++
++#define CFG_MONITOR_K   (0x60 / 4)
++#define CFG_MONITOR_L   (0x64 / 4)
++#define CFG_MONITOR_M   (0x68 / 4)
++#define CFG_MONITOR_N   (0x6c / 4)
++#define CFG_MONITOR_O   (0x70 / 4)
++#define CFG_MONITOR_P   (0x74 / 4)
++#define CFG_MONITOR_Q   (0x78 / 4)
++#define CFG_MONITOR_R   (0x7c / 4)
++
++#endif
++
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stx7105.h b/arch/sh/kernel/cpu/sh4/soc-stx7105.h
+new file mode 100644
+index 0000000..10eb4d7
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/soc-stx7105.h
+@@ -0,0 +1,48 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/soc-stx7105.h
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * -------------------------------------------------------------------------
++ */
++#ifndef __soc_stx7105_h__
++#define __soc_stx7105_h__
++
++/* Values for mb680 */
++#define SYSCLKIN        30000000
++#define SYSCLKINALT     30000000
++
++#define SYSCONF_BASE_ADDR	0xfe001000
++#define CLOCKGENA_BASE_ADDR     0xfe213000	/* Clockgen A */
++#define CLOCKGENB_BASE_ADDR     0xfe000000	/* Clockgen B */
++
++/* Definitions taken from targetpack sti7105_clockgena_regs.xml */
++#define CKGA_PLL0_CFG			0x000
++  #define CKGA_PLL0_CFG_DIVRES		(1 << 20)
++  #define CKGA_PLL0_CFG_BYPASS		CKGA_PLL0_CFG_DIVRES
++  #define CKGA_PLL0_CFG_LOCK		(1 << 31)
++
++#define CKGA_PLL1_CFG			0x004
++  #define CKGA_PLL1_CFG_DIVRES		(1 << 20)
++  #define CKGA_PLL1_CFG_BYPASS		CKGA_PLL1_CFG_DIVRES
++  #define CKGA_PLL1_CFG_LOCK		(1 << 31)
++
++#define CKGA_POWER_CFG			0x010
++  #define CKGA_POWER_PLL0_DISABLE	0x1
++  #define CKGA_POWER_PLL1_DISABLE	0x2
++
++#define CKGA_CLKOPSRC_SWITCH_CFG(x)	(0x014 + ((x) * 0x10))
++#define CKGA_CLKOBS_MUX1_CFG		0x030
++#define CKGA_CLKOBS_MUX2_CFG		0x048
++/* All the following appear to be offsets into clkgen B, despite the name */
++#define CKGA_OSC_DIV_CFG(x)		(0x800 + ((x) * 4))
++#define CKGA_PLL0HS_DIV_CFG(x)		(0x900 + ((x) * 4))
++#define CKGA_PLL0LS_DIV_CFG(x)		(0xa10 + (((x) -4) *4))
++#define CKGA_PLL1_DIV_CFG(x)		(0xb00 + ((x) *4))
++
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stx7111.h b/arch/sh/kernel/cpu/sh4/soc-stx7111.h
+new file mode 100644
+index 0000000..ebf6803
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/soc-stx7111.h
+@@ -0,0 +1,53 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/soc-stx7111.h
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * -------------------------------------------------------------------------
++ */
++#ifndef __soc_stx7111_h__
++#define __soc_stx7111_h__
++
++/* Values for mb618 */
++#define SYSACLKIN	30000000
++#define SYSBCLKIN	30000000
++#define SYSAALTCLKIN	0
++
++#define SYSCONF_BASE_ADDR	0xfe001000
++#define CLOCKGENA_BASE_ADDR	0xfe213000	/* Clockgen A */
++#define CLOCKGENB_BASE_ADDR	0xfe000000	/* Clockgen B */
++#define CLOCKGENC_BASE_ADDR	0xfe210000	/* Clockgen C */
++
++#define CKGA_PLL0_CFG			0x000
++  #define CKGA_PLL0_CFG_DIVRES		(1 << 20)
++  #define CKGA_PLL0_CFG_BYPASS		CKGA_PLL0_CFG_DIVRES
++  #define CKGA_PLL0_CFG_LOCK		(1 << 31)
++
++#define CKGA_PLL1_CFG			0x004
++  #define CKGA_PLL1_CFG_DIVRES		(1 << 20)
++  #define CKGA_PLL1_CFG_BYPASS		CKGA_PLL1_CFG_DIVRES
++  #define CKGA_PLL1_CFG_LOCK		(1 << 31)
++
++#define CKGA_POWER_CFG			0x010
++  #define CKGA_POWER_PLL0_DISABLE	0x1
++  #define CKGA_POWER_PLL1_DISABLE	0x2
++
++#define CKGA_CLKOPSRC_SWITCH_CFG(x)     (0x014 + ((x) * 0x10))
++
++#define CKGA_OSC_ENABLE_FB		0x0018
++  #define CKGA_PLL0_ENABLE_FB		0x001c
++  #define CKGA_PLL1_ENABLE_FB		0x0020
++
++#define CKGA_CLKOBS_MUX1_CFG		0x030
++#define CKGA_CLKOBS_MUX2_CFG		0x048
++
++#define CKGA_PLL0HS_DIV_CFG(x)		(0x900 + ((x) * 4))
++#define CKGA_OSC_DIV_CFG(x)		(0x800 + ((x) * 4))
++#define CKGA_PLL0LS_DIV_CFG(x)		(0xa10 + (((x) - 4) * 4))
++#define CKGA_PLL1_DIV_CFG(x)		(0xb00 + ((x) * 4))
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stx7141.h b/arch/sh/kernel/cpu/sh4/soc-stx7141.h
+new file mode 100644
+index 0000000..d98b506
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/soc-stx7141.h
+@@ -0,0 +1,51 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/soc-stx7141.h
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * -------------------------------------------------------------------------
++ */
++#ifndef __soc_stx7141_h__
++#define __soc_stx7141_h__
++
++/* Values for mb628 */
++#define SYSCLKIN	30000000
++#define SYSCLKINALT	30000000
++
++#define SYSCONF_BASE_ADDR	0xfe001000
++#define CLOCKGENA_BASE_ADDR	0xfe213000	/* Clockgen A */
++#define CLOCKGENB_BASE_ADDR	0xfe000000	/* Clockgen B */
++
++#define ckga_pll0_cfg			0x000
++  #define CKGA_PLL0_CFG_DIVRES		(1 << 20)
++  #define CKGA_PLL0_CFG_BYPASS		CKGA_PLL0_CFG_DIVRES
++  #define CKGA_PLL0_CFG_LOCK		(1 << 31)
++
++#define CKGA_PLL1_CFG			0x004
++  #define CKGA_PLL1_CFG_DIVRES		(1 << 20)
++  #define CKGA_PLL1_CFG_BYPASS		CKGA_PLL1_CFG_DIVRES
++  #define CKGA_PLL1_CFG_LOCK		(1 << 31)
++
++#define CKGA_POWER_CFG			0x010
++  #define CKGA_POWER_PLL0_DISABLE	0x1
++  #define CKGA_POWER_PLL1_DISABLE	0x2
++
++#define CKGA_CLKOPSRC_SWITCH_CFG(x)     (0x014 + ((x) * 0x10))
++
++#define CKGA_OSC_ENABLE_FB		0x0018
++#define CKGA_PLL0_ENABLE_FB		0x001c
++#define CKGA_PLL1_ENABLE_FB		0x0020
++
++#define CKGA_CLKOBS_MUX1_CFG		0x030
++#define CKGA_CLKOBS_MUX2_CFG		0x048
++
++#define CKGA_PLL0HS_DIV_CFG(x)		(0x900 + ((x) *4))
++#define CKGA_OSC_DIV_CFG(x)		(0x800 + ((x) *4))
++#define CKGA_PLL0LS_DIV_CFG(x)		(0xa10 + (((x)-4) *4))
++#define CKGA_PLL1_DIV_CFG(x)		(0xb00 + ((x) *4))
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stx7200.h b/arch/sh/kernel/cpu/sh4/soc-stx7200.h
+new file mode 100644
+index 0000000..8ddf3b7
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/soc-stx7200.h
+@@ -0,0 +1,62 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/soc-stx7200.h
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#ifndef __soc_stx7200_h__
++#define __soc_stx7200_h__
++
++/* Values for mb519 */
++#define SYSACLKIN	27000000
++#define SYSBCLKIN	30000000
++
++#define SYSCONF_BASE_ADDR	0xfd704000
++
++#define CLOCKGEN_BASE_ADDR	0xfd700000	/* Clockgen A */
++#define CLOCKGENB_BASE_ADDR	0xfd701000	/* Clockgen B */
++#define CLOCKGENC_BASE_ADDR	0xfd601000	/* Clockgen C */
++
++#define CLKA_PLL0			0x00
++  #define CLKA_PLL0_BYPASS		(1 << 20)
++  #define CLKA_PLL0_ENABLE_STATUS	(1 << 19)
++  #define CLKA_PLL0_SUSPEND		((5 << 16) | (100 << 8) | \
++	(SYSACLKIN / 1000000))
++
++#define CLKA_PLL1			0x04
++  #define CLKA_PLL1_BYPASS		(1 << 20)
++  #define CLKA_PLL1_ENABLE_STATUS	(1 << 19)
++  #define CLKA_PLL1_SUSPEND		((5 << 16) | (100 << 8) | \
++	(SYSACLKIN / 1000000))
++
++#define CLKA_PLL2			0x08
++  #define CLKA_PLL2_BYPASS		(1 << 20)
++  #define CLKA_PLL2_ENABLE_STATUS	(1 << 19)
++  #define CLKA_PLL2_SUSPEND		((5 << 16) | (100 << 8) | \
++	(SYSACLKIN / 1000000))
++
++#define CKGA_CLKOUT_SEL			0x18
++
++#define CLKA_PWR_CFG			0x1C
++  #define PWR_CFG_PLL0_OFF		0x1
++  #define PWR_CFG_PLL1_OFF		0x2
++  #define PWR_CFG_PLL2_OFF 		0x4
++
++#define CLKA_DIV_CFG			0x10
++
++
++#define CLKB_PLL0_CFG			0x3C
++  #define CLKB_PLL0_BYPASS		(1 << 20)
++  #define CLKB_PLL0_SUSPEND		((5 << 16) | (100 << 8) | \
++	(SYSACLKIN / 1000000))
++
++#define CLKB_PWR_CFG			0x58
++  #define CLKB_PLL0_OFF			(1 << 15)
++
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stb7100.c b/arch/sh/kernel/cpu/sh4/suspend-stb7100.c
+new file mode 100644
+index 0000000..e5134ec
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/suspend-stb7100.c
+@@ -0,0 +1,277 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/suspend-stb7100.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/irqflags.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/pm.h>
++#include <asm/irq.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm/pm.h>
++
++#include "./soc-stb7100.h"
++
++#define _SYS_STA12			(2)
++#define _SYS_STA12_MASK			(3)
++#define _SYS_STA13			(4)
++#define _SYS_STA13_MASK			(5)
++#define _SYS_CFG11			(6)
++#define _SYS_CFG11_MASK			(7)
++
++/* *************************
++ * STANDBY INSTRUCTION TABLE
++ * *************************
++ */
++
++static unsigned long stb7100_standby_table[] __cacheline_aligned = {
++/* 1. PLL0 at the minimum frequency */
++	/* Unlock the clocks */
++CLK_POKE(CLKA_LOCK, 0xc0de),
++	/* enables the bypass */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
++	/* disable the pll0 */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_ENABLE)),
++	/* set to zero mdiv ndiv pdiv */
++CLK_AND_LONG(CLKA_PLL0, ~(0x7ffff)),
++	/* set new mdiv ndiv pdiv */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_SUSPEND),
++	/* enables the pll0 */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_ENABLE),
++	/* removes the bypass */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
++	/* 0 4 5 - 1:4 1:6 1:8	*/
++	/* 3 4 5 - 1:4 1:6 1:8	*/
++	/* 1 2 3 - 1:2 1:3 1:4	*/
++CLK_POKE(CLKA_ST40_PER, 0x5),
++CLK_POKE(CLKA_ST40_IC, 0x5),
++CLK_POKE(CLKA_ST40, 0x3),
++/* END. */
++_END(),
++
++/* 1.  Restore the highest frequency cpu/bus/per ratios */
++CLK_POKE(CLKA_ST40, 0x0),
++CLK_POKE(CLKA_ST40_IC, 0x1),
++CLK_POKE(CLKA_ST40_PER, 0x0),
++
++/* 2.  PLL0 at the standard frequency */
++	/* enables bypass */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
++	/* disables the pll0 */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_ENABLE)),
++DATA_LOAD(0x0),
++IMMEDIATE_SRC0(CLKA_PLL0_BYPASS),
++_OR(),
++	/* save the current r2 in PLL0 */
++CLK_STORE(CLKA_PLL0),
++	/* enables the pll0 */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_ENABLE),
++	/* removes the bypass */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
++	/* Lock the clocks */
++CLK_POKE(CLKA_LOCK, 0x0),
++/* END. */
++_END()
++};
++
++/* *********************
++ * MEM INSTRUCTION TABLE
++ * *********************
++ */
++static unsigned long stb7100_mem_table[] __cacheline_aligned = {
++/* 1. Enables the DDR self refresh mode */
++DATA_OR_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++	/* waits until the ack bit is zero */
++DATA_WHILE_NEQ(_SYS_STA12, _SYS_STA12_MASK, _SYS_STA12_MASK),
++	/* waits until the ack bit is zero */
++DATA_WHILE_NEQ(_SYS_STA13, _SYS_STA13_MASK, _SYS_STA13_MASK),
++
++/* 2. PLL0 at the minimum frequency */
++	/* unlock the clocks */
++CLK_POKE(CLKA_LOCK, 0xc0de),
++	/* enables the bypass */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
++	/* disable the pll0 */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_ENABLE)),
++	/* set to zero mdiv ndiv pdiv */
++CLK_AND_LONG(CLKA_PLL0, ~(0x7ffff)),
++	/* set new mdiv ndiv pdiv */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_SUSPEND),
++	/* enables the pll0 */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_ENABLE),
++	/* removes the bypass */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
++
++/* 3. PLL1 at the minimum frequency */
++	/* enables the bypass */
++CLK_OR_LONG(CLKA_PLL1_BYPASS, 2),
++	/* disable the pll1 */
++CLK_AND_LONG(CLKA_PLL1, ~(CLKA_PLL1_ENABLE)),
++	/* set to zero mdiv ndiv pdiv */
++CLK_AND_LONG(CLKA_PLL1, ~(0x7ffff)),
++	/* set new mdiv ndiv pdiv */
++CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_SUSPEND),
++	/* enables the pll1 */
++CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_ENABLE),
++CLK_AND_LONG(CLKA_PLL1_BYPASS, ~(2)),		/* removes the bypass */
++
++/* 4. Turn-off the LMI clocks and the ST231 clocks */
++CLK_AND_LONG(CLKA_CLK_EN, ~(CLKA_CLK_EN_DEFAULT)),
++CLK_POKE(CLKA_ST40_PER, 0x5),			/* 0 4 5 - 1:4 1:6 1:8 */
++CLK_POKE(CLKA_ST40_IC,  0x5),			/* 3 4 5 - 1:4 1:6 1:8 */
++CLK_POKE(CLKA_ST40, 0x3),			/* 1 2 3 - 1:2 1:3 1:4 */
++ /* END. */
++_END(),
++
++/* 1.  Restore the highest frequency cpu/bus/per ratios */
++CLK_POKE(CLKA_ST40, 0x0),
++CLK_POKE(CLKA_ST40_IC, 0x1),
++CLK_POKE(CLKA_ST40_PER, 0x0),
++
++/* 2. Turn-on the LMI clocks and the ST231 clocks*/
++CLK_OR_LONG(CLKA_CLK_EN, CLKA_CLK_EN_DEFAULT),
++
++/* 3. PLL1 at the standard frequency */
++CLK_OR_LONG(CLKA_PLL1_BYPASS, 2), 		/* enables the bypass */
++CLK_AND_LONG(CLKA_PLL1, ~(CLKA_PLL1_ENABLE)),	/* disable the pll1 */
++DATA_LOAD(0x1),
++CLK_STORE(CLKA_PLL1),
++CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_ENABLE),	/* enables the pll1 */
++CLK_AND_LONG(CLKA_PLL1_BYPASS, ~(2)),		/* removes the bypass */
++
++/* 4. Disables the DDR self refresh mode */
++DATA_AND_NOT_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++
++/* wait until theack bit is high */
++DATA_WHILE_EQ(_SYS_STA12, _SYS_STA12_MASK, _SYS_STA12_MASK),
++DATA_WHILE_EQ(_SYS_STA13, _SYS_STA13_MASK, _SYS_STA12_MASK),
++
++/* 5.  PLL0 at the standard frequency */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),	/* enables bypass */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_ENABLE)),	/* disables the pll0 */
++DATA_LOAD(0x0),
++IMMEDIATE_SRC0(CLKA_PLL0_BYPASS),
++_OR(),
++CLK_STORE(CLKA_PLL0),				/* save the r2 in PLL0 */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_ENABLE),	/* enables the pll0 */
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),	/* removes the bypass */
++CLK_POKE(CLKA_LOCK, 0x0),
++
++/* Lock the clocks  */
++_DELAY(),
++_DELAY(),
++_DELAY(),
++/* END. */
++_END()
++};
++
++static unsigned long stb7100_wrt_table[8] __cacheline_aligned;
++
++static int stb7100_suspend_prepare(suspend_state_t state)
++{
++	int ret = -EINVAL;
++	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
++	emi_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	sysconf_pm_state(pms);
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++		stb7100_wrt_table[0] = readl(clkgena_base + CLKA_PLL0) & 0x7ffff;
++		ret = 0;
++	break;
++	case PM_SUSPEND_MEM:
++		stb7100_wrt_table[0] = readl(clkgena_base + CLKA_PLL0) & 0x7ffff;
++		stb7100_wrt_table[1] = readl(clkgena_base + CLKA_PLL1) & 0x7ffff;
++		ret = 0;
++	break;
++	}
++	return ret;
++}
++
++static int stb7100_suspend_valid(suspend_state_t state)
++{
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++	case PM_SUSPEND_MEM:
++		return 1;
++	};
++	return 0;
++}
++
++/*
++ * The xxxx_finish function is called after the resume
++ * sysdev devices (i.e.: timer, cpufreq)
++ * But it isn't a big issue in our platform
++ */
++static int stb7100_suspend_finish(suspend_state_t state)
++{
++	pm_message_t pms = {.event = PM_EVENT_ON, };
++	sysconf_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	emi_pm_state(pms);
++	return 0;
++}
++
++static int stb7100_evttoirq(unsigned long evt)
++{
++	return evt2irq(evt);
++}
++
++static unsigned long stb7100_iomem[2] __cacheline_aligned = {
++	stb7100_wrt_table,
++};
++
++int __init suspend_platform_setup(struct sh4_suspend_t *st40data)
++{
++	struct sysconf_field* sc;
++
++	stb7100_iomem[1] = (unsigned long) clkgena_base;
++
++	st40data->iobase = stb7100_iomem;
++	st40data->ops.valid  = stb7100_suspend_valid;
++	st40data->ops.finish = stb7100_suspend_finish;
++	st40data->ops.prepare = stb7100_suspend_prepare;
++
++	st40data->evt_to_irq = stb7100_evttoirq;
++
++	st40data->stby_tbl = (unsigned long)stb7100_standby_table;
++	st40data->stby_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stb7100_standby_table)*sizeof(long), L1_CACHE_BYTES);;
++
++	st40data->mem_tbl = (unsigned long)stb7100_mem_table;
++	st40data->mem_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stb7100_mem_table)*sizeof(long), L1_CACHE_BYTES);
++
++	st40data->wrt_tbl = (unsigned long)stb7100_wrt_table;
++	st40data->wrt_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stb7100_wrt_table)*sizeof(long), L1_CACHE_BYTES);
++
++	sc = sysconf_claim(SYS_STA, 12, 28, 28, "pm");
++	stb7100_wrt_table[_SYS_STA12] = (unsigned long)sysconf_address(sc);
++	stb7100_wrt_table[_SYS_STA12_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_STA, 13, 28, 28, "pm");
++	stb7100_wrt_table[_SYS_STA13] = (unsigned long)sysconf_address(sc);
++	stb7100_wrt_table[_SYS_STA13_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_CFG, 11, 28, 28, "pm");
++	stb7100_wrt_table[_SYS_CFG11] = (unsigned long)sysconf_address(sc);
++	stb7100_wrt_table[_SYS_CFG11_MASK] = sysconf_mask(sc);
++	sc = sysconf_claim(SYS_CFG, 11, 30, 30, "pm");
++	stb7100_wrt_table[_SYS_CFG11_MASK] |= sysconf_mask(sc);
++
++	return 0;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx5197.c b/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
+new file mode 100644
+index 0000000..69aa3f3
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
+@@ -0,0 +1,192 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/irqflags.h>
++#include <linux/stm/pm.h>
++#include <linux/stm/sysconf.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm/pm.h>
++#include <asm/irq.h>
++#include <asm/irq-ilc.h>
++
++#include "./soc-stx5197.h"
++
++#define _SYS_MON_J                      (0)
++#define _SYS_MON_J_MASK                 (1)
++#define _SYS_CFG_H                      (2)
++#define _SYS_CFG_H_MASK                 (3)
++
++/* *************************
++ * STANDBY INSTRUCTION TABLE
++ * *************************
++ */
++static unsigned long stx5197_standby_table[] __cacheline_aligned = {
++CLK_POKE(CLK_LOCK_CFG, 0xf0),
++CLK_POKE(CLK_LOCK_CFG, 0x0f), /* UnLock the clocks */
++
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_X1),
++
++/* 1. Move all the clock on OSC */
++CLK_OR_LONG(CLK_REDUCED_PM_CTRL, CLK_REDUCED_ON_XTAL_STDBY),
++CLK_OR_LONG(CLK_PLL_CONFIG1(0), CLK_PLL_CONFIG1_POFF),
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_PROG),
++CLK_POKE(CLK_LOCK_CFG, 0x100), /* Lock the clocks */
++/* END. */
++_END(),
++
++CLK_POKE(CLK_LOCK_CFG, 0xf0),
++CLK_POKE(CLK_LOCK_CFG, 0x0f), /* UnLock the clocks */
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_X1),
++CLK_AND_LONG(CLK_REDUCED_PM_CTRL, ~CLK_REDUCED_ON_XTAL_STDBY),
++CLK_AND_LONG(CLK_PLL_CONFIG1(0), ~CLK_PLL_CONFIG1_POFF),
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_PROG),
++CLK_POKE(CLK_LOCK_CFG, 0x100), /* Lock the clocks */
++_DELAY(),
++_DELAY(),
++_DELAY(),
++_END()
++};
++
++/* *********************
++ * MEM INSTRUCTION TABLE
++ * *********************
++ */
++static unsigned long stx5197_mem_table[] __cacheline_aligned = {
++DATA_OR_LONG(_SYS_CFG_H, _SYS_CFG_H_MASK),
++DATA_WHILE_NEQ(_SYS_MON_J, _SYS_MON_J_MASK, _SYS_MON_J_MASK),
++
++CLK_POKE(CLK_LOCK_CFG, 0xf0),
++CLK_POKE(CLK_LOCK_CFG, 0x0f), /* UnLock the clocks */
++
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_X1),
++/* on exetrnal Xtal */
++CLK_OR_LONG(CLK_REDUCED_PM_CTRL, CLK_REDUCED_ON_XTAL_MEMSTDBY),
++CLK_OR_LONG(CLK_PLL_CONFIG1(0), CLK_PLL_CONFIG1_POFF),
++CLK_OR_LONG(CLK_PLL_CONFIG1(1), CLK_PLL_CONFIG1_POFF),
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_PROG),
++CLK_POKE(CLK_LOCK_CFG, 0x100), /* Lock the clocks */
++
++_END(),
++
++CLK_POKE(CLK_LOCK_CFG, 0xf0),
++CLK_POKE(CLK_LOCK_CFG, 0x0f), /* UnLock the clocks */
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_X1),
++CLK_AND_LONG(CLK_PLL_CONFIG1(0), ~CLK_PLL_CONFIG1_POFF),
++CLK_AND_LONG(CLK_PLL_CONFIG1(1), ~CLK_PLL_CONFIG1_POFF),
++CLK_AND_LONG(CLK_REDUCED_PM_CTRL, ~CLK_REDUCED_ON_XTAL_MEMSTDBY), /* on PLLs */
++CLK_POKE(CLK_MODE_CTRL, CLK_MODE_CTRL_PROG),
++CLK_POKE(CLK_LOCK_CFG, 0x100), /* Lock the clocks */
++
++_DELAY(),
++_DELAY(),
++DATA_AND_NOT_LONG(_SYS_CFG_H, _SYS_CFG_H_MASK),
++DATA_WHILE_EQ(_SYS_MON_J, _SYS_MON_J_MASK, _SYS_MON_J_MASK),
++
++_DELAY(),
++_DELAY(),
++_DELAY(),
++_DELAY(),
++
++_END()
++};
++
++static unsigned long stx5197_wrt_table[8] __cacheline_aligned;
++
++static int stx5197_suspend_prepare(suspend_state_t state)
++{
++	int ret = -EINVAL;
++	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
++	emi_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	sysconf_pm_state(pms);
++
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++	case PM_SUSPEND_MEM:
++		ret = 0;
++		break;
++	}
++	return ret;
++}
++
++static int stx5197_suspend_valid(suspend_state_t state)
++{
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++	case PM_SUSPEND_MEM:
++		return 1;
++	};
++	return 0;
++}
++
++/*
++ * The xxxx_finish function is called after the resume
++ * sysdev devices (i.e.: timer, cpufreq)
++ * But it isn't a big issue in our platform
++ */
++static int stx5197_suspend_finish(suspend_state_t state)
++{
++	pm_message_t pms = {.event = PM_EVENT_ON, };
++	sysconf_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	emi_pm_state(pms);
++	return 0;
++}
++
++static unsigned long stx5197_iomem[2] __cacheline_aligned = {
++		stx5197_wrt_table,
++		SYS_SERV_BASE_ADDR,};
++
++static int stx5197_evt_to_irq(unsigned long evt)
++{
++	return ilc2irq(evt);
++}
++
++int __init suspend_platform_setup(struct sh4_suspend_t *st40data)
++{
++
++	struct sysconf_field* sc;
++	st40data->iobase = stx5197_iomem;
++	st40data->ops.valid = stx5197_suspend_valid;
++	st40data->ops.finish = stx5197_suspend_finish;
++	st40data->ops.prepare = stx5197_suspend_prepare;
++
++	st40data->evt_to_irq = stx5197_evt_to_irq;
++
++	st40data->stby_tbl = (unsigned long)stx5197_standby_table;
++	st40data->stby_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx5197_standby_table) * sizeof(long), L1_CACHE_BYTES);
++
++	st40data->mem_tbl = (unsigned long)stx5197_mem_table;
++	st40data->mem_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx5197_mem_table) * sizeof(long), L1_CACHE_BYTES);
++
++	st40data->wrt_tbl = (unsigned long)stx5197_wrt_table;
++	st40data->wrt_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx5197_wrt_table) * sizeof(long), L1_CACHE_BYTES);
++
++	sc = sysconf_claim(SYS_DEV, CFG_MONITOR_J, 24, 24, "LMI pwd ack");
++	stx5197_wrt_table[_SYS_MON_J] = (unsigned long)sysconf_address(sc);
++	stx5197_wrt_table[_SYS_MON_J_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_H, 26, 26, "LMI pwd req");
++	stx5197_wrt_table[_SYS_CFG_H] = (unsigned long)sysconf_address(sc);
++	stx5197_wrt_table[_SYS_CFG_H_MASK] = sysconf_mask(sc);
++
++	return 0;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7105.c b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+new file mode 100644
+index 0000000..c4112e2
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+@@ -0,0 +1,238 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/irqflags.h>
++#include <linux/stm/pm.h>
++#include <linux/stm/sysconf.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm/pm.h>
++#include <asm/irq.h>
++
++#include "./soc-stx7105.h"
++
++#define _SYS_STA4		(7)
++#define _SYS_STA4_MASK		(8)
++#define _SYS_CFG11		(9)
++#define _SYS_CFG11_MASK		(10)
++#define _SYS_CFG38		(5)
++#define _SYS_CFG38_MASK		(6)
++/* *************************
++ * STANDBY INSTRUCTION TABLE
++ * *************************
++ */
++static unsigned long stx7105_standby_table[] __cacheline_aligned = {
++/* 1. Move all the clock on OSC */
++CLK_POKE(CKGA_CLKOPSRC_SWITCH_CFG(0x0), 0x0),
++CLK_POKE(CKGA_OSC_DIV_CFG(0x5), 29), /* ic_if_100 @ 1 MHz to be safe for Lirc*/
++
++IMMEDIATE_DEST(0x1f),
++/* reduces OSC_st40 */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++/* reduces OSC_clk_ic */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++/* END. */
++_END(),
++
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++DATA_LOAD(0x1),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(5)),
++/* END. */
++_END()
++};
++
++/* *********************
++ * MEM INSTRUCTION TABLE
++ * *********************
++ */
++static unsigned long stx7105_mem_table[] __cacheline_aligned = {
++/* 1. Enables the DDR self refresh mode */
++DATA_OR_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++/* waits until the ack bit is zero */
++DATA_WHILE_NEQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++/* 1.1 Turn-off the ClockGenD */
++DATA_OR_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++
++IMMEDIATE_DEST(0x1f),
++/* reduces OSC_st40 */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++/* reduces OSC_clk_ic */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++/* reduces OSC_clk_ic_if_200 */
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),
++/* 2. Move all the clock on OSC */
++
++CLK_POKE(CKGA_OSC_DIV_CFG(5), 29), /* ic_if_100 @ 1MHz to be safe for Lirc*/
++
++IMMEDIATE_DEST(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x1)),
++/* PLLs in power down */
++CLK_OR_LONG(CKGA_POWER_CFG, 0x3),
++ /* END. */
++_END(),
++
++/* Turn-on the PLLs */
++CLK_AND_LONG(CKGA_POWER_CFG, ~3),
++/* 1. Turn-on the LMI ClocksGenD */
++DATA_AND_NOT_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++/* 2. Disables the DDR self refresh mode */
++DATA_AND_NOT_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++/* waits until the ack bit is zero */
++DATA_WHILE_EQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++
++IMMEDIATE_DEST(0x10000),
++CLK_STORE(CKGA_PLL0LS_DIV_CFG(4)),
++/* 3. Restore the previous clocks setting */
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++DATA_LOAD(0x1),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x1)),
++DATA_LOAD(0x3),
++CLK_STORE(CKGA_OSC_DIV_CFG(5)),
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++DATA_LOAD(0x4),
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),
++_DELAY(),
++_DELAY(),
++_DELAY(),
++_END()
++};
++
++static unsigned long stx7105_wrt_table[16] __cacheline_aligned;
++
++static int stx7105_suspend_prepare(suspend_state_t state)
++{
++	int ret = -EINVAL;
++	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
++	emi_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	sysconf_pm_state(pms);
++
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++		stx7105_wrt_table[0] = /* swith config */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
++		stx7105_wrt_table[1] = /* clk_STNoc */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
++		stx7105_wrt_table[2] = /* clk_ic_if_100 */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(5));
++		ret = 0;
++	break;
++	case PM_SUSPEND_MEM:
++		stx7105_wrt_table[0] = /* swith config */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
++		stx7105_wrt_table[1] = /* swith config 1 */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(1));
++		stx7105_wrt_table[2] = /* clk_STNoc */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
++		stx7105_wrt_table[3] = /* clk_ic_if_100 */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(5));
++		stx7105_wrt_table[4] = /* clk_ic_if_200 */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(17));
++		ret = 0;
++		break;
++	}
++	return ret;
++}
++
++static int stx7105_suspend_valid(suspend_state_t state)
++{
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++	case PM_SUSPEND_MEM:
++		return 1;
++	};
++	return 0;
++}
++
++/*
++ * The xxxx_finish function is called after the resume
++ * sysdev devices (i.e.: timer, cpufreq)
++ * But it isn't a big issue in our platform
++ */
++static int stx7105_suspend_finish(suspend_state_t state)
++{
++	pm_message_t pms = {.event = PM_EVENT_ON, };
++	sysconf_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	emi_pm_state(pms);
++	return 0;
++}
++
++static unsigned long stx7105_iomem[2] __cacheline_aligned = {
++		stx7105_wrt_table,
++		CLOCKGENA_BASE_ADDR};
++
++static int stx7105_evt_to_irq(unsigned long evt)
++{
++	return evt2irq(evt);
++}
++
++#if 0
++#define GPLMI_BASEADDRESS		0xfe901000
++#define GPLMI_SCR_APPD			0x14
++static void stx7105_sleep_on_idle(void)
++{
++	iowrite32(0x10 << 16 | 0x10, GPLMI_BASEADDRESS + GPLMI_SCR_APPD);
++	asm volatile ("sleep    \n":::"memory");
++	iowrite32(0x0, GPLMI_BASEADDRESS + GPLMI_SCR_APPD);
++}
++#endif
++
++int __init suspend_platform_setup(struct sh4_suspend_t *st40data)
++{
++
++	struct sysconf_field* sc;
++	st40data->iobase = stx7105_iomem;
++	st40data->ops.valid = stx7105_suspend_valid;
++	st40data->ops.finish = stx7105_suspend_finish;
++	st40data->ops.prepare = stx7105_suspend_prepare;
++
++	st40data->evt_to_irq = stx7105_evt_to_irq;
++
++	st40data->stby_tbl = (unsigned long)stx7105_standby_table;
++	st40data->stby_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7105_standby_table) * sizeof(long), L1_CACHE_BYTES);
++
++	st40data->mem_tbl = (unsigned long)stx7105_mem_table;
++	st40data->mem_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7105_mem_table) * sizeof(long), L1_CACHE_BYTES);
++
++	st40data->wrt_tbl = (unsigned long)stx7105_wrt_table;
++	st40data->wrt_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7105_wrt_table) * sizeof(long), L1_CACHE_BYTES);
++
++/*	pm_idle = stx7105_sleep_on_idle;	*/
++	sc = sysconf_claim(SYS_CFG, 38, 20, 20, "pm");
++	stx7105_wrt_table[_SYS_CFG38]      = (unsigned long)sysconf_address(sc);
++	stx7105_wrt_table[_SYS_CFG38_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_CFG, 11, 12, 12, "pm");
++	stx7105_wrt_table[_SYS_CFG11]      = (unsigned long)sysconf_address(sc);
++	stx7105_wrt_table[_SYS_CFG11_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_STA, 4, 0, 0, "pm");
++	stx7105_wrt_table[_SYS_STA4]      = (unsigned long)sysconf_address(sc);
++	stx7105_wrt_table[_SYS_STA4_MASK] = sysconf_mask(sc);
++
++	return 0;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7111.c b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+new file mode 100644
+index 0000000..98d2f06
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+@@ -0,0 +1,237 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/irqflags.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/pm.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm/pm.h>
++#include <asm/irq-ilc.h>
++
++#include "./soc-stx7111.h"
++
++#define _SYS_STA4			(5)
++#define _SYS_STA4_MASK			(6)
++
++#define _SYS_CFG11			(7)
++#define _SYS_CFG11_MASK			(8)
++
++#define _SYS_CFG38			(9)
++#define _SYS_CFG38_MASK			(10)
++
++/* *************************
++ * STANDBY INSTRUCTION TABLE
++ * *************************
++ */
++static unsigned long stx7111_standby_table[] __cacheline_aligned = {
++/* 1. Move all the clock on OSC */
++CLK_POKE(CKGA_CLKOPSRC_SWITCH_CFG(0x0), 0x0),
++CLK_POKE(CKGA_OSC_DIV_CFG(5), 29), /* clk_ic_if_100 @ 1 MHz to be safe for lirc */
++
++IMMEDIATE_DEST(0x1f),
++/* reduces the st40 frequency */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++/* reduces the clk_STNoc_ic */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++
++ /* END. */
++_END(),
++
++IMMEDIATE_DEST(0x10000),
++CLK_STORE(CKGA_PLL0LS_DIV_CFG(4)),
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++DATA_LOAD(0x1),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(5)),
++
++ /* END. */
++_END()
++};
++
++/* *********************
++ * MEM INSTRUCTION TABLE
++ * *********************
++ */
++static unsigned long stx7111_mem_table[] __cacheline_aligned = {
++/* 1. Enables the DDR self refresh mode */
++DATA_OR_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++/* waits until the ack bit is zero */
++DATA_WHILE_NEQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++/* 1.1 Turn-off the ClockGenD */
++DATA_OR_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++
++IMMEDIATE_DEST(0x1f),
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),   /* reduces the st40 frequency */
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),  /* reduces the clk_ic_if_200  */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)), /* reduces the clk_STNoc_ic   */
++
++CLK_POKE(CKGA_OSC_DIV_CFG(5), 29), /* clk_ic_if_100 @ 1 MHz to be safe for lirc */
++
++/* 2. Move all the clock on OSC */
++IMMEDIATE_DEST(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x1)),
++
++/* PLLs in power down */
++CLK_OR_LONG(CKGA_POWER_CFG, 0x3),
++ /* END. */
++_END(),
++
++/* Turn-on the PLLs */
++CLK_AND_LONG(CKGA_POWER_CFG, ~3),
++
++/* 1. Turn-on the LMI ClocksGenD */
++DATA_AND_NOT_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++/* 2. Disables the DDR self refresh mode */
++DATA_AND_NOT_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++/* waits until the ack bit is zero */
++DATA_WHILE_EQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++
++
++IMMEDIATE_DEST(0x10000),
++/* 3. Restore the previous clocks setting */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++DATA_LOAD(0x1),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x1)),
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++DATA_LOAD(0x3),
++CLK_STORE(CKGA_OSC_DIV_CFG(5)),
++DATA_LOAD(0x4),
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),
++
++_DELAY(),
++_DELAY(),
++_DELAY(),
++_END()
++};
++
++static unsigned long stx7111_wrt_table[16] __cacheline_aligned;
++
++static int stx7111_suspend_prepare(suspend_state_t state)
++{
++	int ret = -EINVAL;
++	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
++	emi_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	sysconf_pm_state(pms);
++
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++		stx7111_wrt_table[0] = /* swith config */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
++		stx7111_wrt_table[1] = /* clk_STNoc_ic */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
++		stx7111_wrt_table[2] = /* clk_ic_if_100 */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(5));
++		ret = 0;
++	break;
++	case PM_SUSPEND_MEM:
++		stx7111_wrt_table[0] = /* swith config */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
++		stx7111_wrt_table[1] = /* swith config 1 */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(1));
++		stx7111_wrt_table[2] = /* clk_STNoc_ic */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
++		stx7111_wrt_table[3] = /* clk_ic_if_100 */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(5));
++		stx7111_wrt_table[4] = /* clk_ic_if_200 */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(17));
++		ret = 0;
++		break;
++	}
++	return ret;
++}
++
++static int stx7111_suspend_valid(suspend_state_t state)
++{
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++	case PM_SUSPEND_MEM:
++		return 1;
++	};
++	return 0;
++}
++
++/*
++ * The xxxx_finish function is called after the resume
++ * sysdev devices (i.e.: timer, cpufreq)
++ * But it isn't a big issue in our platform
++ */
++static int stx7111_suspend_finish(suspend_state_t state)
++{
++	pm_message_t pms = {.event = PM_EVENT_ON, };
++	sysconf_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	emi_pm_state(pms);
++	return 0;
++}
++
++static unsigned long stx7111_iomem[2] __cacheline_aligned = {
++		stx7111_wrt_table,
++		CLOCKGENA_BASE_ADDR};
++
++static int stx7111_evttoirq(unsigned long evt)
++{
++	return evt2irq(evt);
++}
++
++int __init suspend_platform_setup(struct sh4_suspend_t *st40data)
++{
++	struct sysconf_field* sc;
++#ifdef CONFIG_PM_DEBUG
++/* route the sh4/2 clock frequenfy */
++	iowrite32(0xc, CLOCKGENA_BASE_ADDR + CKGA_CLKOBS_MUX1_CFG);
++#endif
++	st40data->iobase = stx7111_iomem;
++	st40data->ops.valid = stx7111_suspend_valid;
++	st40data->ops.finish = stx7111_suspend_finish;
++	st40data->ops.prepare = stx7111_suspend_prepare;
++
++	st40data->evt_to_irq = stx7111_evttoirq;
++
++	st40data->stby_tbl = (unsigned long)stx7111_standby_table;
++	st40data->stby_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7111_standby_table)*sizeof(long), L1_CACHE_BYTES);
++
++	st40data->mem_tbl = (unsigned long)stx7111_mem_table;
++	st40data->mem_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7111_mem_table)*sizeof(long), L1_CACHE_BYTES);
++
++	st40data->wrt_tbl = (unsigned long)stx7111_wrt_table;
++	st40data->wrt_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7111_wrt_table)*sizeof(long), L1_CACHE_BYTES);
++
++	sc = sysconf_claim(SYS_CFG, 38, 20, 20, "pm");
++	stx7111_wrt_table[_SYS_CFG38]      = (unsigned long)sysconf_address(sc);
++	stx7111_wrt_table[_SYS_CFG38_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_CFG, 11, 12, 12, "pm");
++	stx7111_wrt_table[_SYS_CFG11]      = (unsigned long)sysconf_address(sc);
++	stx7111_wrt_table[_SYS_CFG11_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_STA, 4, 0, 0, "pm");
++	stx7111_wrt_table[_SYS_STA4]      = (unsigned long)sysconf_address(sc);
++	stx7111_wrt_table[_SYS_STA4_MASK] = sysconf_mask(sc);
++
++	return 0;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7141.c b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+new file mode 100644
+index 0000000..b647bb9
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+@@ -0,0 +1,237 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/irqflags.h>
++#include <linux/stm/pm.h>
++#include <linux/stm/sysconf.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm/pm.h>
++#include <asm/irq-ilc.h>
++
++#ifdef CONFIG_PM_DEBUG
++#include <linux/stm/pio.h>
++#endif
++
++#include "./soc-stx7141.h"
++
++#define _SYS_STA4		(7)
++#define _SYS_STA4_MASK		(8)
++#define _SYS_CFG11		(9)
++#define _SYS_CFG11_MASK		(10)
++#define _SYS_CFG38		(5)
++#define _SYS_CFG38_MASK		(6)
++
++/* *************************
++ * STANDBY INSTRUCTION TABLE
++ * *************************
++ */
++static unsigned long stx7141_standby_table[] __cacheline_aligned = {
++IMMEDIATE_DEST(0x1f),
++/* reduces the st40 frequency */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++/* reduces the clk_ic */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++
++CLK_POKE(CKGA_OSC_DIV_CFG(10), 29),/* clk_ic_if_100 @ 1 MHz to be safe for lirc */
++/* 2. Move all the clock on OSC */
++CLK_POKE(CKGA_CLKOPSRC_SWITCH_CFG(0x0), 0),
++
++ /* END. */
++_END(),
++
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++DATA_LOAD(0x1),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(10)),
++ /* END. */
++_END()
++};
++
++/* *********************
++ * MEM INSTRUCTION TABLE
++ * *********************
++ */
++static unsigned long stx7141_mem_table[] __cacheline_aligned = {
++/* 1. Enables the DDR self refresh mode */
++DATA_OR_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++/* waits until the ack bit is zero */
++DATA_WHILE_NEQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++/* 1.1 Turn-off the ClockGenD */
++DATA_OR_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++
++IMMEDIATE_DEST(0x1f),
++/* reduces OSC_st40 */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++/* reduces OSC_clk_ic */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++/* reduces OSC_clk_ic_if_200 */
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),
++
++CLK_POKE(CKGA_OSC_DIV_CFG(10), 29),/* clk_ic_if_100 @ 1 MHz to be safe for lirc */
++/* 2. Move all the clock on OSC */
++IMMEDIATE_DEST(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x1)),
++/* PLLs in power down */
++CLK_OR_LONG(CKGA_POWER_CFG, 0x3),
++ /* END. */
++_END(),
++
++/* Turn-on the PLLs */
++CLK_AND_LONG(CKGA_POWER_CFG, ~3),
++/* 1. Turn-on the LMI ClocksGenD */
++DATA_AND_NOT_LONG(_SYS_CFG11, _SYS_CFG11_MASK),
++/* 2. Disables the DDR self refresh mode */
++DATA_AND_NOT_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++/* waits until the ack bit is zero */
++DATA_WHILE_EQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x0)),
++DATA_LOAD(0x1),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG(0x1)),
++
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++
++DATA_LOAD(0x3),
++CLK_STORE(CKGA_OSC_DIV_CFG(10)),
++
++DATA_LOAD(0x4),
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),
++_DELAY(),
++_DELAY(),
++_DELAY(),
++_END()
++};
++
++static unsigned long stx7141_wrt_table[16] __cacheline_aligned;
++
++static int stx7141_suspend_prepare(suspend_state_t state)
++{
++	int ret = -EINVAL;
++	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
++	emi_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	sysconf_pm_state(pms);
++
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++		stx7141_wrt_table[0] = /* swith config */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
++		stx7141_wrt_table[1] = /* clk_ic */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
++		stx7141_wrt_table[2] = /* clk_ic_if_100 */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(10));
++		ret = 0;
++		break;
++	case PM_SUSPEND_MEM:
++		stx7141_wrt_table[0] = /* swith config */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
++		stx7141_wrt_table[1] = /* swith config */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(1));
++		stx7141_wrt_table[2] = /* clk_ic */
++		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
++		stx7141_wrt_table[3] = /* clk_ic_if_100 */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(10));
++		stx7141_wrt_table[4] = /* clk_ic_if_200 */
++		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(17));
++		ret = 0;
++		break;
++	}
++	return ret;
++}
++
++static int stx7141_suspend_valid(suspend_state_t state)
++{
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++	case PM_SUSPEND_MEM:
++		return 1;
++	};
++	return 0;
++}
++
++/*
++ * The xxxx_finish function is called after the resume
++ * sysdev devices (i.e.: timer, cpufreq)
++ * But it isn't a big issue in our platform
++ */
++static int stx7141_suspend_finish(suspend_state_t state)
++{
++	pm_message_t pms = {.event = PM_EVENT_ON, };
++	sysconf_pm_state(pms);
++/*	clk_pm_state(pms);*/
++	emi_pm_state(pms);
++	return 0;
++}
++
++static unsigned long stx7141_iomem[2] __cacheline_aligned = {
++		stx7141_wrt_table,
++		CLOCKGENA_BASE_ADDR};
++
++static int stx7141_evttoirq(unsigned long evt)
++{
++	return ilc2irq(evt);
++}
++
++int __init suspend_platform_setup(struct sh4_suspend_t *st40data)
++{
++	struct sysconf_field *sc;
++#ifdef CONFIG_PM_DEBUG
++	/* route the sh4/2  clock frequenfy */
++	iowrite32(0xc, CLOCKGENA_BASE_ADDR + CKGA_CLKOBS_MUX1_CFG);
++	stpio_request_set_pin(3, 2, "clkA dbg", STPIO_ALT_OUT, 1);
++	sc = sysconf_claim(SYS_CFG, 19, 22, 23, "clkA dbg");
++	sysconf_write(sc, 11);
++#endif
++	st40data->iobase = stx7141_iomem;
++	st40data->ops.valid = stx7141_suspend_valid;
++	st40data->ops.finish = stx7141_suspend_finish;
++	st40data->ops.prepare = stx7141_suspend_prepare;
++
++	st40data->evt_to_irq = stx7141_evttoirq;
++
++	st40data->stby_tbl = (unsigned long)stx7141_standby_table;
++	st40data->stby_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7141_standby_table)*sizeof(long), L1_CACHE_BYTES);
++
++	st40data->mem_tbl = (unsigned long)stx7141_mem_table;
++	st40data->mem_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7141_mem_table)*sizeof(long), L1_CACHE_BYTES);
++
++	st40data->wrt_tbl = (unsigned long)stx7141_wrt_table;
++        st40data->wrt_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7141_wrt_table) * sizeof(long), L1_CACHE_BYTES);
++
++	sc = sysconf_claim(SYS_CFG, 38, 20, 20, "pm");
++	stx7141_wrt_table[_SYS_CFG38]      = (unsigned long)sysconf_address(sc);
++	stx7141_wrt_table[_SYS_CFG38_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_CFG, 11, 12, 12, "pm");
++	stx7141_wrt_table[_SYS_CFG11]      = (unsigned long)sysconf_address(sc);
++	stx7141_wrt_table[_SYS_CFG11_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_STA, 4, 0, 0, "pm");
++	stx7141_wrt_table[_SYS_STA4]      = (unsigned long)sysconf_address(sc);
++	stx7141_wrt_table[_SYS_STA4_MASK] = sysconf_mask(sc);
++
++	return 0;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7200.c b/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
+new file mode 100644
+index 0000000..fced286
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
+@@ -0,0 +1,273 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/irqflags.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/pm.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm/pm.h>
++#include <asm/irq-ilc.h>
++
++#include "./soc-stx7200.h"
++
++#define _SYS_STA4			(3)
++#define _SYS_STA4_MASK			(4)
++#define _SYS_STA6			(5)
++#define _SYS_STA6_MASK			(6)
++
++/* To powerdown the LMIs */
++#define _SYS_CFG38			(7)
++#define _SYS_CFG38_MASK			(8)
++#define _SYS_CFG39			(9)
++#define _SYS_CFG39_MASK			(10)
++
++/* *************************
++ * STANDBY INSTRUCTION TABLE
++ * *************************
++ */
++static unsigned long stx7200_standby_table[] __cacheline_aligned = {
++/* Down scale the GenA.Pll0 and GenA.Pll2*/
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
++CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
++
++CLK_OR_LONG(CLKA_PWR_CFG, PWR_CFG_PLL0_OFF | PWR_CFG_PLL2_OFF),
++
++CLK_AND_LONG(CLKA_PLL0, ~(0x7ffff)),
++CLK_AND_LONG(CLKA_PLL2, ~(0x7ffff)),
++
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_SUSPEND),
++CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_SUSPEND),
++
++CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL2_OFF)),
++
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
++CLK_AND_LONG(CLKA_PLL2, ~(CLKA_PLL2_BYPASS)),
++
++/* END. */
++_END(),
++
++/* Restore the GenA.Pll0 and GenA.PLL2 original frequencies */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
++CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
++
++CLK_OR_LONG(CLKA_PWR_CFG, PWR_CFG_PLL0_OFF | PWR_CFG_PLL2_OFF),
++
++DATA_LOAD(0x0),
++IMMEDIATE_SRC0(CLKA_PLL0_BYPASS),
++_OR(),
++CLK_STORE(CLKA_PLL0),
++
++DATA_LOAD(0x1),
++IMMEDIATE_SRC0(CLKA_PLL2_BYPASS),
++_OR(),
++CLK_STORE(CLKA_PLL2),
++
++CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL2_OFF)),
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
++CLK_AND_LONG(CLKA_PLL2, ~(CLKA_PLL2_BYPASS)),
++
++_DELAY(),
++/* END. */
++_END()
++};
++
++/* *********************
++ * MEM INSTRUCTION TABLE
++ * *********************
++ */
++
++static unsigned long stx7200_mem_table[] __cacheline_aligned = {
++/* 1. Enables the DDR self refresh mode */
++DATA_OR_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++DATA_OR_LONG(_SYS_CFG39, _SYS_CFG39_MASK),
++	/* waits until the ack bit is zero */
++DATA_WHILE_NEQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++DATA_WHILE_NEQ(_SYS_STA6, _SYS_STA6_MASK, _SYS_STA6_MASK),
++
++ /* waits until the ack bit is zero */
++/* 2. Down scale the GenA.Pll0, GenA.Pll1 and GenA.Pll2*/
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
++CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_BYPASS),
++CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
++
++CLK_OR_LONG(CLKA_PWR_CFG, PWR_CFG_PLL0_OFF | PWR_CFG_PLL1_OFF | PWR_CFG_PLL2_OFF),
++
++CLK_AND_LONG(CLKA_PLL0, ~(0x7ffff)),
++CLK_AND_LONG(CLKA_PLL1, ~(0x7ffff)),
++CLK_AND_LONG(CLKA_PLL2, ~(0x7ffff)),
++
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_SUSPEND),
++CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_SUSPEND),
++CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_SUSPEND),
++
++CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL1_OFF | PWR_CFG_PLL2_OFF)),
++
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
++CLK_AND_LONG(CLKA_PLL1, ~(CLKA_PLL1_BYPASS)),
++CLK_AND_LONG(CLKA_PLL2, ~(CLKA_PLL2_BYPASS)),
++
++/* END. */
++_END() ,
++
++/* Restore the GenA.Pll0 and GenA.PLL2 original frequencies */
++CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
++CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_BYPASS),
++CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
++
++CLK_OR_LONG(CLKA_PWR_CFG, PWR_CFG_PLL0_OFF | PWR_CFG_PLL1_OFF | PWR_CFG_PLL2_OFF),
++
++DATA_LOAD(0x0),
++IMMEDIATE_SRC0(CLKA_PLL0_BYPASS),
++_OR(),
++CLK_STORE(CLKA_PLL0),
++
++DATA_LOAD(0x1),
++IMMEDIATE_SRC0(CLKA_PLL1_BYPASS),
++_OR(),
++CLK_STORE(CLKA_PLL1),
++
++DATA_LOAD(0x2),
++IMMEDIATE_SRC0(CLKA_PLL2_BYPASS),
++_OR(),
++CLK_STORE(CLKA_PLL2),
++
++CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL1_OFF | PWR_CFG_PLL2_OFF)),
++
++CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
++CLK_AND_LONG(CLKA_PLL1, ~(CLKA_PLL1_BYPASS)),
++CLK_AND_LONG(CLKA_PLL2, ~(CLKA_PLL2_BYPASS)),
++
++DATA_AND_NOT_LONG(_SYS_CFG38, _SYS_CFG38_MASK),
++DATA_AND_NOT_LONG(_SYS_CFG39, _SYS_CFG39_MASK),
++DATA_WHILE_EQ(_SYS_STA4, _SYS_STA4_MASK, _SYS_STA4_MASK),
++
++/* wait until the ack bit is high        */
++DATA_WHILE_EQ(_SYS_STA6, _SYS_STA6_MASK, _SYS_STA6_MASK),
++
++_DELAY(),
++_DELAY(),
++_DELAY(),
++/* END. */
++_END()
++};
++
++static unsigned long stx7200_wrt_table[16] __cacheline_aligned;
++
++static int stx7200_suspend_prepare(suspend_state_t state)
++{
++	pm_message_t pm = {.event = PM_EVENT_SUSPEND, };
++	emi_pm_state(pm);
++/*	clk_pm_state(pm);*/
++	sysconf_pm_state(pm);
++
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++		stx7200_wrt_table[0] =
++			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL0) & 0x7ffff;
++		stx7200_wrt_table[1] =
++			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL2) & 0x7ffff;
++		return 0;
++	case PM_SUSPEND_MEM:
++		stx7200_wrt_table[0] =
++			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL0) & 0x7ffff;
++		stx7200_wrt_table[1] =
++			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL1) & 0x7ffff;
++		stx7200_wrt_table[2] =
++			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL2) & 0x7ffff;
++	   return 0;
++	}
++	return -EINVAL;
++}
++
++static int stx7200_suspend_valid(suspend_state_t state)
++{
++	switch (state) {
++	case PM_SUSPEND_STANDBY:
++	case PM_SUSPEND_MEM:
++		return 1;
++	};
++	return 0;
++}
++
++/*
++ * The xxxx_finish function is called after the resume
++ * sysdev devices (i.e.: timer, cpufreq)
++ * But it isn't a big issue in our platform
++ */
++static int stx7200_suspend_finish(suspend_state_t state)
++{
++	pm_message_t pm = {.event = PM_EVENT_ON, };
++	sysconf_pm_state(pm);
++/*	clk_pm_state(pm);*/
++	emi_pm_state(pm);
++	return 0;
++}
++
++static unsigned long stx7200_iomem[2] __cacheline_aligned = {
++		stx7200_wrt_table,	/* To access Sysconf    */
++		CLOCKGEN_BASE_ADDR};	/* Clockgen A */
++
++static int stx7200_evttoirq(unsigned long evt)
++{
++	return ilc2irq(evt);
++}
++
++int __init suspend_platform_setup(struct sh4_suspend_t *st40data)
++{
++	struct sysconf_field* sc;
++
++	st40data->iobase = stx7200_iomem;
++	st40data->ops.valid = stx7200_suspend_valid;
++	st40data->ops.finish = stx7200_suspend_finish;
++	st40data->ops.prepare = stx7200_suspend_prepare;
++
++	st40data->evt_to_irq = stx7200_evttoirq;
++
++	st40data->stby_tbl = (unsigned long)stx7200_standby_table;
++	st40data->stby_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7200_standby_table)*sizeof(long), L1_CACHE_BYTES);
++
++	st40data->mem_tbl = (unsigned long)stx7200_mem_table;
++	st40data->mem_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7200_mem_table)*sizeof(long), L1_CACHE_BYTES);
++
++	st40data->wrt_tbl = (unsigned long)stx7200_wrt_table;
++	st40data->wrt_size = DIV_ROUND_UP(
++		ARRAY_SIZE(stx7200_wrt_table) * sizeof(long), L1_CACHE_BYTES);
++
++	sc = sysconf_claim(SYS_STA, 4, 0, 0, "pm");
++	stx7200_wrt_table[_SYS_STA4] = (unsigned long)sysconf_address(sc);
++	stx7200_wrt_table[_SYS_STA4_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_STA, 6, 0, 0, "pm");
++	stx7200_wrt_table[_SYS_STA6] = (unsigned long)sysconf_address(sc);
++	stx7200_wrt_table[_SYS_STA6_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_CFG, 38, 20, 20, "pm");
++	stx7200_wrt_table[_SYS_CFG38] = (unsigned long)sysconf_address(sc);
++	stx7200_wrt_table[_SYS_CFG38_MASK] = sysconf_mask(sc);
++
++	sc = sysconf_claim(SYS_CFG, 39, 20, 20, "pm");
++	stx7200_wrt_table[_SYS_CFG39] = (unsigned long)sysconf_address(sc);
++	stx7200_wrt_table[_SYS_CFG39_MASK] = sysconf_mask(sc);
++#ifdef CONFIG_PM_DEBUG
++//	ctrl_outl(0xc, CKGA_CLKOUT_SEL +
++//		CLOCKGEN_BASE_ADDR); /* sh4:2 routed on SYSCLK_OUT */
++#endif
++	return 0;
++}
+diff --git a/include/asm-sh/irq-ilc.h b/include/asm-sh/irq-ilc.h
+index 53996c6..46af9aa 100644
+--- a/include/asm-sh/irq-ilc.h
++++ b/include/asm-sh/irq-ilc.h
+@@ -41,5 +41,6 @@
+ void __init ilc_early_init(struct platform_device* pdev);
+ void __init ilc_demux_init(void);
+ void ilc_irq_demux(unsigned int irq, struct irq_desc *desc);
++int ilc2irq(unsigned int evtcode);
+ 
+ #endif
+diff --git a/include/linux/stm/pm.h b/include/linux/stm/pm.h
+index 25428ae..32763b1 100644
+--- a/include/linux/stm/pm.h
++++ b/include/linux/stm/pm.h
+@@ -20,6 +20,7 @@ extern void __iomem *clkgena_base;
+ extern struct kset power_subsys;
+ 
+ int emi_pm_state(pm_message_t state);
++int sysconf_pm_state(pm_message_t state);
+ 
+ /*
+  * Several devices (i.e.: USB-SATA-PCI) have extra power capability
+-- 
+1.5.6.3
+

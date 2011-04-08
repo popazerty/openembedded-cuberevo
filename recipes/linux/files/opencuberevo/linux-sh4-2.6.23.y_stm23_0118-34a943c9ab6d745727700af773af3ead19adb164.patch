@@ -1,0 +1,99 @@
+From 34a943c9ab6d745727700af773af3ead19adb164 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 11 Feb 2009 13:56:06 +0000
+Subject: [PATCH] sound_stm: Enable interrupts prior to player/reader when starting
+
+The start procedure has been changed and interrupts are now enabled
+prior to player/reader to avoid a potential (but unlikely) race.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/pcm_player.c   |    8 ++++----
+ sound/stm/pcm_reader.c   |    8 ++++----
+ sound/stm/spdif_player.c |   14 +++++++-------
+ 3 files changed, 15 insertions(+), 15 deletions(-)
+
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 05f8f57..751be3e 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -621,16 +621,16 @@ static inline int snd_stm_pcm_player_start(struct snd_pcm_substream *substream)
+ 			DMA_CHANNEL_STATUS_RUNNING)
+ 		udelay(5);
+ 
+-	/* Launch PCM player */
+-
+-	set__AUD_PCMOUT_CTRL__MODE__PCM(pcm_player);
+-
+ 	/* Enable player interrupts */
+ 
+ 	enable_irq(pcm_player->irq);
+ 	set__AUD_PCMOUT_IT_EN_SET__NSAMPLE__SET(pcm_player);
+ 	set__AUD_PCMOUT_IT_EN_SET__UNF__SET(pcm_player);
+ 
++	/* Launch the player */
++
++	set__AUD_PCMOUT_CTRL__MODE__PCM(pcm_player);
++
+ 	/* Wake up & unmute DAC */
+ 
+ 	if (pcm_player->conv_group) {
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 4a8f525..a256a3d 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -619,15 +619,15 @@ static inline int snd_stm_pcm_reader_start(struct snd_pcm_substream *substream)
+ 			DMA_CHANNEL_STATUS_RUNNING)
+ 		udelay(5);
+ 
+-	/* Launch PCM reader */
+-
+-	set__AUD_PCMIN_CTRL__MODE__PCM(pcm_reader);
+-
+ 	/* Enable required reader interrupts */
+ 
+ 	enable_irq(pcm_reader->irq);
+ 	set__AUD_PCMIN_IT_EN_SET__OVF__SET(pcm_reader);
+ 
++	/* Launch the reader */
++
++	set__AUD_PCMIN_CTRL__MODE__PCM(pcm_reader);
++
+ 	/* Wake up & unmute ADC */
+ 
+ 	if (pcm_reader->conv_group) {
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 501f10c..176cd00 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -638,7 +638,13 @@ static inline int snd_stm_spdif_player_start(struct snd_pcm_substream
+ 			DMA_CHANNEL_STATUS_RUNNING)
+ 		udelay(5);
+ 
+-	/* Launch SPDIF player */
++	/* Enable player interrupts */
++
++	enable_irq(spdif_player->irq);
++	set__AUD_SPDIF_IT_EN_SET__NSAMPLE__SET(spdif_player);
++	set__AUD_SPDIF_IT_EN_SET__UNF__SET(spdif_player);
++
++	/* Launch the player */
+ 
+ 	if (spdif_player->stream_settings.encoding_mode ==
+ 			SNDRV_STM_SPDIF_ENCODING_MODE_PCM)
+@@ -646,12 +652,6 @@ static inline int snd_stm_spdif_player_start(struct snd_pcm_substream
+ 	else
+ 		set__AUD_SPDIF_CTRL__MODE__ENCODED(spdif_player);
+ 
+-	/* Enable player interrupts */
+-
+-	enable_irq(spdif_player->irq);
+-	set__AUD_SPDIF_IT_EN_SET__NSAMPLE__SET(spdif_player);
+-	set__AUD_SPDIF_IT_EN_SET__UNF__SET(spdif_player);
+-
+ 	/* Wake up & unmute converter */
+ 
+ 	if (spdif_player->conv_group) {
+-- 
+1.5.6.3
+

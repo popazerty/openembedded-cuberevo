@@ -1,0 +1,64 @@
+It is possible to configure ATA drives so that they power up in standby
+mode, and require a SET FEATURES command to activate them. This patch
+adds support for drives in this state, and spins them up as part of the
+device identification sequence.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/drivers/scsi/libata-core.c
+===================================================================
+--- linux.orig/drivers/scsi/libata-core.c
++++ linux/drivers/scsi/libata-core.c
+@@ -1107,6 +1107,7 @@ static int ata_dev_read_id(struct ata_po
+ 	u16 *id;
+ 	const char *reason;
+ 	int rc;
++	int maybe_in_standby = post_reset;
+ 
+ 	DPRINTK("ENTER, host %u, dev %u\n", ap->id, dev->devno);
+ 
+@@ -1147,6 +1148,33 @@ static int ata_dev_read_id(struct ata_po
+ 
+ 	swap_buf_le16(id, ATA_ID_WORDS);
+ 
++	/*
++	 * For drives which are configured with the power up in standby
++	 * feature selected, tell them to go active.
++	 * Ignore error results from the drive, because some drives
++	 * appear to return an error if the drive was already spinning.
++	 * Note this breaks the strict sequence of commands issued by the
++	 * code below for pre-ATA4 devices, but as this feature was not
++	 * available at that time, this should not be a problem.
++	 */
++	if (maybe_in_standby && ((id[2] == 0x37c8) || (id[2] == 0x738c))) {
++		ata_tf_init(ap, &tf, dev->devno);
++		tf.command = ATA_CMD_SET_FEATURES;
++		tf.feature = SETFEATURES_SPINUP;
++		tf.flags |= ATA_TFLAG_ISADDR | ATA_TFLAG_DEVICE;
++		tf.protocol = ATA_PROT_NODATA;
++
++		err_mask = ata_exec_internal(ap, dev, &tf, DMA_NONE, NULL, 0);
++		if (err_mask & (~AC_ERR_DEV)) {
++			rc = -EIO;
++			reason = "failed to spin up";
++			goto err_out;
++		}
++
++		maybe_in_standby = 0;
++		goto retry;
++	}
++
+ 	/* sanity check */
+ 	if ((class == ATA_DEV_ATA) != (ata_id_is_ata(id) | ata_id_is_cfa(id))) {
+ 		rc = -EINVAL;
+Index: linux/include/linux/ata.h
+===================================================================
+--- linux.orig/include/linux/ata.h
++++ linux/include/linux/ata.h
+@@ -171,6 +171,7 @@ enum {
+ 	XFER_PIO_1		= 0x09,
+ 	XFER_PIO_0		= 0x08,
+ 	XFER_PIO_SLOW		= 0x00,
++	SETFEATURES_SPINUP	= 0x07,
+ 
+ 	/* ATAPI stuff */
+ 	ATAPI_PKT_DMA		= (1 << 0),

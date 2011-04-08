@@ -1,0 +1,17 @@
+This patch fix the source clock in the ssc device 
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+
+Index: linux/drivers/stm/stm_ssc.c
+===================================================================
+--- linux.orig/drivers/stm/stm_ssc.c	2007-01-25 16:50:28.848549000 +0000
++++ linux/drivers/stm/stm_ssc.c	2007-02-15 10:01:20.905178000 +0000
+@@ -62,7 +62,7 @@
+ 
+ unsigned int ssc_get_clock()
+ {
+-	return clk_get_rate(clk_get("sh4_ic_clk"));
++	return clk_get_rate(clk_get("comms_clk"));
+ }
+ 
+ struct ssc_t *ssc_device_request(unsigned int device_id)

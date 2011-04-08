@@ -1,0 +1,1237 @@
+commit 93dd00dad632b2b57961ec56da830001732e38ae
+Author: Pawel MOLL <pawel.moll@st.com>
+Date:   Wed Nov 28 12:07:12 2007 +0000
+
+    Registers database added
+    
+    Contains registers for:
+    
+    - ASC
+    - PWM
+    - Audio subsystem
+    
+    Signed-off-by: Pawel MOLL <pawel.moll@st.com>
+
+Index: linux-2.6.23-stm/include/linux/stm/registers.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers.h
+@@ -0,0 +1,98 @@
++#ifndef __STM_REGISTERS_H
++#define __STM_REGISTERS_H
++
++#include <asm/io.h>
++
++
++
++/* Register access macros */
++
++#define REGISTER_PEEK(base, reg) \
++		readl(base + reg)
++
++#define REGISTER_PEEK_N(base, reg, n) \
++		readl(base + reg(n))
++
++#define REGISTER_POKE(base, reg, u32value) \
++		writel(u32value, base + reg)
++
++#define REGISTER_POKE_N(base, reg, n, u32value) \
++		writel(u32value, base + reg(n))
++
++
++
++/* Field raw access macros */
++
++#define REGFIELD_PEEK(base, reg, field) \
++		regfield_peek(base, reg, reg##__##field##__SHIFT, \
++				reg##__##field##__MASK)
++
++#define REGFIELD_PEEK_N(base, reg, n, field) \
++		regfield_peek(base, reg(n), reg##__##field##__SHIFT, \
++				reg##__##field##__MASK)
++
++#define REGFIELD_POKE(base, reg, field, u32value) \
++		regfield_poke(base, reg, reg##__##field##__SHIFT, \
++				reg##__##field##__MASK, u32value)
++
++#define REGFIELD_POKE_N(base, reg, n, field, u32value) \
++		regfield_poke(base, reg(n), reg##__##field##__SHIFT, \
++				reg##__##field##__MASK, u32value)
++
++
++
++/* Field named values access macro */
++
++#define REGFIELD_SET(base, reg, field, valuename) \
++		regfield_poke(base, reg, reg##__##field##__SHIFT, \
++				reg##__##field##__MASK, reg##__##field##__VALUE__##valuename)
++
++#define REGFIELD_SET_N(base, reg, n, field, valuename) \
++		regfield_poke(base, reg(n), reg##__##field##__SHIFT, \
++				reg##__##field##__MASK, reg##__##field##__VALUE__##valuename)
++
++
++
++/* Bitmask generator macros */
++
++#define REGFIELD_MASK(reg, field) \
++		(reg##__##field##__MASK << reg##__##field##__SHIFT)
++
++#define REGFIELD_VALUE(reg, field, valuename) \
++		(reg##__##field##__VALUE__##valuename << reg##__##field##__SHIFT)
++
++
++
++/* Register fields runtime access */
++
++static inline unsigned long regfield_peek(void *base, unsigned long offset,
++		int shift, unsigned long mask)
++{
++	return ((readl(base + offset) >> shift) & mask);
++}
++
++static inline void regfield_poke(void *base, unsigned long offset,
++		int shift, unsigned long mask, unsigned long value)
++{
++	writel(((readl(base + offset) & ~(mask << shift)) |
++				((value & mask) << shift)), base + offset);
++}
++
++
++
++/* COMMs registers definitions */
++
++#include <linux/stm/registers/asc.h>
++#include <linux/stm/registers/pwm.h>
++
++/* Audio registers definitions */
++
++#include <linux/stm/registers/aud_pcmin.h>
++#include <linux/stm/registers/aud_pcmout.h>
++#include <linux/stm/registers/audcfg.h>
++#include <linux/stm/registers/audcfg_adac.h>
++#include <linux/stm/registers/audcfg_fsyn.h>
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/asc.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/asc.h
+@@ -0,0 +1,350 @@
++#ifndef __STM_REGISTERS_ASC_H
++#define __STM_REGISTERS_ASC_H
++
++
++
++/* ASC baudrate generator */
++
++#define ASC_BAUDRATE 0x00 /* RW, reset value: 1 */
++/* This register is the dual function baudrate generator and reload value register. A read
++ * from this register returns the content of the 16-bit counter/accumulator; writing to it
++ * updates the 16-bit reload register.
++ * If bit ASC_CTRL.RUN is 1, then any value written in the ASC_BaudRate register
++ * is immediately copied to the timer. However, if the RUN bit is 0 when the register is
++ * written, then the timer is not reloaded until the first comms clock cycle after the RUN
++ * bit is 1.
++ * The mode of operation of the baudrate generator depends on the setting of bit
++ * ASC_CTRL.BAUDMODE.
++ * Mode 0
++ * When bit ASC_CTRL.BAUDMODE is set to 0, the baudrate and the required reload
++ * value for a given baudrate can be determined by the following formulae:
++ * where: ASCBaudRate represents the content of the ASC_BaudRate register,
++ * taken as an unsigned 16-bit integer.
++ * fcomms is the frequency of the comms clock (clock channel CLK_IC_DIV2).
++ * Mode 0 should be used for all baudrates below 19.2 Kbaud.
++ * Table 39 lists commonly used baudrates with the required reload values and the
++ * approximate deviation errors for an example baudrate with a comms clock of
++ * 100 MHz.
++ * Mode 1
++ * When bit ASC_CTRL.BAUDMODE is set to 1, the baudrate is given by:
++ * where: fcomms is the comms clock frequency and ASCBaudRate is the value written to
++ * the ASC_BaudRate register. Mode 1 should be used for baudrates of 19.2 Kbytes
++ * and above as it has a lower deviation error than mode 0 at higher frequencies. */
++
++#define ASC_BAUDRATE__RELOAD_VAL__SHIFT 0
++#define ASC_BAUDRATE__RELOAD_VAL__MASK  0x0000ffff
++
++
++
++/* ASC transmit buffer */
++
++#define ASC_TX_BUF 0x04 /* W, reset value: 0 */
++/* A transmission is started by writing to the transmit buffer register ASC_TX_BUF.
++ * Serial data transmission is only possible when the baudrate generator bit
++ * ASC_CTRL.RUN is set to 1.
++ * Data transmission is double buffered or uses a FIFO, so a new character may be
++ * written to the transmit buffer register before the transmission of the previous
++ * character is complete. This allows characters to be sent back to back without gaps. */
++
++#define ASC_TX_BUF__TD__SHIFT 0
++#define ASC_TX_BUF__TD__MASK  0x000001ff
++/* TD[8]:
++ * Transmit buffer data D8, or parity bit, or wake up bit or undefined depending on the operating
++ * mode (the setting of field ASC_CTRL.MODE).
++ * If the MODE field selects an 8-bit frame then this bit should be written as 0.
++ * TD[7]:
++ * Transmit buffer data D7, or parity bit depending on the operating mode (the setting of field
++ * ASC_CTRL.MODE).
++ * TD[6:0]: transmit buffer data D6 to D0 */
++
++
++
++/* ASC receive buffer */
++
++#define ASC_RX_BUF 0x08 /* R, reset value: 0 */
++/* Serial data reception is only possible when the baudrate generator bit
++ * ASC_CTRL.RUN is set to 1. */
++
++#define ASC_RX_BUF__RD__SHIFT 0
++#define ASC_RX_BUF__RD__MASK  0x000001ff
++/* RD[8]:
++ * Receive buffer data D8, or parity error bit, or wake up bit depending on the operating mode (the
++ * setting of field ASC_CTRL.MODE)
++ * If the MODE field selects an 8-bit frame then this bit is undefined. Software should ignore this
++ * bit when reading 8-bit frames
++ * RD[7]:
++ * Receive buffer data D7, or parity error bit depending on the operating mode (the setting of field
++ * ASC_CTRL.MODE)
++ * RD[6:0]:
++ * Receive buffer data D6 to D0 */
++
++
++
++/* ASC control */
++
++#define ASC_CTRL 0x0c /* RW, reset value: 0 */
++/* This register controls the operating mode of the ASC and contains control bits for
++ * mode and error check selection, and status flags for error identification.
++ * Programming the mode control field (MODE) to one of the reserved combinations
++ * may result in unpredictable behavior. Serial data transmission or reception is only
++ * possible when the baudrate generator run bit (RUN) is set to 1. When the RUN bit is
++ * set to 0, TxD is 1. Setting the RUN bit to 0 immediately freezes the state of the
++ * transmitter and receiver. This should only be done when the ASC is idle.
++ * Serial data transmission or reception is only possible when the baudrate generator
++ * RUN bit is set to 1. A transmission is started by writing to the transmit buffer register
++ * ASC_Tx_Buf. */
++
++#define ASC_CTRL__MODE__SHIFT 0
++#define ASC_CTRL__MODE__MASK  0x00000007
++/* MODE: ASC mode control
++ * 000: reserved	001: 8-bit data
++ * 010: reserved	011: 7-bit data + parity
++ * 100: 9-bit data	101: 8-bit data + wake up bit
++ * 110: reserved	111: 8-bit data + parity */
++
++#define ASC_CTRL__STOPBITS__SHIFT 3
++#define ASC_CTRL__STOPBITS__MASK  0x00000003
++/* STOPBITS: number of stop bits selection
++ * 00: 0.5 stop bits	01: 1 stop bits
++ * 10: 1.5 stop bits	11: 2 stop bits */
++
++#define ASC_CTRL__PARITYODD__SHIFT 5
++#define ASC_CTRL__PARITYODD__MASK  0x00000001
++/* PARITYODD: parity selection
++ * 0: even parity (parity bit set on odd number of 1's in data)
++ * 1: odd parity (parity bit set on even number of 1's in data) */
++
++#define ASC_CTRL__LOOPBACK__SHIFT 6
++#define ASC_CTRL__LOOPBACK__MASK  0x00000001
++/* LOOPBACK: loopback mode enable bit
++ * 0: standard transmit/receive mode	1: loopback mode enabled */
++
++#define ASC_CTRL__RUN__SHIFT 7
++#define ASC_CTRL__RUN__MASK  0x00000001
++/* RUN: baudrate generator run bit
++ * 0: baudrate generator disabled (ASC inactive)	1: baudrate generator enabled */
++
++#define ASC_CTRL__RX_EN__SHIFT 8
++#define ASC_CTRL__RX_EN__MASK  0x00000001
++/* RX_EN: receiver enable bit
++ * 0: receiver disabled	1: receiver enabled */
++
++#define ASC_CTRL__SC_EN__SHIFT 9
++#define ASC_CTRL__SC_EN__MASK  0x00000001
++/* SC_EN: smartcard enable
++ * 0: smartcard mode disabled	1: smartcard mode enabled */
++
++#define ASC_CTRL__FIFO_EN__SHIFT 10
++#define ASC_CTRL__FIFO_EN__MASK  0x00000001
++/* FIFO_EN: FIFO enable:
++ * 0: FIFO disabled	1: FIFO enabled */
++
++#define ASC_CTRL__CTS_EN__SHIFT 11
++#define ASC_CTRL__CTS_EN__MASK  0x00000001
++/* CTS_EN: CTS enable
++ * 0: CTS ignored		1: CTS enabled */
++
++#define ASC_CTRL__BAUDMODE__SHIFT 12
++#define ASC_CTRL__BAUDMODE__MASK  0x00000001
++/* BAUDMODE: baudrate generation mode
++ * 0: baud counter decrements, ticks when it reaches 1	1: baud counter added to itself, ticks when
++ * there is a carry */
++
++#define ASC_CTRL__NACK_DISABLE__SHIFT 13
++#define ASC_CTRL__NACK_DISABLE__MASK  0x00000001
++/* NACK_DISABLE: NACKing behavior control
++ * 0: NACKing behavior in smartcard mode	1: no NACKing behavior in smartcard mode */
++
++
++
++/* ASC interrupt enable */
++
++#define ASC_INT_EN 0x10 /* RW, reset value: 0 */
++
++#define ASC_INT_EN__RX_BUFFULL__SHIFT 0
++#define ASC_INT_EN__RX_BUFFULL__MASK  0x00000001
++/* RX_BUFFULL: receiver buffer full interrupt enable
++ * 0: receiver buffer full interrupt disable	1: receiver buffer full interrupt enable */
++
++#define ASC_INT_EN__TX_EMPTY__SHIFT 1
++#define ASC_INT_EN__TX_EMPTY__MASK  0x00000001
++/* TX_EMPTY: transmitter empty interrupt enable
++ * 0: transmitter empty interrupt disable	1: transmitter empty interrupt enable */
++
++#define ASC_INT_EN__TX_HALFEMPTY__SHIFT 2
++#define ASC_INT_EN__TX_HALFEMPTY__MASK  0x00000001
++/* TX_HALFEMPTY: transmitter buffer half empty interrupt enable
++ * 0: transmitter buffer half empty interrupt disable	1: transmitter buffer half empty interrupt
++ * enable */
++
++#define ASC_INT_EN__PARITY_ERR__SHIFT 3
++#define ASC_INT_EN__PARITY_ERR__MASK  0x00000001
++/* PARITY_ERR: parity error interrupt enable:
++ * 0: parity error interrupt disable	1: parity error interrupt enable */
++
++#define ASC_INT_EN__FRAME_ERR__SHIFT 4
++#define ASC_INT_EN__FRAME_ERR__MASK  0x00000001
++/* FRAME_ERR: framing error interrupt enable
++ * 0: framing error interrupt disable	1: framing error interrupt enable */
++
++#define ASC_INT_EN__OVERRUN_ERROR__SHIFT 5
++#define ASC_INT_EN__OVERRUN_ERROR__MASK  0x00000001
++/* OVERRUN_ERR: overrun error interrupt enable
++ * 0: overrun error interrupt disable	1: overrun error interrupt enable */
++
++#define ASC_INT_EN__TIMEOUT_NOTEMPTY__SHIFT 6
++#define ASC_INT_EN__TIMEOUT_NOTEMPTY__MASK  0x00000001
++/* TIMEOUT_NOTEMPTY: time out when not empty interrupt enable
++ * 0: time out when input FIFO or buffer not empty interrupt disable
++ * 1: time out when input FIFO or buffer not empty interrupt enable */
++
++#define ASC_INT_EN__TIMEOUT_IDLE__SHIFT 7
++#define ASC_INT_EN__TIMEOUT_IDLE__MASK  0x00000001
++/* TIMEOUT_IDLE: time out when the receiver FIFO is empty interrupt enable
++ * 0: time out when the input FIFO or buffer is empty interrupt disable
++ * 1: time out when the input FIFO or buffer is empty interrupt enable */
++
++#define ASC_INT_EN__RX_HALFFULL__SHIFT 8
++#define ASC_INT_EN__RX_HALFFULL__MASK  0x00000001
++/* RX_HALFFULL: receiver FIFO is half full interrupt enable
++ * 0: receiver FIFO is half full interrupt disable	1: receiver FIFO is half full interrupt enable */
++
++
++
++/* ASC interrupt status */
++
++#define ASC_STA 0x14 /* R, reset value: 3 (Rx buffer full and Tx buffer empty) */
++
++#define ASC_STA__RX_BUFFULL__SHIFT 0
++#define ASC_STA__RX_BUFFULL__MASK  0x00000001
++/* RX_BUFFULL: Receiver FIFO not empty (FIFO operation) or buffer full (double buffered
++ * operation)
++ * 0: receiver FIFO is empty or buffer is not full	1: receiver FIFO is not empty or buffer is full */
++
++#define ASC_STA__TX_EMPTY__SHIFT 1
++#define ASC_STA__TX_EMPTY__MASK  0x00000001
++/* TX_EMPTY: Transmitter empty flag
++ * 0: transmitter is not empty	1: transmitter is empty */
++
++#define ASC_STA__TX_HALFEMPTY__SHIFT 2
++#define ASC_STA__TX_HALFEMPTY__MASK  0x00000001
++/* TX_HALFEMPTY: Transmitter FIFO at least half empty flag or buffer empty
++ * 0: the FIFOs are enabled and the transmitter FIFO is more than half full (more than eight
++ * characters) or the FIFOs are disabled and the transmit buffer is not empty.
++ * 1: the FIFOs are enabled and the transmitter FIFO is at least half empty (eight or less
++ * characters) or the FIFOs are disabled and the transmit buffer is empty */
++
++#define ASC_STA__PARITY_ERR__SHIFT 3
++#define ASC_STA__PARITY_ERR__MASK  0x00000001
++/* PARITY_ERR: Input parity error flag:
++ * 0: no parity error	1: parity error */
++
++#define ASC_STA__FRAME_ERR__SHIFT 4
++#define ASC_STA__FRAME_ERR__MASK  0x00000001
++/* FRAME_ERR: Input frame error flag
++ * 0: no framing error	1: framing error (stop bits not found) */
++
++#define ASC_STA__OVERRUN_ERR__SHIFT 5
++#define ASC_STA__OVERRUN_ERR__MASK  0x00000001
++/* OVERRUN_ERR: Overrun error flag
++ * 0: no overrun error
++ * 1: overrun error, that is, data received when the input buffer is full */
++
++#define ASC_STA__TONE__SHIFT 6
++#define ASC_STA__TONE__MASK  0x00000001
++/* TONE: Time out when the receiver FIFO or buffer is not empty
++ * 0: no time out or the receiver FIFO or buffer is empty
++ * 1: time out when the receiver FIFO or buffer is not empty */
++
++#define ASC_STA__TOE__SHIFT 7
++#define ASC_STA__TOE__MASK  0x00000001
++/* TOE: Time out when the receiver FIFO or buffer is empty
++ * 0: no time out or the receiver FIFO or buffer is not empty
++ * 1: time out when the receiver FIFO or buffer is empty */
++
++#define ASC_STA__RX_HALFFULL__SHIFT 8
++#define ASC_STA__RX_HALFFULL__MASK  0x00000001
++/* RX_HALFFULL: Receiver FIFO is half full
++ * 0: the receiver FIFO contains eight characters or less
++ * 1: the receiver FIFO contains more than eight characters */
++
++#define ASC_STA__TX_FULL__SHIFT 9
++#define ASC_STA__TX_FULL__MASK  0x00000001
++/* TX_FULL: Transmitter FIFO or buffer is full
++ * 0: the FIFOs are enabled and the transmitter FIFO is empty or contains less than 16
++ * characters or the FIFOs are disabled and the transmit buffer is empty
++ * 1: the FIFOs are enabled and the transmitter FIFO contains 16 characters or the FIFOs are
++ * disabled and the transmit buffer is full */
++
++#define ASC_STA__NKD__SHIFT 10
++#define ASC_STA__NKD__MASK  0x00000001
++/* NKD: Transmission failure acknowledgement by receiver in smartcard mode.
++ * 0: data transmitted successfully
++ * 1: data transmission unsuccessful (data NACKed by smartcard) */
++
++
++
++/* ASC guard time */
++
++#define ASC_GUARDTIME 0x18 /* RW, reset value: 0 */
++/* This register defines the number of stop bits and the delay of the assertion of the
++ * interrupt TX_EMPTY by a programmable number of baud clock ticks. The value in the
++ * register is the number of baud clock ticks to delay assertion of TX_EMPTY. This
++ * value must be in the range 0 to 511. */
++
++#define ASC_GUARDTIME__GUARDTIME__SHIFT 0
++#define ASC_GUARDTIME__GUARDTIME__MASK  0x000001ff
++
++
++
++/* ASC time out */
++
++#define ASC_TIMEOUT 0x1c /* RW, reset value: 0 */
++/* The time out period in baudrate ticks. The ASC contains an 8-bit time out counter,
++ * which reloads from ASC_TIMEOUT when one or more of the following is true:
++ * If none of these conditions hold, the counter decrements to 0 at every baudrate tick.
++ * The TONE (time out when not empty) bit of the ASC_STA register is 1 when the
++ * input FIFO is not empty and the time out counter is zero. The TIMEOUT_IDLE bit of
++ * the ASC_STA register is 1 when the input FIFO is empty and the time out counter is
++ * zero.
++ * When the software has emptied the input FIFO, the time out counter resets and starts
++ * decrementing. If no more characters arrive, when the counter reaches zero the
++ * TIMEOUT_IDLE bit of the ASC_STA register is set. */
++
++#define ASC_TIMEOUT__TIMEOUT__SHIFT 0
++#define ASC_TIMEOUT__TIMEOUT__MASK  0x000000ff
++
++
++
++/* ASC transmit FIFO reset */
++
++#define ASC_TX_RST 0x20 /* W */
++/* Reset the transmit FIFO. Registers ASC_TX_RST have no storage associated with
++ * them. A write of any value to these registers resets the corresponding transmitter
++ * FIFO. */
++
++
++
++/* ASC receive FIFO reset */
++
++#define ASC_RX_RST 0x24 /* W */
++/* Reset the receiver FIFO. The registers ASC_RX_RST have no actual storage
++ * associated with them. A write of any value to one of these registers resets the
++ * corresponding receiver FIFO. */
++
++
++
++/* ASC number of retries on transmission */
++
++#define ASC_RETRIES 0x28 /* RW, reset value: 1 */
++/* Defines the number of transmissions attempted on a piece of data before the UART
++ * discards the data. If a transmission still fails after NUM_RETRIES, the NKD bit is set
++ * in the ASC_STA register where it can be read and acted on by software. This
++ * register does not have to be reinitialized after a NACK error. */
++
++#define ASC_RETRIES__NUM_RETRIES__SHIFT 0
++#define ASC_RETRIES__NUM_RETRIES__MASK  0x000000ff
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/aud_pcmin.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/aud_pcmin.h
+@@ -0,0 +1,131 @@
++#ifndef __STM_REGISTERS_AUD_PCMIN_H
++#define __STM_REGISTERS_AUD_PCMIN_H
++
++
++
++#define AUD_PCMIN__RST 0x00
++
++#define AUD_PCMIN__RST__RSTP__SHIFT 0
++#define AUD_PCMIN__RST__RSTP__MASK  0x00000001
++
++
++
++#define AUD_PCMIN__DATA 0x04
++
++#define AUD_PCMIN__DATA__DATA__SHIFT 0
++#define AUD_PCMIN__DATA__DATA__MASK  0xffffffff
++
++
++
++#define AUD_PCMIN__ITS 0x08
++
++#define AUD_PCMIN__ITS__OVF__SHIFT 0
++#define AUD_PCMIN__ITS__OVF__MASK  0x00000001
++
++#define AUD_PCMIN__ITS__VSYNC__SHIFT 1
++#define AUD_PCMIN__ITS__VSYNC__MASK  0x00000001
++
++
++
++#define AUD_PCMIN__ITS_CLR 0x0c
++
++#define AUD_PCMIN__ITS_CLR__OVF__SHIFT 0
++#define AUD_PCMIN__ITS_CLR__OVF__MASK  0x00000001
++
++#define AUD_PCMIN__ITS_CLR__VSYNC__SHIFT 1
++#define AUD_PCMIN__ITS_CLR__VSYNC__MASK  0x00000001
++
++
++
++#define AUD_PCMIN__IT_EN 0x10
++
++#define AUD_PCMIN__IT_EN__OVF__SHIFT 0
++#define AUD_PCMIN__IT_EN__OVF__MASK  0x00000001
++
++#define AUD_PCMIN__IT_EN__VSYNC__SHIFT 1
++#define AUD_PCMIN__IT_EN__VSYNC__MASK  0x00000001
++
++
++
++#define AUD_PCMIN__IT_EN_SET 0x14
++
++#define AUD_PCMIN__IT_EN_SET__OVF__SHIFT 0
++#define AUD_PCMIN__IT_EN_SET__OVF__MASK  0x00000001
++
++#define AUD_PCMIN__IT_EN_SET__VSYNC__SHIFT 1
++#define AUD_PCMIN__IT_EN_SET__VSYNC__MASK  0x00000001
++
++
++
++#define AUD_PCMIN__IT_EN_CLR 0x18
++
++#define AUD_PCMIN__IT_EN_CLR__OVF__SHIFT 0
++#define AUD_PCMIN__IT_EN_CLR__OVF__MASK  0x00000001
++
++#define AUD_PCMIN__IT_EN_CLR__VSYNC__SHIFT 1
++#define AUD_PCMIN__IT_EN_CLR__VSYNC__MASK  0x00000001
++
++
++
++#define AUD_PCMIN__CTRL 0x1c
++
++#define AUD_PCMIN__CTRL__MODE__SHIFT 0
++#define AUD_PCMIN__CTRL__MODE__MASK  0x00000003
++
++#define AUD_PCMIN__CTRL__MEM_FMT__SHIFT 2
++#define AUD_PCMIN__CTRL__MEM_FMT__MASK  0x00000001
++
++#define AUD_PCMIN__CTRL__RND__SHIFT 3
++#define AUD_PCMIN__CTRL__RND__MASK  0x00000001
++
++#define AUD_PCMIN__CTRL__NUM_FRAMES__SHIFT 4
++#define AUD_PCMIN__CTRL__NUM_FRAMES__MASK  0x0fffffff
++
++
++
++
++#define AUD_PCMIN__STA 0x20
++
++#define AUD_PCMIN__STA__RUN_STOP__SHIFT 0
++#define AUD_PCMIN__STA__RUN_STOP__MASK  0x00000001
++
++#define AUD_PCMIN__STA__OVF__SHIFT 1
++#define AUD_PCMIN__STA__OVF__MASK  0x00000001
++
++#define AUD_PCMIN__STA__SAMPL_CNT__SHIFT 2
++#define AUD_PCMIN__STA__SAMPL_CNT__MASK  0x0000ffff
++
++#define AUD_PCMIN__STA__VSYNC__SHIFT 18
++#define AUD_PCMIN__STA__VSYNC__MASK  0x00000001
++
++#define AUD_PCMIN__STA__NFRAMES__SHIFT 19
++#define AUD_PCMIN__STA__NFRAMES__MASK  0x00000001
++
++
++
++#define AUD_PCMIN__FMT 0x24
++
++#define AUD_PCMIN__FMT__NBIT__SHIFT 0
++#define AUD_PCMIN__FMT__NBIT__MASK  0x00000001
++
++#define AUD_PCMIN__FMT__DATA_SIZE__SHIFT 1
++#define AUD_PCMIN__FMT__DATA_SIZE__MASK  0x00000003
++
++#define AUD_PCMIN__FMT__LR_POL__SHIFT 3
++#define AUD_PCMIN__FMT__LR_POL__MASK  0x00000001
++
++#define AUD_PCMIN__FMT__SCLK_EDGE__SHIFT 4
++#define AUD_PCMIN__FMT__SCLK_EDG__MASK  0x00000001
++
++#define AUD_PCMIN__FMT__PADDING__SHIFT 5
++#define AUD_PCMIN__FMT__PADDING__MASK  0x00000001
++
++#define AUD_PCMIN__FMT__ALIGN__SHIFT 6
++#define AUD_PCMIN__FMT__ALIGN__MASK  0x00000001
++
++#define AUD_PCMIN__FMT__ORDER__SHIFT 7
++#define AUD_PCMIN__FMT__ORDER__MASK  0x00000001
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/aud_pcmout.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/aud_pcmout.h
+@@ -0,0 +1,196 @@
++#ifndef __STM_REGISTERS_AUD_PCMOUT_H
++#define __STM_REGISTERS_AUD_PCMOUT_H
++
++
++
++#define AUD_PCMOUT_RST 0x00
++
++#define AUD_PCMOUT_RST__SRSTP__SHIFT          0
++#define AUD_PCMOUT_RST__SRSTP__MASK           0x1
++#define AUD_PCMOUT_RST__SRSTP__VALUE__RUNNING 0x0
++#define AUD_PCMOUT_RST__SRSTP__VALUE__RESET   0x1
++
++
++
++#define AUD_PCMOUT_DATA 0x04
++
++#define AUD_PCMOUT_DATA__DATA__SHIFT 0
++#define AUD_PCMOUT_DATA__DATA__MASK  0xffffffff
++
++
++
++#define AUD_PCMOUT_ITS 0x08
++
++#define AUD_PCMOUT_ITS__UNF__SHIFT          0
++#define AUD_PCMOUT_ITS__UNF__MASK           0x1
++#define AUD_PCMOUT_ITS__UNF__VALUE__PENDING 0x1
++
++#define AUD_PCMOUT_ITS__NSAMPLE__SHIFT          1
++#define AUD_PCMOUT_ITS__NSAMPLE__MASK           0x1
++#define AUD_PCMOUT_ITS__NSAMPLE__VALUE__PENDING 0x1
++
++
++
++#define AUD_PCMOUT_ITS_CLR 0x0c
++
++#define AUD_PCMOUT_ITS_CLR__UNF__SHIFT        0
++#define AUD_PCMOUT_ITS_CLR__UNF__MASK         0x1
++#define AUD_PCMOUT_ITS_CLR__UNF__VALUE__CLEAR 0x1
++
++#define AUD_PCMOUT_ITS_CLR__NSAMPLE__SHIFT       1
++#define AUD_PCMOUT_ITS_CLR__NSAMPLE__MASK        0x1
++#define AUD_PCMOUT_ITS_CLR__NSAMPLE__VALUE_CLEAR 0x1
++
++
++
++#define AUD_PCMOUT_IT_EN 0x10
++
++#define AUD_PCMOUT_IT_EN__UNF__SHIFT           0
++#define AUD_PCMOUT_IT_EN__UNF__MASK            0x1
++#define AUD_PCMOUT_IT_EN__UNF__VALUE__DISABLED 0x0
++#define AUD_PCMOUT_IT_EN__UNF__VALUE__ENABLED  0x1
++
++#define AUD_PCMOUT_IT_EN__NSAMPLE__SHIFT           1
++#define AUD_PCMOUT_IT_EN__NSAMPLE__MASK            0x1
++#define AUD_PCMOUT_IT_EN__NSAMPLE__VALUE__DISABLED 0x0
++#define AUD_PCMOUT_IT_EN__NSAMPLE__VALUE__ENABLED  0x1
++
++
++
++#define AUD_PCMOUT_IT_EN_SET 0x14
++
++#define AUD_PCMOUT_IT_EN_SET__UNF__SHIFT      0
++#define AUD_PCMOUT_IT_EN_SET__UNF__MASK       0x1
++#define AUD_PCMOUT_IT_EN_SET__UNF__VALUE__SET 0x1
++
++#define AUD_PCMOUT_IT_EN_SET__NSAMPLE__SHIFT      1
++#define AUD_PCMOUT_IT_EN_SET__NSAMPLE__MASK       0x1
++#define AUD_PCMOUT_IT_EN_SET__NSAMPLE__VALUE__SET 0x1
++
++
++
++#define AUD_PCMOUT_IT_EN_CLR 0x18
++
++#define AUD_PCMOUT_IT_EN_CLR__UNF__SHIFT        0
++#define AUD_PCMOUT_IT_EN_CLR__UNF__MASK         0x1
++#define AUD_PCMOUT_IT_EN_CLR__UNF__VALUE__CLEAR 0x1
++
++#define AUD_PCMOUT_IT_EN_CLR__NSAMPLE__SHIFT        1
++#define AUD_PCMOUT_IT_EN_CLR__NSAMPLE__MASK         0x1
++#define AUD_PCMOUT_IT_EN_CLR__NSAMPLE__VALUE__CLEAR 0x1
++
++
++
++#define AUD_PCMOUT_CTRL 0x1c
++
++#define AUD_PCMOUT_CTRL__MODE__SHIFT       0
++#define AUD_PCMOUT_CTRL__MODE__MASK        0x3
++#define AUD_PCMOUT_CTRL__MODE__VALUE__OFF  0x0
++#define AUD_PCMOUT_CTRL__MODE__VALUE__MUTE 0x1
++#define AUD_PCMOUT_CTRL__MODE__VALUE__PCM  0x2
++#define AUD_PCMOUT_CTRL__MODE__VALUE__CD   0x3
++
++#define AUD_PCMOUT_CTRL__MEM_FMT__SHIFT                  2
++#define AUD_PCMOUT_CTRL__MEM_FMT__MASK                   0x1
++#define AUD_PCMOUT_CTRL__MEM_FMT__VALUE__16_BITS_0_BITS  0x0
++#define AUD_PCMOUT_CTRL__MEM_FMT__VALUE__16_BITS_16_BITS 0x1
++
++#define AUD_PCMOUT_CTRL__RND__SHIFT                   3
++#define AUD_PCMOUT_CTRL__RND__MASK                    0x1
++#define AUD_PCMOUT_CTRL__RND__VALUE__NO_ROUNDING      0x0
++#define AUD_PCMOUT_CTRL__RND__VALUE__16_BITS_ROUNDING 0x1
++
++#define AUD_PCMOUT_CTRL__CLK_DIV__SHIFT 4
++#define AUD_PCMOUT_CTRL__CLK_DIV__MASK  0xff
++
++#define AUD_PCMOUT_CTRL__SPDIF_LAT__SHIFT                 12
++#define AUD_PCMOUT_CTRL__SPDIF_LAT__MASK                  0x1
++#define AUD_PCMOUT_CTRL__SPDIF_LAT__VALUE__IGNORE_SPDIF   0x0
++#define AUD_PCMOUT_CTRL__SPDIF_LAT__VALUE__WAIT_FOR_SPDIF 0x1
++
++#define AUD_PCMOUT_CTRL__NSAMPLE__SHIFT 13
++#define AUD_PCMOUT_CTRL__NSAMPLE__MASK  0x0007ffff
++
++
++
++#define AUD_PCMOUT_STA 0x20
++
++#define AUD_PCMOUT_STA__RUN_STOP__SHIFT          0
++#define AUD_PCMOUT_STA__RUN_STOP__MASK           0x1
++#define AUD_PCMOUT_STA__RUN_STOP__VALUE__STOPPED 0x0
++#define AUD_PCMOUT_STA__RUN_STOP__VALUE__RUNNING 0x1
++
++#define AUD_PCMOUT_STA__UNF__SHIFT                     1
++#define AUD_PCMOUT_STA__UNF__MASK                      0x1
++#define AUD_PCMOUT_STA__UNF__VALUE__UNDERFLOW_DETECTED 0x1
++
++#define AUD_PCMOUT_STA__NSAMPLE__SHIFT       2
++#define AUD_PCMOUT_STA__NSAMPLE__MASK        0x1
++#define AUD_PCMOUT_STA__NSAMPLE__VALUE__DONE 0x1
++
++
++
++#define AUD_PCMOUT_FMT 0x24
++
++#define AUD_PCMOUT_FMT__NBIT__SHIFT          0
++#define AUD_PCMOUT_FMT__NBIT__MASK           0x1
++#define AUD_PCMOUT_FMT__NBIT__VALUE__32_BITS 0x0
++#define AUD_PCMOUT_FMT__NBIT__VALUE__16_BITS 0x1
++
++#define AUD_PCMOUT_FMT__DATA_SIZE__SHIFT          1
++#define AUD_PCMOUT_FMT__DATA_SIZE__MASK           0x3
++#define AUD_PCMOUT_FMT__DATA_SIZE__VALUE__24_BITS 0x0
++#define AUD_PCMOUT_FMT__DATA_SIZE__VALUE__20_BITS 0x1
++#define AUD_PCMOUT_FMT__DATA_SIZE__VALUE__18_BITS 0x2
++#define AUD_PCMOUT_FMT__DATA_SIZE__VALUE__16_BITS 0x3
++
++#define AUD_PCMOUT_FMT__LR_POL__SHIFT            3
++#define AUD_PCMOUT_FMT__LR_POL__MASK             0x1
++#define AUD_PCMOUT_FMT__LR_POL__VALUE__LEFT_LOW  0x0
++#define AUD_PCMOUT_FMT__LR_POL__VALUE__LEFT_HIGH 0x1
++
++#define AUD_PCMOUT_FMT__SCLK_EDGE__SHIFT          4
++#define AUD_PCMOUT_FMT__SCLK_EDGE__MASK           0x1
++/* Beware that in 7100 and some cuts of 7109 there is
++ * a HW bug and these values are inverted; such
++ * situation must be detected in runtime! */
++#define AUD_PCMOUT_FMT__SCLK_EDGE__VALUE__RISING  0x0
++#define AUD_PCMOUT_FMT__SCLK_EDGE__VALUE__FALLING 0x1
++
++#define AUD_PCMOUT_FMT__PADDING__SHIFT                5
++#define AUD_PCMOUT_FMT__PADDING__MASK                 0x1
++#define AUD_PCMOUT_FMT__PADDING__VALUE__1_CYCLE_DELAY 0x0
++#define AUD_PCMOUT_FMT__PADDING__VALUE__NO_DELAY      0x1
++
++#define AUD_PCMOUT_FMT__ALIGN__SHIFT        6
++#define AUD_PCMOUT_FMT__ALIGN__MASK         0x1
++#define AUD_PCMOUT_FMT__ALIGN__VALUE__LEFT  0x0
++#define AUD_PCMOUT_FMT__ALIGN__VALUE__RIGHT 0x1
++
++#define AUD_PCMOUT_FMT__ORDER__SHIFT            7
++#define AUD_PCMOUT_FMT__ORDER__MASK             0x1
++#define AUD_PCMOUT_FMT__ORDER__VALUE__LSB_FIRST 0x0
++#define AUD_PCMOUT_FMT__ORDER__VALUE__MSB_FIRST 0x1
++
++#define AUD_PCMOUT_FMT__NUM_CH__SHIFT             8
++#define AUD_PCMOUT_FMT__NUM_CH__MASK              0x7
++/* "1 channel" means 1 PCM player channel so
++ * 2 audio channels (stereo) */
++#define AUD_PCMOUT_FMT__NUM_CH__VALUE__1_CHANNEL  0x1
++#define AUD_PCMOUT_FMT__NUM_CH__VALUE__2_CHANNELS 0x2
++#define AUD_PCMOUT_FMT__NUM_CH__VALUE__3_CHANNELS 0x3
++#define AUD_PCMOUT_FMT__NUM_CH__VALUE__4_CHANNELS 0x4
++#define AUD_PCMOUT_FMT__NUM_CH__VALUE__5_CHANNELS 0x5
++
++/* According to 7200 Programming Manual vol. 2: */
++#if 0
++#define AUD_PCMOUT_FMT__DMA_REQ_TRIG_LMT__SHIFT 12
++#define AUD_PCMOUT_FMT__DMA_REQ_TRIG_LMT__MASK  0xf
++#endif
++/* According to GPFIFO based PCM Player Functional Spec: */
++#if 1
++#define AUD_PCMOUT_FMT__DMA_REQ_TRIG_LMT__SHIFT 11
++#define AUD_PCMOUT_FMT__DMA_REQ_TRIG_LMT__MASK  0x1f
++#endif
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/audcfg.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/audcfg.h
+@@ -0,0 +1,16 @@
++#ifndef __STM_REGISTERS_AUDCFG_H
++#define __STM_REGISTERS_AUDCFG_H
++
++
++
++#ifdef CONFIG_CPU_SUBTYPE_STB7100
++#include <linux/stm/registers/stx710x/audcfg.h>
++#endif
++
++#if CONFIG_CPU_SUBTYPE_STX7200
++#include <linux/stm/registers/stx7200/audcfg.h>
++#endif
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/audcfg_adac.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/audcfg_adac.h
+@@ -0,0 +1,39 @@
++#ifndef __STM_REGISTERS_AUDCFG_ADAC_H
++#define __STM_REGISTERS_AUDCFG_ADAC_H
++
++
++
++#define AUDCFG_ADAC_CTRL 0x00
++
++#define AUDCFG_ADAC_CTRL__NRST__SHIFT         0
++#define AUDCFG_ADAC_CTRL__NRST__MASK          0x1
++#define AUDCFG_ADAC_CTRL__NRST__VALUE__RESET  0x0
++#define AUDCFG_ADAC_CTRL__NRST__VALUE__NORMAL 0x1
++
++#define AUDCFG_ADAC_CTRL__MODE__SHIFT          1
++#define AUDCFG_ADAC_CTRL__MODE__MASK           0x3
++#define AUDCFG_ADAC_CTRL__MODE__VALUE__DEFAULT 0x0
++
++#define AUDCFG_ADAC_CTRL__NSB__SHIFT             3
++#define AUDCFG_ADAC_CTRL__NSB__MASK              0x1
++#define AUDCFG_ADAC_CTRL__NSB__VALUE__POWER_DOWN 0x0
++#define AUDCFG_ADAC_CTRL__NSB__VALUE__NORMAL     0x1
++
++#define AUDCFG_ADAC_CTRL__SOFTMUTE__SHIFT         4
++#define AUDCFG_ADAC_CTRL__SOFTMUTE__MASK          0x1
++#define AUDCFG_ADAC_CTRL__SOFTMUTE__VALUE__NORMAL 0x0
++#define AUDCFG_ADAC_CTRL__SOFTMUTE__VALUE__MUTE   0x1
++
++#define AUDCFG_ADAC_CTRL__PDNANA__SHIFT             5
++#define AUDCFG_ADAC_CTRL__PDNANA__MASK              0x1
++#define AUDCFG_ADAC_CTRL__PDNANA__VALUE__POWER_DOWN 0x0
++#define AUDCFG_ADAC_CTRL__PDNANA__VALUE__NORMAL     0x1
++
++#define AUDCFG_ADAC_CTRL__PDNBG__SHIFT             6
++#define AUDCFG_ADAC_CTRL__PDNBG__MASK              0x1
++#define AUDCFG_ADAC_CTRL__PDNBG__VALUE__POWER_DOWN 0x0
++#define AUDCFG_ADAC_CTRL__PDNBG__VALUE__NORMAL     0x1
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/audcfg_fsyn.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/audcfg_fsyn.h
+@@ -0,0 +1,108 @@
++#ifndef __STM_REGISTERS_AUDCFG_FSYN_H
++#define __STM_REGISTERS_AUDCFG_FSYN_H
++
++
++
++#define AUDCFG_FSYN_CFG 0x00
++
++#define AUDCFG_FSYN_CFG__RSTP__SHIFT          0
++#define AUDCFG_FSYN_CFG__RSTP__MASK           0x1
++#define AUDCFG_FSYN_CFG__RSTP__VALUE__RUNNING 0x0
++#define AUDCFG_FSYN_CFG__RSTP__VALUE__RESET   0x1
++
++#define AUDCFG_FSYN_CFG__PCM_CLK_SEL__SHIFT 2
++#define AUDCFG_FSYN_CFG__PCM_CLK_SEL__MASK  0xf
++/* Inverted in 7200 vs 710x - madness, isn't it? :-O */
++#ifdef CONFIG_CPU_SUBTYPE_STB7100
++#define AUDCFG_FSYN_CFG__PCM_CLK_SEL__VALUE__EXTCLK(n) (0 << n)
++#define AUDCFG_FSYN_CFG__PCM_CLK_SEL__VALUE__FSYNTH(n) (1 << n)
++#endif
++#ifdef CONFIG_CPU_SUBTYPE_STX7200
++#define AUDCFG_FSYN_CFG__PCM_CLK_SEL__VALUE__FSYNTH(n) (0 << n)
++#define AUDCFG_FSYN_CFG__PCM_CLK_SEL__VALUE__EXTCLK(n) (1 << n)
++#endif
++
++/* Doesn't exist in 7200 - again, veeery strange... */
++#ifdef CONFIG_CPU_SUBTYPE_STB7100
++#define AUDCFG_FSYN_CFG__FS_EN__SHIFT              6
++#define AUDCFG_FSYN_CFG__FS_EN__MASK               0x7
++#define AUDCFG_FSYN_CFG__FS_EN__VALUE__DISABLED(n) (0 << n)
++#define AUDCFG_FSYN_CFG__FS_EN__VALUE__ENABLED(n)  (1 << n)
++#endif
++
++#define AUDCFG_FSYN_CFG__NSB__SHIFT             10
++#define AUDCFG_FSYN_CFG__NSB__MASK              0xf
++#define AUDCFG_FSYN_CFG__NSB__VALUE__STANDBY(n) (0 << n)
++#define AUDCFG_FSYN_CFG__NSB__VALUE__ACTIVE(n)  (1 << n)
++
++#define AUDCFG_FSYN_CFG__NPDA__SHIFT             14
++#define AUDCFG_FSYN_CFG__NPDA__MASK              0x1
++#define AUDCFG_FSYN_CFG__NPDA__VALUE__POWER_DOWN 0x0
++#define AUDCFG_FSYN_CFG__NPDA__VALUE__NORMAL     0x1
++
++#define AUDCFG_FSYN_CFG__NDIV__SHIFT            15
++#define AUDCFG_FSYN_CFG__NDIV__MASK             0x1
++#define AUDCFG_FSYN_CFG__NDIV__VALUE__27_30_MHZ 0x0
++#define AUDCFG_FSYN_CFG__NDIV__VALUE__54_60_MHZ 0x1
++
++#define AUDCFG_FSYN_CFG__BW_SEL__SHIFT                      16
++#define AUDCFG_FSYN_CFG__BW_SEL__MASK                       0x3
++#define AUDCFG_FSYN_CFG__BW_SEL__VALUE__VERY_GOOD_REFERENCE 0x0
++#define AUDCFG_FSYN_CFG__BW_SEL__VALUE__GOOD_REFERENCE      0x1
++#define AUDCFG_FSYN_CFG__BW_SEL__VALUE__BAD_REFERENCE       0x2
++#define AUDCFG_FSYN_CFG__BW_SEL__VALUE__VERY_BAD_REFERENCE  0x3
++
++#if CONFIG_CPU_SUBTYPE_STX7200
++#define AUDCFG_FSYN_CFG__TST_CLK_SEL__SHIFT 18
++#define AUDCFG_FSYN_CFG__TST_CLK_SEL__MASK  0x3
++#endif
++
++#if CONFIG_CPU_SUBTYPE_STX7200
++#define AUDCFG_FSYN_CFG__TST_PCMDAT__SHIFT 20
++#define AUDCFG_FSYN_CFG__TST_PCMDAT__MASK  0xf
++#endif
++
++#ifdef CONFIG_CPU_SUBTYPE_STB7100
++#define AUDCFG_FSYN_CFG__REF_CLK_IN__SHIFT               23
++#endif
++#if CONFIG_CPU_SUBTYPE_STX7200
++#define AUDCFG_FSYN_CFG__REF_CLK_IN__SHIFT               24
++#endif
++#define AUDCFG_FSYN_CFG__REF_CLK_IN__MASK                0x1
++#define AUDCFG_FSYN_CFG__REF_CLK_IN__VALUE__30_MHZ_CLOCK 0x0
++#define AUDCFG_FSYN_CFG__REF_CLK_IN__VALUE__SYSBCLKINALT 0x1
++
++
++
++#define AUDCFG_FSYN_MD(n) ((n + 1) * 0x10 + 0x00)
++
++#define AUDCFG_FSYN_MD__MD__SHIFT 0
++#define AUDCFG_FSYN_MD__MD__MASK  0x1f
++
++
++
++#define AUDCFG_FSYN_PE(n) ((n + 1) * 0x10 + 0x04)
++
++#define AUDCFG_FSYN_PE__PE__SHIFT 0
++#define AUDCFG_FSYN_PE__PE__MASK  0xffff
++
++
++
++#define AUDCFG_FSYN_SDIV(n) ((n + 1) * 0x10 + 0x08)
++
++#define AUDCFG_FSYN_SDIV__SDIV__SHIFT 0
++#define AUDCFG_FSYN_SDIV__SDIV__MASK  0x7
++
++
++
++#define AUDCFG_FSYN_PROGEN(n) ((n + 1) * 0x10 + 0x0c)
++
++#define AUDCFG_FSYN_PROGEN__PROG_EN__SHIFT                  0
++#define AUDCFG_FSYN_PROGEN__PROG_EN__MASK                   0x1
++#define AUDCFG_FSYN_PROGEN__PROG_EN__VALUE__PE0_MD0_IGNORED 0x0
++#define AUDCFG_FSYN_PROGEN__PROG_EN__VALUE__PE0_MD0_USED    0x1
++
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/pwm.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/pwm.h
+@@ -0,0 +1,131 @@
++#ifndef __STM_REGISTERS_PWM_H
++#define __STM_REGISTERS_PWM_H
++
++
++
++#define PWM_VAL(n) (0x00 + n * 0x04) /* R/W */
++
++#define PWM_VAL__PWM_VAL__SHIFT 0
++#define PWM_VAL__PWM_VAL__MASK  0xff
++
++
++
++#define PWM_CPT_VAL(n) (0x10 + (n * 0x04)) /* RO */
++
++#define PWM_CPT_VAL__CPT_VAL__SHIFT 0
++#define PWM_CPT_VAL__CPT_VAL__MASK  0xffffffff
++
++
++
++#define PWM_CMP_VAL(n) (0x20 + (n * 0x04)) /* R/W */
++
++#define PWM_CMP_VAL__CMP_VAL__SHIFT 0
++#define PWM_CMP_VAL__CMP_VAL__MASK  0xffffffff
++
++
++
++#define PWM_CPT_EDGE(n) (0x30 + (n * 0x04)) /* R/W */
++
++#define PWM_CPT_EDGE__CE__SHIFT 0
++#define PWM_CPT_EDGE__CE__MASK  0x3
++
++
++
++#define PWM_CMP_OUT_VAL(n) (0x40 + (n * 0x04)) /* R/W */
++
++#define PWM_CMP_OUT_VAL__CO__SHIFT 0
++#define PWM_CMP_OUT_VAL__CO__MASK  0x1
++
++
++
++#define PWM_CTRL 0x50 /* R/W */
++
++#define PWM_CTRL__PWM_CLK_VAL_3_0__SHIFT 0
++#define PWM_CTRL__PWM_CLK_VAL_3_0__MASK  0xf
++
++#define PWM_CTRL__CPT_CLK_VAL_4_0__SHIFT 4
++#define PWM_CTRL__CPT_CLK_VAL_4_0__MASK  0x1f
++
++#define PWM_CTRL__PWM_EN__SHIFT 9
++#define PWM_CTRL__PWM_EN__MASK  0x1
++
++#define PWM_CTRL__CPT_EN__SHIFT 10
++#define PWM_CTRL__CPT_EN__MASK  0x1
++
++#define PWM_CTRL__PWM_CLK_VAL_7_4__SHIFT 11
++#define PWM_CTRL__PWM_CLK_VAL_7_4__MASK	 0xf
++
++
++
++#define PWM_INT_EN 0x54 /* R/W */
++
++#define PWM_INT_EN__EN__SHIFT 0
++#define PWM_INT_EN__EN__MASK  0x1
++
++#define PWM_INT_EN__CPT0_INT_EN__SHIFT 1
++#define PWM_INT_EN__CPT0_INT_EN__MASK  0x1
++
++#define PWM_INT_EN__CPT1_INT_EN__SHIFT 2
++#define PWM_INT_EN__CPT1_INT_EN__MASK  0x1
++
++#define PWM_INT_EN__CMP0_INT_EN__SHIFT 5
++#define PWM_INT_EN__CMP0_INT_EN__MASK  0x1
++
++#define PWM_INT_EN__CMP1_INT_EN__SHIFT 6
++#define PWM_INT_EN__CMP1_INT_EN__MASK  0x1
++
++
++
++#define PWM_INT_STA 0x58 /* RO */
++
++#define PWM_INT_STA__PWM_INT__SHIFT  0
++#define PWM_INT_STA__PWM_INT__MASK   0x1
++
++#define PWM_INT_STA__CPT0_INT__SHIFT 1
++#define PWM_INT_STA__CPT0_INT__MASK  0x1
++
++#define PWM_INT_STA__CPT1_INT__SHIFT 2
++#define PWM_INT_STA__CPT1_INT__MASK  0x1
++
++#define PWM_INT_STA__CMP0_INT__SHIFT 5
++#define PWM_INT_STA__CMP0_INT__MASK  0x1
++
++#define PWM_INT_STA__CMP1_INT__SHIFT 6
++#define PWM_INT_STA__CMP1_INT__MASK  0x1
++
++
++
++#define PWM_INT_ACK 0x5c /* WO */
++
++#define PWM_INT_ACK__PWM_INT__SHIFT 0
++#define PWM_INT_ACK__PWM_INT__MASK  0x1
++
++#define PWM_INT_ACK__CPT0_INT__SHIFT 1
++#define PWM_INT_ACK__CPT0_INT__MASK  0x1
++
++#define PWM_INT_ACK__CPT1_INT__SHIFT 2
++#define PWM_INT_ACK__CPT1_INT__MASK  0x1
++
++#define PWM_INT_ACK__CMP0_INT__SHIFT 5
++#define PWM_INT_ACK__CMP0_INT__MASK  0x1
++
++#define PWM_INT_ACK__CMP1_INT__SHIFT 6
++#define PWM_INT_ACK__CMP1_INT__MASK  0x1
++
++
++
++#define PWM_CNT 0x60 /* R, W only when PWM timer is disabled */
++
++#define PWM_CNT__PWM_CNT__SHIFT 0
++#define PWM_CNT__PWM_CNT__MASK  0xff
++
++
++
++#define PWM_CPT_CMP_CNT 0x64 /* R/W */
++
++#define PWM_CPT_CMP_CNT__CPT_CMP_CNT__SHIFT 0
++#define PWM_CPT_CMP_CNT__CPT_CMP_CNT__MASK  0xffffffff
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/stx710x/audcfg.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/stx710x/audcfg.h
+@@ -0,0 +1,25 @@
++#ifndef __STM_REGISTERS_STX710x_AUDCFG_H
++#define __STM_REGISTERS_STX710x_AUDCFG_H
++
++
++
++#define AUDCFG_IO_CTRL 0x00
++
++#define AUDCFG_IO_CTRL__PCM_CLK_EN__SHIFT 0
++#define AUDCFG_IO_CTRL__PCM_CLK_EN__MASK  0x00000001
++
++#define AUDCFG_IO_CTRL__DATA0_EN__SHIFT 1
++#define AUDCFG_IO_CTRL__DATA0_EN__MASK  0x00000001
++
++#define AUDCFG_IO_CTRL__DATA1_EN__SHIFT 2
++#define AUDCFG_IO_CTRL__DATA1_EN__MASK  0x00000001
++
++#define AUDCFG_IO_CTRL__SPDIF_EN__SHIFT 3
++#define AUDCFG_IO_CTRL__SPDIF_EN__MASK  0x00000001
++
++#define AUDCFG_IO_CTRL__HDMI_AUD_SRC__SHIFT 4
++#define AUDCFG_IO_CTRL__HDMI_AUD_SRC__MASK  0x00000001
++
++
++
++#endif
+Index: linux-2.6.23-stm/include/linux/stm/registers/stx7200/audcfg.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/registers/stx7200/audcfg.h
+@@ -0,0 +1,79 @@
++#ifndef __STM_REGISTERS_STX7200_AUDCFG_H
++#define __STM_REGISTERS_STX7200_AUDCFG_H
++
++
++
++#define AUDCFG_IOMUX_CTRL 0x00
++
++#define AUDCFG_IOMUX_CTRL__PCM_CLK_EN__SHIFT         0
++#define AUDCFG_IOMUX_CTRL__PCM_CLK_EN__MASK          0x1
++#define AUDCFG_IOMUX_CTRL__PCM_CLK_EN__VALUE__INPUT  0x1
++#define AUDCFG_IOMUX_CTRL__PCM_CLK_EN__VALUE__OUTPUT 0x0
++
++#define AUDCFG_IOMUX_CTRL__DATA0_EN__SHIFT         1
++#define AUDCFG_IOMUX_CTRL__DATA0_EN__MASK          0x1
++#define AUDCFG_IOMUX_CTRL__DATA0_EN__VALUE__INPUT  0x0
++#define AUDCFG_IOMUX_CTRL__DATA0_EN__VALUE__OUTPUT 0x1
++
++#define AUDCFG_IOMUX_CTRL__DATA1_EN__SHIFT         2
++#define AUDCFG_IOMUX_CTRL__DATA1_EN__MASK          0x1
++#define AUDCFG_IOMUX_CTRL__DATA1_EN__VALUE__INPUT  0x0
++#define AUDCFG_IOMUX_CTRL__DATA1_EN__VALUE__OUTPUT 0x1
++
++#define AUDCFG_IOMUX_CTRL__DATA2_EN__SHIFT         3
++#define AUDCFG_IOMUX_CTRL__DATA2_EN__MASK          0x1
++#define AUDCFG_IOMUX_CTRL__DATA2_EN__VALUE__INPUT  0x0
++#define AUDCFG_IOMUX_CTRL__DATA2_EN__VALUE__OUTPUT 0x1
++
++#define AUDCFG_IOMUX_CTRL__SPDIF_EN__SHIFT          4
++#define AUDCFG_IOMUX_CTRL__SPDIF_EN__MASK           0x1
++#define AUDCFG_IOMUX_CTRL__SPDIF_EN__VALUE__DISABLE 0x0
++#define AUDCFG_IOMUX_CTRL__SPDIF_EN__VALUE__ENABLE  0x1
++
++
++
++#define AUDCFG_HDMI_CTRL 0x04
++
++#define AUDCFG_HDMI_CTRL__HDMI_DEBUG__SHIFT              0
++#define AUDCFG_HDMI_CTRL__HDMI_DEBUG__MASK               0x1
++#define AUDCFG_HDMI_CTRL__HDMI_DEBUG__VALUE__PCM_PLAYERS 0x0
++#define AUDCFG_HDMI_CTRL__HDMI_DEBUG__VALUE__HDMI        0x1
++
++#define AUDCFG_HDMI_CTRL__HDMI_SPDIF__SHIFT       1
++#define AUDCFG_HDMI_CTRL__HDMI_SPDIF__MASK        0x1
++#define AUDCFG_HDMI_CTRL__HDMI_SPDIF__VALUE_PCM   0x0
++#define AUDCFG_HDMI_CTRL__HDMI_SPDIF__VALUE_SPDIF 0x1
++
++
++
++#define AUDCFG_RECOVERY_CTRL 0x08
++
++#define AUDCFG_RECOVERY_CTRL__RECO_EN0__SHIFT 0
++#define AUDCFG_RECOVERY_CTRL__RECO_EN0__MASK  0x1
++
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL0__SHIFT       1
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL0__MASK        0x3
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL0__VALUE__CLK0 0x0
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL0__VALUE__CLK1 0x1
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL0__VALUE__CLK2 0x2
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL0__VALUE__CLK3 0x3
++
++#define AUDCFG_RECOVERY_CTRL__RECO_EXT0__SHIFT 3
++#define AUDCFG_RECOVERY_CTRL__RECO_EXT0__MASK  0x1
++
++#define AUDCFG_RECOVERY_CTRL__RECO_EN1__SHIFT 4
++#define AUDCFG_RECOVERY_CTRL__RECO_EN1__MASK  0x1
++
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL1__SHIFT       5
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL1__MASK        0x3
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL1__VALUE__CLK0 0x0
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL1__VALUE__CLK1 0x1
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL1__VALUE__CLK2 0x2
++#define AUDCFG_RECOVERY_CTRL__RECO_SEL1__VALUE__CLK3 0x3
++
++#define AUDCFG_RECOVERY_CTRL__RECO_EXT1__SHIFT 7
++#define AUDCFG_RECOVERY_CTRL__RECO_EXT1__MASK  0x1
++
++
++
++#endif

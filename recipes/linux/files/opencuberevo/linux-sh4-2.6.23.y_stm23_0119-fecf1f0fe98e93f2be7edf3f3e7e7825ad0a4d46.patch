@@ -1,0 +1,45 @@
+From fecf1f0fe98e93f2be7edf3f3e7e7825ad0a4d46 Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Mon, 11 May 2009 12:55:31 +0100
+Subject: [PATCH] sh: Have kptrace trace do_execve, rather than sys_execve
+
+We can catch more thread names that way.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+---
+ arch/sh/kernel/kptrace.c |   10 ++++++----
+ 1 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index 6313c2e..9184986 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -989,11 +989,13 @@ static int syscall_shhh_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ 	char filename[KPTRACE_SMALL_BUF];
+ 	int len = 0;
+ 
+-	if (copy_from_user(filename, (char *)regs->regs[4], KPTRACE_SMALL_BUF)
+-	    != 0) {
++	if (regs->pc == (unsigned)do_execve) {
++		/* Don't need to copy_from_user in this case */
++		snprintf(filename, KPTRACE_SMALL_BUF, (char *)regs->regs[4]);
++	} else if (copy_from_user(filename, (char *)regs->regs[4],
++			KPTRACE_SMALL_BUF) != 0)
+ 		snprintf(filename, KPTRACE_SMALL_BUF,
+ 			 "<copy_from_user failed>");
+-	}
+ 
+ 	len =
+ 	    snprintf(static_buf, KPTRACE_SMALL_BUF, "E %.8x %s %.8x %.8x %.8x",
+@@ -1609,7 +1611,7 @@ static void init_syscall_logging(void)
+ 	INIT_SYSCALL_PROBE(sys_creat);
+ 	INIT_SYSCALL_PROBE(sys_link);
+ 	INIT_SYSCALL_PROBE(sys_unlink);
+-	INIT_CUSTOM_SYSCALL_PROBE(sys_execve, syscall_shhh_pre_handler);
++	INIT_CUSTOM_SYSCALL_PROBE(do_execve, syscall_shhh_pre_handler);
+ 	INIT_SYSCALL_PROBE(sys_chdir);
+ 	INIT_SYSCALL_PROBE(sys_time);
+ 	INIT_SYSCALL_PROBE(sys_mknod);
+-- 
+1.6.0.6
+
