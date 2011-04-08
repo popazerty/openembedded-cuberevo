@@ -1,4 +1,5 @@
 DEPENDS = "freetype dreambox-dvbincludes libtuxtxt"
+DEPENDS_opencuberevo = "freetype cuberevo-dvbincludes libtuxtxt"
 DESCRIPTION = "tuxbox tuxtxt for 32bit framebuffer"
 MAINTAINER = "Sven Karschewski <seddi@i-have-a-dreambox.com>"
 

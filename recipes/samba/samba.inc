@@ -12,6 +12,10 @@ SRC_URI = "http://samba.org/samba/ftp/stable/samba-${PV}.tar.gz;name=src \
 SRC_URI_append_opendreambox = " \
 	file://01samba-kill \
 	file://01samba-start"
+	
+SRC_URI_append_opencuberevo = " \
+	file://01samba-kill \
+	file://01samba-start"
 
 S = "${WORKDIR}/samba-${PV}/source"
 
@@ -46,6 +50,7 @@ EXTRA_OECONF='--disable-cups \
 
 PACKAGES =+ "libsmbclient libsmbclient-dev cifs cifs-doc smbfs smbfs-doc"
 PACKAGES =+ "${@base_conditional('DISTRO', 'opendreambox', ' sambaserver libpopt libtalloc libtdb', '', d)}"
+PACKAGES =+ "${@base_conditional('DISTRO', 'opencuberevo', ' sambaserver libpopt libtalloc libtdb', '', d)}"
 FILES_smbfs = "${bindir}/smbmount ${bindir}/smbumount ${bindir}/smbmnt ${base_sbindir}/mount.smbfs ${base_sbindir}/mount.smb"
 FILES_smbfs-doc = "${mandir}/man8/smbmount.8 ${mandir}/man8/smbumount.8 ${mandir}/man8/smbmnt.8"
 FILES_cifs = "${base_sbindir}/mount.cifs ${base_sbindir}/umount.cifs"
@@ -60,6 +65,7 @@ FILES_libtalloc = "${libdir}/libtalloc.so.*"
 FILES_libtdb = "${libdir}/libtdb.so.*"
 
 PROVIDES_append_opendreambox = " sambaserver libpopt libtalloc libtdb"
+PROVIDES_append_opencuberevo = " sambaserver libpopt libtalloc libtdb"
 
 INITSCRIPT_NAME = "samba"
 # No dependencies, goes in at level 20 (NOTE: take care with the
@@ -70,6 +76,7 @@ CONFFILES_${PN} = "${sysconfdir}/samba/smb.conf"
 
 CONFFILES_sambaserver = "${sysconfdir}/samba/smb.conf"
 CONFFILES_${PN}_opendreambox = ""
+CONFFILES_${PN}_opencuberevo = ""
 
 do_configure_prepend () {
 	./script/mkversion.sh
@@ -113,6 +120,10 @@ do_install_prepend_opendreambox() {
 	install -c -m 644 ${WORKDIR}/smb.conf ../examples/smb.conf.default
 }
 
+do_install_prepend_opencuberevo() {
+	install -c -m 644 ${WORKDIR}/smb.conf ../examples/smb.conf.default
+}
+
 do_install_append_opendreambox() {
 	install -d ${D}/etc/samba/private
 	install -d ${D}/etc/network/if-down.d
@@ -121,3 +132,10 @@ do_install_append_opendreambox() {
 	install -m 0755 ${WORKDIR}/01samba-start ${D}/etc/network/if-up.d
 }
 
+do_install_append_opencuberevo() {
+	install -d ${D}/etc/samba/private
+	install -d ${D}/etc/network/if-down.d
+	install -m 0755 ${WORKDIR}/01samba-kill ${D}/etc/network/if-down.d
+	install -d ${D}/etc/network/if-up.d
+	install -m 0755 ${WORKDIR}/01samba-start ${D}/etc/network/if-up.d
+}

@@ -18,6 +18,10 @@ SRC_URI = "http://hostap.epitest.fi/releases/wpa_supplicant-${PV}.tar.gz \
 SRC_URI_append_opendreambox = " \
 	file://driver-zydas.patch;patch=1 \
 	file://driver-ralink.patch;patch=1"
+	
+SRC_URI_append_opencuberevo = " \
+	file://driver-zydas.patch;patch=1 \
+	file://driver-ralink.patch;patch=1"
 
 DEPENDS_dm8000_append = "madwifi-ng"
 TARGET_CFLAGS_dm8000_append = " -I${STAGING_INCDIR}/madwifi-ng"
@@ -43,6 +47,11 @@ do_configure () {
 }
 
 do_configure_append_opendreambox() {
+	echo "CONFIG_DRIVER_RALINK=y" >> .config
+	echo "CONFIG_DRIVER_ZYDAS=y" >> .config
+}
+
+do_configure_append_opencuberevo() {
 	echo "CONFIG_DRIVER_RALINK=y" >> .config
 	echo "CONFIG_DRIVER_ZYDAS=y" >> .config
 }

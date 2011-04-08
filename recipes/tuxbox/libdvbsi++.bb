@@ -1,5 +1,6 @@
 DESCRIPTION = "libdvbsi++ by obi@saftware.de"
 DEPENDS = "dreambox-dvbincludes"
+DEPENDS_opencuberevo = "cuberevo-dvbincludes"
 MAINTAINER = "Felix Domke <tmbinc@elitdvb.net>"
 
 SRC_URI = "cvs://anoncvs@cvs.tuxbox.org/cvs/tuxbox;module=apps/dvb/libdvbsi++;method=ext"

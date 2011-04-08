@@ -1,5 +1,6 @@
 DESCRIPTION = "tuxbox libs"
 DEPENDS = "zlib dreambox-dvbincludes"
+DEPENDS_opencuberevo = "zlib cuberevo-dvbincludes"
 MAINTAINER = "Felix Domke <tmbinc@elitdvb.net>"
 SRC_URI = "cvs://anoncvs@cvs.tuxbox.org/cvs/tuxbox;module=apps/misc/libs;method=ext \
            file://acinclude.m4 \

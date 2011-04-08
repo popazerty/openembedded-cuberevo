@@ -8,6 +8,7 @@ SRC_URI_append_linux-uclibc        = "file://uclibc-strlcpy-strlcat.patch;patch=
 SRC_URI_append_linux-uclibceabi = "file://uclibc-strlcpy-strlcat.patch;patch=1"
 
 PE_opendreambox = "4"
+PE_opencuberevo = "4"
 PR = "r0"
 
 EXTRA_OECONF += "\

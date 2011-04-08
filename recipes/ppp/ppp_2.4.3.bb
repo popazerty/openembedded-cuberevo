@@ -53,10 +53,16 @@ do_install_append () {
 			rm ${D}/etc/ppp/$i
 		done
 	fi
+	if [ ${DISTRO} == "opencuberevo" ]; then
+		for i in pap-secrets options; do
+			rm ${D}/etc/ppp/$i
+		done
+	fi
 }
 
 CONFFILES_${PN} = "${sysconfdir}/ppp/pap-secrets ${sysconfdir}/ppp/chap-secrets ${sysconfdir}/ppp/options"
 CONFFILES_${PN}_opendreambox = "${sysconfdir}/ppp/chap-secrets"
+CONFFILES_${PN}_opencuberevo = "${sysconfdir}/ppp/chap-secrets"
 PACKAGES += "ppp-oa ppp-oe ppp-radius ppp-winbind ppp-minconn ppp-password ppp-tools"
 FILES_${PN}        = "/etc /usr/bin /usr/sbin/chat /usr/sbin/pppd"
 FILES_${PN}_nylon  = "/etc /usr/bin /usr/sbin/chat /usr/sbin/pppd /usr/sbin/tdbread"

@@ -4,6 +4,7 @@ SECTION = "base"
 LICENSE = "GPL"
 DEPENDS = "expat glib-2.0 virtual/libintl libsm libice virtual/libx11"
 DEPENDS_opendreambox = "expat glib-2.0 virtual/libintl"
+DEPENDS_opencuberevo = "expat glib-2.0 virtual/libintl"
 
 INC_PR = "r19"
 
@@ -22,6 +23,7 @@ inherit autotools pkgconfig update-rc.d gettext
 
 EXTRA_OECONF_X = "--with-x"
 EXTRA_OECONF_X_opendreambox = ""
+EXTRA_OECONF_X_opencuberevo = ""
 
 EXTRA_OECONF = "\
   --disable-qt \
@@ -109,3 +111,4 @@ CONFFILES_${PN} = "${sysconfdir}/dbus-1/system.conf ${sysconfdir}/dbus-1/session
 INITSCRIPT_NAME = "dbus-1"
 INITSCRIPT_PARAMS = "start 02 5 2 . stop 20 0 1 6 ."
 INITSCRIPT_PARAMS_opendreambox = "start 02 5 2 3 . stop 20 0 1 6 ."
+INITSCRIPT_PARAMS_opencuberevo = "start 02 5 2 3 . stop 20 0 1 6 ."

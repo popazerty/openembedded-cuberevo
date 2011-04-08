@@ -22,6 +22,8 @@ PACKAGE_ARCH_h2200 = "h2200"
 
 SRC_URI_append_opendreambox = " file://40-od-devfs-compatibility.rules \
 	   file://42-od-oled-compatibility.rules"
+SRC_URI_append_opencuberevo = " file://40-od-devfs-compatibility.rules \
+	   file://42-od-oled-compatibility.rules"
 
 SRC_URI_append_dm8000 = " ${@base_contains('PREFERRED_VERSION_linux-dm8000', '2.6.18', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
 SRC_URI_append_dm800 = " ${@base_contains('PREFERRED_VERSION_linux-dm800', '2.6.18', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
@@ -77,5 +79,9 @@ do_install_append_h2200() {
 }
 
 do_install_append_opendreambox() {
+	install -m 0644 ${WORKDIR}/??-od-*.rules ${D}${sysconfdir}/udev/rules.d/
+}
+
+do_install_append_opencuberevo() {
 	install -m 0644 ${WORKDIR}/??-od-*.rules ${D}${sysconfdir}/udev/rules.d/
 }

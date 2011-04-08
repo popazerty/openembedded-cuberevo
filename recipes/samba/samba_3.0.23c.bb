@@ -7,6 +7,7 @@ SRC_URI += "file://configure.patch;patch=1 \
 PR = "r7"
 
 SRC_URI_append_opendreambox = "file://smb.conf"
+SRC_URI_append_opencuberevo = "file://smb.conf"
 
 PACKAGES =+ " smbfs-doc"
 

@@ -4,6 +4,10 @@ DEPENDS = "jpeg libungif libmad libpng libsigc++-1.2 gettext-native \
 	dreambox-dvbincludes freetype libdvbsi++ python swig-native \
 	libfribidi libxmlccwrap libdreamdvd gstreamer gst-plugin-dvbmediasink \
 	gst-plugins-bad gst-plugins-good gst-plugins-ugly python-wifi"
+DEPENDS_opencuberevo = "jpeg libungif libmad libpng libsigc++-1.2 gettext-native \
+	cuberevo-dvbincludes freetype libdvbsi++ python swig-native \
+	libfribidi libxmlccwrap libdreamdvd gstreamer gst-plugin-dvbmediasink \
+	gst-plugins-bad gst-plugins-good gst-plugins-ugly python-wifi"
 RDEPENDS = "python-codecs python-core python-lang python-re python-threading \
 	python-xml python-fcntl gst-plugin-decodebin gst-plugin-decodebin2 python-stringold \
 	python-pickle gst-plugin-app \
@@ -28,6 +32,14 @@ RDEPENDS_append_dm8000 = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-a
 RDEPENDS_append_dm500hd = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
 RDEPENDS_append_dm800se = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
 RDEPENDS_append_dm7020hd = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo-mini = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo-mini2 = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo-mini-fta = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo-250hd = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo-2000hd = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo-9500hd = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
+RDEPENDS_append_cuberevo-100hd = " ${GST_BASE_RDEPENDS} ${GST_DVD_RDEPENDS} gst-plugin-avi"
 
 # 'forward depends' - no two providers can have the same PACKAGES_DYNAMIC, however both
 # enigma2 and enigma2-plugins produce enigma2-plugin-*.
@@ -54,6 +66,7 @@ RDEPENDS_enigma2-plugin-systemplugins-crashlogautosubmit = "twisted-mail twisted
 DESCRIPTION_append_enigma2-plugin-systemplugins-cleanupwizard = "informs you on low internal memory on system startup."
 DESCRIPTION_append_enigma2-plugin-extenstions-modem = "opens a menu to connect to internet via builtin modem."
 RDEPENDS_enigma2-plugin-extensions-modem = "dreambox-modem-ppp-scripts ppp"
+RDEPENDS_opencuberevo_enigma2-plugin-extensions-modem = "cuberevo-modem-ppp-scripts ppp"
 DESCRIPTION_append_enigma2-plugin-systemplugins-wirelesslan = "helps you configuring your wireless lan"
 RDEPENDS_enigma2-plugin-systemplugins-wirelesslan = "wpa-supplicant wireless-tools python-wifi"
 DESCRIPTION_append_enigma2-plugin-systemplugins-networkwizard = "provides easy step by step network configuration"
@@ -62,7 +75,9 @@ PN = "enigma2"
 PR = "r0"
 
 SRCDATE = "20110217"
+SRCDATE_opencuberevo = "20110408"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
+SRCREV_opencuberevo = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need
@@ -71,11 +86,21 @@ SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
 # if you want experimental use
 ####################################################
 BRANCH = "experimental"
+BRANCH_opencuberevo = "master"
 PV = "experimental-git${SRCDATE}"
+PV_opencuberevo = "master-git${SRCDATE}"
 #SRCREV = ""
 ####################################################
 
 SRC_URI = "git://git.opendreambox.org/git/enigma2.git;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo-mini = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo-mini2 = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo-mini-fta = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo-250hd = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo-100hd = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo-2000hd = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_cuberevo-9500hd = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
 SRC_URI_append_dm7025 = " file://7025_pvr_device_compatibility.diff;patch=1;pnum=1"
 
 S = "${WORKDIR}/git"
@@ -102,6 +127,8 @@ python populate_packages_prepend () {
 
 RCONFLICTS_${PN} = "dreambox-keymaps"
 RREPLACES_${PN} = "dreambox-keymaps tuxbox-tuxtxt-32bpp (<= 0.0+cvs20090130-r1)"
+RCONFLICTS_${PN}_opencuberevo = "cuberevo-keymaps"
+RREPLACES_${PN}_opencuberevo = "cuberevo-keymaps tuxbox-tuxtxt-32bpp (<= 0.0+cvs20090130-r1)"
 
 # workaround for opkg <= 0.1.7+svnr455-r19.1
 pkg_preinst_${PN} () {

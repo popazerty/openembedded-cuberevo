@@ -1,5 +1,6 @@
 DESCRIPTION = "tuxbox libtuxtxt"
 DEPENDS = "dreambox-dvbincludes libpng freetype"
+DEPENDS_opencuberevo = "cuberevo-dvbincludes libpng freetype"
 MAINTAINER = "Felix Domke <tmbinc@elitdvb.net>"
 
 SRCDATE = "20090130"
@@ -41,6 +42,51 @@ SRC_URI_append_dm7020hd = " \
 	file://allow_different_demux.diff;patch=1"
 
 SRC_URI_append_dm8000 = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+
+SRC_URI_append_dm8000 = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+
+SRC_URI_append_cuberevo = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+
+SRC_URI_append_cuberevo-mini = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+	
+SRC_URI_append_cuberevo-mini2 = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+	
+SRC_URI_append_cuberevo-mini-fta = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+	
+SRC_URI_append_cuberevo-250hd = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+	
+SRC_URI_append_cuberevo-2000hd = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+	
+SRC_URI_append_cuberevo-9500hd = " \
+	file://32bpp.diff;patch=1 \
+	file://resize_framebuffer.diff;patch=1 \
+	file://allow_different_demux.diff;patch=1"
+
+SRC_URI_append_cuberevo-100hd = " \
 	file://32bpp.diff;patch=1 \
 	file://resize_framebuffer.diff;patch=1 \
 	file://allow_different_demux.diff;patch=1"

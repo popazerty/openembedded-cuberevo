@@ -17,6 +17,11 @@ SRC_URI_append_opendreambox = " \
            file://auto.master \
            file://auto.network \
            file://autofs"
+           
+SRC_URI_append_opencuberevo = " \
+           file://auto.master \
+           file://auto.network \
+           file://autofs"
 
 PR = "${INC_PR}.2"
 
@@ -31,6 +36,13 @@ EXTRA_OEMAKE = "STRIP=/bin/true"
 PARALLEL_MAKE = ""
 
 do_install_append_opendreambox () {
+	install -d ${D}${sysconfdir}/init.d
+	install ${WORKDIR}/autofs ${D}${sysconfdir}/init.d
+	install ${WORKDIR}/auto.master ${D}${sysconfdir}/auto.master
+	install ${WORKDIR}/auto.network ${D}${sysconfdir}/auto.network
+}
+
+do_install_append_opencuberevo () {
 	install -d ${D}${sysconfdir}/init.d
 	install ${WORKDIR}/autofs ${D}${sysconfdir}/init.d
 	install ${WORKDIR}/auto.master ${D}${sysconfdir}/auto.master

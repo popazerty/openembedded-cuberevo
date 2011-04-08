@@ -12,6 +12,12 @@ SRC_URI = "http://ftp.gnu.org/pub/gnu/libcdio/${PN}-${PV}.tar.gz\
 	    file://${PN}-${PV}-minimal-new.patch;patch=1\
 	    file://${PN}-${PV}-fix-pkgconfig.patch;patch=1\
 	    file://${PN}-${PV}-add-cdtextinfo.patch;patch=1"
+	    
+SRC_URI_opencuberevo = "http://ftp.gnu.org/pub/gnu/libcdio/${PN}-${PV}.tar.gz\
+	    file://${PN}-${PV}-configure-crosscompile.patch;patch=1\
+	    file://${PN}-${PV}-minimal-new.patch;patch=1\
+	    file://${PN}-${PV}-fix-pkgconfig.patch;patch=1\
+	    file://${PN}-${PV}-add-cdtextinfo_cuberevo.patch;patch=1"
 
 inherit pkgconfig autotools
 

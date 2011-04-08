@@ -1,4 +1,5 @@
 DEPENDS = "dreambox-dvbincludes tuxbox-libs"
+DEPENDS_opencuberevo = "cuberevo-dvbincludes tuxbox-libs"
 RDEPENDS = "libtuxbox-mpegtools0"
 DESCRIPTION = "tuxbox net streaming tools"
 MAINTAINER = "Felix Domke <tmbinc@elitdvb.net>"

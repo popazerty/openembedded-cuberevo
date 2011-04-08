@@ -1,4 +1,5 @@
 DEPENDS = "dreambox-dvbincludes"
+DEPENDS_opencuberevo = "cuberevo-dvbincludes"
 DESCRIPTION = "DVBsnoop by rasc@users.sourceforge.net"
 MAINTAINER = "Felix Domke <tmbinc@elitdvb.net>"
 

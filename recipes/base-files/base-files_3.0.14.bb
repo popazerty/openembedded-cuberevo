@@ -168,6 +168,13 @@ do_install_append_opendreambox() {
 	ln -sf media ${D}/mnt
 }
 
+do_install_append_opencuberevo() {
+	rm -rf ${D}/mnt
+	rm -rf ${D}/hdd
+	ln -sf media/hdd ${D}/hdd
+	ln -sf media ${D}/mnt
+}
+
 PACKAGES = "${PN}-dbg ${PN}-doc ${PN}"
 FILES_${PN} = "/*"
 FILES_${PN}-doc = "${docdir} ${datadir}/common-licenses"

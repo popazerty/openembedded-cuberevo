@@ -17,7 +17,13 @@ EXTRA_OECONF += " --disable-gpg \
 LDFLAGS_append = " -Wl,--as-needed"
 
 PV_opendreambox = "0.1.7+svnr${SRCPV}"
+PV_opencuberevo = "0.1.7+svnr${SRCPV}"
 SRC_URI_append_opendreambox = " \
+	file://remove_pyc_pyo_hack.patch;patch=1 \
+	file://r531-fix-remove.patch;patch=1 \
+	file://r599-fix-depmod.patch;patch=1 \
+"
+SRC_URI_append_opencuberevo = " \
 	file://remove_pyc_pyo_hack.patch;patch=1 \
 	file://r531-fix-remove.patch;patch=1 \
 	file://r599-fix-depmod.patch;patch=1 \

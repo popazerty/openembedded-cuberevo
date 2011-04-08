@@ -6,9 +6,11 @@ PRIORITY = "optional"
 LICENSE = "GPL"
 DEPENDS = "expat virtual/libintl libdaemon dbus glib-2.0"
 DEPENDS_append_opendreambox = " libnss-mdns"
+DEPENDS_append_opencuberevo = " libnss-mdns"
 
 # uclibc has no nss
 RRECOMMENDS_avahi-daemon_append_libc-glibc = " ${@base_conditional('DISTRO', 'opendreambox', 'libavahi-client zeroconf', 'libnss-mdns', d)}"
+RRECOMMENDS_avahi-daemon_append_libc-glibc = " ${@base_conditional('DISTRO', 'opencuberevo', 'libavahi-client zeroconf', 'libnss-mdns', d)}"
 RDEPENDS_avahi-daemon += "sysvinit-pidof update-rc.d"
 RDEPENDS_avahi-autoipd += "update-rc.d"
 

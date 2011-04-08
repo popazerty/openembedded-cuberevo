@@ -350,6 +350,14 @@ Person:     Takashi Nemoto
 Mail:       tnemoto@sourceforge.jp
 Recipes:    mkbold-mkitalic
 
+Person:     Tideglo
+Mail:       tideglo@users.sourceforge.net
+Website:    http://www.sifteam.eu
+Interests:  Information Technologies
+Distros:    OpenCuberevo
+Machines:   cuberevo, cuberevo-100hd, cuberevo-mini-fta, cuberevo-250hd, cuberevo-mini, cuberevo-mini2, cuberevo-2000hd, cuberevo-9500hd
+Recipes:    cuberevo and related cuberevo patches
+
 Person:     Tim Ellis
 Mail:       tim.ellis@foonas.org
 Interests:  NAS

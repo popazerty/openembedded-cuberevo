@@ -1,4 +1,5 @@
 DEPENDS = "curl libpng freetype dreambox-dvbincludes libsigc++-1.2 libtuxtxt tuxbox-libs"
+DEPENDS_opencuberevo = "curl libpng freetype cuberevo-dvbincludes libsigc++-1.2 libtuxtxt tuxbox-libs"
 DESCRIPTION = "tuxbox plugins"
 MAINTAINER = "Felix Domke <tmbinc@elitdvb.net>"
 
