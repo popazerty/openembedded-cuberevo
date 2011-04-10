@@ -1,0 +1,119 @@
+From 50edb4f56b91d185752f784f288e646b51383bfa Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Wed, 12 Nov 2008 12:05:29 +0100
+Subject: [PATCH] sh4_stm: Align LOCALVERSION in ST boards defconfig
+
+Some boards defconfig do not add the 'se' mode suffix
+in the CONFIG_LOCALVERSION option in their defconfig.
+This change comes with a fix required in the SPEC file
+to remove the creation of the 'localversion-stm-board'
+file, otherwise all released kernel will have the
+kernel release string reporting the board label twice.
+i.e. 2.6.23.17_stm23_0117-mb411-mb411
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/configs/cb101se_defconfig       |    2 +-
+ arch/sh/configs/cb102se_defconfig       |    2 +-
+ arch/sh/configs/mb519_mb520_defconfig   |    2 +-
+ arch/sh/configs/mb519se_mb520_defconfig |    2 +-
+ arch/sh/configs/mb618se_defconfig       |    2 +-
+ arch/sh/configs/mb628_defconfig         |    2 +-
+ arch/sh/configs/mb671se_defconfig       |    2 +-
+ 7 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/configs/cb101se_defconfig b/arch/sh/configs/cb101se_defconfig
+index 331476a..b01a5c8 100644
+--- a/arch/sh/configs/cb101se_defconfig
++++ b/arch/sh/configs/cb101se_defconfig
+@@ -29,7 +29,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-cb101"
++CONFIG_LOCALVERSION="-cb101se"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+diff --git a/arch/sh/configs/cb102se_defconfig b/arch/sh/configs/cb102se_defconfig
+index 883c1c5..7203a2a 100644
+--- a/arch/sh/configs/cb102se_defconfig
++++ b/arch/sh/configs/cb102se_defconfig
+@@ -29,7 +29,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-cb102"
++CONFIG_LOCALVERSION="-cb102se"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+diff --git a/arch/sh/configs/mb519_mb520_defconfig b/arch/sh/configs/mb519_mb520_defconfig
+index 26f6732..f36094d 100644
+--- a/arch/sh/configs/mb519_mb520_defconfig
++++ b/arch/sh/configs/mb519_mb520_defconfig
+@@ -29,7 +29,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-mb519"
++CONFIG_LOCALVERSION="-mb519_mb520"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+diff --git a/arch/sh/configs/mb519se_mb520_defconfig b/arch/sh/configs/mb519se_mb520_defconfig
+index e55179d..63615bf 100644
+--- a/arch/sh/configs/mb519se_mb520_defconfig
++++ b/arch/sh/configs/mb519se_mb520_defconfig
+@@ -29,7 +29,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-mb519"
++CONFIG_LOCALVERSION="-mb519se_mb520"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+diff --git a/arch/sh/configs/mb618se_defconfig b/arch/sh/configs/mb618se_defconfig
+index 2cd2ea9..4e6ddb4 100644
+--- a/arch/sh/configs/mb618se_defconfig
++++ b/arch/sh/configs/mb618se_defconfig
+@@ -29,7 +29,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-mb618"
++CONFIG_LOCALVERSION="-mb618se"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+diff --git a/arch/sh/configs/mb628_defconfig b/arch/sh/configs/mb628_defconfig
+index 07842b5..598d639 100644
+--- a/arch/sh/configs/mb628_defconfig
++++ b/arch/sh/configs/mb628_defconfig
+@@ -29,7 +29,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-mb618"
++CONFIG_LOCALVERSION="-mb628"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+diff --git a/arch/sh/configs/mb671se_defconfig b/arch/sh/configs/mb671se_defconfig
+index 896bb11..cfa403b 100644
+--- a/arch/sh/configs/mb671se_defconfig
++++ b/arch/sh/configs/mb671se_defconfig
+@@ -28,7 +28,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-mb671"
++CONFIG_LOCALVERSION="-mb671se"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+-- 
+1.5.3.6
+

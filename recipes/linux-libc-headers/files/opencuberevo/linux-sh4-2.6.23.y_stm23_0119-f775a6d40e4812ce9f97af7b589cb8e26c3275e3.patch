@@ -1,0 +1,86 @@
+From f775a6d40e4812ce9f97af7b589cb8e26c3275e3 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 13 Mar 2009 16:59:22 +0100
+Subject: [PATCH] sh: implement PR_[GS]ET_UNALIGN prctls.
+
+This gives the ability to control whether alignment exceptions get
+fixed up or reported to the process as a SIGBUS, using the existing
+PR_SET_UNALIGN and PR_GET_UNALIGN prctls.
+
+This could help the end-level user to debug UA by using prctl:
+$ prctl --unaligned=signal gdb <tst>
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ arch/sh/kernel/traps.c       |    6 +++++-
+ include/asm-sh/thread_info.h |   26 ++++++++++++++++++++++++++
+ 2 files changed, 31 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index abc7b00..8237b67 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -650,8 +650,12 @@ asmlinkage void do_address_error(struct pt_regs *regs,
+ 			goto uspace_segv;
+ 		}
+ 		set_fs(oldfs);
++
++		if (test_thread_flag (TIF_UAC_SIGBUS))
++			goto uspace_segv;
++
+ 		/* shout about userspace fixups */
+-		if (se_usermode & 1)
++		if ((se_usermode & 1) && !(test_thread_flag (TIF_UAC_NOPRINT)))
+ 			printk("Unaligned userspace access "
+ 			       "in \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
+ 			       current->comm,current->pid,
+diff --git a/include/asm-sh/thread_info.h b/include/asm-sh/thread_info.h
+index 28d167c..ee0c483 100644
+--- a/include/asm-sh/thread_info.h
++++ b/include/asm-sh/thread_info.h
+@@ -112,6 +112,9 @@ static inline struct thread_info *current_thread_info(void)
+ #define TIF_RESTORE_SIGMASK	3	/* restore signal mask in do_signal() */
+ #define TIF_SINGLESTEP		4	/* singlestepping active */
+ #define TIF_KERNEL_TRACE	5	/* kernel trace active */
++#define TIF_UAC_NOPRINT		6	/* Unaligned Access control flags ...*/
++#define TIF_UAC_SIGBUS		7
++#define TIF_UAC_NOFIX		8
+ #define TIF_USEDFPU		16	/* FPU was used by this task this quantum (SMP) */
+ #define TIF_POLLING_NRFLAG	17	/* true if poll_idle() is polling TIF_NEED_RESCHED */
+ #define TIF_MEMDIE		18
+@@ -127,9 +130,32 @@ static inline struct thread_info *current_thread_info(void)
+ #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
+ #define _TIF_FREEZE		(1<<TIF_FREEZE)
+ 
++#define _TIF_UAC_SIGBUS		(1<<TIF_UAC_SIGBUS)
++#define _TIF_UAC_NOPRINT	(1<<TIF_UAC_NOPRINT)
++#define _TIF_UAC_NOFIX		(1<<TIF_UAC_NOFIX)
++
+ #define _TIF_WORK_MASK		0x000000DE	/* work to do on interrupt/exception return */
+ #define _TIF_ALLWORK_MASK	0x000000FF	/* work to do on any return to u-space */
+ 
++/* PR_[GS]ET_UNALIGN prctls */
++#define SH_UAC_SHIFT		6
++#define SH_UAC_MASK		(_TIF_UAC_SIGBUS | _TIF_UAC_NOPRINT)
++
++#define SET_UNALIGN_CTL(task,value)	\
++({	\
++	task_thread_info(task)->flags =	\
++	((task_thread_info(task)->flags & ~SH_UAC_MASK)	\
++				| (((value) << SH_UAC_SHIFT) & SH_UAC_MASK));\
++	0;	\
++})
++
++#define GET_UNALIGN_CTL(task,addr)	\
++({	\
++	put_user((task_thread_info(task)->flags & SH_UAC_MASK) \
++	>> SH_UAC_SHIFT,	\
++	(int __user *) (addr));	\
++})
++
+ #endif /* __KERNEL__ */
+ 
+ #endif /* __ASM_SH_THREAD_INFO_H */
+-- 
+1.6.0.6
+

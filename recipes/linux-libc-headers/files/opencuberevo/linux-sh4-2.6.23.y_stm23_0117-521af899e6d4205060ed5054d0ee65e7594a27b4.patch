@@ -1,0 +1,139 @@
+From 521af899e6d4205060ed5054d0ee65e7594a27b4 Mon Sep 17 00:00:00 2001
+From: Carl SHAW <carl.shaw@st.com>
+Date: Thu, 11 Dec 2008 12:25:30 +0000
+Subject: [PATCH] i2c-stm: I2C no repeated start support (with STOP START delay)
+
+This patch adds support to the I2C driver which forces messages
+within a transaction to be separated by a STOP then START rather
+than be a REPEATED START.
+
+In a multi-master system, this will allow another master to get
+control of a bus in the middle of a long transaction.
+
+Where the host is the only master, this patch can fix issues
+with some I2C tuner chips which want all transactions separated
+by a STOP in order to make the I2C repeater work.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Reviewd-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/i2c/busses/i2c-stm.c |   48 +++++++++++++++++++++++++++++++----------
+ include/linux/i2c.h          |   13 ++++++-----
+ 2 files changed, 43 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-stm.c b/drivers/i2c/busses/i2c-stm.c
+index 1d2c1ca..ca2527a 100644
+--- a/drivers/i2c/busses/i2c-stm.c
++++ b/drivers/i2c/busses/i2c-stm.c
+@@ -148,6 +148,7 @@
+ typedef enum _iic_state_machine_e {
+ 	IIC_FSM_VOID = 0,
+ 	IIC_FSM_PREPARE,
++	IIC_FSM_NOREPSTART,
+ 	IIC_FSM_START,
+ 	IIC_FSM_DATA_WRITE,
+ 	IIC_FSM_PREPARE_2_READ,
+@@ -297,10 +298,6 @@ static irqreturn_t iic_state_machine(int this_irq, void *data)
+ 					     clk_get_rate(clk_get
+ 							  (NULL, "comms_clk")));
+ 
+-		trsc->state = IIC_FSM_START;
+-		conflags = SSC_I2C_STRTG;
+-
+-		ssc_store32(adap, SSC_CLR, 0xdc0);
+ 		trsc->start_state = IIC_FSM_START;
+ 
+ 		/* Enable RX FIFO, enable clock stretch on TX empty */
+@@ -312,6 +309,18 @@ static irqreturn_t iic_state_machine(int this_irq, void *data)
+ 
+ 		/* NO break! */
+ 
++	case IIC_FSM_NOREPSTART:
++		ssc_store32(adap, SSC_CLR, 0xdc0);
++		trsc->state = IIC_FSM_START;
++		conflags = SSC_I2C_STRTG;
++
++		if (!check_fastmode(adap))
++			ndelay(4000);
++		else
++			ndelay(700);
++
++		/* NO break! */
++
+ 	case IIC_FSM_START:
+ be_fsm_start:
+ 		dbg_print2("-Start address 0x%x\n", pmsg->addr);
+@@ -389,6 +398,7 @@ be_fsm_start:
+ 
+ 		jump_on_fsm_start(trsc);
+ 
++
+ 	case IIC_FSM_PREPARE_2_READ:
+ 		dbg_print2("-Prepare to Read...\n");
+ 
+@@ -531,14 +541,28 @@ be_fsm_stop:
+ 		dbg_print2("-Stop\n");
+ 
+ 		if (++trsc->current_msg < trsc->queue_length) {
+-			/* repstart */
+-			dbg_print2(" STOP - REPSTART\n");
+-			trsc->next_state = IIC_FSM_REPSTART_ADDR;
+-			ssc_store32(adap, SSC_I2C,
+-				    SSC_I2C_I2CM | SSC_I2C_TXENB |
+-				    SSC_I2C_REPSTRTG);
+-			ssc_store32(adap, SSC_IEN,
+-				    SSC_IEN_REPSTRTEN | SSC_IEN_ARBLEN);
++			/* More transactions left... */
++			if (pmsg->flags & I2C_M_NOREPSTART) {
++				/* no repstart - stop then start */
++				dbg_print2(" STOP - STOP\n");
++				trsc->next_state = IIC_FSM_NOREPSTART;
++				ssc_store32(adap, SSC_I2C,
++					    SSC_I2C_I2CM | SSC_I2C_TXENB |
++					    SSC_I2C_STOPG);
++				ssc_store32(adap, SSC_IEN,
++					    SSC_IEN_STOPEN | SSC_IEN_ARBLEN);
++			} else {
++				/* repstart */
++				dbg_print2(" STOP - REPSTART\n");
++				trsc->next_state = IIC_FSM_REPSTART_ADDR;
++				ssc_store32(adap, SSC_I2C,
++					    SSC_I2C_I2CM |
++					    SSC_I2C_TXENB |
++					    SSC_I2C_REPSTRTG);
++				ssc_store32(adap, SSC_IEN,
++					    SSC_IEN_REPSTRTEN |
++					    SSC_IEN_ARBLEN);
++			}
+ 		} else {
+ 			/* stop */
+ 			dbg_print2(" STOP - STOP\n");
+diff --git a/include/linux/i2c.h b/include/linux/i2c.h
+index 2a32f2f..074b5f5 100644
+--- a/include/linux/i2c.h
++++ b/include/linux/i2c.h
+@@ -450,13 +450,14 @@ static inline int i2c_adapter_id(struct i2c_adapter *adap)
+ struct i2c_msg {
+ 	__u16 addr;	/* slave address			*/
+ 	__u16 flags;
+-#define I2C_M_TEN	0x10	/* we have a ten bit chip address	*/
+-#define I2C_M_RD	0x01
+-#define I2C_M_NOSTART	0x4000
+-#define I2C_M_REV_DIR_ADDR	0x2000
+-#define I2C_M_IGNORE_NAK	0x1000
+-#define I2C_M_NO_RD_ACK		0x0800
++#define I2C_M_RD		0x0001
++#define I2C_M_TEN		0x0010 /* we have a ten bit chip address */
+ #define I2C_M_RECV_LEN		0x0400 /* length will be first received byte */
++#define I2C_M_NO_RD_ACK		0x0800
++#define I2C_M_IGNORE_NAK	0x1000
++#define I2C_M_REV_DIR_ADDR	0x2000
++#define I2C_M_NOSTART		0x4000
++#define I2C_M_NOREPSTART	0x8000
+ 	__u16 len;		/* msg length				*/
+ 	__u8 *buf;		/* pointer to msg data			*/
+ };
+-- 
+1.5.3.6
+

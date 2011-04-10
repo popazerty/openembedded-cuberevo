@@ -1,0 +1,345 @@
+Allow the STM USB wrapper to be built as a module, allowing the entire
+USB subsystem to be built as modules.
+
+See bugzilla 3234 and 3245.
+
+Also switch 710x and 7111 to use the macros introduced for 7200 to
+initialise the USB platform data structures.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/drivers/usb/host/stb7100-common.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/stb7100-common.c
++++ linux-2.6.23-stm/drivers/usb/host/stb7100-common.c
+@@ -134,3 +134,8 @@ err1:
+ 	mutex_unlock(&wraper_mutex);
+ 	return retval;
+ }
++EXPORT_SYMBOL(ST40_start_host_control);
++
++MODULE_DESCRIPTION ("STM USB Host Controller wrapper driver");
++MODULE_AUTHOR ("Mark Glaisher <mark.glaisher@st.com>");
++MODULE_LICENSE ("GPL");
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -70,42 +70,14 @@ struct platform_device wdt_device = {
+ 
+ /* USB resources ----------------------------------------------------------- */
+ 
+-static struct resource st40_ohci_resources[] = {
+-	[0] = {
+-		.start	= 0x19100000 + 0xffc00,
+-		.end	= 0x19100000 + 0xffcff,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[1] = {
+-		.start	= 168,
+-		.end	= 168,
+-		.flags	= IORESOURCE_IRQ,
+-	}
+-};
+-static struct resource st40_ehci_resources[] = {
+-	[0] =  {
+-		.start	= 0x19100000 + 0xffe00,
+-		.end	= 0x19100000 + 0xffeff,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[1] = {
+-		.start	= 169,
+-		.end	= 169,
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-};
+-
+-/*
+- * Defines for the controller register offsets
+- */
+ #define UHOST2C_BASE			0x19100000
+ #define AHB2STBUS_WRAPPER_GLUE_BASE	(UHOST2C_BASE)
+-#define AHB2STBUS_RESERVED1_BASE	(UHOST2C_BASE + 0x000e0000)
+-#define AHB2STBUS_RESERVED2_BASE	(UHOST2C_BASE + 0x000f0000)
+ #define AHB2STBUS_OHCI_BASE		(UHOST2C_BASE + 0x000ffc00)
+ #define AHB2STBUS_EHCI_BASE		(UHOST2C_BASE + 0x000ffe00)
+ #define AHB2STBUS_PROTOCOL_BASE		(UHOST2C_BASE + 0x000fff00)
+ 
++static u64 st40_dma_mask = 0xfffffff;
++
+ static struct sysconf_field *usb_power_sc;
+ 
+ static void usb_power_up(void* dev)
+@@ -120,39 +92,15 @@ static void usb_power_up(void* dev)
+ 	}
+ }
+ 
+-static struct plat_usb_data usb_wrapper = {
+-	.ahb2stbus_wrapper_glue_base = AHB2STBUS_WRAPPER_GLUE_BASE,
+-	.ahb2stbus_protocol_base = AHB2STBUS_PROTOCOL_BASE,
+-	.power_up = usb_power_up,
+-	.initialised = 0,
+-	.port_number = 0,
+-};
++static struct plat_usb_data usb_wrapper =
++	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE, AHB2STBUS_PROTOCOL_BASE,
++		usb_power_up);
+ 
+-static u64 st40_dma_mask = 0xfffffff;
++static struct platform_device  st40_ohci_device =
++	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE, 168, &usb_wrapper);
+ 
+-static struct platform_device  st40_ohci_device = {
+-	.name = "stm-ohci",
+-	.id=1,
+-	.dev = {
+-		.dma_mask = &st40_dma_mask,
+-		.coherent_dma_mask = 0xffffffful,
+-		.platform_data = &usb_wrapper,
+-	},
+-	.num_resources = ARRAY_SIZE(st40_ohci_resources),
+-	.resource = st40_ohci_resources,
+-};
+-
+-static struct platform_device  st40_ehci_device = {
+-	.name = "stm-ehci",
+-	.id=2,
+-	.dev = {
+-		.dma_mask = &st40_dma_mask,
+-		.coherent_dma_mask = 0xffffffful,
+-		.platform_data = &usb_wrapper,
+-	},
+-	.num_resources = ARRAY_SIZE(st40_ehci_resources),
+-	.resource = st40_ehci_resources,
+-};
++static struct platform_device  st40_ehci_device =
++	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE, 169, &usb_wrapper);
+ 
+ void __init stx7100_configure_usb(void)
+ {
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -31,72 +31,25 @@ static u64 st40_dma_mask = 0xfffffff;
+ 
+ /* USB resources ----------------------------------------------------------- */
+ 
+-/*
+- * Defines for the controller register offsets
+- */
+ #define UHOST2C_BASE			0xfe100000
+ #define AHB2STBUS_WRAPPER_GLUE_BASE	(UHOST2C_BASE)
+-#define AHB2STBUS_RESERVED1_BASE	(UHOST2C_BASE + 0x000e0000)
+-#define AHB2STBUS_RESERVED2_BASE	(UHOST2C_BASE + 0x000f0000)
+ #define AHB2STBUS_OHCI_BASE		(UHOST2C_BASE + 0x000ffc00)
+ #define AHB2STBUS_EHCI_BASE		(UHOST2C_BASE + 0x000ffe00)
+ #define AHB2STBUS_PROTOCOL_BASE		(UHOST2C_BASE + 0x000fff00)
+ 
+-static struct resource st40_ohci_resources[] = {
+-	[0] = {
+-		.start	= 0xfe100000 + 0xffc00,
+-		.end	= 0xfe100000 + 0xffcff,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[1] = {
+-		.start	= evt2irq(0x1700), /* 168, */
+-		.end	= evt2irq(0x1700),
+-		.flags	= IORESOURCE_IRQ,
+-	}
+-};
+-static struct resource st40_ehci_resources[] = {
+-	[0] =  {
+-		.start	= 0xfe100000 + 0xffe00,
+-		.end	= 0xfe100000 + 0xffeff,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[1] = {
+-		.start	= evt2irq(0x1720), /* 169, */
+-		.end	= evt2irq(0x1720),
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-};
+-
+-static struct plat_usb_data usb_wrapper = {
+-	.ahb2stbus_wrapper_glue_base = AHB2STBUS_WRAPPER_GLUE_BASE,
+-	.ahb2stbus_protocol_base = AHB2STBUS_PROTOCOL_BASE,
+-	.initialised = 0,
+-	.port_number = 0,
+-};
+-
+-static struct platform_device  st40_ohci_device = {
+-	.name = "stm-ohci",
+-	.id=1,
+-	.dev = {
+-		.dma_mask = &st40_dma_mask,
+-		.coherent_dma_mask = 0xffffffful,
+-		.platform_data = &usb_wrapper,
+-	},
+-	.num_resources = ARRAY_SIZE(st40_ohci_resources),
+-	.resource = st40_ohci_resources,
+-};
+-
+-static struct platform_device  st40_ehci_device = {
+-	.name = "stm-ehci",
+-	.id=2,
+-	.dev = {
+-		.dma_mask = &st40_dma_mask,
+-		.coherent_dma_mask = 0xffffffful,
+-		.platform_data = &usb_wrapper,
+-	},
+-	.num_resources = ARRAY_SIZE(st40_ehci_resources),
+-	.resource = st40_ehci_resources,
+-};
++static struct plat_usb_data usb_wrapper =
++	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE, AHB2STBUS_PROTOCOL_BASE,
++		NULL);
++
++static struct platform_device  st40_ohci_device =
++	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE,
++			evt2irq(0x1700), /* 168 */
++			&usb_wrapper);
++
++static struct platform_device  st40_ehci_device =
++	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE,
++			evt2irq(0x1720), /* 169 */
++			&usb_wrapper);
+ 
+ void __init stx7111_configure_usb(void)
+ {
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -34,8 +34,6 @@ static struct sysconf_field *sc7_2;
+ #define UHOST2C_BASE(N)                 (0xfd200000 + ((N)*0x00100000))
+ 
+ #define AHB2STBUS_WRAPPER_GLUE_BASE(N)  (UHOST2C_BASE(N))
+-#define AHB2STBUS_RESERVED1_BASE(N)     (UHOST2C_BASE(N) + 0x000e0000)
+-#define AHB2STBUS_RESERVED2_BASE(N)     (UHOST2C_BASE(N) + 0x000f0000)
+ #define AHB2STBUS_OHCI_BASE(N)          (UHOST2C_BASE(N) + 0x000ffc00)
+ #define AHB2STBUS_EHCI_BASE(N)          (UHOST2C_BASE(N) + 0x000ffe00)
+ #define AHB2STBUS_PROTOCOL_BASE(N)      (UHOST2C_BASE(N) + 0x000fff00)
+@@ -54,27 +52,31 @@ static void usb_power_up(void* dev)
+ }
+ 
+ static struct plat_usb_data usb_wrapper[3] = {
+-	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE(0), AHB2STBUS_PROTOCOL_BASE(0)),
+-	USB_WRAPPER(1, AHB2STBUS_WRAPPER_GLUE_BASE(1), AHB2STBUS_PROTOCOL_BASE(1)),
+-	USB_WRAPPER(2, AHB2STBUS_WRAPPER_GLUE_BASE(2), AHB2STBUS_PROTOCOL_BASE(2))
++	USB_WRAPPER(0, AHB2STBUS_WRAPPER_GLUE_BASE(0),
++		    AHB2STBUS_PROTOCOL_BASE(0), usb_power_up),
++	USB_WRAPPER(1, AHB2STBUS_WRAPPER_GLUE_BASE(1),
++		    AHB2STBUS_PROTOCOL_BASE(1), usb_power_up),
++	USB_WRAPPER(2, AHB2STBUS_WRAPPER_GLUE_BASE(2),
++		    AHB2STBUS_PROTOCOL_BASE(2), usb_power_up),
+ };
+ 
+-static struct platform_device st40_ehci_devices[3] = {
+-	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE(0), ILC_IRQ(80)),
+-	USB_EHCI_DEVICE(1, AHB2STBUS_EHCI_BASE(1), ILC_IRQ(82)),
+-	USB_EHCI_DEVICE(2, AHB2STBUS_EHCI_BASE(2), ILC_IRQ(84)),
++static struct platform_device st40_ohci_devices[3] = {
++	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE(0), ILC_IRQ(81), &usb_wrapper[0]),
++	USB_OHCI_DEVICE(1, AHB2STBUS_OHCI_BASE(1), ILC_IRQ(83), &usb_wrapper[1]),
++	USB_OHCI_DEVICE(2, AHB2STBUS_OHCI_BASE(2), ILC_IRQ(85), &usb_wrapper[2]),
+ };
+ 
+-static struct platform_device st40_ohci_devices[3] = {
+-	USB_OHCI_DEVICE(0, AHB2STBUS_OHCI_BASE(0), ILC_IRQ(81)),
+-	USB_OHCI_DEVICE(1, AHB2STBUS_OHCI_BASE(1), ILC_IRQ(83)),
+-	USB_OHCI_DEVICE(2, AHB2STBUS_OHCI_BASE(2), ILC_IRQ(85)),
++static struct platform_device st40_ehci_devices[3] = {
++	USB_EHCI_DEVICE(0, AHB2STBUS_EHCI_BASE(0), ILC_IRQ(80), &usb_wrapper[0]),
++	USB_EHCI_DEVICE(1, AHB2STBUS_EHCI_BASE(1), ILC_IRQ(82), &usb_wrapper[1]),
++	USB_EHCI_DEVICE(2, AHB2STBUS_EHCI_BASE(2), ILC_IRQ(84), &usb_wrapper[2]),
+ };
+ 
+ /*
+  * Workaround for USB problems on 7200 cut 1; alternative to RC delay on board
+ */
+-void __init usb_soft_jtag_reset(void) {
++static void __init usb_soft_jtag_reset(void)
++{
+ 	int i, j;
+ 	struct sysconf_field *sc;
+ 
+Index: linux-2.6.23-stm/drivers/usb/host/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/Kconfig
++++ linux-2.6.23-stm/drivers/usb/host/Kconfig
+@@ -248,3 +248,8 @@ config USB_R8A66597_HCD
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called r8a66597-hcd.
+ 
++config USB_STM_COMMON
++       tristate
++       depends CPU_SUBTYPE_ST40
++       default y if USB_EHCI_HCD=y || USB_OHCI_HCD=y
++       default m if USB_EHCI_HCD=m || USB_OHCI_HCD=m
+Index: linux-2.6.23-stm/drivers/usb/host/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/Makefile
++++ linux-2.6.23-stm/drivers/usb/host/Makefile
+@@ -16,6 +16,4 @@ obj-$(CONFIG_USB_SL811_HCD)	+= sl811-hcd
+ obj-$(CONFIG_USB_SL811_CS)	+= sl811_cs.o
+ obj-$(CONFIG_USB_U132_HCD)	+= u132-hcd.o
+ obj-$(CONFIG_USB_R8A66597_HCD)	+= r8a66597-hcd.o
+-obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= stb7100-common.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= stb7100-common.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= stb7100-common.o
++obj-$(CONFIG_USB_STM_COMMON)	+= stb7100-common.o
+Index: linux-2.6.23-stm/include/linux/stm/soc_init.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc_init.h
++++ linux-2.6.23-stm/include/linux/stm/soc_init.h
+@@ -70,24 +70,24 @@
+ 	}								\
+ }
+ 
+-#define USB_WRAPPER(_port, _wrapper_base, _protocol_base)	\
+-{								\
+-	.ahb2stbus_wrapper_glue_base = _wrapper_base,		\
+-	.ahb2stbus_protocol_base = _protocol_base,		\
+-	.power_up = usb_power_up,				\
+-	.initialised = 0,					\
+-	.port_number = _port,					\
++#define USB_WRAPPER(_port, _wrapper_base, _protocol_base, _power_up)	\
++{									\
++	.ahb2stbus_wrapper_glue_base = _wrapper_base,			\
++	.ahb2stbus_protocol_base = _protocol_base,			\
++	.power_up = _power_up,						\
++	.initialised = 0,						\
++	.port_number = _port,						\
+ }
+ 
+ 
+-#define USB_EHCI_DEVICE(_port, _base, _irq)				\
++#define USB_EHCI_DEVICE(_port, _base, _irq, _wrapper)			\
+ {									\
+ 	.name = "stm-ehci",						\
+ 	.id=_port,							\
+ 	.dev = {							\
+ 		.dma_mask = &st40_dma_mask,				\
+ 		.coherent_dma_mask = 0xffffffful,			\
+-		.platform_data = &usb_wrapper[_port],			\
++		.platform_data = _wrapper,				\
+ 	},								\
+ 	.num_resources = 2,						\
+ 	.resource = (struct resource[]) {				\
+@@ -105,14 +105,14 @@
+ }									\
+ 
+ 
+-#define USB_OHCI_DEVICE(_port, _base, _irq)				\
++#define USB_OHCI_DEVICE(_port, _base, _irq, _wrapper)			\
+ {									\
+ 	.name = "stm-ohci",						\
+ 	.id=_port,							\
+ 	.dev = {							\
+ 		.dma_mask = &st40_dma_mask,				\
+ 		.coherent_dma_mask = 0xffffffful,			\
+-		.platform_data = &usb_wrapper[_port],			\
++		.platform_data = _wrapper,				\
+ 	},								\
+ 	.num_resources = 2,						\
+ 	.resource = (struct resource[]) {				\

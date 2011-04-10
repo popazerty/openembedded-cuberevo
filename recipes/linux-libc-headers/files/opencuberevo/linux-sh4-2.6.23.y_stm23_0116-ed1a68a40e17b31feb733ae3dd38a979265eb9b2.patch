@@ -1,0 +1,73 @@
+From ed1a68a40e17b31feb733ae3dd38a979265eb9b2 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 17 Sep 2008 14:38:56 +0200
+Subject: [PATCH] Fix the MAC_SPEED_SEL bit in the sys_cfg register
+
+This fixes an error configuring the mac speed selection
+in the syestem configuration register 7.
+It was signaled in the Bugzilla Bug #4589
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |    2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index fdcb53d..c768ec0 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -442,7 +442,7 @@ static struct sysconf_field *mac_speed_sc;
+ 
+ static void fix_mac_speed(void* priv, unsigned int speed)
+ {
+-	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 0 : 1);
++	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 1 : 0);
+ }
+ 
+ /* Hopefully I can remove this now */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index ba7f9ab..998e9c9 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -492,7 +492,7 @@ static struct sysconf_field *mac_speed_sc;
+ 
+ static void fix_mac_speed(void* priv, unsigned int speed)
+ {
+-	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 0 : 1);
++	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 1 : 0);
+ }
+ 
+ static struct plat_stmmacenet_data stx7105eth_private_data = {
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 11a63f6..0e8c261 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -274,7 +274,7 @@ static struct sysconf_field *mac_speed_sc;
+ 
+ static void fix_mac_speed(void* priv, unsigned int speed)
+ {
+-	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 0 : 1);
++	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 1 : 0);
+ }
+ 
+ /* Hopefully I can remove this now */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 2521124..7e66bd3 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -564,7 +564,7 @@ static void fix_mac_speed(void *priv, unsigned int speed)
+ {
+ 	struct sysconf_field *sc = priv;
+ 
+-	sysconf_write(sc, (speed == SPEED_100) ? 0 : 1);
++	sysconf_write(sc, (speed == SPEED_100) ? 1 : 0);
+ }
+ 
+ static struct plat_stmmacenet_data stx7141eth_private_data[2] = {
+-- 
+1.5.3.6
+

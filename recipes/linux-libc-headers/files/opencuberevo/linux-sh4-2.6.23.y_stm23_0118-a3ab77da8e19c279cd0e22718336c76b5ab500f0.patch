@@ -1,0 +1,158 @@
+From a3ab77da8e19c279cd0e22718336c76b5ab500f0 Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Fri, 13 Feb 2009 08:44:10 +0100
+Subject: [PATCH] sh_stm: Add WakeUp capability to ASC/Lirc/Pio/Eth
+
+Add WakeUp capability to ASC/Lirc/Pio/Eth
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |    4 ++++
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    4 ++++
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |    4 ++++
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |    4 ++++
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |    6 ++++++
+ include/linux/stm/soc_init.h           |    1 +
+ 6 files changed, 23 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index 7685ead..d4f7308 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -657,6 +657,7 @@ static struct platform_device lirc_device = {
+ 	.num_resources  = ARRAY_SIZE(lirc_resource),
+ 	.resource       = lirc_resource,
+ 	.dev = {
++		   .power.can_wakeup = 1,
+ 	           .platform_data = &lirc_private_info
+ 	}
+ };
+@@ -777,6 +778,9 @@ void __init stb7100_configure_asc(const int *ascs, int num_ascs, int console)
+ 	}
+ 
+ 	stasc_console_device = console;
++	/* the console will be always a wakeup-able device */
++	stasc_configured_devices[console]->dev.power.can_wakeup = 1;
++	device_set_wakeup_enable(&stasc_configured_devices[console]->dev, 0x1);
+ }
+ 
+ /* Add platform device as configured by board specific code */
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 964aca3..20430c8 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -857,6 +857,9 @@ void __init stx7105_configure_asc(const int *ascs, int num_ascs, int console)
+ 	}
+ 
+ 	stasc_console_device = console;
++	/* the console will be always a wakeup-able device */
++	stasc_configured_devices[console]->dev.power.can_wakeup = 1;
++	device_set_wakeup_enable(&stasc_configured_devices[console]->dev, 0x1);
+ }
+ 
+ /* Add platform device as configured by board specific code */
+@@ -934,6 +937,7 @@ static struct platform_device lirc_device = {
+ 	.num_resources  = ARRAY_SIZE(lirc_resource),
+ 	.resource       = lirc_resource,
+ 	.dev = {
++		   .power.can_wakeup = 1,
+ 	           .platform_data = &lirc_private_info
+ 	}
+ };
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index a7dc146..d3eaee7 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -512,6 +512,9 @@ void __init stx7111_configure_asc(const int *ascs, int num_ascs, int console)
+ 	}
+ 
+ 	stasc_console_device = console;
++	/* the console will be always a wakeup-able device */
++	stasc_configured_devices[console]->dev.power.can_wakeup = 1;
++	device_set_wakeup_enable(&stasc_configured_devices[console]->dev, 0x1);
+ }
+ 
+ /* Add platform device as configured by board specific code */
+@@ -589,6 +592,7 @@ static struct platform_device lirc_device = {
+ 	.num_resources  = ARRAY_SIZE(lirc_resource),
+ 	.resource       = lirc_resource,
+ 	.dev = {
++		   .power.can_wakeup = 1,
+ 	           .platform_data = &lirc_private_info
+ 	}
+ };
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index b872056..8c78bfc 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -969,6 +969,9 @@ void __init stx7141_configure_asc(const int *ascs, int num_ascs, int console)
+ 	}
+ 
+ 	stasc_console_device = console;
++	/* the console will be always a wakeup-able device */
++	stasc_configured_devices[console]->dev.power.can_wakeup = 1;
++	device_set_wakeup_enable(&stasc_configured_devices[console]->dev, 0x1);
+ }
+ 
+ /* Add platform device as configured by board specific code */
+@@ -1046,6 +1049,7 @@ static struct platform_device lirc_device = {
+ 	.num_resources	= ARRAY_SIZE(lirc_resource),
+ 	.resource	= lirc_resource,
+ 	.dev = {
++		   .power.can_wakeup = 1,
+ 		   .platform_data = &lirc_private_info
+ 	}
+ };
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 7276d74..9be709d 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -682,6 +682,7 @@ static struct platform_device stmmaceth_device[2] = {
+ 		},
+ 	},
+ 	.dev = {
++		.power.can_wakeup = 1,
+ 		.platform_data = &stmmaceth_private_data[0],
+ 	}
+ }, {
+@@ -702,6 +703,7 @@ static struct platform_device stmmaceth_device[2] = {
+ 		},
+ 	},
+ 	.dev = {
++		.power.can_wakeup = 1,
+ 		.platform_data = &stmmaceth_private_data[1],
+ 	}
+ } };
+@@ -893,6 +895,7 @@ static struct platform_device lirc_device = {
+ 	.num_resources  = ARRAY_SIZE(lirc_resource),
+ 	.resource       = lirc_resource,
+ 	.dev = {
++		   .power.can_wakeup = 0x1,
+ 	           .platform_data = &lirc_private_info
+ 	}
+ };
+@@ -1184,6 +1187,9 @@ void __init stx7200_configure_asc(const int *ascs, int num_ascs, int console)
+ 	}
+ 
+ 	stasc_console_device = console;
++	/* the console will be always a wakeup-able device */
++	stasc_configured_devices[console]->dev.power.can_wakeup = 1;
++	device_set_wakeup_enable(&stasc_configured_devices[console]->dev, 0x1);
+ }
+ 
+ /* Add platform device as configured by board specific code */
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index ec392bc..5641e36 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -4,6 +4,7 @@
+ 	.name		= "stpio",					\
+ 	.id		= _id,						\
+ 	.num_resources	= 2,						\
++	.dev.power.can_wakeup = ((_irq) != -1),				\
+ 	.resource	= (struct resource[]) {				\
+ 		{							\
+ 			.start	= _base,				\
+-- 
+1.5.6.3
+

@@ -1,0 +1,344 @@
+This patch updates the ide-pio-dma driver to the new stm_dma api, it
+also adds a config option to enable piodma debugging, which previiusly
+required a modification of the code.  The major change is that dma
+transfer descriptors are now allocated at init time, and re-used for
+each transfer, this should cut down the overhead of each transaction.
+
+Signed-off-by: Mark Glaisher <mark.glaisher@st.com>
+
+Index: linux-2.6.17/drivers/ide/sh/ide-piodma.c
+===================================================================
+--- linux-2.6.17.orig/drivers/ide/sh/ide-piodma.c
++++ linux-2.6.17/drivers/ide/sh/ide-piodma.c
+@@ -14,7 +14,7 @@
+ #include <linux/ide.h>
+ #include <linux/debugfs.h>
+ 
+-#include <asm/dma.h>
++#include <linux/stm/stm-dma.h>
+ 
+ #include "../ide-cd.h"
+ #include "../ide-piodma.h"
+@@ -29,7 +29,14 @@ typedef struct ide_piodma {
+ 	int dma_end_request_from_callback;
+ 	unsigned int dma_direction_write;
+ 	int dma_chan_id;
+-	struct dma_channel *dma_channel;
++	struct scatterlist *src_sg;
++	struct scatterlist *dst_sg;
++	int src_sg_len;
++	int dst_sg_len;
++	int xfer_sz;
++	struct stm_dma_params read_dmap;
++	struct stm_dma_params write_dmap;
++	unsigned long ide_data_reg;
+ } ide_piodma_t;
+ 
+ /* The number of attempts we will make to allocate a DMA channel before issuing
+@@ -38,10 +45,9 @@ typedef struct ide_piodma {
+  */
+ #define REQUEST_DMA_LIMIT 64
+ 
+-/*#define CONFIG_IDE_PIODMA_DEBUG*/
+-#ifdef CONFIG_IDE_PIODMA_DEBUG
++#ifdef CONFIG_BLK_DEV_IDE_PIODMA_DEBUG
+ static int enable_dma = 1;
+-static int enable_trace = 0;
++static int enable_trace = 1;
+ static int hide_errors = 0;
+ #else
+ #define enable_dma 1
+@@ -238,31 +244,33 @@ static inline void ide_piodma_issue_defe
+ {
+ 	ide_hwif_t *hwif = HWIF(drive);
+ 	ide_piodma_t *pd = ide_get_hwifdata(hwif);
+-	int res;
+-	unsigned int write = pd->dma_direction_write;
+-	struct scatterlist *sg;
+-	unsigned int nents;
++	int res=0;
+ 
+ 	pd->dma_deferred_configure = 0;
++	BUG_ON(!pd->dma_busy);
+ 
+ 	PDMA_TRACE("%s: about to issue deferred DMA request\n", drive->name);
+-	res = dma_configure_channel(pd->dma_channel);
+-	if (0 == res) {
+-		dma_xfer(pd->dma_chan_id);
+-	} else {
+-		PDMA_ERROR("%s: cannot configure deferred DMA request "
+-		           "(res = %d)\n", drive->name, res);
+-
+-		if (write) {
+-			sg = pd->dma_channel->dst_sg;
+-			nents = pd->dma_channel->dst_sg_len;
+-		} else {
+-			sg = pd->dma_channel->src_sg;
+-			nents = pd->dma_channel->src_sg_len;
+-		}
++	if(pd->dma_direction_write)
++		res = dma_xfer_list(pd->dma_chan_id,&pd->write_dmap);
++	else
++		res = dma_xfer_list(pd->dma_chan_id,&pd->read_dmap);
+ 
++	if(res!=0){
++		PDMA_TRACE("%s: cannot configure deferred DMA request "
++		           "(res = %d)\n", drive->name, res);
+ 		pd->dma_busy = 0;
+-		ide_piodma_do_cpu_transfer(drive, sg, nents, write);
++		if (pd->dma_direction_write)
++			ide_piodma_do_cpu_transfer(
++				drive,
++				pd->dst_sg,
++				pd->dst_sg_len,
++				pd->dma_direction_write);
++		else
++			ide_piodma_do_cpu_transfer(
++				drive,
++				pd->src_sg,
++				pd->src_sg_len,
++				pd->dma_direction_write);
+ 	}
+ }
+ 
+@@ -325,26 +333,71 @@ static void ide_piodma_dma_completion_ha
+ /* TODO: need an error handler to clear DMA busy and to complete the
+  * DMA request with an error
+  */
++static int ide_piodma_prepare_read_dma(	ide_piodma_t *pd,
++					ide_drive_t *drive,
++					unsigned long len)
++{
++	static int read_configured=0;
++	if(!read_configured){
++		declare_dma_parms(	&pd->read_dmap,
++					MODE_DST_SCATTER,
++					STM_DMA_LIST_OPEN,
++					STM_DMA_SETUP_CONTEXT_ISR,
++					STM_DMA_NOBLOCK_MODE,
++					( char*)STM_DMAC_ID);
+ 
+-static void ide_piodma_prepare_channel(ide_drive_t *drive, unsigned int len,
+-				       unsigned int write)
++		dma_parms_comp_cb(	&pd->read_dmap,
++					ide_piodma_dma_completion_handler,
++					drive,
++					STM_DMA_CB_CONTEXT_TASKLET);
++
++		dma_parms_DIM_0_x_1(&pd->read_dmap,pd->xfer_sz);
++
++		dma_parms_addrs(&pd->read_dmap,pd->ide_data_reg,0,len);
++
++		read_configured=1;
++	}
++	dma_parms_sg(&pd->read_dmap,pd->dst_sg,pd->dst_sg_len);
++	return dma_compile_list(&pd->read_dmap);
++}
++
++static int ide_piodma_prepare_write_dma( ide_piodma_t *pd,
++					 ide_drive_t *drive,
++					 unsigned long len)
+ {
+-	ide_hwif_t *hwif = HWIF(drive);
+-	ide_piodma_t *pd = ide_get_hwifdata(hwif);
+-	struct dma_channel *chan;
+-	u8 transfer_sz = drive->io_32bit ? 4 : 2;
++	static int write_configured=0;
++	if(!write_configured){
++		declare_dma_parms(&pd->write_dmap,
++				  MODE_SRC_SCATTER,
++				  STM_DMA_LIST_OPEN,
++				  STM_DMA_SETUP_CONTEXT_ISR,
++				  STM_DMA_NOBLOCK_MODE,
++				  (char*)STM_DMAC_ID);
++
++		dma_parms_comp_cb(&pd->write_dmap,
++					      ide_piodma_dma_completion_handler,
++					      drive,
++					      STM_DMA_CB_CONTEXT_TASKLET);
+ 
+-	chan = get_dma_channel(pd->dma_chan_id);
+-	BUG_ON(IS_ERR(chan));
++		dma_parms_DIM_1_x_0(&pd->write_dmap,pd->xfer_sz);
+ 
+-	chan->mode = MODE_FREERUNNING;
+-	chan->count = len;
++		dma_parms_addrs(&pd->write_dmap,0,pd->ide_data_reg,len);
++
++		write_configured=1;
++	}
++	dma_parms_sg(&pd->write_dmap,pd->src_sg,pd->src_sg_len);
++	return dma_compile_list(&pd->write_dmap);
++}
+ 
+-	chan->comp_callback = ide_piodma_dma_completion_handler;
+-	chan->comp_callback_param = drive;
+-	chan->err_callback = 0;
++static int ide_piodma_prepare_channel(ide_drive_t *drive, unsigned int len,
++				       unsigned int write)
++{
++	ide_hwif_t *hwif = HWIF(drive);
++	ide_piodma_t *pd = ide_get_hwifdata(hwif);
++	int res=0;
+ 
+-	chan->flags = LIST_TYPE_UNLINKED | DMA_SETUP_NOBLOCK;
++	pd->xfer_sz = drive->io_32bit ? 4 : 2;
++	pd->ide_data_reg =  virt_to_bus((void *) IDE_DATA_REG);
+ 
+ #ifdef CONFIG_STB7100_FDMA
+ 	/* Currently any attempt to set the FDMA transfer size smaller than
+@@ -352,21 +405,16 @@ static void ide_piodma_prepare_channel(i
+ 	 * is attached to EMI then the bottom bits of the address bus are
+ 	 * ignored and the disk continues to work!
+ 	 */
+-	transfer_sz = 32;
++	pd->xfer_sz = 32;
+ #endif
++	if(write)
++		res = ide_piodma_prepare_write_dma(pd,drive,len);
++	else
++		res= ide_piodma_prepare_read_dma(pd,drive,len);
++	if(res < 0 )
++		PDMA_TRACE("Cant Prepare %s DMA transaction\n",(write ? "write":"read"));
+ 
+-	if (write) {
+-		chan->flags |= DIM_SG_x_0;
+-		chan->dar = virt_to_bus((void *) IDE_DATA_REG);
+-		chan->dst_sz = transfer_sz;
+-	} else {
+-		chan->flags |= DIM_0_x_SG;
+-		chan->sar = virt_to_bus((void *) IDE_DATA_REG);
+-		chan->src_sz = transfer_sz;
+-		PDMA_TRACE("sar = %p\n", (void *) chan->sar);
+-	}
+-
+-	pd->dma_channel = chan;
++	return res;
+ }
+ 
+ /**
+@@ -382,6 +430,7 @@ static ide_startstop_t ide_piodma_progra
+ 	ide_piodma_t *pd = ide_get_hwifdata(hwif);
+ 	struct scatterlist *sg = pd->dma_table;
+ 	int nents, res;
++	unsigned long flags=0;
+ 
+ 	nents = ide_piodma_build_sg(drive, sg, len);
+ 	if (nents < 0)
+@@ -390,32 +439,40 @@ static ide_startstop_t ide_piodma_progra
+ 	if (!enable_dma)
+ 		return ide_piodma_do_cpu_transfer(drive, sg, nents, write);
+ 
+-	ide_piodma_prepare_channel(drive, len, write);
+-
+ 	if (write) {
+-		pd->dma_channel->src_sg = sg;
+-		pd->dma_channel->src_sg_len = nents;
++		pd->src_sg = sg;
++		pd->src_sg_len = nents;
+ 	} else {
+-		pd->dma_channel->dst_sg = sg;
+-		pd->dma_channel->dst_sg_len = nents;
++		pd->dst_sg = sg;
++		pd->dst_sg_len = nents;
+ 	}
+ 
++	if(ide_piodma_prepare_channel(drive, len, write)!=0)
++			return ide_piodma_do_cpu_transfer(drive, sg, nents, write);
++
++	spin_lock_irqsave(&ide_lock, flags);
+ 	if (pd->dma_busy) {
+ 		PDMA_TRACE("%s: deferring DMA request\n", drive->name);
+ 		pd->dma_direction_write = write;
+ 		pd->dma_deferred_configure = 1;
+ 	} else {
+ 		PDMA_TRACE("%s: about to issue DMA request\n", drive->name);
+-		res = dma_configure_channel(pd->dma_channel);
++		pd->dma_busy = 1;
++		if(write)
++			res= dma_xfer_list(pd->dma_chan_id,&pd->write_dmap);
++		else
++			res= dma_xfer_list(pd->dma_chan_id,&pd->read_dmap);
++
+ 		if (0 != res) {
++			pd->dma_busy = 0;
+ 			BUG();
++			spin_unlock_irqrestore(&ide_lock, flags);
+ 			return ide_piodma_do_cpu_transfer(drive, sg, nents,
+ 			                                  write);
+ 		}
+-		pd->dma_busy = 1;
+-		dma_xfer(pd->dma_chan_id);
+-	}
+ 
++	}
++	spin_unlock_irqrestore(&ide_lock, flags);
+ 	return ide_started;
+ }
+ 
+@@ -453,6 +510,8 @@ static int ide_piodma_host_off (ide_driv
+ 	if (pd) {
+ 		if (0 == --pd->ref_count) {
+ 			free_dma(pd->dma_chan_id);
++			dma_free_descriptor(&pd->read_dmap);
++			dma_free_descriptor(&pd->write_dmap);
+ 			kfree(pd);
+ 			ide_set_hwifdata(hwif, NULL);
+ 		}
+@@ -742,6 +801,9 @@ static int ide_piodma_setup (ide_drive_t
+ 	ide_hwif_t *hwif = HWIF(drive);
+ 	ide_piodma_t *pd = ide_get_hwifdata(hwif);
+ 	struct request *rq = HWGROUP(drive)->rq;
++	const char * stm_dmac_id =STM_DMAC_ID;
++	const char * stm_lb_cap  =STM_DMA_CAP_LOW_BW;
++	const char * stm_hb_cap  =STM_DMA_CAP_HIGH_BW;
+ 
+ 	PDMA_TRACE("%s: preparing for PIO DMA transaction\n", drive->name);
+ 
+@@ -759,10 +821,10 @@ static int ide_piodma_setup (ide_drive_t
+ 	 * partition table.
+ 	 */
+ 	if (pd->dma_chan_id < 0) {
+-		int chan_id = request_dma(ANY_CHANNEL, __FILE__);
++		int chan_id = request_dma_bycap(&stm_dmac_id,&stm_lb_cap ,"IDE_PIO_DMA");
+ 		if (chan_id < 0) {
+-			pd->dma_chan_id--;
+-			if (REQUEST_DMA_LIMIT < -pd->dma_chan_id) {
++			chan_id = request_dma_bycap(&stm_dmac_id,&stm_hb_cap ,"IDE_PIO_DMA");
++			if(chan_id <  0){
+ 				pd->dma_chan_id = -1;
+ 				printk(KERN_ERR "%s: cannot allocate DMA "
+ 				                "channel for IDE (PIODMA)\n",
+@@ -771,12 +833,12 @@ static int ide_piodma_setup (ide_drive_t
+ 
+ 			return 1; /* fallback to PIO */
+ 		}
++		/*HACK here - assuming that no dma channel === first setup*/
+ 
+ 		pd->dma_chan_id = chan_id;
+ 		PDMA_TRACE("%s: allocated DMA channel %d\n",
+ 		           drive->name, chan_id);
+ 	}
+-
+ 	if (drive->bswap) {
+ 		PDMA_ERROR("%s: cannot use PIO DMA because device is byte "
+ 		           "swapped\n", drive->name);
+@@ -804,7 +866,6 @@ static int ide_piodma_setup (ide_drive_t
+ 
+ 	pd->dma_deferred_configure = 0;
+ 	pd->dma_end_request_from_callback = 0;
+-
+ 	drive->waiting_for_dma = 1;
+ 	return 0;
+ }
+@@ -928,7 +989,9 @@ static int ide_piodma_end (ide_drive_t *
+ 	PDMA_TRACE("%s: terminating PIO DMA transaction\n", drive->name);
+ 
+ 	drive->waiting_for_dma = 0;
+-	dma_stop_channel(pd->dma_chan_id);
++	if( DMA_CHANNEL_STATUS_IDLE != dma_get_status(pd->dma_chan_id))
++		dma_stop_channel(pd->dma_chan_id);
++
+ 	dma_unmap_sg(NULL, hwif->sg_table, hwif->sg_nents,
+ 	             hwif->sg_dma_direction);
+ 	hwif->dma = 0;

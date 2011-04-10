@@ -1,0 +1,111 @@
+From a3b4f276313ef3b02f987e8bdb45b85bb4a55d99 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Tue, 22 Sep 2009 13:23:47 +0100
+Subject: [PATCH] stm_nand_flex: Implement flex_verify_buf()
+
+Add flex_verify_buf() to the FLEX mode NAND driver, required for
+CONFIG_MTD_NAND_VERIFY_WRITE support.  (However, in practice, the use of
+NAND_VERIFY_WRITE is fairly limited since it fails on single bit-errors, which
+would otherwise be corrected by ECC.)
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ drivers/mtd/nand/stm_nand_flex.c |   42 ++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index cd78cf1..192fb73 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -39,6 +39,13 @@
+  *      FLEX data register...
+  *
+  *  Changelog:
++ *
++ *	2009-09-21 Angus Clark <angus.clark@st.com>
++ *		- Add flex_verify_buf
++ *	2009-09-15 Angus Clark <angus.clark@st.com>
++ *		- Update for new clock LLA
++ *	2009-09-03 Angus Clark <angus.clark@st.com>
++ *		- Workaround for WAIT_RBN bug, GNBvd77579
+  *	2009-03-12 Angus Clark <angus.clark@st.com>
+  *		- first version
+  *
+@@ -238,7 +245,6 @@ static int flex_rbn(struct mtd_info *mtd)
+ static void flex_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
+ {
+ 	uint8_t *p;
+-	uint32_t reg;
+ 
+ 	/* Handle non-aligned buffer */
+ 	p = ((uint32_t)buf & 0x3) ? flex.buf : buf;
+@@ -261,7 +267,6 @@ static void flex_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
+ static void flex_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
+ {
+ 	uint8_t *p;
+-	uint32_t reg;
+ 
+ 	/* Handle non-aligned buffer */
+ 	if ((uint32_t)buf & 0x3) {
+@@ -283,6 +288,34 @@ static void flex_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
+ 
+ }
+ 
++static int flex_verify_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
++{
++
++	uint32_t *p = (uint32_t *)buf;
++	uint32_t d;
++	int ret = 0;
++	int i;
++
++	/* Switch to 4-byte reads */
++	flex_writereg(FLX_DATA_CFG_BEAT_4 | FLX_DATA_CFG_CSN_STATUS,
++		      EMINAND_FLEX_DATAREAD_CONFIG);
++
++	for (i = 0; i < len/4; i++) {
++		d = readl(flex.base_addr + EMINAND_FLEX_DATA);
++		if (d != *p++) {
++			ret = -EFAULT;
++			goto out1;
++		}
++	}
++
++ out1:
++	/* Switch back to 1-byte reads */
++	flex_writereg(FLX_DATA_CFG_BEAT_1 | FLX_DATA_CFG_CSN_STATUS,
++		      EMINAND_FLEX_DATAREAD_CONFIG);
++
++	return ret;
++}
++
+ #ifdef CONFIG_STM_NAND_FLEX_BOOTMODESUPPORT
+ /* OOB Layout for Boot Mode HW ECC (SP and LP devices) */
+ static struct nand_ecclayout boot_oob_16 = {
+@@ -882,11 +915,15 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	int res;
+ 	int i;
+ 
++#ifdef CONFIG_CPU_SUBTYPE_STX7200
+ 	uint32_t reg;
+ 	uint32_t prog[8] = {0};
++#endif
+ 
++#ifdef CONFIG_STM_NAND_FLEX_BOOTMODESUPPORT
+ 	char *boot_part_name;
+ 	int boot_part_found = 0;
++#endif
+ 
+ 	/* Initialise NAND controller */
+ 	res = flex_init_controller(pdev);
+@@ -938,6 +975,7 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	data->chip.read_byte = flex_read_byte;
+ 	data->chip.read_buf = flex_read_buf;
+ 	data->chip.write_buf = flex_write_buf;
++	data->chip.verify_buf = flex_verify_buf;
+ 	data->chip.waitfunc = flex_nand_wait;
+ 	if (stmdata->flex_rbn_connected)
+ 		data->chip.dev_ready = flex_rbn;
+-- 
+1.6.0.6
+

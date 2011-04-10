@@ -1,0 +1,139 @@
+From b4284565cab43a7f5775492d6735d41765ace913 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 18 Nov 2009 13:01:20 +0000
+Subject: [PATCH] sh_stm: Adds support for serial flash device (via SPI_STM_SSC) on fldb board
+
+This patch adds a serial flash device, via the SPI_STM_SSC driver, for the fldb
+board.
+---
+ arch/sh/boards/st/fldb/setup.c   |   50 +++++++++++++++++++++++++++++++++++--
+ arch/sh/configs/fldbse_defconfig |   19 +++++++++++++-
+ 2 files changed, 64 insertions(+), 5 deletions(-)
+
+diff --git a/arch/sh/boards/st/fldb/setup.c b/arch/sh/boards/st/fldb/setup.c
+index d2f759a..fa608bc 100644
+--- a/arch/sh/boards/st/fldb/setup.c
++++ b/arch/sh/boards/st/fldb/setup.c
+@@ -21,6 +21,8 @@
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/physmap.h>
+ #include <linux/mtd/partitions.h>
++#include <linux/spi/spi.h>
++#include <linux/spi/flash.h>
+ #include <linux/stm/emi.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/nand.h>
+@@ -56,7 +58,7 @@ static struct plat_ssc_data fldb_ssc_private_info = {
+ 		ssc1_has(SSC_I2C_CAPABILITY) |
+ 		ssc2_has(SSC_I2C_CAPABILITY) |
+ 		ssc3_has(SSC_I2C_CAPABILITY) |
+-		ssc4_has(SSC_UNCONFIGURED),
++		ssc4_has(SSC_SPI_CAPABILITY),
+ };
+ 
+ 
+@@ -149,13 +151,45 @@ static struct platform_device fldb_nor_flash = {
+ 	},
+ };
+ 
++static struct mtd_partition fldb_serial_flash_mtd_parts[] = {
++	{
++		.name = "SerialFlash_1",
++		.size = 0x00080000,
++		.offset = 0,
++	}, {
++		.name = "SerialFlash_2",
++		.size = MTDPART_SIZ_FULL,
++		.offset = MTDPART_OFS_NXTBLK,
++	},
++};
++
++
++static struct flash_platform_data fldb_serial_flash_data = {
++	.name = "m25p80",
++	.parts = fldb_serial_flash_mtd_parts,
++	.nr_parts = ARRAY_SIZE(fldb_serial_flash_mtd_parts),
++	.type = "m25p32",
++};
++
++/* SPI 'board_info' to register serial FLASH protocol driver */
++static struct spi_board_info fldb_serial_flash[] =  {
++	{
++		.modalias	= "m25p80",
++		.bus_num	= 0,
++		.chip_select	= spi_set_cs(17, 4),
++		.max_speed_hz	= 7000000,
++		.platform_data	= &fldb_serial_flash_data,
++		.mode		= SPI_MODE_3,
++	},
++};
++
+ static struct mtd_partition fldb_nand_flash_mtd_parts[] = {
+ 	{
+-		.name   = "NAND root",
++		.name   = "NANDFlash_1",
+ 		.offset = 0,
+ 		.size   = 0x00800000
+ 	}, {
+-		.name   = "NAND home",
++		.name   = "NANDFlash_2",
+ 		.offset = MTDPART_OFS_APPEND,
+ 		.size   = MTDPART_SIZ_FULL
+ 	},
+@@ -272,6 +306,13 @@ static int __init fldb_device_init(void)
+ 		gpio_direction_output(FLDB_GPIO_PCI_IDSEL, 1);
+ 	else
+ 		printk(KERN_ERR "fldb: Failed to claim PCI_IDSEL PIO!\n");
++
++	/* We're not using the SPIBoot controller, so disable here and release
++	 * the pads. */
++	sc = sysconf_claim(CFG_COMMS_CONFIG_2, 13, 13, "spi_enable");
++	sysconf_write(sc, 0);
++	sysconf_release(sc);
++
+ 	/* And finally! */
+ 	fli7510_configure_pci(&fldb_pci_config);
+ 
+@@ -281,6 +322,9 @@ static int __init fldb_device_init(void)
+ 	fli7510_configure_ethernet(fli7510_ethernet_mii, 0, 0);
+ 	fli7510_configure_lirc(NULL);
+ 	fli7510_configure_nand(&fldb_nand_flash);
++	spi_register_board_info(fldb_serial_flash,
++				ARRAY_SIZE(fldb_serial_flash));
++
+ 
+ 	return platform_add_devices(fldb_devices,
+ 			ARRAY_SIZE(fldb_devices));
+diff --git a/arch/sh/configs/fldbse_defconfig b/arch/sh/configs/fldbse_defconfig
+index 651b530..e1b22bf 100644
+--- a/arch/sh/configs/fldbse_defconfig
++++ b/arch/sh/configs/fldbse_defconfig
+@@ -855,8 +855,23 @@ CONFIG_I2C_STM=y
+ #
+ # SPI support
+ #
+-# CONFIG_SPI is not set
+-# CONFIG_SPI_MASTER is not set
++CONFIG_SPI=y
++CONFIG_SPI_MASTER=y
++
++#
++# SPI Master Controller Drivers
++#
++CONFIG_SPI_BITBANG=y
++CONFIG_SPI_STM=y
++# CONFIG_SPI_STM_PIO is not set
++CONFIG_SPI_STM_SSC=y
++
++#
++# SPI Protocol Masters
++#
++# CONFIG_SPI_AT25 is not set
++# CONFIG_SPI_SPIDEV is not set
++# CONFIG_SPI_TLE62X0 is not set
+ CONFIG_HAVE_GPIO_LIB=y
+ 
+ #
+-- 
+1.6.0.6
+

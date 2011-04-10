@@ -1,0 +1,347 @@
+From 9edc2904383c97b8ec67798a02e052cf0c4eb055 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 22 Aug 2008 14:40:04 +0100
+Subject: [PATCH] sound_stm: CAPITALISED names Normalised...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ include/sound/stm.h       |    2 +-
+ sound/stm/common.c        |    2 +-
+ sound/stm/conv.c          |    2 +-
+ sound/stm/conv_dummy.c    |    4 ++--
+ sound/stm/conv_epld.c     |    4 ++--
+ sound/stm/conv_gpio.c     |    4 ++--
+ sound/stm/conv_i2c.c      |    4 ++--
+ sound/stm/conv_i2sspdif.c |    2 +-
+ sound/stm/conv_int_dac.c  |    2 +-
+ sound/stm/fsynth.c        |    4 ++--
+ sound/stm/init.c          |    4 ++--
+ sound/stm/pcm_player.c    |    2 +-
+ sound/stm/pcm_reader.c    |    2 +-
+ sound/stm/spdif_player.c  |    2 +-
+ sound/stm/stx7105.c       |    4 ++--
+ sound/stm/stx710x.c       |    4 ++--
+ sound/stm/stx7111.c       |    4 ++--
+ sound/stm/stx7200.c       |    4 ++--
+ 18 files changed, 28 insertions(+), 28 deletions(-)
+
+diff --git a/include/sound/stm.h b/include/sound/stm.h
+index 568da71..89f82fe 100644
+--- a/include/sound/stm.h
++++ b/include/sound/stm.h
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index be88317..fad6bd9 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/conv.c b/sound/stm/conv.c
+index 2a69379..7c5970f 100644
+--- a/sound/stm/conv.c
++++ b/sound/stm/conv.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/conv_dummy.c b/sound/stm/conv_dummy.c
+index 9daa1cf..ebfc9ba 100644
+--- a/sound/stm/conv_dummy.c
++++ b/sound/stm/conv_dummy.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -161,7 +161,7 @@ static void __exit snd_stm_conv_dummy_exit(void)
+ 	platform_driver_unregister(&snd_stm_conv_dummy_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics dummy audio converter driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/conv_epld.c b/sound/stm/conv_epld.c
+index 3fe6d4a..086e1ba 100644
+--- a/sound/stm/conv_epld.c
++++ b/sound/stm/conv_epld.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -313,7 +313,7 @@ static void __exit snd_stm_conv_epld_exit(void)
+ 	platform_driver_unregister(&snd_stm_conv_epld_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics EPLD-controlled audio converter driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/conv_gpio.c b/sound/stm/conv_gpio.c
+index 2ec4713..4f06d43 100644
+--- a/sound/stm/conv_gpio.c
++++ b/sound/stm/conv_gpio.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -412,7 +412,7 @@ static void __exit snd_stm_conv_gpio_exit(void)
+ 	platform_driver_unregister(&snd_stm_conv_gpio_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics GPIO-controlled audio converter driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/conv_i2c.c b/sound/stm/conv_i2c.c
+index 246d043..94bb0d4 100644
+--- a/sound/stm/conv_i2c.c
++++ b/sound/stm/conv_i2c.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -355,7 +355,7 @@ static void __exit snd_stm_conv_i2c_exit(void)
+ 	i2c_del_driver(&snd_stm_conv_i2c_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics I2C-controlled audio converter driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/conv_i2sspdif.c b/sound/stm/conv_i2sspdif.c
+index 35602b4..e5abefd 100644
+--- a/sound/stm/conv_i2sspdif.c
++++ b/sound/stm/conv_i2sspdif.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/conv_int_dac.c b/sound/stm/conv_int_dac.c
+index 74281ec..3971aa6 100644
+--- a/sound/stm/conv_int_dac.c
++++ b/sound/stm/conv_int_dac.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/fsynth.c b/sound/stm/fsynth.c
+index 1184800..8ca51f1 100644
+--- a/sound/stm/fsynth.c
++++ b/sound/stm/fsynth.c
+@@ -4,8 +4,8 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Authors: Pawel MOLL <pawel.moll@st.com>
+- *            Daniel THOMPSON <daniel.thompson@st.com>
++ *   Authors: Pawel Moll <pawel.moll@st.com>
++ *            Daniel Thompson <daniel.thompson@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/init.c b/sound/stm/init.c
+index cd21c9c..2f97084 100644
+--- a/sound/stm/init.c
++++ b/sound/stm/init.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -121,7 +121,7 @@ static void __exit snd_stm_exit(void)
+ 	snd_stm_info_dispose();
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics System-on-Chips' audio core driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 413b128..19bf885 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *           Mark Glaisher
+  *
+  *   This program is free software; you can redistribute it and/or modify
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index a098d3d..6ab5c12 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 2da5b13..05e7958 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+diff --git a/sound/stm/stx7105.c b/sound/stm/stx7105.c
+index f5ea85f..95b6d59 100644
+--- a/sound/stm/stx7105.c
++++ b/sound/stm/stx7105.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -583,7 +583,7 @@ static void __exit snd_stm_stx7105_exit(void)
+ 	platform_driver_unregister(&snd_stm_stx7105_glue_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics STx7105 audio driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/stx710x.c b/sound/stm/stx710x.c
+index 8826332..6066052 100644
+--- a/sound/stm/stx710x.c
++++ b/sound/stm/stx710x.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -562,7 +562,7 @@ static void __exit snd_stm_stx710x_exit(void)
+ 	platform_driver_unregister(&snd_stm_stx710x_glue_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics STx710x audio driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index 31a3e44..e3b8dc9 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -587,7 +587,7 @@ static void __exit snd_stm_stx7111_exit(void)
+ 	platform_driver_unregister(&snd_stm_stx7111_glue_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics STx7111 audio driver");
+ MODULE_LICENSE("GPL");
+ 
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index 9e5190e..3aeac7b 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -3,7 +3,7 @@
+  *
+  *   Copyright (c) 2005-2007 STMicroelectronics Limited
+  *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
++ *   Author: Pawel Moll <pawel.moll@st.com>
+  *
+  *   This program is free software; you can redistribute it and/or modify
+  *   it under the terms of the GNU General Public License as published by
+@@ -921,7 +921,7 @@ static void __exit snd_stm_stx7200_exit(void)
+ 	platform_driver_unregister(&snd_stm_stx7200_glue_driver);
+ }
+ 
+-MODULE_AUTHOR("Pawel MOLL <pawel.moll@st.com>");
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
+ MODULE_DESCRIPTION("STMicroelectronics STx7200 audio driver");
+ MODULE_LICENSE("GPL");
+ 
+-- 
+1.5.3.6
+

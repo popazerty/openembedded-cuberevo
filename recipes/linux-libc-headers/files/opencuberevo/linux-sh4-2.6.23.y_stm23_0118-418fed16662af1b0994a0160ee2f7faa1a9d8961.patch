@@ -1,0 +1,166 @@
+From 418fed16662af1b0994a0160ee2f7faa1a9d8961 Mon Sep 17 00:00:00 2001
+From: Angelo Castello <angelo.castello@st.com>
+Date: Wed, 11 Feb 2009 13:42:19 +0000
+Subject: [PATCH] sh_stm: add lirc support for STi5197
+
+For IR-RX/TX no hardware setting are required.
+For UHF-RX following board-mods are required:
+MB704 - need a wired link from J14-C to J14-E
+MB676 - need a wired link from  J6-E to J15-A.
+
+Signed-off-by: Angelo Castello <angelo.castello@st.com>
+---
+ arch/sh/boards/st/mb704/setup.c        |   10 ++++
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |   72 ++++++++++++++++++++++++++++++++
+ drivers/char/lirc/Kconfig              |    4 +-
+ include/linux/stm/soc.h                |    1 +
+ 4 files changed, 85 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb704/setup.c b/arch/sh/boards/st/mb704/setup.c
+index 42adec3..e1db97a 100644
+--- a/arch/sh/boards/st/mb704/setup.c
++++ b/arch/sh/boards/st/mb704/setup.c
+@@ -118,6 +118,15 @@ static struct platform_device *mb704_devices[] __initdata = {
+ 	&mb704_phy_device,
+ };
+ 
++/* Configuration based on Futarque-RC signals train. */
++lirc_scd_t lirc_scd = {
++	.code = 0x3FFFC028,
++	.codelen = 0x1e,
++	.alt_codelen = 0,
++	.nomtime = 0x1f4,
++	.noiserecov = 0,
++};
++
+ static int __init device_init(void)
+ {
+ 	/*
+@@ -128,6 +137,7 @@ static int __init device_init(void)
+ 	stx5197_configure_ssc(&ssc_private_info);
+ 	stx5197_configure_usb();
+ 	stx5197_configure_ethernet(0, 1, 0);
++	stx5197_configure_lirc(&lirc_scd);
+ 
+ 	spi_register_board_info(&mb704_spi_device, 1);
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index e51e060..5d373ad 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -455,6 +455,78 @@ void stx5197_configure_pwm(struct plat_stm_pwm_data *data)
+ 	platform_device_register(&stm_pwm_device);
+ }
+ 
++/* LiRC resources ---------------------------------------------------------- */
++static struct lirc_pio lirc_pios[] = {
++	[0] = {
++		.bank  = 2,
++		.pin   = 5,
++		.dir   = STPIO_IN,
++		.pinof = 0x00 | LIRC_IR_RX  | LIRC_PIO_ON
++	},
++	[1] = {
++		.bank  = 2,
++		.pin   = 6,
++		.dir   = STPIO_IN,
++		.pinof = 0x00 | LIRC_UHF_RX | LIRC_PIO_ON
++		/* To have UHF available on :
++		   MB704: need one wire from J14-C to J14-E
++		   MB676: need one wire from  J6-E to J15-A */
++	},
++	[2] = {
++		.bank  = 2,
++		.pin   = 7,
++		.dir   = STPIO_ALT_OUT,
++		.pinof = 0x00 | LIRC_IR_TX | LIRC_PIO_ON
++	}
++};
++
++static struct plat_lirc_data lirc_private_info = {
++	/* The clock settings will be calculated by the driver
++	 * from the system clock
++	 */
++	.irbclock	= 0, /* use current_cpu data */
++	.irbclkdiv      = 0, /* automatically calculate */
++	.irbperiodmult  = 0,
++	.irbperioddiv   = 0,
++	.irbontimemult  = 0,
++	.irbontimediv   = 0,
++	.irbrxmaxperiod = 0x5000,
++	.sysclkdiv	= 1,
++	.rxpolarity	= 1,
++	.pio_pin_arr  = lirc_pios,
++	.num_pio_pins = ARRAY_SIZE(lirc_pios)
++};
++
++static struct resource lirc_resource[] = {
++	[0] = {
++		.start = 0xfd118000,
++		.end   = 0xfd118000 + 0xa8,
++		.flags = IORESOURCE_MEM
++	},
++	[1] = {
++		.start = ILC_IRQ(19),
++		.end   = ILC_IRQ(19),
++		.flags = IORESOURCE_IRQ
++	},
++};
++
++static struct platform_device lirc_device = {
++	.name           = "lirc",
++	.id             = -1,
++	.num_resources  = ARRAY_SIZE(lirc_resource),
++	.resource       = lirc_resource,
++	.dev = {
++		.platform_data = &lirc_private_info
++	}
++};
++
++void __init stx5197_configure_lirc(lirc_scd_t *scd)
++{
++	lirc_private_info.scd_info = scd;
++
++	platform_device_register(&lirc_device);
++}
++
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+diff --git a/drivers/char/lirc/Kconfig b/drivers/char/lirc/Kconfig
+index 2838aa4..5f1424c 100644
+--- a/drivers/char/lirc/Kconfig
++++ b/drivers/char/lirc/Kconfig
+@@ -261,7 +261,7 @@ config LIRC_SUPPORT
+ 			depends on LIRC_SIR
+         config LIRC_STM
+                 tristate "STM Lirc support"
+-                depends on LIRC_SUPPORT && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB448 || SH_ST_HMS1 || SH_ST_MB520 || SH_ST_MB618 || SH_ST_MB680)
++                depends on LIRC_SUPPORT && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB448 || SH_ST_HMS1 || SH_ST_MB520 || SH_ST_MB618 || SH_ST_MB680 || SH_ST_MB704)
+ 		help
+ 		  The IR and UHF are identical and independent, except
+ 		  that the IRB receiver does not use the noise filter.
+@@ -270,7 +270,7 @@ config LIRC_SUPPORT
+ 
+         config LIRC_STM_UHF_RX
+ 	        bool "UHF Receiver mode"
+-		depends on LIRC_STM && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB520 || SH_ST_MB618 || SH_ST_MB680)
++		depends on LIRC_STM && (SH_ST_MB411 || SH_ST_MB442 || SH_ST_MB520 || SH_ST_MB618 || SH_ST_MB680 || SH_ST_MB704)
+ 		help
+ 		  This causes the driver to use UHF RX mode.
+ 
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 12e95f6..bea5a92 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -370,6 +370,7 @@ void stx5197_configure_usb(void);
+ void stx5197_configure_ethernet(int rmii, int ext_clk, int phy_bus);
+ void stx5197_configure_ssc(struct plat_ssc_data *data);
+ void stx5197_configure_pwm(struct plat_stm_pwm_data *data);
++void stx5197_configure_lirc(lirc_scd_t *scd);
+ 
+ void stx7100_early_device_init(void);
+ void stb7100_configure_asc(const int *ascs, int num_ascs, int console);
+-- 
+1.5.6.3
+

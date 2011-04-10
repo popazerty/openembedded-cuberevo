@@ -1,0 +1,452 @@
+From 1fb81e11e02a50a5fbf89dd6aca16c94374d6933 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Wed, 1 Jul 2009 14:42:52 +0100
+Subject: [PATCH] sh_stm: multiple vectors per irq fixup
+
+Commit 529fc1d0860787779b66cd57674aabcb747f2236 "stm: pm: Register INTC as
+sysdev device" backported most of the mainline sh-2.6 kernel commit
+bdaa6e8062d7f8085d8ed94ff88c99406ad53d79 "sh: multiple vectors per irq - base",
+but unfortunately not all of them...
+
+This patch:
+
+- fixes the interrupt demuxing in do_IRQ, which now must go via the
+  intc_evt2irq() instead of evt2irq() (to make use of the
+  intc_evt2irq_table, which translates multi-evt-interrupts to the
+  first declared one),
+
+- adapts all the BSPs, merging TMU2_*, RTC_* and SCIF_* interrupts
+  into single ones (one enum per few evt codes), and removing groups
+  declared for them previously,
+
+- changes interrupt resources for SH-RTC device in the 7100 BSP,
+
+- in case of 7200, the SH-RTC device definition is removed completely,
+  as the ST40-300 (cut 2+) doesn't contain the RTC at all (and we are
+  hoping not to see 7200 cut 1 again ;-)
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |   59 +++++++++-------------------
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |   18 ++------
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |   12 ++----
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |    9 +---
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |   15 +------
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |   67 ++++----------------------------
+ arch/sh/kernel/irq.c                   |    2 +-
+ include/asm-sh/hw_irq.h                |    1 +
+ 8 files changed, 43 insertions(+), 140 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index a075f9f..743758d 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -566,34 +566,22 @@ void stx7100_configure_pwm(struct plat_stm_pwm_data *data)
+ }
+ 
+ /* SH-RTC resources ----------------------------------------------------------- */
+-static struct resource rtc_resource[]= {
+-        [0] = {
+-		.start = 0xffc80000,
+-		.end   = 0xffc80000 + 0x3c,
+-	        .flags = IORESOURCE_IO
+-	},
+-	[1] = { /* periodic irq */
+-		.start = 21,
+-		.end   = 21,
+-	        .flags = IORESOURCE_IRQ
+-	},
+-	[2] = { /* carry irq */
+-		.start = 22,
+-		.end   = 22,
+-	        .flags = IORESOURCE_IRQ
+-	},
+-	[3] = { /* alarm irq */
+-		.start = 20,
+-		.end   = 20,
+-	        .flags = IORESOURCE_IRQ
+-	},
+-};
+ 
+ static struct platform_device rtc_device = {
+ 	.name           = "sh-rtc",
+ 	.id             = -1,
+-	.num_resources  = ARRAY_SIZE(rtc_resource),
+-	.resource       = rtc_resource,
++	.num_resources  = 2,
++	.resource       = (struct resource []) {
++		{
++			.start = 0xffc80000,
++			.end   = 0xffc80000 + 0x3c,
++			.flags = IORESOURCE_IO
++		}, { /* Shared Period/Carry/Alarm IRQ */
++			.start = 20,
++			.end   = 20,
++			.flags = IORESOURCE_IRQ
++		},
++	},
+ };
+ 
+ /* LiRC resources ---------------------------------------------------------- */
+@@ -927,11 +915,7 @@ enum {
+ 
+ 	/* interrupt sources */
+ 	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
+-	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
+-	RTC_ATI, RTC_PRI, RTC_CUI,
+-	SCIF_ERI, SCIF_RXI, SCIF_BRI, SCIF_TXI,
+-	WDT,
+-	HUDI,
++	TMU0, TMU1, TMU2, RTC, SCIF, WDT, HUDI,
+ 
+ 	SATA_DMAC, SATA_HOSTC,
+ 	PIO0, PIO1, PIO2,
+@@ -953,7 +937,6 @@ enum {
+ 	ICAM3_KTE, ICAM3, MES_LMI_VID, MES_LMI_SYS,	/* Group 15 */
+ 
+ 	/* interrupt groups */
+-	TMU2, RTC, SCIF,
+ 	SATA_SPLIT,
+ 	GROUP0, GROUP1, GROUP2, GROUP3,
+ 	GROUP4, GROUP5, GROUP6, GROUP7,
+@@ -962,12 +945,12 @@ enum {
+ };
+ 
+ static struct intc_vect vectors[] = {
+-	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
+-	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
+-	INTC_VECT(RTC_ATI, 0x480), INTC_VECT(RTC_PRI, 0x4a0),
+-	INTC_VECT(RTC_CUI, 0x4c0),
+-	INTC_VECT(SCIF_ERI, 0x4e0), INTC_VECT(SCIF_RXI, 0x500),
+-	INTC_VECT(SCIF_BRI, 0x520), INTC_VECT(SCIF_TXI, 0x540),
++	INTC_VECT(TMU0, 0x400),
++	INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
++	INTC_VECT(RTC, 0x480), INTC_VECT(RTC, 0x4a0), INTC_VECT(RTC, 0x4c0),
++	INTC_VECT(SCIF, 0x4e0), INTC_VECT(SCIF, 0x500),
++		INTC_VECT(SCIF, 0x520), INTC_VECT(SCIF, 0x540),
+ 	INTC_VECT(WDT, 0x560),
+ 	INTC_VECT(HUDI, 0x600),
+ 
+@@ -1008,10 +991,6 @@ static struct intc_vect vectors[] = {
+ };
+ 
+ static struct intc_group groups[] = {
+-	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
+-	INTC_GROUP(RTC, RTC_ATI, RTC_PRI, RTC_CUI),
+-	INTC_GROUP(SCIF, SCIF_ERI, SCIF_RXI, SCIF_BRI, SCIF_TXI),
+-
+ 	INTC_GROUP(SATA_SPLIT, SATA_DMAC, SATA_HOSTC),
+ 	INTC_GROUP(GROUP0, PIO5, PIO4, PIO3, MTP),
+ 	INTC_GROUP(GROUP1, SSC2, SSC1, SSC0),
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index 214d613..bc6a02f 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -771,25 +771,17 @@ enum {
+ 
+ 	/* interrupt sources */
+ 	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
+-	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
+-	WDT,
+-	HUDI,
+-
+-	/* interrupt groups */
+-	TMU2, RTC,
++	TMU0, TMU1, TMU2, WDT, HUDI,
+ };
+ 
+ static struct intc_vect vectors[] = {
+-	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
+-	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
++	INTC_VECT(TMU0, 0x400),
++	INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
+ 	INTC_VECT(WDT, 0x560),
+ 	INTC_VECT(HUDI, 0x600),
+ };
+ 
+-static struct intc_group groups[] = {
+-	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
+-};
+-
+ static struct intc_prio_reg prio_registers[] = {
+ 					   /*   15-12, 11-8,  7-4,   3-0 */
+ 	{ 0xffd00004, 0, 16, 4, /* IPRA */     { TMU0, TMU1, TMU2,       } },
+@@ -798,7 +790,7 @@ static struct intc_prio_reg prio_registers[] = {
+ 	{ 0xffd00010, 0, 16, 4, /* IPRD */     { IRL0, IRL1,  IRL2, IRL3 } },
+ };
+ 
+-static DECLARE_INTC_DESC(intc_desc, "stx5197", vectors, groups,
++static DECLARE_INTC_DESC(intc_desc, "stx5197", vectors, NULL,
+ 			 NULL, prio_registers, NULL);
+ 
+ void __init plat_irq_setup(void)
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 5d690f7..874a102 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1266,9 +1266,7 @@ enum {
+ 
+ 	/* interrupt sources */
+ 	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
+-	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
+-	WDT,
+-	HUDI,
++	TMU0, TMU1, TMU2, WDT, HUDI,
+ 
+ 	I2S2SPDIF0,					/* Group 0 */
+ 	I2S2SPDIF1, I2S2SPDIF2, I2S2SPDIF3, SATA_DMAC,
+@@ -1298,7 +1296,6 @@ enum {
+ 	ICAM3_KTE, ICAM3, KEY_SCANNER, MES,		/* Group 16 */
+ 
+ 	/* interrupt groups */
+-	TMU2,
+ 	GROUP0_0, GROUP0_1,
+ 	GROUP1, GROUP2, GROUP3,
+ 	GROUP4, GROUP5, GROUP6, GROUP7,
+@@ -1308,8 +1305,9 @@ enum {
+ };
+ 
+ static struct intc_vect vectors[] = {
+-	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
+-	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
++	INTC_VECT(TMU0, 0x400),
++	INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
+ 	INTC_VECT(WDT, 0x560),
+ 	INTC_VECT(HUDI, 0x600),
+ 
+@@ -1359,8 +1357,6 @@ static struct intc_vect vectors[] = {
+ };
+ 
+ static struct intc_group groups[] = {
+-	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
+-
+ 	/* I2S2SPDIF0 is a single bit group */
+ 	INTC_GROUP(GROUP0_0, I2S2SPDIF1, I2S2SPDIF2, I2S2SPDIF3, SATA_DMAC),
+ 	INTC_GROUP(GROUP0_1, SATA_HOSTC, DVP, STANDALONE_PIO,
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 7401f93..79df6be 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -922,9 +922,7 @@ enum {
+ 
+ 	/* interrupt sources */
+ 	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
+-	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
+-	WDT,
+-	HUDI,
++	TMU0, TMU1, TMU2, WDT, HUDI,
+ 
+ 	PCI_DEV0, PCI_DEV1, PCI_DEV2, PCI_DEV3,		/* Group 0 */
+ 	I2S2SPDIF1, I2S2SPDIF2, I2S2SPDIF3,
+@@ -952,7 +950,6 @@ enum {
+ 	ICAM3_KTE, ICAM3, KEY_SCANNER, MES_LMI_SYS,	/* Group 16 */
+ 
+ 	/* interrupt groups */
+-	TMU2, RTC,
+ 	GROUP0_1, GROUP0_2, GROUP1, GROUP2, GROUP3,
+ 	GROUP4, GROUP5, GROUP6, GROUP7,
+ 	GROUP8, GROUP9, GROUP10, GROUP11,
+@@ -962,7 +959,7 @@ enum {
+ 
+ static struct intc_vect vectors[] = {
+ 	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
+-	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
++	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
+ 	INTC_VECT(WDT, 0x560),
+ 	INTC_VECT(HUDI, 0x600),
+ 
+@@ -1010,8 +1007,6 @@ static struct intc_vect vectors[] = {
+ };
+ 
+ static struct intc_group groups[] = {
+-	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
+-
+ 	/* PCI_DEV0 is not grouped */
+ 	INTC_GROUP(GROUP0_1, PCI_DEV1, PCI_DEV2, PCI_DEV3,
+ 		   I2S2SPDIF1),
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 91f5515..590aaca 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -1364,25 +1364,16 @@ enum {
+ 
+ 	/* interrupt sources */
+ 	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
+-	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
+-	WDT,
+-	HUDI,
+-
+-	/* interrupt groups */
+-	TMU2, RTC,
++	TMU0, TMU1, TMU2, WDT, HUDI,
+ };
+ 
+ static struct intc_vect vectors[] = {
+ 	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
+-	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
++	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
+ 	INTC_VECT(WDT, 0x560),
+ 	INTC_VECT(HUDI, 0x600),
+ };
+ 
+-static struct intc_group groups[] = {
+-	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
+-};
+-
+ static struct intc_prio_reg prio_registers[] = {
+ 					   /*   15-12, 11-8,  7-4,   3-0 */
+ 	{ 0xffd00004, 0, 16, 4, /* IPRA */     { TMU0, TMU1, TMU2,       } },
+@@ -1391,7 +1382,7 @@ static struct intc_prio_reg prio_registers[] = {
+ 	{ 0xffd00010, 0, 16, 4, /* IPRD */     { IRL0, IRL1,  IRL2, IRL3 } },
+ };
+ 
+-static DECLARE_INTC_DESC(intc_desc, "stx7141", vectors, groups,
++static DECLARE_INTC_DESC(intc_desc, "stx7141", vectors, NULL,
+ 			 NULL, prio_registers, NULL);
+ 
+ void __init plat_irq_setup(void)
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index d5cd3b2..f5f80a0 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -786,37 +786,6 @@ void stx7200_configure_pwm(struct plat_stm_pwm_data *data)
+ 	platform_device_register(&stm_pwm_device);
+ }
+ 
+-/* SH-RTC resources ----------------------------------------------------------- */
+-static struct resource rtc_resource[]= {
+-        [0] = {
+-		.start = 0xffc80000,
+-		.end   = 0xffc80000 + 0x3c,
+-	        .flags = IORESOURCE_IO
+-	},
+-	[1] = { /* periodic irq */
+-		.start = 21,
+-		.end   = 21,
+-	        .flags = IORESOURCE_IRQ
+-	},
+-	[2] = { /* carry irq */
+-		.start = 22,
+-		.end   = 22,
+-	        .flags = IORESOURCE_IRQ
+-	},
+-	[3] = { /* alarm irq */
+-		.start = 20,
+-		.end   = 20,
+-	        .flags = IORESOURCE_IRQ
+-	},
+-};
+-
+-static struct platform_device rtc_device = {
+-	.name           = "sh-rtc",
+-	.id             = -1,
+-	.num_resources  = ARRAY_SIZE(rtc_resource),
+-	.resource       = rtc_resource,
+-};
+-
+ /* LiRC resources ---------------------------------------------------------- */
+ static struct lirc_pio lirc_pios[] = {
+ 	[0] = {
+@@ -1099,12 +1068,6 @@ void __init stx7200_early_device_init(void)
+ 	 * clock which is derived from the SATA clock. */
+ 	ctrl_outl(0, 0xFD701048);
+ 
+-	/* Configure the ST40 RTC to source its clock from clockgenB.
+-	 * In theory this should be board specific, but so far nobody
+-	 * has ever done this. */
+-	sc = sysconf_claim(SYS_CFG, 8, 1, 1, "rtc");
+-	sysconf_write(sc, 1);
+-
+ 	/* We haven't configured the LPC, so the sleep instruction may
+ 	 * do bad things. Thus we disable it here. */
+ 	disable_hlt();
+@@ -1153,7 +1116,6 @@ static struct platform_device *stx7200_devices[] __initdata = {
+ 	&stx7200_fdma_xbar_device,
+ 	&sysconf_device,
+ 	&ilc3_device,
+-        &rtc_device,
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
+ 	&emi,
+@@ -1179,33 +1141,20 @@ enum {
+ 	UNUSED = 0,
+ 
+ 	/* interrupt sources */
+-	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
+-	RTC_ATI, RTC_PRI, RTC_CUI,
+-	SCIF_ERI, SCIF_RXI, SCIF_BRI, SCIF_TXI,
+-	WDT,
+-	HUDI,
+-
+-	/* interrupt groups */
+-	TMU2, RTC, SCIF,
++	TMU0, TMU1, TMU2, RTC, SCIF, WDT, HUDI,
+ };
+ 
+ static struct intc_vect vectors[] = {
+-	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
+-	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
+-	INTC_VECT(RTC_ATI, 0x480), INTC_VECT(RTC_PRI, 0x4a0),
+-	INTC_VECT(RTC_CUI, 0x4c0),
+-	INTC_VECT(SCIF_ERI, 0x4e0), INTC_VECT(SCIF_RXI, 0x500),
+-	INTC_VECT(SCIF_BRI, 0x520), INTC_VECT(SCIF_TXI, 0x540),
++	INTC_VECT(TMU0, 0x400),
++	INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
++	INTC_VECT(RTC, 0x480), INTC_VECT(RTC, 0x4a0), INTC_VECT(RTC, 0x4c0),
++	INTC_VECT(SCIF, 0x4e0), INTC_VECT(SCIF, 0x500),
++		INTC_VECT(SCIF, 0x520), INTC_VECT(SCIF, 0x540),
+ 	INTC_VECT(WDT, 0x560),
+ 	INTC_VECT(HUDI, 0x600),
+ };
+ 
+-static struct intc_group groups[] = {
+-	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
+-	INTC_GROUP(RTC, RTC_ATI, RTC_PRI, RTC_CUI),
+-	INTC_GROUP(SCIF, SCIF_ERI, SCIF_RXI, SCIF_BRI, SCIF_TXI),
+-};
+-
+ static struct intc_prio_reg prio_registers[] = {
+ 					/*  15-12, 11-8,  7-4,   3-0 */
+ 	{ 0xffd00004, 0, 16, 4, /* IPRA */ { TMU0, TMU1, TMU2,   RTC } },
+@@ -1213,7 +1162,7 @@ static struct intc_prio_reg prio_registers[] = {
+ 	{ 0xffd0000c, 0, 16, 4, /* IPRC */ {    0,    0,    0,  HUDI } },
+ };
+ 
+-static DECLARE_INTC_DESC(intc_desc, "stx7200", vectors, groups,
++static DECLARE_INTC_DESC(intc_desc, "stx7200", vectors, NULL,
+ 			 NULL, prio_registers, NULL);
+ 
+ void __init plat_irq_setup(void)
+diff --git a/arch/sh/kernel/irq.c b/arch/sh/kernel/irq.c
+index 5e493fc..41e4adf 100644
+--- a/arch/sh/kernel/irq.c
++++ b/arch/sh/kernel/irq.c
+@@ -107,7 +107,7 @@ asmlinkage int do_IRQ(unsigned int irq, struct pt_regs *regs)
+ 	}
+ #endif
+ 
+-	irq = evt2irq(irq);
++	irq = intc_evt2irq(irq);
+ 
+ #ifdef CONFIG_4KSTACKS
+ 	curctx = (union irq_ctx *)current_thread_info();
+diff --git a/include/asm-sh/hw_irq.h b/include/asm-sh/hw_irq.h
+index c958fda..7df913b 100644
+--- a/include/asm-sh/hw_irq.h
++++ b/include/asm-sh/hw_irq.h
+@@ -91,6 +91,7 @@ struct intc_desc symbol __initdata = {					\
+ 	chipname,							\
+ }
+ 
++unsigned int intc_evt2irq(unsigned int vector);
+ void __init register_intc_controller(struct intc_desc *desc);
+ int intc_set_priority(unsigned int irq, unsigned int prio);
+ 
+-- 
+1.6.0.6
+

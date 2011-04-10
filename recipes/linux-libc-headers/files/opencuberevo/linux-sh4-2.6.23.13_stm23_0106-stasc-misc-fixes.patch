@@ -1,0 +1,563 @@
+Fix a couple of niggles with the ASC driver:
+ - Fix the problem reported in bugzilla 2909, the multiple configuration of
+   one PIO pin.
+ - Also add the support requested in bugzilla 2909 for not configuring the
+   RTC/CTS pins if not required. Note this really needs double checking because
+   the table in the architecture manual is almost useless.
+ - Free the PIO pins when the port is released.
+ - Pass all the platform data to the asc driver so that the console can be
+   on any port, not just the default one.
+ - Fix the kgdb code so that it checks against the actual console device
+   instead of the default one.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -749,12 +749,18 @@ static unsigned int __initdata stm_stasc
+ 	{ STB7109_FDMA_REQ_UART_3_RX, STB7109_FDMA_REQ_UART_3_TX },
+ };
+ 
++/*
++ * Note these three variables are global, and shared with the stasc driver
++ * for console bring up prior to platform initialisation.
++ */
++
+ /* the serial console device */
+-struct platform_device *asc_default_console_device;
++int stasc_console_device __initdata;
+ 
+ /* Platform devices to register */
+-static struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
+-static int stasc_configured_devices_count __initdata = 0;
++struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
++unsigned int stasc_configured_devices_count __initdata = 0;
++
+ 
+ /* Configure the ASC's for this board.
+  * This has to be called before console_init().
+@@ -762,24 +768,28 @@ static int stasc_configured_devices_coun
+ void __init stb7100_configure_asc(const int *ascs, int num_ascs, int console)
+ {
+ 	int i;
+-	struct platform_device *pdev;
+ 
+ 	for (i=0; i<num_ascs; i++) {
++		int port;
++		unsigned char flags;
++		struct platform_device *pdev;
+ 		unsigned int *fdma_requests;
+ 
++		port = ascs[i] & 0xff;
++		flags = ascs[i] >> 8;
++		pdev = &stm_stasc_devices[port];
++
+ 		if (chip_7109)
+-			fdma_requests = stm_stasc_fdma_requests_7109[ascs[i]];
++			fdma_requests = stm_stasc_fdma_requests_7109[port];
+ 		else
+-			fdma_requests = stm_stasc_fdma_requests_7100[ascs[i]];
+-
+-		stm_stasc_devices[ascs[i]].resource[2].start = fdma_requests[0];
+-		stm_stasc_devices[ascs[i]].resource[2].end   = fdma_requests[0];
+-		stm_stasc_devices[ascs[i]].resource[3].start = fdma_requests[1];
+-		stm_stasc_devices[ascs[i]].resource[3].end   = fdma_requests[1];
++			fdma_requests = stm_stasc_fdma_requests_7100[port];
+ 
+-		pdev = &stm_stasc_devices[ascs[i]];
++		pdev->resource[2].start = fdma_requests[0];
++		pdev->resource[2].end   = fdma_requests[0];
++		pdev->resource[3].start = fdma_requests[1];
++		pdev->resource[3].end   = fdma_requests[1];
+ 
+-		switch (ascs[i]) {
++		switch (port) {
+ 		case 2:
+ 			if (sys_cfg7_0 == NULL)
+ 				sys_cfg7_0 = sysconf_claim(SYS_CFG, 7, 0, 0, "asc");
+@@ -788,10 +798,11 @@ void __init stb7100_configure_asc(const 
+ 		}
+ 
+ 		pdev->id = i;
++		((struct stasc_uart_data*)(pdev->dev.platform_data))->flags = flags;
+ 		stasc_configured_devices[stasc_configured_devices_count++] = pdev;
+ 	}
+ 
+-	asc_default_console_device = stasc_configured_devices[console];
++	stasc_console_device = console;
+ }
+ 
+ /* Add platform device as configured by board specific code */
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -938,12 +938,17 @@ static struct platform_device stm_stasc_
+ 			5, 4, 3, 5, 6),
+ };
+ 
++/*
++ * Note these three variables are global, and shared with the stasc driver
++ * for console bring up prior to platform initialisation.
++ */
++
+ /* the serial console device */
+-struct platform_device *asc_default_console_device;
++int stasc_console_device __initdata;
+ 
+ /* Platform devices to register */
+-static struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
+-static int stasc_configured_devices_count __initdata = 0;
++struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
++unsigned int stasc_configured_devices_count __initdata = 0;
+ 
+ /* Configure the ASC's for this board.
+  * This has to be called before console_init().
+@@ -957,8 +962,10 @@ void __init stx7200_configure_asc(const 
+ 		int port;
+ 		struct platform_device *pdev;
+ 		struct sysconf_field *sc;
++		unsigned char flags;
+ 
+-		port = ascs[i];
++		port = ascs[i] & 0xff;
++		flags = ascs[i] >> 8;
+ 		pdev = &stm_stasc_devices[port];
+ 
+ 		if ((port == 0) || (port == 1)) {
+@@ -973,26 +980,26 @@ void __init stx7200_configure_asc(const 
+ 		case 0:
+ 			/* Route UART0 instead of PDES to pins.
+ 			 * pdes_scmux_out = 0 */
+-#warning check these numbers
+ 			sc = sysconf_claim(SYS_CFG, 0,0,0, "asc");
+ 			sysconf_write(sc, 0);
+ 			break;
+ 
+ 		case 1:
+-			/* Ideally we need an option here to allow section
+-			 * of UART1, but with out RTS/CTS, to allow use
+-			 * of PIO1[4] and PIO1[5] for dvo. At which point
+-			 * this would need to become conditional.
++			/* Route UART1 RTS/CTS instead of dvo to pins.
+ 			 * conf_pad_pio[0] = 0 */
+-			sc = sysconf_claim(SYS_CFG, 7, 24, 24, "asc");
+-			sysconf_write(sc, 0);
++			if (!(flags & STASC_FLAG_NORTSCTS)) {
++				sc = sysconf_claim(SYS_CFG, 7, 24, 24, "asc");
++				sysconf_write(sc, 0);
++			}
+ 			break;
+ 
+ 		case 2:
+ 			/* Route UART2&3 or SCI inputs instead of DVP to pins.
+ 			 * conf_pad_dvp = 0 */
+-			sc = sysconf_claim(SYS_CFG, 40, 16, 16, "asc");
+-			sysconf_write(sc, 0);
++			if (!(flags & STASC_FLAG_NORTSCTS)) {
++				sc = sysconf_claim(SYS_CFG, 40, 16, 16, "asc");
++				sysconf_write(sc, 0);
++			}
+ 
+ 			/* Route UART2 (in and out) and PWM_OUT0 instead of SCI to pins.
+ 			 * ssc2_mux_sel = 0 */
+@@ -1007,15 +1014,19 @@ void __init stx7200_configure_asc(const 
+ 
+ 			/* No idea, more routing.
+ 			 * conf_pad_pio[0] = 0 */
+-			sc = sysconf_claim(SYS_CFG, 7, 24, 24, "asc");
+-			sysconf_write(sc, 0);
++			if (!(flags & STASC_FLAG_NORTSCTS)) {
++				sc = sysconf_claim(SYS_CFG, 7, 24, 24, "asc");
++				sysconf_write(sc, 0);
++			}
+ 			break;
+ 
+ 		case 3:
+ 			/* No idea, more routing.
+ 			 * conf_pad_pio[4] = 0 */
+-			sc = sysconf_claim(SYS_CFG, 7, 28, 28, "asc");
+-			sysconf_write(sc, 0);
++			if (!(flags & STASC_FLAG_NORTSCTS)) {
++				sc = sysconf_claim(SYS_CFG, 7, 28, 28, "asc");
++				sysconf_write(sc, 0);
++			}
+ 
+ 			/* Route UART3 (in and out) instead of SCI to pins
+ 			 * ssc3_mux_sel = 0 */
+@@ -1025,10 +1036,11 @@ void __init stx7200_configure_asc(const 
+ 		}
+ 
+ 		pdev->id = i;
++		((struct stasc_uart_data*)(pdev->dev.platform_data))->flags = flags;
+ 		stasc_configured_devices[stasc_configured_devices_count++] = pdev;
+ 	}
+ 
+-	asc_default_console_device = stasc_configured_devices[console];
++	stasc_console_device = console;
+ }
+ 
+ /* Add platform device as configured by board specific code */
+Index: linux-2.6.23-stm/drivers/serial/stasc.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/serial/stasc.c
++++ linux-2.6.23-stm/drivers/serial/stasc.c
+@@ -64,7 +64,7 @@ static int __init asc_console_setup (str
+ #ifdef CONFIG_KGDB_ST_ASC
+ static int kgdbasc_baud = CONFIG_KGDB_BAUDRATE;
+ static int kgdbasc_portno = CONFIG_KGDB_PORT_NUM;
+-# define kgdb_asc_port asc_ports[kgdbasc_portno]
++static struct asc_port *kgdb_asc_port;
+ #endif
+ 
+ /*---- Inline function definitions ---------------------------*/
+@@ -237,8 +237,10 @@ static const char *asc_type(struct uart_
+ 
+ static void asc_release_port(struct uart_port *port)
+ {
++	struct asc_port *ascport = container_of(port, struct asc_port, port);
+ 	struct platform_device *pdev = to_platform_device(port->dev);
+ 	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
++	int i;
+ 
+ 	release_mem_region(port->mapbase, size);
+ 
+@@ -246,6 +248,9 @@ static void asc_release_port(struct uart
+ 		iounmap(port->membase);
+ 		port->membase = NULL;
+ 	}
++
++	for (i=0; i<((ascport->flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++)
++		stpio_free_pin(ascport->pios[i]);
+ }
+ 
+ static int asc_request_port(struct uart_port *port)
+@@ -259,10 +264,9 @@ static int asc_request_port(struct uart_
+ /* Set type field if successful */
+ static void asc_config_port(struct uart_port *port, int flags)
+ {
+-	if (flags & UART_CONFIG_TYPE) {
++	if ((flags & UART_CONFIG_TYPE) &&
++	    (asc_request_port(port) == 0))
+ 		port->type = PORT_ASC;
+-		asc_request_port(port);
+-	}
+ }
+ 
+ static int
+@@ -304,7 +308,7 @@ static void __devinit asc_init_port(stru
+ 
+ 	port->iotype	= UPIO_MEM;
+ 	port->flags	= UPF_BOOT_AUTOCONF;
+-	port->ops	= &asc_uart_ops,
++	port->ops	= &asc_uart_ops;
+ 	port->fifosize	= FIFO_SIZE;
+ 	port->line	= pdev->id;
+ 	port->dev	= &pdev->dev;
+@@ -331,6 +335,16 @@ static void __devinit asc_init_port(stru
+ 	ascport->pio_port = data->pio_port;
+ 	for (i=0; i<4; i++)
+ 		ascport->pio_pin[i] = data->pio_pin[i];
++
++	ascport->flags = data->flags;
++}
++
++static void __init asc_init_ports(void)
++{
++	int i;
++
++	for (i=0; i<stasc_configured_devices_count; i++)
++		asc_init_port(&asc_ports[i], stasc_configured_devices[i]);
+ }
+ 
+ static struct uart_driver asc_uart_driver = {
+@@ -359,13 +373,13 @@ static struct console asc_console = {
+  */
+ static int __init asc_console_init(void)
+ {
+-	if (asc_default_console_device) {
+-		add_preferred_console("ttyAS", asc_default_console_device->id,
+-				      NULL);
+-		asc_init_port(&asc_ports[asc_default_console_device->id],
+-			      asc_default_console_device);
+-		register_console(&asc_console);
+-        }
++	if (!stasc_configured_devices_count)
++		return 0;
++
++	asc_init_ports();
++	register_console(&asc_console);
++	if (stasc_console_device != -1)
++		add_preferred_console("ttyAS", stasc_console_device, NULL);
+ 
+         return 0;
+ }
+@@ -376,7 +390,7 @@ console_initcall(asc_console_init);
+  */
+ static int __init asc_late_console_init(void)
+ {
+-	if (asc_default_console_device && !(asc_console.flags & CON_ENABLED))
++	if (!(asc_console.flags & CON_ENABLED))
+ 		register_console(&asc_console);
+ 
+         return 0;
+@@ -482,9 +496,9 @@ static int asc_remap_port(struct asc_por
+ 		}
+ 	}
+ 
+-	for (i=0; i<4; i++) {
++	for (i=0; i<((ascport->flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++) {
+ 		ascport->pios[i] = stpio_request_pin(ascport->pio_port,
+-			ascport->pio_pin[0], DRIVER_NAME, pio_dirs[i]);
++			ascport->pio_pin[i], DRIVER_NAME, pio_dirs[i]);
+ 	}
+ 
+ 	return 0;
+@@ -552,11 +566,7 @@ asc_set_termios_cflag (struct asc_port *
+ 		ctrl_val |= ASC_CTL_PARITYODD;
+ 
+ 	/* hardware flow control */
+-	if (cflag & CRTSCTS)
+-		ctrl_val |= ASC_CTL_CTSENABLE;
+-
+-	/* hardware flow control */
+-	if (cflag & CRTSCTS)
++	if ((cflag & CRTSCTS) && (!(ascport->flags & STASC_FLAG_NORTSCTS)))
+ 		ctrl_val |= ASC_CTL_CTSENABLE;
+ 
+ 	/* set speed and baud generator mode */
+@@ -719,7 +729,7 @@ static inline void asc_receive_chars(str
+ 			tty_insert_flip_char(tty, c & 0xff, flag);
+ 		}
+ #if defined(CONFIG_KGDB_ST_ASC)
+-		if (asc_default_console_device->id == kgdbasc_portno) {
++		if (port == &kgdb_asc_port->port) {
+ 			if ((strncmp(tty->buf.head->char_buf_ptr,
+ 			     "$Hc-1#09",8) == 0)) {
+ 				breakpoint();
+@@ -784,7 +794,7 @@ static irqreturn_t asc_interrupt(int irq
+ 		}
+ 
+ #if defined(CONFIG_KGDB_ST_ASC)
+-	if ((asc_default_console_device->id == kgdbasc_portno) &&
++	if ((port == &kgdb_asc_port->port) &&
+ 			(status == BRK_STATUS)){
+ 		breakpoint();
+ 	}
+@@ -938,14 +948,18 @@ put_string (struct uart_port *port, cons
+ static int __init
+ asc_console_setup (struct console *co, char *options)
+ {
+-	struct asc_port *ascport = &asc_ports[co->index];
++	struct asc_port *ascport;
+ 	int     baud = 9600;
+ 	int     bits = 8;
+ 	int     parity = 'n';
+ 	int     flow = 'n';
+ 	int ret;
+ 
+-	if (ascport->port.membase == 0)	/* Port not initialized yet - delay setup */
++	if (co->index >= ASC_MAX_PORTS)
++		co->index = 0;
++
++	ascport = &asc_ports[co->index];
++	if ((ascport->port.mapbase == 0))
+ 		return -ENODEV;
+ 
+ 	if ((ret = asc_remap_port(ascport, 0)) != 0)
+@@ -978,13 +992,13 @@ asc_console_write (struct console *co, c
+ #ifdef CONFIG_KGDB_ST_ASC
+ static int kgdbasc_read_char(void)
+ {
+-	return get_char(&kgdb_asc_port.port);
++	return get_char(&kgdb_asc_port->port);
+ }
+ 
+ /* Called from kgdbstub.c to put a character, just a wrapper */
+ static void kgdbasc_write_char(u8 c)
+ {
+-	put_char(&kgdb_asc_port.port, c);
++	put_char(&kgdb_asc_port->port, c);
+ }
+ 
+ static int kgdbasc_set_termios(void)
+@@ -1011,7 +1025,7 @@ static int kgdbasc_set_termios(void)
+ 			termios.c_cflag |= B115200;
+ 			break;
+ 	}
+-	asc_set_termios_cflag(&kgdb_asc_port, termios.c_cflag, kgdbasc_baud);
++	asc_set_termios_cflag(kgdb_asc_port, termios.c_cflag, kgdbasc_baud);
+ 	return 0;
+ }
+ 
+@@ -1030,16 +1044,18 @@ static irqreturn_t kgdbasc_interrupt(int
+ 
+ static void __init kgdbasc_lateinit(void)
+ {
+-	if (asc_default_console_device->id != kgdbasc_portno) {
++	if (asc_console.index != kgdbasc_portno) {
+ 
+ 		kgdbasc_set_termios();
+ 
+-		if (request_irq(kgdb_asc_port.port.irq, kgdbasc_interrupt,
+-			0, "stasc", &kgdb_asc_port.port)) {
++		if (request_irq(kgdb_asc_port->port.irq, kgdbasc_interrupt,
++			0, "stasc", &kgdb_asc_port->port)) {
+ 			printk(KERN_ERR "kgdb asc: cannot allocate irq.\n");
+ 			return;
+ 		}
+-		asc_enable_rx_interrupts(&kgdb_asc_port.port);
++		asc_enable_rx_interrupts(&kgdb_asc_port->port);
++
++		kgdb_asc_port = &asc_ports[kgdbasc_portno];
+ 	}
+ 	return;
+ }
+Index: linux-2.6.23-stm/drivers/serial/stasc.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/serial/stasc.h
++++ linux-2.6.23-stm/drivers/serial/stasc.h
+@@ -33,7 +33,7 @@ struct asc_port {
+ 	unsigned char pio_port;
+ 	unsigned char pio_pin[4]; /* Tx, Rx, CTS, RTS */
+ 	struct stpio_pin *pios[4];
+-	int break_flag;
++	unsigned char flags;
+ #ifdef CONFIG_SERIAL_ST_ASC_FDMA
+ 	struct asc_port_fdma fdma;
+ #endif
+Index: linux-2.6.23-stm/include/linux/stm/soc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc.h
++++ linux-2.6.23-stm/include/linux/stm/soc.h
+@@ -107,9 +107,14 @@ struct plat_usb_data {
+ struct stasc_uart_data {
+ 	unsigned char pio_port;
+ 	unsigned char pio_pin[4]; /* Tx, Rx, CTS, RTS */
++	unsigned char flags;
+ };
+ 
+-extern struct platform_device *asc_default_console_device;
++#define STASC_FLAG_NORTSCTS	1
++
++extern int stasc_console_device;
++extern struct platform_device *stasc_configured_devices[];
++extern unsigned int stasc_configured_devices_count;
+ 
+ struct plat_sysconf_data {
+ 	int sys_device_offset;
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -434,12 +434,17 @@ static struct platform_device stm_stasc_
+ 		     5, 0, 1, 2, 3),
+ };
+ 
++/*
++ * Note these three variables are global, and shared with the stasc driver
++ * for console bring up prior to platform initialisation.
++ */
++
+ /* the serial console device */
+-struct platform_device *asc_default_console_device;
++int stasc_console_device __initdata;
+ 
+ /* Platform devices to register */
+-static struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
+-static int stasc_configured_devices_count __initdata = 0;
++struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
++unsigned int stasc_configured_devices_count __initdata = 0;
+ 
+ /* Configure the ASC's for this board.
+  * This has to be called before console_init().
+@@ -450,10 +455,12 @@ void __init stx7111_configure_asc(const 
+ 
+ 	for (i=0; i<num_ascs; i++) {
+ 		int port;
++		unsigned char flags;
+ 		struct platform_device *pdev;
+ 		struct sysconf_field *sc;
+ 
+ 		port = ascs[i];
++		flags = ascs[i] >> 8;
+ 		pdev = &stm_stasc_devices[port];
+ 
+ 		switch (ascs[i]) {
+@@ -466,19 +473,23 @@ void __init stx7111_configure_asc(const 
+ 			 * Lets just hope it powers up in UART mode! */
+ 
+ 			/* Route CTS instead of emiss_bus_request[2] to pins. */
+-			sc = sysconf_claim(SYS_CFG, 5,3,3, "asc");
+-			sysconf_write(sc, 0);
++			if (!(flags & STASC_FLAG_NORTSCTS)) {
++				sc = sysconf_claim(SYS_CFG, 5,3,3, "asc");
++				sysconf_write(sc, 0);
++			}
+ 
+ 			break;
+ 
+ 		case 1:
+-			/* Route CTS instead of emiss_bus_free_accesspend_in to pins */
+-			sc = sysconf_claim(SYS_CFG, 5, 6, 6, "asc");
+-			sysconf_write(sc, 0);
+-
+-			/* Route RTS instead of PCI_PME_OUT to pins */
+-			sc = sysconf_claim(SYS_CFG, 5, 7, 7, "asc");
+-			sysconf_write(sc, 0);
++			if (!(flags & STASC_FLAG_NORTSCTS)) {
++				/* Route CTS instead of emiss_bus_free_accesspend_in to pins */
++				sc = sysconf_claim(SYS_CFG, 5, 6, 6, "asc");
++				sysconf_write(sc, 0);
++
++				/* Route RTS instead of PCI_PME_OUT to pins */
++				sc = sysconf_claim(SYS_CFG, 5, 7, 7, "asc");
++				sysconf_write(sc, 0);
++			}
+ 
+ 			/* What about SYS_CFG5[23]? */
+ 
+@@ -499,10 +510,11 @@ void __init stx7111_configure_asc(const 
+ 		}
+ 
+ 		pdev->id = i;
++		((struct stasc_uart_data*)(pdev->dev.platform_data))->flags = flags;
+ 		stasc_configured_devices[stasc_configured_devices_count++] = pdev;
+ 	}
+ 
+-	asc_default_console_device = stasc_configured_devices[console];
++	stasc_console_device = console;
+ }
+ 
+ /* Add platform device as configured by board specific code */
+Index: linux-2.6.23-stm/drivers/serial/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/serial/Kconfig
++++ linux-2.6.23-stm/drivers/serial/Kconfig
+@@ -1273,10 +1273,10 @@ config SERIAL_ST_ASC_CONSOLE
+ 	select SERIAL_CORE_CONSOLE
+ 
+ config SERIAL_ST_ASC_FDMA
+-	bool "Support for 710x & 7200 FDMA on ST ASC"
+-	depends on (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200) && SERIAL_ST_ASC && STM_DMA
++	bool "Support FDMA on ST ASC"
++	depends on SERIAL_ST_ASC && STM_DMA
+ 	help
+ 	  This enables on-chip FDMA to be used with the Asychronous Serial
+-	  Controller on STMicroelectronics 710x/7200 system-on-chip devices.
++	  Controller on some STMicroelectronics system-on-chip devices.
+ 
+ endmenu
+Index: linux-2.6.23-stm/include/linux/stm/soc_init.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc_init.h
++++ linux-2.6.23-stm/include/linux/stm/soc_init.h
+@@ -29,6 +29,7 @@
+ 			.flags	= IORESOURCE_MEM			\
+ 		}, {							\
+ 			.start	= _irq,					\
++			.end	= _irq,					\
+ 			.flags	= IORESOURCE_IRQ			\
+ 		}, {							\
+ 			.start	= _fdma_req_rx,				\

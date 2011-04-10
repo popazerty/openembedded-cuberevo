@@ -1,0 +1,33 @@
+The current kernel behaviour is to reenable interrupts unconditionally
+when taking a page fault. This patch changes this to only enable them
+if interrupts were previously enabled.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/arch/sh/kernel/entry.S
+===================================================================
+--- linux.orig/arch/sh/kernel/entry.S
++++ linux/arch/sh/kernel/entry.S
+@@ -168,7 +168,6 @@ call_dpf:
+ 	mov.l	1f, r0
+ 	mov.l	@r0, r6		! address
+ 	mov.l	3f, r0
+-	STI()
+ 	jmp	@r0
+ 	 mov	r15, r4		! regs
+ 
+Index: linux/arch/sh/mm/fault.c
+===================================================================
+--- linux.orig/arch/sh/mm/fault.c
++++ linux/arch/sh/mm/fault.c
+@@ -34,6 +34,11 @@ asmlinkage void do_page_fault(struct pt_
+ 	int si_code;
+ 	siginfo_t info;
+ 
++	/* Only enable interrupts if they were on before the fault */
++	if ((regs->sr & SR_IMASK) != SR_IMASK) {
++		local_irq_enable();
++	}
++
+ 	tsk = current;
+ 	mm = tsk->mm;
+ 	si_code = SEGV_MAPERR;

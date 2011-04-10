@@ -1,0 +1,45 @@
+This patch adds the suspend and resume functions into the Generic
+PHY device.
+In order to support the wake-on LAN and avoid to put in power down
+the PHY device, the MDIO is aware of what the Ethernet device wants to do.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+
+diff -uprN -X dontdiff linux-sh4/drivers/net/phy.orig/mdio_bus.c linux-sh4/drivers/net/phy/mdio_bus.c
+--- linux-sh4/drivers/net/phy.orig/mdio_bus.c	2008-05-30 15:20:43.000000000 +0200
++++ linux-sh4/drivers/net/phy/mdio_bus.c	2008-05-30 15:21:48.000000000 +0200
+@@ -146,8 +146,9 @@ static int mdio_bus_suspend(struct devic
+ 	struct phy_driver *phydrv = to_phy_driver(drv);
+ 	struct phy_device *phydev = to_phy_device(dev);
+ 
+-	if (phydrv && phydrv->suspend)
+-		ret = phydrv->suspend(phydev);
++	if ((!device_may_wakeup(phydev->dev.parent)) && 
++		(phydrv && phydrv->suspend))
++			ret = phydrv->suspend(phydev);
+ 
+ 	return ret;
+ }
+@@ -159,7 +160,8 @@ static int mdio_bus_resume(struct device
+ 	struct phy_driver *phydrv = to_phy_driver(drv);
+ 	struct phy_device *phydev = to_phy_device(dev);
+ 
+-	if (phydrv && phydrv->resume)
++	if ((!device_may_wakeup(phydev->dev.parent)) && 
++		(phydrv && phydrv->resume))
+ 		ret = phydrv->resume(phydev);
+ 
+ 	return ret;
+diff -uprN -X dontdiff linux-sh4/drivers/net/phy.orig/phy_device.c linux-sh4/drivers/net/phy/phy_device.c
+--- linux-sh4/drivers/net/phy.orig/phy_device.c	2008-05-30 15:20:43.000000000 +0200
++++ linux-sh4/drivers/net/phy/phy_device.c	2008-05-30 15:21:48.000000000 +0200
+@@ -757,6 +757,8 @@ static struct phy_driver genphy_driver =
+ 	.features	= 0,
+ 	.config_aneg	= genphy_config_aneg,
+ 	.read_status	= genphy_read_status,
++	.suspend	= genphy_suspend,
++	.resume		= genphy_resume,
+ 	.driver		= {.owner= THIS_MODULE, },
+ };
+ 

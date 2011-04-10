@@ -1,0 +1,48 @@
+From 0b7221e6b7bd8e8275864a1e0b21da7914536440 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Wed, 13 May 2009 12:37:54 +0100
+Subject: [PATCH] sh_stm: Fix a race condition updating page flags
+
+Fix a race condition in the code which handles cache flushing
+to work around D-cache aliasing between kernel and user space. The
+page flag which marks the page as dirty, and in need of flushing,
+wasn't being manipulated using the atomic set and clear macros, and so
+sometimes raced with other functions manipulating the page flags.
+
+See bugzilla 5885
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/mm/cache-sh4.c |    2 +-
+ arch/sh/mm/tlb-sh4.c   |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/mm/cache-sh4.c b/arch/sh/mm/cache-sh4.c
+index cf9fae6..e1b4301 100644
+--- a/arch/sh/mm/cache-sh4.c
++++ b/arch/sh/mm/cache-sh4.c
+@@ -276,7 +276,7 @@ void flush_dcache_page(struct page *page)
+ 	if ((mapping != NULL) && (! mapping_mapped(mapping))) {
+ 		/* There are no user mappings for this page, so we can
+ 		 * defer the flush. */
+-		__set_bit(PG_dcache_dirty, &page->flags);
++		set_bit(PG_dcache_dirty, &page->flags);
+ 	} else {
+ 		/* page->mapping is NULL for argv/env pages, which
+ 		 * must be flushed here (there is no call to
+diff --git a/arch/sh/mm/tlb-sh4.c b/arch/sh/mm/tlb-sh4.c
+index bc323ec..7bcc81c 100644
+--- a/arch/sh/mm/tlb-sh4.c
++++ b/arch/sh/mm/tlb-sh4.c
+@@ -42,7 +42,7 @@ void update_mmu_cache(struct vm_area_struct * vma,
+ 				unsigned long phys = pte_val(pte) & PTE_PHYS_MASK;
+ 				__flush_wback_region(phys_to_virt(phys),
+ 						     PAGE_SIZE);
+-				__clear_bit(PG_dcache_dirty, &page->flags);
++				clear_bit(PG_dcache_dirty, &page->flags);
+ 			}
+ 		}
+ 	}
+-- 
+1.6.0.6
+

@@ -1,0 +1,37 @@
+From 33002caf48ba49ab3024c572e3e986ab72a72c46 Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Fri, 27 Mar 2009 15:06:17 +0000
+Subject: [PATCH] sh: Fix zImage building for SE mode.
+
+This patch ensures that zImages are corrected linked in SE mode.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+---
+ arch/sh/boot/compressed/Makefile |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/boot/compressed/Makefile b/arch/sh/boot/compressed/Makefile
+index 013504a..3266568 100644
+--- a/arch/sh/boot/compressed/Makefile
++++ b/arch/sh/boot/compressed/Makefile
+@@ -16,10 +16,17 @@ endif
+ #
+ # IMAGE_OFFSET is the load offset of the compression loader
+ #
++
++ifeq ($(CONFIG_32BIT),y)
++IMAGE_OFFSET	:= $(shell /bin/bash -c 'printf "0x%08x" \
++		     $$[$(CONFIG_PAGE_OFFSET)  + \
++			$(CONFIG_BOOT_LINK_OFFSET)]')
++else
+ IMAGE_OFFSET	:= $(shell /bin/bash -c 'printf "0x%08x" \
+ 		     $$[$(CONFIG_PAGE_OFFSET)  + \
+ 			$(CONFIG_MEMORY_START) + \
+ 			$(CONFIG_BOOT_LINK_OFFSET)]')
++endif
+ 
+ LIBGCC	:= $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
+ 
+-- 
+1.6.0.6
+

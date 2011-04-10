@@ -1,0 +1,61 @@
+The current kernel behaviour is to reenable interrupts unconditionally
+when taking a page fault. This patch changes this to only enable them
+if interrupts were previously enabled.
+
+It also fixes a problem seen with this fix in place: the kernel previously
+flushed the vsyscall page when handling a signal, which is not only
+unncessary, but caused a possible sleep with interrupts disabled.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23.1-stm/arch/sh/mm/fault.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/mm/fault.c
++++ linux-2.6.23.1-stm/arch/sh/mm/fault.c
+@@ -34,11 +34,7 @@ asmlinkage void __kprobes do_page_fault(
+ 	int fault;
+ 	siginfo_t info;
+ 
+-	trace_hardirqs_on();
+-	local_irq_enable();
+-
+ 	tsk = current;
+-	mm = tsk->mm;
+ 	si_code = SEGV_MAPERR;
+ 
+ 	if (unlikely(address >= TASK_SIZE)) {
+@@ -91,6 +87,14 @@ asmlinkage void __kprobes do_page_fault(
+ 		}) >> 5,
+ 		instruction_pointer(regs));
+ 
++	/* Only enable interrupts if they were on before the fault */
++	if ((regs->sr & SR_IMASK) != SR_IMASK) {
++		trace_hardirqs_on();
++		local_irq_enable();
++	}
++
++	mm = tsk->mm;
++
+ 	/*
+ 	 * If we're in an interrupt or have no user
+ 	 * context, we must not take the fault..
+Index: linux-2.6.23.1-stm/arch/sh/kernel/signal.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/signal.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/signal.c
+@@ -377,6 +377,7 @@ static int setup_frame(int sig, struct k
+ 		err |= __put_user(OR_R0_R0, &frame->retcode[6]);
+ 		err |= __put_user((__NR_sigreturn), &frame->retcode[7]);
+ 		regs->pr = (unsigned long) frame->retcode;
++		flush_icache_range(regs->pr, regs->pr + sizeof(frame->retcode));
+ 	}
+ 
+ 	if (err)
+@@ -394,8 +395,6 @@ static int setup_frame(int sig, struct k
+ 	pr_debug("SIG deliver (%s:%d): sp=%p pc=%08lx pr=%08lx\n",
+ 		 current->comm, current->pid, frame, regs->pc, regs->pr);
+ 
+-	flush_icache_range(regs->pr, regs->pr + sizeof(frame->retcode));
+-
+ 	return 0;
+ 
+ give_sigsegv:

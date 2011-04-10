@@ -1,0 +1,840 @@
+From 8326bceb3ce86709487b667069e533d812a39eaf Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:20 +0200
+Subject: [PATCH] stm: clk: New ST clock framework
+
+This patch adds the ST clock framework where all the symbols
+are EXPORT_SYMBOLS as requested by STAPI team.
+
+Reference: [Bug 7069] [PM] clock lla + STAPI integration 7141
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/Makefile       |    4 +
+ arch/sh/kernel/setup.c            |    1 -
+ arch/sh/kernel/time.c             |    4 +
+ arch/sh/kernel/timers/timer-tmu.c |    4 +
+ drivers/stm/Makefile              |    2 +-
+ drivers/stm/clk.c                 |  624 +++++++++++++++++++++++++++++++++++++
+ include/asm-sh/ltt.h              |    2 +-
+ include/linux/stm/clk.h           |   91 ++++++
+ 8 files changed, 729 insertions(+), 3 deletions(-)
+ create mode 100644 drivers/stm/clk.c
+ create mode 100644 include/linux/stm/clk.h
+
+diff --git a/arch/sh/kernel/cpu/Makefile b/arch/sh/kernel/cpu/Makefile
+index 565e40c..164122e 100644
+--- a/arch/sh/kernel/cpu/Makefile
++++ b/arch/sh/kernel/cpu/Makefile
+@@ -11,7 +11,11 @@ obj-$(CONFIG_CPU_SH4A)		+= sh4a/
+ obj-$(CONFIG_UBC_WAKEUP)	+= ubc.o
+ obj-$(CONFIG_SH_ADC)		+= adc.o
+ 
++ifdef CONFIG_STM_DRIVERS
++obj-y	+= irq/ init.o
++else
+ obj-y	+= irq/ init.o clock.o
++endif
+ 
+ # Most chips still use the Hitachi standard CPG which has a few standard
+ # clocks. Those which do not can remove it here, and define a complete
+diff --git a/arch/sh/kernel/setup.c b/arch/sh/kernel/setup.c
+index e5526ab..03d42fa 100644
+--- a/arch/sh/kernel/setup.c
++++ b/arch/sh/kernel/setup.c
+@@ -29,7 +29,6 @@
+ #include <asm/sections.h>
+ #include <asm/irq.h>
+ #include <asm/setup.h>
+-#include <asm/clock.h>
+ #include <asm/mmu_context.h>
+ 
+ /*
+diff --git a/arch/sh/kernel/time.c b/arch/sh/kernel/time.c
+index 484bd0b..b98fc3c 100644
+--- a/arch/sh/kernel/time.c
++++ b/arch/sh/kernel/time.c
+@@ -16,7 +16,11 @@
+ #include <linux/timex.h>
+ #include <linux/sched.h>
+ #include <linux/clockchips.h>
++#ifdef CONFIG_STM_DRIVERS
++#include <linux/stm/clk.h>
++#else
+ #include <asm/clock.h>
++#endif
+ #include <asm/rtc.h>
+ #include <asm/timer.h>
+ #include <asm/kgdb.h>
+diff --git a/arch/sh/kernel/timers/timer-tmu.c b/arch/sh/kernel/timers/timer-tmu.c
+index 559a5a2..2a4e483 100644
+--- a/arch/sh/kernel/timers/timer-tmu.c
++++ b/arch/sh/kernel/timers/timer-tmu.c
+@@ -23,7 +23,11 @@
+ #include <asm/rtc.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
++#ifdef CONFIG_CPU_SUBTYPE_ST40
++#include <linux/stm/clk.h>
++#else
+ #include <asm/clock.h>
++#endif
+ 
+ #define TMU_TOCR_INIT	0x00
+ #define TMU_TCR_INIT	0x0020
+diff --git a/drivers/stm/Makefile b/drivers/stm/Makefile
+index ee3b95c..64c0501 100644
+--- a/drivers/stm/Makefile
++++ b/drivers/stm/Makefile
+@@ -2,7 +2,7 @@
+ # Makefile for the STMicroelectronics device drivers.
+ #
+ 
+-obj-y				+= sysconf.o
++obj-y				+= sysconf.o clk.o
+ obj-$(CONFIG_STM_DMA)		+= fdma.o fdma-xbar.o
+ obj-$(CONFIG_STM_PIO)		+= pio.o
+ obj-$(CONFIG_STM_PIO10)		+= pio10.o
+diff --git a/drivers/stm/clk.c b/drivers/stm/clk.c
+new file mode 100644
+index 0000000..82067cd
+--- /dev/null
++++ b/drivers/stm/clk.c
+@@ -0,0 +1,624 @@
++/*
++ * arch/sh/kernel/cpu/clk.c - STMicroelectronics clock framework
++ *
++ *  Copyright (C) 2009, STMicroelectronics
++ *  Author: Francesco M. Virlinzi <francesco.virlinzi@st.com>
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/module.h>
++#include <linux/sysdev.h>
++#include <linux/mutex.h>
++#include <linux/list.h>
++#include <linux/kref.h>
++#include <linux/seq_file.h>
++#include <linux/platform_device.h>
++#include <linux/err.h>
++#include <linux/proc_fs.h>
++#include <linux/delay.h>
++#include <linux/stm/clk.h>
++
++static LIST_HEAD(global_list);
++/*static DEFINE_SPINLOCK(global_lock);*/
++static DEFINE_MUTEX(global_list_sem);
++
++enum clk_ops_id {
++	_CLK_INIT = 0,
++	_CLK_ENABLE,
++	_CLK_DISABLE,
++	_CLK_SET_RATE,
++	_CLK_SET_PARENT,
++	_CLK_RECALC,
++	_CLK_ROUND,
++	_CLK_OBSERVE,
++	_CLK_MEASURE
++};
++
++
++enum child_event {
++	_CHILD_CLK_ENABLED = 1,
++	_CHILD_CLK_DISABLED,
++};
++
++/*
++ * All the __clk_xxxx operation will not raise propagation system
++ */
++static int
++__clk_operation(struct clk *clk, unsigned long data, enum clk_ops_id id_ops)
++{
++	int ret = -EINVAL;
++	unsigned long *ops_fns = (unsigned long *)clk->ops;
++	if (likely(ops_fns && ops_fns[id_ops])) {
++		int (*fns)(struct clk *clk, unsigned long rate)
++			= (void *)ops_fns[id_ops];
++		unsigned long flags;
++		spin_lock_irqsave(&clk->lock, flags);
++		ret = fns(clk, data);
++		spin_unlock_irqrestore(&clk->lock, flags);
++	}
++	return ret;
++}
++
++static inline int __clk_init(struct clk *clk)
++{
++	return __clk_operation(clk, 0, _CLK_INIT);
++}
++
++static inline int __clk_enable(struct clk *clk)
++{
++	return __clk_operation(clk, 0, _CLK_ENABLE);
++}
++
++static inline int __clk_disable(struct clk *clk)
++{
++	return __clk_operation(clk, 0, _CLK_DISABLE);
++}
++
++static inline int __clk_set_rate(struct clk *clk, unsigned long rate)
++{
++	return __clk_operation(clk, rate, _CLK_SET_RATE);
++}
++
++static inline int __clk_set_parent(struct clk *clk, struct clk *parent)
++{
++	return __clk_operation(clk, (unsigned long)parent, _CLK_SET_PARENT);
++}
++
++static inline int __clk_recalc_rate(struct clk *clk)
++{
++	__clk_operation(clk, 0, _CLK_RECALC);
++	return 0;
++}
++
++static inline int __clk_observe(struct clk *clk, unsigned long value)
++{
++	return __clk_operation(clk, value, _CLK_OBSERVE);
++}
++
++static inline int __clk_get_measure(struct clk *clk, unsigned long value)
++{
++	return __clk_operation(clk, value, _CLK_MEASURE);
++}
++
++static inline int clk_is_always_enabled(struct clk *clk)
++{
++	return (clk->flags & CLK_ALWAYS_ENABLED);
++}
++
++static inline int clk_wants_propagate(struct clk *clk)
++{
++	return (clk->flags & CLK_RATE_PROPAGATES);
++}
++
++static inline int clk_wants_auto_switching(struct clk *clk)
++{
++	return (clk->flags & CLK_AUTO_SWITCHING);
++}
++
++static int clk_notify_to_parent(enum child_event code, struct clk *clk)
++{
++	int ret = 0;
++
++	if (!clk)
++		return ret;
++
++	switch (code) {
++	case _CHILD_CLK_ENABLED:
++		++clk->nr_active_clocks;
++		break;
++	case _CHILD_CLK_DISABLED:
++		--clk->nr_active_clocks;
++		break;
++	}
++
++	if (!clk_wants_auto_switching(clk))
++		return ret;
++
++	if (!clk->nr_active_clocks) /* no user... disable */
++		clk_disable(clk);
++	else if (clk->nr_active_clocks == 1) /* the first user... enable */
++		clk_enable(clk);
++
++	return 0;
++}
++
++static void clk_propagate_rate(struct clk *clk)
++{
++	struct clk *clkp;
++
++	list_for_each_entry(clkp, &clk->childs, childs_node) {
++		__clk_recalc_rate(clk);
++		if (likely(clk_wants_propagate(clkp)))
++			clk_propagate_rate(clkp);
++	}
++}
++
++int clk_enable(struct clk *clk)
++{
++	int ret = 0;
++
++	if (!clk)
++		return -EINVAL;
++
++	if (clk_is_always_enabled(clk))
++		/* No enable required! */
++		return 0;
++
++	if (clk_get_rate(clk))
++		/* clock already enabled */
++		return 0;
++
++	clk_notify_to_parent(_CHILD_CLK_ENABLED, clk->parent);
++
++	ret = __clk_enable(clk);
++	if (!ret)
++		clk_notify_to_parent(_CHILD_CLK_DISABLED, clk->parent);
++
++	return ret;
++}
++EXPORT_SYMBOL(clk_enable);
++
++static void clk_kref_release(struct kref *kref)
++{
++	/* Nothing to do */
++}
++
++void clk_disable(struct clk *clk)
++{
++	if (!clk)
++		return;
++
++	if (clk_is_always_enabled(clk))
++		/* this clock can not be disabled */
++		return;
++	if (!clk_get_rate(clk))
++		/* clock already disabled */
++		return;
++
++	__clk_disable(clk);
++	clk_notify_to_parent(_CHILD_CLK_DISABLED, clk->parent);
++}
++EXPORT_SYMBOL(clk_disable);
++
++int clk_register(struct clk *clk)
++{
++	if (!clk || !clk->name)
++		return -EINVAL;
++
++	mutex_lock(&global_list_sem);
++
++	list_add_tail(&clk->node, &global_list);
++	INIT_LIST_HEAD(&clk->childs);
++	spin_lock_init(&clk->lock);
++
++	clk->nr_active_clocks = 0;
++
++	__clk_init(clk);
++
++	if (clk->parent)
++		list_add_tail(&clk->childs_node, &clk->parent->childs);
++
++	kref_init(&clk->kref);
++
++	mutex_unlock(&global_list_sem);
++
++	if (clk_is_always_enabled(clk))
++		__clk_enable(clk);
++
++	return 0;
++}
++EXPORT_SYMBOL(clk_register);
++
++void clk_unregister(struct clk *clk)
++{
++	if (!clk)
++		return;
++	mutex_lock(&global_list_sem);
++	list_del(&clk->node);
++	if (clk->parent)
++		list_del(&clk->childs_node);
++	mutex_unlock(&global_list_sem);
++}
++EXPORT_SYMBOL(clk_unregister);
++
++unsigned long clk_get_rate(struct clk *clk)
++{
++	if (!clk)
++		return -EINVAL;
++	return clk->rate;
++}
++EXPORT_SYMBOL(clk_get_rate);
++
++int clk_set_rate(struct clk *clk, unsigned long rate)
++{
++	int ret = -EINVAL;
++
++	if (!clk)
++		return ret;
++
++	if (rate == clk_get_rate(clk))
++		return 0;
++
++	ret = __clk_set_rate(clk, rate);
++
++	if (clk_wants_propagate(clk) && !ret)
++		clk_propagate_rate(clk);
++	return ret;
++}
++EXPORT_SYMBOL(clk_set_rate);
++
++long clk_round_rate(struct clk *clk, unsigned long rate)
++{
++	unsigned long ret = clk_get_rate(clk);
++
++	if (likely(clk->ops && clk->ops->round_rate))
++		ret = clk->ops->round_rate(clk, rate);
++	return ret;
++}
++EXPORT_SYMBOL(clk_round_rate);
++
++struct clk *clk_get_parent(struct clk *clk)
++{
++	if (!clk)
++		return NULL;
++	return clk->parent;
++}
++EXPORT_SYMBOL(clk_get_parent);
++
++int clk_set_parent(struct clk *clk, struct clk *parent)
++{
++	int ret = -EINVAL;
++	struct clk *old_parent;
++	unsigned long old_rate;
++
++	if (!parent || !clk)
++		return ret;
++
++	if (parent == clk_get_parent(clk))
++		return 0;
++
++	old_parent = clk_get_parent(clk);
++	old_rate = clk_get_rate(clk);
++
++	if (old_rate)
++		/* enable the new parent if required */
++		clk_notify_to_parent(_CHILD_CLK_ENABLED, parent);
++
++	ret = __clk_set_parent(clk, parent);
++
++	/* update the parent field */
++	clk->parent = (ret ? old_parent : parent);
++
++	if (old_rate)
++		/* notify to the parent the 'disable' clock */
++		clk_notify_to_parent(_CHILD_CLK_DISABLED,
++			(ret ? parent : old_parent));
++	/* propagate if required */
++	if (!ret && likely(clk_wants_propagate(clk)))
++		clk_propagate_rate(clk);
++
++	return ret;
++}
++EXPORT_SYMBOL(clk_set_parent);
++
++int clk_observe(struct clk *clk, unsigned long *div)
++{
++	int ret = -EINVAL;
++	if (!clk)
++		return ret;
++	return __clk_observe(clk, (unsigned long) div);
++}
++EXPORT_SYMBOL(clk_observe);
++
++/*
++ * Returns a clock. Note that we first try to use device id on the bus
++ * and clock name. If this fails, we try to use clock name only.
++ */
++struct clk *clk_get(struct device *dev, const char *name)
++{
++	struct clk *clkp, *clk = ERR_PTR(-ENOENT);
++	int idno;
++
++	if (dev == NULL || dev->bus != &platform_bus_type)
++		idno = -1;
++	else
++		idno = to_platform_device(dev)->id;
++
++	mutex_lock(&global_list_sem);
++	list_for_each_entry(clkp, &global_list, node) {
++		if (clkp->id == idno &&
++		    strcmp(name, clkp->name) == 0 &&
++		    try_module_get(clkp->owner)) {
++			clk = clkp;
++			goto found;
++		}
++	}
++
++	list_for_each_entry(clkp, &global_list, node) {
++		if (strcmp(name, clkp->name) == 0 &&
++		    try_module_get(clkp->owner)) {
++			clk = clkp;
++			break;
++		}
++	}
++
++found:
++	mutex_unlock(&global_list_sem);
++
++	return clk;
++}
++EXPORT_SYMBOL(clk_get);
++
++void clk_put(struct clk *clk)
++{
++	if (clk && !IS_ERR(clk))
++		module_put(clk->owner);
++}
++EXPORT_SYMBOL(clk_put);
++
++int clk_for_each(int (*fn)(struct clk *clk, void *data), void *data)
++{
++	struct clk *clkp;
++	int result = 0;
++
++	if (!fn)
++		return -1;
++
++	mutex_lock(&global_list_sem);
++	list_for_each_entry(clkp, &global_list, node)
++		result |= fn(clkp, data);
++	mutex_unlock(&global_list_sem);
++	return result;
++}
++EXPORT_SYMBOL(clk_for_each);
++
++#ifdef CONFIG_PROC_FS
++static void *clk_seq_next(struct seq_file *s, void *v, loff_t *pos)
++{
++	struct list_head *tmp;
++	union {
++		loff_t value;
++		long parts[2];
++	} ltmp;
++
++	ltmp.value = *pos;
++	tmp = (struct list_head *)ltmp.parts[0];
++	tmp = tmp->next;
++	ltmp.parts[0] = (long)tmp;
++
++	*pos = ltmp.value;
++
++	if (tmp == &global_list)
++		return NULL; /* No more to read */
++	return pos;
++}
++
++static void *clk_seq_start(struct seq_file *s, loff_t *pos)
++{
++	if (!*pos) { /* first call! */
++		 union {
++			  loff_t value;
++			  long parts[2];
++		 } ltmp;
++		 ltmp.parts[0] = (long) global_list.next;
++		 *pos = ltmp. value;
++		 return pos;
++	}
++	--(*pos); /* to realign *pos value! */
++
++	return clk_seq_next(s, NULL, pos);
++}
++
++static int clk_seq_show(struct seq_file *s, void *v)
++{
++	unsigned long *l = (unsigned long *)v;
++	struct list_head *node = (struct list_head *)(*l);
++	struct clk *clk = container_of(node, struct clk, node);
++	unsigned long rate = clk_get_rate(clk);
++	if (unlikely(!rate && !clk->parent))
++		return 0;
++	seq_printf(s, "%-12s\t: %ld.%02ldMHz - ", clk->name,
++		rate / 1000000, (rate % 1000000) / 10000);
++	seq_printf(s, "[%ld.%02ldMHz] - ", clk->nominal_rate / 1000000,
++		(clk->nominal_rate % 1000000) / 10000);
++	seq_printf(s, "[0x%p]", clk);
++
++	if (clk->parent)
++		seq_printf(s, " - [%s]", clk->parent->name);
++	seq_printf(s, "\n");
++	return 0;
++}
++
++static void clk_seq_stop(struct seq_file *s, void *v)
++{
++}
++
++static struct seq_operations clk_seq_ops = {
++	.start = clk_seq_start,
++	.next = clk_seq_next,
++	.stop = clk_seq_stop,
++	.show = clk_seq_show,
++};
++
++static int clk_proc_open(struct inode *inode, struct file *file)
++{
++	return seq_open(file, &clk_seq_ops);
++}
++
++static struct file_operations clk_proc_ops = {
++	.owner = THIS_MODULE,
++	.open = clk_proc_open,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.release = seq_release,
++};
++
++static int __init clk_proc_init(void)
++{
++	struct proc_dir_entry *p;
++
++	p = create_proc_entry("clocks", S_IRUGO, NULL);
++	if (unlikely(!p))
++		return -EINVAL;
++
++	p->proc_fops = &clk_proc_ops;
++
++	return 0;
++}
++subsys_initcall(clk_proc_init);
++#endif
++
++#ifdef CONFIG_PM
++/*
++ * The standard pm_clk_ratio rule allowes a default ratio of 1
++ *
++ * pm_ratio = (flags.RATIO + 1 ) << (flags.EXP)
++ */
++static inline int pm_clk_ratio(struct clk *clk)
++{
++	register unsigned int val, exp;
++
++	val = ((clk->flags >> CLK_PM_RATIO_SHIFT) &
++		((1 << CLK_PM_RATIO_NRBITS) -1)) + 1;
++	exp = ((clk->flags >> CLK_PM_EXP_SHIFT) &
++		((1 << CLK_PM_EXP_NRBITS) -1));
++
++	return (val << exp);
++}
++
++static inline int pm_clk_is_off(struct clk *clk)
++{
++	return ((clk->flags & CLK_PM_TURNOFF) == CLK_PM_TURNOFF);
++}
++
++static inline void pm_clk_set(struct clk *clk, int edited)
++{
++#define CLK_PM_EDITED (1<<CLK_PM_EDIT_SHIFT)
++	clk->flags &= ~CLK_PM_EDITED;
++	clk->flags |= (edited ? CLK_PM_EDITED : 0);
++}
++
++static inline int pm_clk_is_modified(struct clk *clk)
++{
++	return ((clk->flags & CLK_PM_EDITED) != 0);
++}
++
++static int clk_resume_from_standby(struct clk *clk, void *data)
++{
++	if (!likely(clk->ops))
++		return 0;
++	/* check if the pm modified the clock */
++	if (!pm_clk_is_modified(clk))
++		return 0;;
++
++	pm_clk_set(clk, 0);
++
++	if (pm_clk_is_off(clk))
++		__clk_enable(clk);
++	else
++		__clk_set_rate(clk, clk->rate * pm_clk_ratio(clk));
++	return 0;
++}
++
++static int clk_resume_from_hibernation(struct clk *clk, void *data)
++{
++	unsigned long rate = clk->rate;
++
++	__clk_set_parent(clk, clk->parent);
++	__clk_set_rate(clk, rate);
++	__clk_recalc_rate(clk);
++	return 0;
++}
++
++static int clk_on_standby(struct clk *clk, void *data)
++{
++	if (!clk->ops)
++		return 0;
++	if (!clk->rate) /* already disabled */
++		return 0;
++
++	pm_clk_set(clk, 1);	/* set as modified */
++	if (pm_clk_is_off(clk))		/* turn-off */
++		__clk_disable(clk);
++	else    /* reduce */
++		__clk_set_rate(clk, clk->rate / pm_clk_ratio(clk));
++	return 0;
++}
++
++static int clks_sysdev_suspend(struct sys_device *dev, pm_message_t state)
++{
++	static pm_message_t prev_state;
++
++	switch (state.event) {
++	case PM_EVENT_ON:
++		switch (prev_state.event) {
++		case PM_EVENT_FREEZE: /* Resumeing from hibernation */
++			clk_for_each(clk_resume_from_hibernation, NULL);
++			break;
++		case PM_EVENT_SUSPEND:
++			clk_for_each(clk_resume_from_standby, NULL);
++			break;
++		}
++	case PM_EVENT_SUSPEND:
++		clk_for_each(clk_on_standby, NULL);
++		break;
++	case PM_EVENT_FREEZE:
++		break;
++	}
++	prev_state = state;
++	return 0;
++}
++
++static int clks_sysdev_resume(struct sys_device *dev)
++{
++	return clks_sysdev_suspend(dev, PMSG_ON);
++}
++
++static struct sysdev_class clk_sysdev_class = {
++	set_kset_name("clks"),
++};
++
++static struct sysdev_driver clks_sysdev_driver = {
++	.suspend = clks_sysdev_suspend,
++	.resume = clks_sysdev_resume,
++};
++
++static struct sys_device clks_sysdev_dev = {
++	.cls = &clk_sysdev_class,
++};
++
++static int __init clk_sysdev_init(void)
++{
++	sysdev_class_register(&clk_sysdev_class);
++	sysdev_driver_register(&clk_sysdev_class, &clks_sysdev_driver);
++	sysdev_register(&clks_sysdev_dev);
++	return 0;
++}
++
++subsys_initcall(clk_sysdev_init);
++#endif
++
+diff --git a/include/asm-sh/ltt.h b/include/asm-sh/ltt.h
+index 7ab4d65..66ed4a7 100644
+--- a/include/asm-sh/ltt.h
++++ b/include/asm-sh/ltt.h
+@@ -10,7 +10,7 @@
+ 
+ #include <linux/ltt-core.h>
+ #include <linux/timer.h>
+-#include <asm/clock.h>
++#include <linux/clk.h>
+ 
+ #define LTT_HAS_TSC
+ 
+diff --git a/include/linux/stm/clk.h b/include/linux/stm/clk.h
+new file mode 100644
+index 0000000..d25444d
+--- /dev/null
++++ b/include/linux/stm/clk.h
+@@ -0,0 +1,91 @@
++/*
++ * arch/sh/kernel/cpu/clock_stm.c - STMicroelectronics clock framework
++ *
++ *  Copyright (C) 2009, STMicroelectronics
++ *  Author: Francesco M. Virlinzi <francesco.virlinzi@st.com>
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#ifndef __ASM_STM_CLK_H__
++#define __ASM_STM_CLK_H__
++
++#include <linux/kref.h>
++#include <linux/list.h>
++#include <linux/seq_file.h>
++#include <linux/clk.h>
++#include <linux/spinlock.h>
++
++struct clk;
++
++struct clk_ops {
++	int (*init)(struct clk *clk);
++	int (*enable)(struct clk *clk);
++	int (*disable)(struct clk *clk);
++	int (*set_rate)(struct clk *clk, unsigned long rate);
++	int (*set_parent)(struct clk *clk, struct clk *parent);
++	void (*recalc)(struct clk *clk);
++	long (*round_rate)(struct clk *clk, unsigned long rate);
++	int (*observe)(struct clk *clk, unsigned long *div);
++	unsigned long (*get_measure)(struct clk *clk);
++	void *private_data;
++};
++
++struct clk {
++	spinlock_t		lock; /* to serialize the clock operation */
++
++	struct list_head	node;
++
++	const char		*name;
++	int			id;
++	struct module		*owner;
++
++	struct clk		*parent;
++	struct clk_ops		*ops;
++
++	void			*private_data;
++
++	struct kref		kref;
++
++	unsigned long		nr_active_clocks;
++
++	unsigned long		rate;
++	unsigned long		nominal_rate;
++	unsigned long		flags;
++
++	struct list_head	childs;
++	struct list_head	childs_node;
++};
++
++#define CLK_ALWAYS_ENABLED	(1 << 0)
++#define CLK_RATE_PROPAGATES	(1 << 1)
++#define CLK_AUTO_SWITCHING	(1 << 2)
++
++#define CLK_PM_EXP_SHIFT	(24)
++#define CLK_PM_EXP_NRBITS	(7)
++#define CLK_PM_RATIO_SHIFT	(16)
++#define CLK_PM_RATIO_NRBITS	(8)
++#define CLK_PM_EDIT_SHIFT	(31)
++#define CLK_PM_EDIT_NRBITS	(1)
++#define CLK_PM_TURNOFF		(((1<<CLK_PM_EXP_NRBITS)-1) << CLK_PM_EXP_SHIFT)
++
++/* arch/sh/kernel/cpu/clock.c */
++int clk_init(void);
++
++int clk_register(struct clk *);
++void clk_unregister(struct clk *);
++
++int clk_for_each(int (*fn)(struct clk *clk, void *data), void *data);
++
++/**
++ * Routes the clock on an external pin (if possible)
++ */
++int clk_observe(struct clk *clk, unsigned long *div);
++
++/**
++ * Evaluate the clock rate in hardware (if possible)
++ */
++unsigned long clk_get_measure(struct clk *clk);
++
++#endif /* __ASM_STM_CLOCK_H */
+-- 
+1.6.0.6
+

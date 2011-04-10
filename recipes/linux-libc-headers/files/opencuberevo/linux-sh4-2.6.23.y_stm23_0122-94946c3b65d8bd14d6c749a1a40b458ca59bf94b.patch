@@ -1,0 +1,184 @@
+From 94946c3b65d8bd14d6c749a1a40b458ca59bf94b Mon Sep 17 00:00:00 2001
+From: Francesco Virlinzi <francesco.virlinzi@st.com>
+Date: Thu, 19 Nov 2009 15:03:46 +0100
+Subject: [PATCH] stm: clk: Fixed field names and added clk_for_each_child
+
+This patch fixes the field names 'childs' to the right 'children'
+moreover it add the new 'clk_for_each_child' function
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-oslayer.h |    4 +-
+ drivers/stm/clk.c                      |   58 +++++++++++++++++++++++---------
+ include/linux/stm/clk.h                |    7 ++--
+ 3 files changed, 48 insertions(+), 21 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-oslayer.h b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+index c25085d..f19f41a 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-oslayer.h
++++ b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+@@ -122,7 +122,7 @@ static struct clk_ops  _name= {						\
+ 		 .ops = (_ops),						\
+ 		 .flags = (_flags),					\
+ 		 .nominal_rate = (_nominal),				\
+-		 .childs = LIST_HEAD_INIT(clk_clocks[_id].childs),	\
++		 .children = LIST_HEAD_INIT(clk_clocks[_id].children),	\
+ }
+ 
+ #define REGISTER_CLK_P(_id, _ops, _nominal, _flags, _parent)		\
+@@ -132,7 +132,7 @@ static struct clk_ops  _name= {						\
+ 		 .flags = (_flags),					\
+ 		 .nominal_rate = (_nominal),				\
+ 		 .parent = (_parent),					\
+-		 .childs = LIST_HEAD_INIT(clk_clocks[_id].childs),	\
++		 .children = LIST_HEAD_INIT(clk_clocks[_id].children),	\
+ }
+ 
+ #define time_ticks_per_sec()		CONFIG_HZ
+diff --git a/drivers/stm/clk.c b/drivers/stm/clk.c
+index c1054d7..95592e4 100644
+--- a/drivers/stm/clk.c
++++ b/drivers/stm/clk.c
+@@ -5,7 +5,7 @@
+  *  Author: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+  *
+  * This file is subject to the terms and conditions of the GNU General Public
+- * License.  See the file "COPYING" in the main directory of this archive
++ * License V2 _ONLY_.  See the file "COPYING" in the main directory of this archive
+  * for more details.
+  */
+ #include <linux/kernel.h>
+@@ -171,15 +171,35 @@ static int clk_notify_to_parent(enum child_event code, struct clk *clk)
+ 	return 0;
+ }
+ 
+-static void clk_propagate_rate(struct clk *clk)
++static int __clk_for_each_child(struct clk *clk,
++		int (*fn)(struct clk *clk, void *data), void *data)
+ {
+ 	struct clk *clkp;
++	int result = 0;
+ 
+-	list_for_each_entry(clkp, &clk->childs, childs_node) {
+-		__clk_recalc_rate(clkp);
+-		if (likely(clk_wants_propagate(clkp)))
+-			clk_propagate_rate(clkp);
+-	}
++	if (!fn || !clk)
++		return -EINVAL;
++
++	list_for_each_entry(clkp, &clk->children, children_node)
++		result |= fn(clkp, data);
++
++	return result;
++}
++
++static void clk_propagate_rate(struct clk *clk);
++static int __clk_propagate_rate(struct clk *clk, void *data)
++{
++	__clk_recalc_rate(clk);
++
++	if (likely(clk_wants_propagate(clk)))
++		clk_propagate_rate(clk);
++
++	return 0;
++}
++
++static void clk_propagate_rate(struct clk *clk)
++{
++	__clk_for_each_child(clk, __clk_propagate_rate, NULL);
+ }
+ 
+ int clk_enable(struct clk *clk)
+@@ -211,11 +231,6 @@ int clk_enable(struct clk *clk)
+ }
+ EXPORT_SYMBOL(clk_enable);
+ 
+-static void clk_kref_release(struct kref *kref)
+-{
+-	/* Nothing to do */
+-}
+-
+ void clk_disable(struct clk *clk)
+ {
+ 	if (!clk)
+@@ -245,13 +260,13 @@ int clk_register(struct clk *clk)
+ 	mutex_lock(&global_list_sem);
+ 
+ 	list_add_tail(&clk->node, &global_list);
+-	INIT_LIST_HEAD(&clk->childs);
++	INIT_LIST_HEAD(&clk->children);
+ 	spin_lock_init(&clk->lock);
+ 
+ 	clk->nr_active_clocks = 0;
+ 
+ 	if (clk->parent)
+-		list_add_tail(&clk->childs_node, &clk->parent->childs);
++		list_add_tail(&clk->children_node, &clk->parent->children);
+ 
+ 	kref_init(&clk->kref);
+ 
+@@ -274,7 +289,7 @@ void clk_unregister(struct clk *clk)
+ 	mutex_lock(&global_list_sem);
+ 	list_del(&clk->node);
+ 	if (clk->parent)
+-		list_del(&clk->childs_node);
++		list_del(&clk->children_node);
+ 	mutex_unlock(&global_list_sem);
+ }
+ EXPORT_SYMBOL(clk_unregister);
+@@ -405,7 +420,7 @@ int clk_for_each(int (*fn)(struct clk *clk, void *data), void *data)
+ 	int result = 0;
+ 
+ 	if (!fn)
+-		return -1;
++		return -EINVAL;
+ 
+ 	mutex_lock(&global_list_sem);
+ 	list_for_each_entry(clkp, &global_list, node)
+@@ -415,6 +430,17 @@ int clk_for_each(int (*fn)(struct clk *clk, void *data), void *data)
+ }
+ EXPORT_SYMBOL(clk_for_each);
+ 
++int clk_for_each_child(struct clk *clk, int (*fn)(struct clk *clk, void *data),
++		void *data)
++{
++	int ret = 0;
++	mutex_lock(&global_list_sem);
++	ret = __clk_for_each_child(clk, fn, data);
++	mutex_unlock(&global_list_sem);
++	return ret;
++}
++EXPORT_SYMBOL(clk_for_each_child);
++
+ #ifdef CONFIG_PROC_FS
+ static void *clk_seq_next(struct seq_file *s, void *v, loff_t *pos)
+ {
+diff --git a/include/linux/stm/clk.h b/include/linux/stm/clk.h
+index d25444d..9f8d903 100644
+--- a/include/linux/stm/clk.h
++++ b/include/linux/stm/clk.h
+@@ -54,8 +54,8 @@ struct clk {
+ 	unsigned long		nominal_rate;
+ 	unsigned long		flags;
+ 
+-	struct list_head	childs;
+-	struct list_head	childs_node;
++	struct list_head	children;
++	struct list_head	children_node;
+ };
+ 
+ #define CLK_ALWAYS_ENABLED	(1 << 0)
+@@ -77,7 +77,8 @@ int clk_register(struct clk *);
+ void clk_unregister(struct clk *);
+ 
+ int clk_for_each(int (*fn)(struct clk *clk, void *data), void *data);
+-
++int clk_for_each_child(struct clk *clk,
++		int (*fn)(struct clk *clk, void *data), void *data);
+ /**
+  * Routes the clock on an external pin (if possible)
+  */
+-- 
+1.6.0.6
+

@@ -1,0 +1,53 @@
+From 7cd45c8a60d28086f4a5f85d79acefa6bc54f697 Mon Sep 17 00:00:00 2001
+From: Jonathan FROSDICK <jon.frosdick@st.com>
+Date: Wed, 24 Jun 2009 16:03:04 +0100
+Subject: [PATCH] sh_stm: enable stmmac ethernet for PDK7105 board default configs
+
+This board supports ethernet correctly and we usually enable
+        the relevant config options in the default configuration.
+        This patch brings the pdk7105_defconfig and pdk7105se_defconfig
+         in line with this practice
+
+Signed-off-by: Jon Frosdick <jon.frosdick@st.com>
+---
+ arch/sh/configs/pdk7105_defconfig   |    6 +++++-
+ arch/sh/configs/pdk7105se_defconfig |    6 +++++-
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/configs/pdk7105_defconfig b/arch/sh/configs/pdk7105_defconfig
+index 4d9c7ad..354e3a5 100644
+--- a/arch/sh/configs/pdk7105_defconfig
++++ b/arch/sh/configs/pdk7105_defconfig
+@@ -576,7 +576,11 @@ CONFIG_MII=y
+ # CONFIG_STNIC is not set
+ # CONFIG_SMSC911x is not set
+ # CONFIG_SMC91X is not set
+-# CONFIG_NETDEV_1000 is not set
++CONFIG_NETDEV_1000=y
++CONFIG_STMMAC_ETH=y
++# CONFIG_STMMAC_DA is not set
++# CONFIG_STMMAC_DUAL_MAC is not set
++# CONFIG_STMMAC_TIMER is not set
+ # CONFIG_NETDEV_10000 is not set
+ 
+ #
+diff --git a/arch/sh/configs/pdk7105se_defconfig b/arch/sh/configs/pdk7105se_defconfig
+index e6b96fa..c660d3e 100644
+--- a/arch/sh/configs/pdk7105se_defconfig
++++ b/arch/sh/configs/pdk7105se_defconfig
+@@ -576,7 +576,11 @@ CONFIG_MII=y
+ # CONFIG_STNIC is not set
+ # CONFIG_SMSC911x is not set
+ # CONFIG_SMC91X is not set
+-# CONFIG_NETDEV_1000 is not set
++CONFIG_NETDEV_1000=y
++CONFIG_STMMAC_ETH=y
++# CONFIG_STMMAC_DA is not set
++# CONFIG_STMMAC_DUAL_MAC is not set
++# CONFIG_STMMAC_TIMER is not set
+ # CONFIG_NETDEV_10000 is not set
+ 
+ #
+-- 
+1.6.0.6
+

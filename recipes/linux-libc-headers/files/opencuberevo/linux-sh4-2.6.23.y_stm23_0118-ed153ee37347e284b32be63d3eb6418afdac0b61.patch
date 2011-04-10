@@ -1,0 +1,33 @@
+From ed153ee37347e284b32be63d3eb6418afdac0b61 Mon Sep 17 00:00:00 2001
+From: David McKay <david.mckay@st.com>
+Date: Sun, 8 Feb 2009 21:26:22 +0000
+Subject: [PATCH] sh_stm: fix SSC sysconfig claim on STi7111
+
+Earlier versions of the 7111 datasheet erronously claimed that the ssc
+used bits 9-11 in sysconfig 5 were used to control the SSC. Actually it
+is bits 10-12. PCI wants to control bit 9 to get the PCI INT0 interrupt,
+so these have to be changed. If you want to use INT1-3, you have to not
+configure SSC1.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 0095a35..f6a9653 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -240,7 +240,8 @@ void __init stx7111_configure_ssc(struct plat_ssc_data *data)
+ 			sysconf_write(ssc_sc, 0);
+ 
+ 			/* Select SSC1 instead of PCI interrupts */
+-			ssc_sc = sysconf_claim(SYS_CFG, 5, 9, 11, "ssc");
++			/* Early datasheet version erroneously said 9-11 */
++			ssc_sc = sysconf_claim(SYS_CFG, 5, 10, 12, "ssc");
+ 			sysconf_write(ssc_sc, 0);
+ 
+ 			break;
+-- 
+1.5.6.3
+

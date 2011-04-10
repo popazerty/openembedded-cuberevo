@@ -1,0 +1,410 @@
+From 7e9faec4c1feb903c15c926c30e4fa4b1d4d6fd6 Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Wed, 19 Nov 2008 13:52:05 +0000
+Subject: [PATCH] sh: add pre-defined kptrace tracepoints on synchronization events
+
+Adds prefined tracepoints to track mutexes, semaphores, rw_semaphores etc.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/kptrace.c       |  242 +++++++++++++++++++++++++++++++++++++++-
+ include/asm-sh/semaphore.h     |   14 ++-
+ kernel/Kconfig.instrumentation |   10 ++
+ kernel/mutex.c                 |    4 +
+ 4 files changed, 261 insertions(+), 9 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index 359a4a2..5ee0e96 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -1325,6 +1325,196 @@ static int it_real_fn_rp_handler(struct kretprobe_instance *ri,
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_KPTRACE_SYNC
++static int mutex_lock_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZM 0x%.8x",
++		 (unsigned int)regs->regs[4]);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int mutex_unlock_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zm 0x%.8x",
++		 (unsigned int)regs->regs[4]);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int lock_kernel_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	write_trace_record(p, regs, "ZL");
++	return 0;
++
++}
++
++static int unlock_kernel_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	write_trace_record(p, regs, "Zl");
++	return 0;
++
++}
++
++static int down_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct semaphore *sem = (struct semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZD 0x%.8x %d",
++		 (unsigned int)regs->regs[4], atomic_read(&sem->count));
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_interruptible_pre_handler(struct kprobe *p,
++					  struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct semaphore *sem = (struct semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZI 0x%.8x %d",
++		 (unsigned int)regs->regs[4], atomic_read(&sem->count));
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_trylock_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct semaphore *sem = (struct semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZT 0x%.8x %d",
++		 (unsigned int)regs->regs[4], atomic_read(&sem->count));
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_trylock_rp_handler(struct kretprobe_instance *ri,
++				   struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zt %d",
++		 (unsigned int)regs->regs[0]);
++	write_trace_record_no_callstack(tbuf);
++
++	return 0;
++}
++
++static int up_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct semaphore *sem = (struct semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZU 0x%.8x %d",
++		 (unsigned int)regs->regs[4], atomic_read(&sem->count));
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int underscore_up_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zu 0x%.8x",
++		 (unsigned int)regs->regs[4]);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_read_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct rw_semaphore *sem = (struct rw_semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZR 0x%.8x %d",
++		 (unsigned int)regs->regs[4], sem->activity);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_read_trylock_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct rw_semaphore *sem = (struct rw_semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZA 0x%.8x %d",
++		 (unsigned int)regs->regs[4], sem->activity);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_read_trylock_rp_handler(struct kretprobe_instance *ri,
++					struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Za %d",
++		 (unsigned int)regs->regs[0]);
++	write_trace_record_no_callstack(tbuf);
++
++	return 0;
++}
++
++static int up_read_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct rw_semaphore *sem = (struct rw_semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zr 0x%.8x %d",
++		 (unsigned int)regs->regs[4], sem->activity);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_write_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct rw_semaphore *sem = (struct rw_semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZW 0x%.8x %d",
++		 (unsigned int)regs->regs[4], sem->activity);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_write_trylock_pre_handler(struct kprobe *p,
++					  struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct rw_semaphore *sem = (struct rw_semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "ZB 0x%.8x %d",
++		 (unsigned int)regs->regs[4], sem->activity);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++
++static int down_write_trylock_rp_handler(struct kretprobe_instance *ri,
++					 struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zb %d",
++		 (unsigned int)regs->regs[0]);
++	write_trace_record_no_callstack(tbuf);
++
++	return 0;
++}
++static int up_write_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	struct rw_semaphore *sem = (struct rw_semaphore *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "Zw 0x%.8x %d",
++		 (unsigned int)regs->regs[4], sem->activity);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++
++}
++#endif /* CONFIG_KPTRACE_SYNC */
++
+ /* Add the main sysdev and the "user" tracepoint set */
+ static int create_sysfs_tree(void)
+ {
+@@ -1363,7 +1553,7 @@ static int create_sysfs_tree(void)
+ 	return 1;
+ }
+ 
+-void init_core_event_logging(void)
++static void init_core_event_logging(void)
+ {
+ 	tracepoint_set_t *set = create_tracepoint_set("core_kernel_events");
+ 	if (set == NULL) {
+@@ -1399,7 +1589,7 @@ void init_core_event_logging(void)
+ 	create_tracepoint(set, "exit_thread", exit_thread_pre_handler, NULL);
+ }
+ 
+-void init_syscall_logging(void)
++static void init_syscall_logging(void)
+ {
+ 	tracepoint_set_t *set = create_tracepoint_set("syscalls");
+ 	if (set == NULL) {
+@@ -1693,7 +1883,7 @@ void init_syscall_logging(void)
+ 	INIT_SYSCALL_PROBE(sys_vmsplice);
+ }
+ 
+-void init_memory_logging(void)
++static void init_memory_logging(void)
+ {
+ 	tracepoint_set_t *set = create_tracepoint_set("memory_events");
+ 	if (set == NULL) {
+@@ -1726,7 +1916,7 @@ void init_memory_logging(void)
+ 			  bigphysarea_free_pages_pre_handler, NULL);
+ }
+ 
+-void init_network_logging(void)
++static void init_network_logging(void)
+ {
+ 	tracepoint_set_t *set = create_tracepoint_set("network_events");
+ 	if (set == NULL) {
+@@ -1746,7 +1936,7 @@ void init_network_logging(void)
+ 			  sock_recvmsg_rp_handler);
+ }
+ 
+-void init_timer_logging(void)
++static void init_timer_logging(void)
+ {
+ 	tracepoint_set_t *set = create_tracepoint_set("timer_events");
+ 	if (!set) {
+@@ -1764,6 +1954,45 @@ void init_timer_logging(void)
+ 	create_tracepoint(set, "try_to_wake_up", wake_pre_handler, NULL);
+ }
+ 
++#ifdef CONFIG_KPTRACE_SYNC
++static void init_synchronization_logging(void)
++{
++	tracepoint_set_t *set = create_tracepoint_set("synchronization_events");
++	if (!set) {
++		printk(KERN_WARNING
++			"kptrace: unable to create synchronization tracepoint "
++			"set.\n");
++		return;
++	}
++
++	create_tracepoint(set, "mutex_lock", mutex_lock_pre_handler, NULL);
++	create_tracepoint(set, "mutex_unlock", mutex_unlock_pre_handler, NULL);
++
++	create_tracepoint(set, "lock_kernel", lock_kernel_pre_handler, NULL);
++	create_tracepoint(set, "unlock_kernel", unlock_kernel_pre_handler,
++			  NULL);
++
++	create_tracepoint(set, "down", down_pre_handler, NULL);
++	create_tracepoint(set, "down_interruptible",
++			  down_interruptible_pre_handler, NULL);
++	create_tracepoint(set, "down_trylock", down_trylock_pre_handler,
++			  down_trylock_rp_handler);
++	create_tracepoint(set, "up", up_pre_handler, NULL);
++	create_tracepoint(set, "__up", underscore_up_pre_handler, NULL);
++
++	create_tracepoint(set, "down_read", down_read_pre_handler, NULL);
++	create_tracepoint(set, "down_read_trylock",
++			  down_read_trylock_pre_handler,
++			  down_read_trylock_rp_handler);
++	create_tracepoint(set, "down_write", down_write_pre_handler, NULL);
++	create_tracepoint(set, "down_write_trylock",
++			  down_write_trylock_pre_handler,
++			  down_write_trylock_rp_handler);
++	create_tracepoint(set, "up_read", up_read_pre_handler, NULL);
++	create_tracepoint(set, "up_write", up_write_pre_handler, NULL);
++}
++#endif
++
+ /**
+  *	remove_channel_controls - removes produced/consumed control files
+  */
+@@ -2323,6 +2552,9 @@ static int __init kptrace_init(void)
+ 	init_memory_logging();
+ 	init_network_logging();
+ 	init_timer_logging();
++#ifdef CONFIG_KPTRACE_SYNC
++	init_synchronization_logging();
++#endif
+ 
+ 	printk(KERN_INFO "kptrace: initialised\n");
+ 
+diff --git a/include/asm-sh/semaphore.h b/include/asm-sh/semaphore.h
+index 489f784..28f743e 100644
+--- a/include/asm-sh/semaphore.h
++++ b/include/asm-sh/semaphore.h
+@@ -39,6 +39,12 @@ struct semaphore {
+ #define DECLARE_MUTEX(name) __DECLARE_SEMAPHORE_GENERIC(name,1)
+ #define DECLARE_MUTEX_LOCKED(name) __DECLARE_SEMAPHORE_GENERIC(name,0)
+ 
++#ifdef CONFIG_KPTRACE_SYNC
++#define __kptrace_inline __attribute__ ((unused)) noinline
++#else
++#define __kptrace_inline inline
++#endif
++
+ static inline void sema_init (struct semaphore *sem, int val)
+ {
+ /*
+@@ -76,14 +82,14 @@ asmlinkage void __up(struct semaphore * sem);
+ 
+ extern spinlock_t semaphore_wake_lock;
+ 
+-static inline void down(struct semaphore * sem)
++static __kptrace_inline void down(struct semaphore *sem)
+ {
+ 	might_sleep();
+ 	if (atomic_dec_return(&sem->count) < 0)
+ 		__down(sem);
+ }
+ 
+-static inline int down_interruptible(struct semaphore * sem)
++static __kptrace_inline int down_interruptible(struct semaphore *sem)
+ {
+ 	int ret = 0;
+ 
+@@ -93,7 +99,7 @@ static inline int down_interruptible(struct semaphore * sem)
+ 	return ret;
+ }
+ 
+-static inline int down_trylock(struct semaphore * sem)
++static __kptrace_inline int down_trylock(struct semaphore *sem)
+ {
+ 	int ret = 0;
+ 
+@@ -106,7 +112,7 @@ static inline int down_trylock(struct semaphore * sem)
+  * Note! This is subtle. We jump to wake people up only if
+  * the semaphore was negative (== somebody was waiting on it).
+  */
+-static inline void up(struct semaphore * sem)
++static __kptrace_inline void up(struct semaphore *sem)
+ {
+ 	if (atomic_inc_return(&sem->count) <= 0)
+ 		__up(sem);
+diff --git a/kernel/Kconfig.instrumentation b/kernel/Kconfig.instrumentation
+index 3511cbf..58c70bc 100644
+--- a/kernel/Kconfig.instrumentation
++++ b/kernel/Kconfig.instrumentation
+@@ -22,6 +22,16 @@ config KPTRACE
+ 	  of pre-defined tracepoints, plus a simple way to add and remove
+ 	  tracepoints at runtime.
+ 
++config KPTRACE_SYNC
++	bool "Trace synchronization events"
++	depends on KPTRACE
++	default n
++	help
++	 For KPTrace to be able to trace synchonization events (for example
++	 mutex and semaphore usage), certain key functions like mutex_lock
++	 must not be inlined. This may adversely affect system performance,
++	 and so this option must be used with care.
++
+ config MARKERS
+ 	bool "Activate markers"
+ 	help
+diff --git a/kernel/mutex.c b/kernel/mutex.c
+index 691b865..970d471 100644
+--- a/kernel/mutex.c
++++ b/kernel/mutex.c
+@@ -81,7 +81,11 @@ __mutex_lock_slowpath(atomic_t *lock_count);
+  *
+  * This function is similar to (but not equivalent to) down().
+  */
++#ifdef CONFIG_KPTRACE_SYNC
++void fastcall __sched noinline mutex_lock(struct mutex *lock)
++#else
+ void inline fastcall __sched mutex_lock(struct mutex *lock)
++#endif
+ {
+ 	might_sleep();
+ 	/*
+-- 
+1.5.3.6
+

@@ -1,0 +1,58 @@
+From 4564c44936c4e6ffd745e11cfa90eed8380c9d6f Mon Sep 17 00:00:00 2001
+From: David McKay <david.mckay@st.com>
+Date: Wed, 10 Jun 2009 11:19:28 +0100
+Subject: [PATCH] sh_stm: Fix PCI reset on STMicro mb680 board
+
+The PCI reset scheme on the mb680 uses the EPLD on the mb705 peripheral
+board if it is present. If not, it uses a pio 15,6 to reset the board.
+In this case J47D must be fitted on the mb680. At the moment this is
+done via conditional compilation rather than autoprobing if the mb705 is
+present or not.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/mb680/setup.c |   20 ++++++++++++++++++--
+ 1 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 984ae00..9d6ad2c 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -164,7 +164,14 @@ lirc_scd_t lirc_scd = {
+ 	.noiserecov = 0,
+ };
+ 
+-
++#ifdef CONFIG_SH_ST_MB705
++static void mb705_epld_pci_reset(void)
++{
++	mb705_reset(EPLD_EMI_RESET_SW1, 1000);
++	/* PCI spec says one second */
++	mdelay(10);
++}
++#endif
+ 
+ /* PCI configuration */
+ 
+@@ -175,7 +182,16 @@ static struct pci_config_data  pci_config = {
+ 	.idsel_hi = 30,
+ 	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
+ 	.pci_clk = 33333333,
+-	.pci_reset_pio = stpio_to_gpio(15, 7)
++	/*
++	 * When connected to the mb705, PCI reset is controlled by an EPLD
++	 * register on the mb705. When used standalone a PIO pin is used,
++	 * and J47-D, J9-G must be fitted.
++	 */
++#ifdef CONFIG_SH_ST_MB705
++	.pci_reset = mb705_epld_pci_reset,
++#else
++	.pci_reset_pio = stpio_to_gpio(15, 6),
++#endif
+ };
+ 
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+-- 
+1.6.0.6
+

@@ -1,0 +1,42 @@
+From 648915a65fe3d4fd7cbff35042b24c6c26fbb08b Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Thu, 16 Jul 2009 11:51:17 +0200
+Subject: [PATCH] stm: pm: Updated the pms header file
+
+Fix inline functions in the pms header file to be static.
+This also makes it compliant with the STAPI requirement.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ include/linux/stm/pms.h |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/stm/pms.h b/include/linux/stm/pms.h
+index 3fc5aad..a49395f 100644
+--- a/include/linux/stm/pms.h
++++ b/include/linux/stm/pms.h
+@@ -64,17 +64,17 @@ int pms_global_standby(pms_standby_t state);
+ #ifdef CONFIG_STM_LPC
+ int pms_set_wakeup_timers(unsigned long long second);
+ #else
+-inline int pms_set_wakeup_timers(unsigned long long second)
++static inline int pms_set_wakeup_timers(unsigned long long second)
+ {
+ 	return 0;
+ }
+ #endif
+-inline int pms_disable_wakeup_timers(void)
++static inline int pms_disable_wakeup_timers(void)
+ {
+ 	return pms_set_wakeup_timers(0);
+ }
+ 
+-inline int pms_change_wakeup_timers(unsigned long long second)
++static inline int pms_change_wakeup_timers(unsigned long long second)
+ {
+ 	pms_set_wakeup_timers(0);
+ 	return pms_set_wakeup_timers(second);
+-- 
+1.6.0.6
+

@@ -1,0 +1,74 @@
+From 32b0bd6231f5ebe590f9f47539cdf3d277633434 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 20 Nov 2008 15:34:51 +0100
+Subject: [PATCH] kgdb: use trapa #0x3c for entering into the debugger.
+
+Use the trapa #0x3c instead of 0xff for entering into KGDB.
+This is to align our stub to the latest development and
+fix the CONFIG_SH_STANDARD_BIOS support.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/debugtraps.S |    4 ++--
+ arch/sh/kernel/kgdb.c       |    8 ++------
+ include/asm-sh/kgdb.h       |    2 +-
+ 3 files changed, 5 insertions(+), 9 deletions(-)
+
+diff --git a/arch/sh/kernel/debugtraps.S b/arch/sh/kernel/debugtraps.S
+index c9f00a5..c1837e7 100644
+--- a/arch/sh/kernel/debugtraps.S
++++ b/arch/sh/kernel/debugtraps.S
+@@ -35,7 +35,7 @@ ENTRY(debug_trap_table)
+ 	.long debug_trap_handler	/* 0x39 */
+ 	.long debug_trap_handler	/* 0x3a */
+ 	.long debug_trap_handler	/* 0x3b */
+-	.long debug_trap_handler	/* 0x3c */
++	.long kgdb_exception_handler	/* 0x3c */
+ 	.long debug_trap_handler	/* 0x3d */
+ 	.long bug_trap_handler		/* 0x3e */
+-	.long kgdb_exception_handler	/* 0x3f */
++	.long sh_bios_handler		/* 0x3f */
+diff --git a/arch/sh/kernel/kgdb.c b/arch/sh/kernel/kgdb.c
+index 125ab8e..45adc24 100644
+--- a/arch/sh/kernel/kgdb.c
++++ b/arch/sh/kernel/kgdb.c
+@@ -362,7 +362,7 @@ void kgdb_exception_handler(struct pt_regs *regs)
+ 	 * will later be replaced by its original one.  Do NOT do this for
+ 	 * trap 0xff, since that indicates a compiled-in breakpoint which
+ 	 * will not be replaced (and we would retake the trap forever) */
+-	if ((excep_code == TRAP_VEC) && (trapa_value != (0xff << 2)))
++	if ((excep_code == TRAP_VEC) && (trapa_value != (0x3c << 2)))
+ 		trap_registers.pc -= 2;
+ #endif
+ 
+@@ -400,12 +400,8 @@ int __init kgdb_arch_init(void)
+ 
+ struct kgdb_arch arch_kgdb_ops = {
+ #ifdef CONFIG_CPU_LITTLE_ENDIAN
+-#ifdef CONFIG_CPU_SUBTYPE_ST40
+ 	.gdb_bpt_instr = { 0x32, 0xc3 },
+-#else
+-	.gdb_bpt_instr = {0xff, 0xc3},
+-#endif
+ #else /* ! CONFIG_CPU_LITTLE_ENDIAN */
+-	.gdb_bpt_instr = {0xc3, 0xff},
++	.gdb_bpt_instr = { 0xc3, 0x32 },
+ #endif
+ };
+diff --git a/include/asm-sh/kgdb.h b/include/asm-sh/kgdb.h
+index 77afea1..8187b25 100644
+--- a/include/asm-sh/kgdb.h
++++ b/include/asm-sh/kgdb.h
+@@ -39,7 +39,7 @@ struct kgdb_regs {
+ 	unsigned long sr;
+ };
+ 
+-#define BREAKPOINT()		asm("trapa #0xff");
++#define BREAKPOINT()		asm("trapa #0x3c");
+ #define BREAK_INSTR_SIZE	2
+ #define CACHE_FLUSH_IS_SAFE	1
+ 
+-- 
+1.5.3.6
+

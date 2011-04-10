@@ -1,0 +1,13 @@
+Index: linux-sh4-2.6.23.1_stm23_0105/kernel/sched_fair.c
+===================================================================
+--- linux-sh4-2.6.23.1_stm23_0105.orig/kernel/sched_fair.c	2007-10-12 17:43:44.000000000 +0100
++++ linux-sh4-2.6.23.1_stm23_0105/kernel/sched_fair.c	2008-01-21 11:31:24.000000000 +0000
+@@ -645,7 +645,7 @@
+ 		 * get a milliseconds-range estimation of the amount of
+ 		 * time that the task spent sleeping:
+ 		 */
+-		if (unlikely(prof_on == SLEEP_PROFILING)) {
++		if (unlikely(immediate_read(prof_on) == SLEEP_PROFILING)) {
+ 			profile_hits(SLEEP_PROFILING, (void *)get_wchan(tsk),
+ 				     delta >> 20);
+ 		}

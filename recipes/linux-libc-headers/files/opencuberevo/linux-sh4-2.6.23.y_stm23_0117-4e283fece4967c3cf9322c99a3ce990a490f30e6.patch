@@ -1,0 +1,40 @@
+From 4e283fece4967c3cf9322c99a3ce990a490f30e6 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 20 Nov 2008 15:35:05 +0100
+Subject: [PATCH] kgdb: do not reload VBR while handling debugger breackpoint
+
+Save the VBR allowing GDB to dump full registers set but do not reload it
+as soon as the kgdb_handle_exception is invoked.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/kgdb.c |    5 -----
+ 1 files changed, 0 insertions(+), 5 deletions(-)
+
+diff --git a/arch/sh/kernel/kgdb.c b/arch/sh/kernel/kgdb.c
+index 45adc24..d930ed0 100644
+--- a/arch/sh/kernel/kgdb.c
++++ b/arch/sh/kernel/kgdb.c
+@@ -329,8 +329,6 @@ void kgdb_exception_handler(struct pt_regs *regs)
+ 	int trapa_value = *(volatile unsigned long *)(TRA);
+ 	int count;
+ 
+-	/*show_regs(regs);*/
+-
+ 	/* Copy kernel regs (from stack) */
+ 	for (count = 0; count < 16; count++)
+ 		trap_registers.regs[count] = regs->regs[count];
+@@ -388,9 +386,6 @@ void kgdb_exception_handler(struct pt_regs *regs)
+ 	regs->gbr = trap_registers.gbr;
+ 	regs->mach = trap_registers.mach;
+ 	regs->macl = trap_registers.macl;
+-
+-	vbr_val = trap_registers.vbr;
+-	__asm__ __volatile__("ldc %0, vbr": :"r"(vbr_val));
+ }
+ 
+ int __init kgdb_arch_init(void)
+-- 
+1.5.3.6
+

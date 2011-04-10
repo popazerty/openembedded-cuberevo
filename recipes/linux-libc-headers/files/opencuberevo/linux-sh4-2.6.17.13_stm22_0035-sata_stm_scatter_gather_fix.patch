@@ -1,0 +1,191 @@
+Index: linux/drivers/scsi/sata_stm.c
+===================================================================
+--- linux.orig/drivers/scsi/sata_stm.c
++++ linux/drivers/scsi/sata_stm.c
+@@ -38,7 +38,7 @@
+ #include <linux/st_soc.h>
+ 
+ #define DRV_NAME			"sata_stm"
+-#define DRV_VERSION			"0.2"
++#define DRV_VERSION			"0.3"
+ 
+ /* Offsets of the component blocks */
+ #define SATA_AHB2STBUS_BASE			0x00000000
+@@ -230,11 +230,7 @@
+ #define SERROR_ERR_P	(1<<10)
+ #define SERROR_ERR_E	(1<<11)
+ 
+-/*
+- * DMAH_CH0_MAX_BLK_SIZE is 4095, so with CTL0.DST_TR_WIDTH set to 32,
+- * we are limited to just under 16K. In practice this is 12K.
+- */
+-#define DMAC_BLOCK_TS_MAX_BYTES (12*1024)
++#define SATA_FIS_SIZE	(8*1024)
+ 
+ /* Layout of a DMAC Linked List Item (LLI)
+  * DMAH_CH0_STAT_DST and DMAH_CH0_STAT_SRC are both 0 */
+@@ -244,7 +240,6 @@ struct stm_lli {
+ 	u32	llp;
+ 	u32	ctl0;
+ 	u32	ctl1;
+-  u32 v1, v2;
+ };
+ 
+ struct stm_host_priv
+@@ -261,7 +256,14 @@ struct stm_port_priv
+ 	struct stm_lli *softsg_end;	/* End of the softsg node */
+ };
+ 
+-#define STM_LLI_BYTES (LIBATA_MAX_PRD * sizeof(struct stm_lli))
++/* There is an undocumented restriction that DMA blocks must not span
++ * a FIS boundary. So to ensure we have enough LLIs to cope we restrict
++ * the maximum number of sectors, and assume a worst case of one
++ * LLI per sector.
++ */
++#define STM_MAX_SECTORS ATA_MAX_SECTORS
++#define STM_MAX_LLIS	ATA_MAX_SECTORS
++#define STM_LLI_BYTES	(STM_MAX_LLIS * sizeof(struct stm_lli))
+ 
+ static void stm_phy_reset(struct ata_port *ap)
+ {
+@@ -270,7 +272,24 @@ static void stm_phy_reset(struct ata_por
+ 
+ DPRINTK("ENTER\n");
+ 
+-/* ST SATA 1.4 doc has a reference for what these bits mean */
++	/*
++	 * "sata1hostc Functional Specification" 1.4 defines the PHYCR as:
++	 * phy_ctrl[0]     sendalign
++	 * phy_ctrl[1]     at
++	 * phy_ctrl[4:2]   divdll[2:0]
++	 * phy_ctrl[6:5]   txslew[1:0]
++	 * phy_ctrl[8:7]   preemph[1:0]
++	 * phy_ctrl[10:9]  sdthres[1:0]
++	 * phy_ctrl[13:11] swing[2:0]
++	 * phy_ctrl[14]    recen
++	 * phy_ctrl[15]    ensigdet
++	 * phy_ctrl[16]    enasyncdetneg
++	 * phy_ctrl[17]    enasyncdetpos
++	 * phy_ctrl[18]    startcomzc
++	 * phy_ctrl[19]    startcomsr
++	 * phy_ctrl[24:20] iddqsub[4:0]
++	 * phy_ctrl[31:25] NOT DEFINED
++	 */
+ 	writel(hpriv->phy_init, mmio + SATA_PHYCR);
+         mdelay(100);
+ 
+@@ -397,10 +416,10 @@ static void stm_fill_sg(struct ata_queue
+ 	struct ata_port *ap = qc->ap;
+ 	struct stm_host_priv *hpriv = ap->host_set->private_data;
+         struct stm_port_priv *pp = ap->private_data;
+-        void *mmio = (void *) ap->ioaddr.cmd_addr;
+ 	unsigned int write = (qc->tf.flags & ATA_TFLAG_WRITE);
+ 	unsigned int idx;
+ 	u32 sar, dar, ctl0;
++	u32 fis_offset;
+ 
+ 	DPRINTK("ENTER\n");
+ 
+@@ -434,6 +453,8 @@ static void stm_fill_sg(struct ata_queue
+ 	}
+ 
+ 	idx = 0;
++	sar = dar = 0;
++	fis_offset = 0;
+ 	ata_for_each_sg(sg, qc) {
+ 		u32 addr;
+ 		u32 sg_len, len;
+@@ -442,15 +463,16 @@ static void stm_fill_sg(struct ata_queue
+ 		sg_len = sg_dma_len(sg);
+ 
+ 		while (sg_len) {
++			/* Ensure no DMA block crosses a FIS boundary */
+ 			len = sg_len;
+-			if (len > DMAC_BLOCK_TS_MAX_BYTES)
+-				len = DMAC_BLOCK_TS_MAX_BYTES;
++			if (len + fis_offset > SATA_FIS_SIZE)
++				len = SATA_FIS_SIZE - fis_offset;
+ 
++			/* SATA host (master2) has a hardwired address of
++			 * DMADR, so leave the address set to 0. */
+ 			if (write) {
+ 				sar = addr;
+-				dar = (u32)(mmio + SATA_AHBHOST_BASE);
+ 			} else {
+-				sar = (u32)(mmio + SATA_AHBHOST_BASE);
+ 				dar = addr;
+ 			}
+ 
+@@ -467,14 +489,15 @@ static void stm_fill_sg(struct ata_queue
+ 				pp->lli[idx].ctl0, pp->lli[idx].ctl1);
+ 
+ 			idx++;
++			BUG_ON(idx >= STM_MAX_LLIS);
+ 			sg_len -= len;
+ 			addr += len;
++			fis_offset = (fis_offset + len) % SATA_FIS_SIZE;
+ 		}
+ 	}
+ 
+ 	WARN_ON(idx == 0);
+ 	pp->lli[idx-1].llp = 0;
+-	//	pp->lli[idx-1].ctl0 &= ~(DMAC_CTL_LLP_DST_EN | DMAC_CTL_LLP_SRC_EN);
+ 
+ 	if (hpriv->softsg) {
+ 		pp->softsg_node = pp->lli;
+@@ -492,7 +515,7 @@ static void stm_qc_prep(struct ata_queue
+ }
+ 
+ static unsigned long error_count;
+-static unsigned int print_error=0;
++static unsigned int print_error=1;
+ 
+ static irqreturn_t stm_sata_interrupt(int irq, void *dev_instance, struct pt_regs *regs)
+ {
+@@ -536,6 +559,9 @@ DPRINTK("ENTER\n");
+ 
+ 			writel((1<<8) | (1<<0), mmio + DMAC_ChEnReg);
+ 		} else
++		if (readl(mmio + DMAC_RAWERR) & 1) {
++			printk("DMA error asserted\n");
++		} else
+ 		if (readl(mmio + SATA_INTPR) & (SATA_INT_ERR)) {
+ 			/* Error code set in SError */
+ 			if (print_error) {
+@@ -718,7 +744,7 @@ static struct scsi_host_template stm_sat
+ 	.can_queue		= ATA_DEF_QUEUE,
+ 	.this_id		= ATA_SHT_THIS_ID,
+ 	.sg_tablesize		= LIBATA_MAX_PRD,
+-	.max_sectors		= ATA_MAX_SECTORS,
++	.max_sectors		= STM_MAX_SECTORS,
+ 	.cmd_per_lun		= ATA_SHT_CMD_PER_LUN,
+ 	.emulated		= ATA_SHT_EMULATED,
+ 	.use_clustering		= ATA_SHT_USE_CLUSTERING,
+@@ -796,12 +822,11 @@ static int __init stm_sata_probe(struct 
+ 		return retval;
+ 	}
+ 
+-	probe_ent = kmalloc(sizeof(*probe_ent), GFP_KERNEL);
++	probe_ent = kzalloc(sizeof(*probe_ent), GFP_KERNEL);
+ 	if (probe_ent == NULL) {
+ 		retval = -ENOMEM;
+ 		goto err1;
+ 	}
+-	memset(probe_ent, 0, sizeof(*probe_ent));
+ 	probe_ent->dev = dev;
+ 	INIT_LIST_HEAD(&probe_ent->node);
+ 
+@@ -813,12 +838,11 @@ static int __init stm_sata_probe(struct 
+ 
+ 	mmio_base = (unsigned long)virt_base;
+ 
+-	hpriv = kmalloc(sizeof(*hpriv), GFP_KERNEL);
++	hpriv = kzalloc(sizeof(*hpriv), GFP_KERNEL);
+ 	if (!hpriv) {
+ 		retval = -ENOMEM;
+ 		goto err3;
+ 	}
+-	memset(hpriv, 0, sizeof(*hpriv));
+ 
+ 	probe_ent->sht = &stm_sata_sht;
+ 	probe_ent->host_flags = ATA_FLAG_SATA | ATA_FLAG_NO_LEGACY |

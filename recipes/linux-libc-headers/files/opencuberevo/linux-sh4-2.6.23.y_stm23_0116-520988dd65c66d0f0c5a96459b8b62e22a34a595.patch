@@ -1,0 +1,57 @@
+From 520988dd65c66d0f0c5a96459b8b62e22a34a595 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Thu, 4 Sep 2008 17:36:30 +0100
+Subject: [PATCH] sh_stm: Fixed ILC headers.
+
+Added missing include and ctrl_outl/ctrl_inl changed to writel/readl
+(no more compiler warnings).
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/irq/st40_ilc.h |   14 +++++++-------
+ include/asm-sh/irq-ilc.h          |    2 ++
+ 2 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/irq/st40_ilc.h b/arch/sh/kernel/cpu/irq/st40_ilc.h
+index c23565f..86486f9 100644
+--- a/arch/sh/kernel/cpu/irq/st40_ilc.h
++++ b/arch/sh/kernel/cpu/irq/st40_ilc.h
+@@ -33,14 +33,14 @@ extern void __iomem *ilc_base;
+ /*
+  * Macros to get/set/clear ILC registers
+  */
+-#define ILC_SET_ENABLE(_int)     ctrl_outl(_BIT(_int), ILC_SET_ENABLE_REG(_int))
+-#define ILC_CLR_ENABLE(_int)     ctrl_outl(_BIT(_int), ILC_CLR_ENABLE_REG(_int))
+-#define ILC_GET_ENABLE(_int)     (ctrl_inl(ILC_ENABLE_REG(_int)) & _BIT(_int))
+-#define ILC_CLR_STATUS(_int)     ctrl_outl(_BIT(_int), ILC_CLR_STATUS_REG(_int))
+-#define ILC_GET_STATUS(_int)     (ctrl_inl(ILC_STATUS_REG(_int)) & _BIT(_int))
+-#define ILC_SET_PRI(_int, _pri)  ctrl_outl((_pri), ILC_PRIORITY_REG(_int))
++#define ILC_SET_ENABLE(_int)     writel(_BIT(_int), ILC_SET_ENABLE_REG(_int))
++#define ILC_CLR_ENABLE(_int)     writel(_BIT(_int), ILC_CLR_ENABLE_REG(_int))
++#define ILC_GET_ENABLE(_int)     (readl(ILC_ENABLE_REG(_int)) & _BIT(_int))
++#define ILC_CLR_STATUS(_int)     writel(_BIT(_int), ILC_CLR_STATUS_REG(_int))
++#define ILC_GET_STATUS(_int)     (readl(ILC_STATUS_REG(_int)) & _BIT(_int))
++#define ILC_SET_PRI(_int, _pri)  writel((_pri), ILC_PRIORITY_REG(_int))
+ 
+-#define ILC_SET_TRIGMODE(_int, _mod) ctrl_outl((_mod), ILC_TRIGMODE_REG(_int))
++#define ILC_SET_TRIGMODE(_int, _mod) writel((_mod), ILC_TRIGMODE_REG(_int))
+ 
+ #define ILC_TRIGGERMODE_NONE	0
+ #define ILC_TRIGGERMODE_HIGH	1
+diff --git a/include/asm-sh/irq-ilc.h b/include/asm-sh/irq-ilc.h
+index 7e86c52..95e1c4c 100644
+--- a/include/asm-sh/irq-ilc.h
++++ b/include/asm-sh/irq-ilc.h
+@@ -9,6 +9,8 @@
+ #ifndef __ASM_SH_IRQ_ILC_H
+ #define __ASM_SH_IRQ_ILC_H
+ 
++#include <linux/platform_device.h>
++
+ #if defined(CONFIG_CPU_SUBTYPE_STX7105)
+ #define ILC_FIRST_IRQ	176
+ #define ILC_NR_IRQS	(64+35)
+-- 
+1.5.3.6
+

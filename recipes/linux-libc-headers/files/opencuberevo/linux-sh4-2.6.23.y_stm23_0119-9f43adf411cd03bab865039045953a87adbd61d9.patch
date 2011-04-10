@@ -1,0 +1,1759 @@
+From 9f43adf411cd03bab865039045953a87adbd61d9 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Wed, 6 May 2009 10:46:04 +0100
+Subject: [PATCH] stm: sysconf driver rework to support more then one sysconf block
+
+New SOCs have more then one sysconf block, while the driver assumed
+that the configuration/status/etc registers were laying in one,
+contiguous area.
+
+This patch introduces support for multiple sysconf platform devices,
+different (SOC-specific) register groups and additional debug
+features. It also fixes conflicts in sysconf fields use in 7111 and 7200
+BSPs.
+
+It also splits the locking into one for the claim/release code,
+which should only be called from task level, and another around the
+register manipulation which is used with spin_*lock_irq*, so
+sysconf_write may be called from interrupt context.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/sata-init.c     |    3 +
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |   17 +-
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |  235 +++++++-----
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |   15 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |   29 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |   15 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |   38 +--
+ arch/sh/kernel/cpu/sh4/soc-stx5197.h   |   37 --
+ drivers/stm/sysconf.c                  |  693 ++++++++++++++++++++++----------
+ include/linux/stm/soc.h                |   23 +-
+ include/linux/stm/sysconf.h            |   95 ++++-
+ 11 files changed, 780 insertions(+), 420 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/sata-init.c b/arch/sh/kernel/cpu/sh4/sata-init.c
+index 392b8a3..8368175 100644
+--- a/arch/sh/kernel/cpu/sh4/sata-init.c
++++ b/arch/sh/kernel/cpu/sh4/sata-init.c
+@@ -316,4 +316,7 @@ void __init stm_sata_miphy_init(void)
+ 
+ 	/* bit lock detection strength */
+ 	SATA_JTAG_DR_Write_MIPHY(sc, 0x86, 0x61);
++
++	sysconf_release(sc);
++	sysconf_release(status_sc);
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index 7ea814f..295f4b6 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -783,16 +783,17 @@ static struct platform_device sysconf_device = {
+ 	.resource	= (struct resource[]) {
+ 		{
+ 			.start	= 0x19001000,
+-			.end	= 0x19001000 + 0x100,
++			.end	= 0x19001187,
+ 			.flags	= IORESOURCE_MEM
+ 		}
+ 	},
+-	.dev = {
+-		.platform_data = &(struct plat_sysconf_data) {
+-			.sys_device_offset = 0,
+-			.sys_sta_offset = 8,
+-			.sys_cfg_offset = 0x100,
+-		}
++	.dev.platform_data = &(struct plat_sysconf_data) {
++		.groups_num = 3,
++		.groups = (struct plat_sysconf_group []) {
++			PLAT_SYSCONF_GROUP(SYS_DEV, 0x000),
++			PLAT_SYSCONF_GROUP(SYS_STA, 0x008),
++			PLAT_SYSCONF_GROUP(SYS_CFG, 0x100),
++		},
+ 	}
+ };
+ 
+@@ -820,7 +821,7 @@ void __init stx7100_early_device_init(void)
+ 
+ 	/* Initialise PIO and sysconf drivers */
+ 
+-	sysconf_early_init(&sysconf_device);
++	sysconf_early_init(&sysconf_device, 1);
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+ 			 176);
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index 1b58c1c..ca3cbf9 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -27,79 +27,29 @@
+ #include <asm/irl.h>
+ #include <asm/irq-ilc.h>
+ 
+-/*
+- * Config control A and B and config monitor A and B are in the High
+- * Speed (HS) config regiter block (in STBus Group 1). We don't currently
+- * map these.
+- *
+- * The remaining config control and config monitor registers are in the
+- * High Density (HD) config register block (in STBus Group 3). These are
+- * mapped using the sysconf driver as it does the right thing, as long
+- * as we disregard the distinction between SYS_STA and SYS_CFG because
+- * monitor and control registers are intermixed.
+- *
+- * Note registers are documented as offsets, but the sysconf driver
+- * always multiples by 4, hence the divide below.
+- */
+-
+-#define CFG_CONTROL_C	(0x00 / 4)
+-#define CFG_CONTROL_D	(0x04 / 4)
+-#define CFG_CONTROL_E	(0x08 / 4)
+-#define CFG_CONTROL_F	(0x0c / 4)
+-#define CFG_CONTROL_G	(0x10 / 4)
+-#define CFG_CONTROL_H	(0x14 / 4)
+-#define CFG_CONTROL_I	(0x18 / 4)
+-#define CFG_CONTROL_J	(0x1c / 4)
+-
+-#define CFG_CONTROL_K	(0x40 / 4)
+-#define CFG_CONTROL_L	(0x44 / 4)
+-#define CFG_CONTROL_M	(0x48 / 4)
+-#define CFG_CONTROL_N	(0x4c / 4)
+-#define CFG_CONTROL_O	(0x50 / 4)
+-#define CFG_CONTROL_P	(0x54 / 4)
+-#define CFG_CONTROL_Q	(0x58 / 4)
+-#define CFG_CONTROL_R	(0x5c / 4)
+-
+-#define CFG_MONITOR_C	(0x20 / 4)
+-#define CFG_MONITOR_D	(0x24 / 4)
+-#define CFG_MONITOR_E	(0x28 / 4)
+-#define CFG_MONITOR_F	(0x2c / 4)
+-#define CFG_MONITOR_G	(0x30 / 4)
+-#define CFG_MONITOR_H	(0x34 / 4)
+-#define CFG_MONITOR_I	(0x38 / 4)
+-#define CFG_MONITOR_J	(0x3c / 4)
+-
+-#define CFG_MONITOR_K	(0x60 / 4)
+-#define CFG_MONITOR_L	(0x64 / 4)
+-#define CFG_MONITOR_M	(0x68 / 4)
+-#define CFG_MONITOR_N	(0x6c / 4)
+-#define CFG_MONITOR_O	(0x70 / 4)
+-#define CFG_MONITOR_P	(0x74 / 4)
+-#define CFG_MONITOR_Q	(0x78 / 4)
+-#define CFG_MONITOR_R	(0x7c / 4)
+-
+ struct {
+-	unsigned char cfg;
++	unsigned char regtype, regnum;
+ 	unsigned char off[2];
+ } const pio_conf[5] = {
+-	{ CFG_CONTROL_F, {  0,  8} },
+-	{ CFG_CONTROL_F, { 16, 24} },
+-	{ CFG_CONTROL_G, {  0,  8} },
+-	{ CFG_CONTROL_G, { 16, 24} },
+-	{ CFG_CONTROL_O, {  0,  8} }
++	{ CFG_CTRL_F, {  0,  8} },
++	{ CFG_CTRL_F, { 16, 24} },
++	{ CFG_CTRL_G, {  0,  8} },
++	{ CFG_CTRL_G, { 16, 24} },
++	{ CFG_CTRL_O, {  0,  8} }
+ };
+ 
+ static void stx5197_pio_conf(int bank, int pin, int alt, const char *name)
+ {
+-	int cfg = pio_conf[bank].cfg;
++	int regtype = pio_conf[bank].regtype;
++	int regnum = pio_conf[bank].regnum;
+ 	int bit[2] = {
+ 		 pio_conf[bank].off[0] + pin,
+ 		 pio_conf[bank].off[1] + pin
+ 	};
+ 	struct sysconf_field *sc[2];
+ 
+-	sc[0] = sysconf_claim(SYS_CFG, cfg, bit[0], bit[0], name);
+-	sc[1] = sysconf_claim(SYS_CFG, cfg, bit[1], bit[1], name);
++	sc[0] = sysconf_claim(regtype, regnum, bit[0], bit[0], name);
++	sc[1] = sysconf_claim(regtype, regnum, bit[1], bit[1], name);
+ 	sysconf_write(sc[0], (alt >> 0) & 1);
+ 	sysconf_write(sc[1], (alt >> 1) & 1);
+ }
+@@ -130,11 +80,11 @@ void __init stx5197_configure_usb(void)
+ 	struct sysconf_field *sc;
+ 
+ 	/* USB power down */
+-	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_H, 8, 8, "USB");
++	sc = sysconf_claim(CFG_CTRL_H, 8, 8, "USB");
+ 	sysconf_write(sc, 0);
+ 
+ 	/* DDR enable for ULPI. 0=8 bit SDR ULPI, 1=4 bit DDR ULPI */
+-	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_M, 12, 12, "USB");
++	sc = sysconf_claim(CFG_CTRL_M, 12, 12, "USB");
+ 	sysconf_write(sc, 0);
+ 
+ 	platform_device_register(&st_usb);
+@@ -257,14 +207,14 @@ void __init stx5197_configure_ssc(struct plat_ssc_data *data)
+ 
+ 			/* spi_bootnotcomms
+ 			 * 0: SSC0 -> PIO1[7:6], 1: SSC0 -> SPI */
+-			sc = sysconf_claim(SYS_CFG, CFG_CONTROL_M, 14, 14,
++			sc = sysconf_claim(CFG_CTRL_M, 14, 14,
+ 					   "ssc");
+ 
+ 			if (capability & SSC_SPI_CAPABILITY) {
+ 				sysconf_write(sc, 1);
+ 				ssc_pio->pio[0].pio_port = SSC_NO_PIO;
+ 
+-				spi_cs = sysconf_claim(SYS_CFG, CFG_CONTROL_M,
++				spi_cs = sysconf_claim(CFG_CTRL_M,
+ 						       13, 13, "ssc");
+ 				sysconf_write(spi_cs, 1);
+ 				ssc_pio->chipselect = stx5197_ssc0_cs;
+@@ -274,7 +224,7 @@ void __init stx5197_configure_ssc(struct plat_ssc_data *data)
+ 
+ 			/* pio_functionality_on_pio1_7.
+ 			 * 0: QAM validation, 1: Normal PIO */
+-			sc = sysconf_claim(SYS_CFG, CFG_CONTROL_I, 2, 2, "ssc");
++			sc = sysconf_claim(CFG_CTRL_I, 2, 2, "ssc");
+ 			sysconf_write(sc, 1);
+ 
+ 			break;
+@@ -287,7 +237,7 @@ void __init stx5197_configure_ssc(struct plat_ssc_data *data)
+ 				 *  0 IP289 I2C input from PIO1[0:1]
+ 				 *  1 IP289 input from BE COMMS SSC1
+ 				 */
+-				sc = sysconf_claim(SYS_CFG, CFG_CONTROL_C,
++				sc = sysconf_claim(CFG_CTRL_C,
+ 						   1, 1, "ssc");
+ 				sysconf_write(sc, 1);
+ 			} else {
+@@ -295,7 +245,7 @@ void __init stx5197_configure_ssc(struct plat_ssc_data *data)
+ 				   *    QAM_SCLT/SDAT.
+ 				   * 1: SSC1 is routed to QAM_SCLT/SDAT.
+ 				   */
+-				  sc = sysconf_claim(SYS_CFG, CFG_CONTROL_K,
++				  sc = sysconf_claim(CFG_CTRL_K,
+ 						     27, 27, "ssc");
+ 				  sysconf_write(sc, 1);
+ 			}
+@@ -395,22 +345,22 @@ void stx5197_configure_ethernet(int rmii, int ext_clk, int phy_bus)
+ 	stx5197eth_private_data.bus_id = phy_bus;
+ 
+ 	/* Ethernet interface on */
+-	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 0, 0, "stmmac");
++	sc = sysconf_claim(CFG_CTRL_E, 0, 0, "stmmac");
+ 	sysconf_write(sc, 1);
+ 
+ 	/* MII plyclk out enable: 0=output, 1=input */
+-	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 6, 6, "stmmac");
++	sc = sysconf_claim(CFG_CTRL_E, 6, 6, "stmmac");
+ 	sysconf_write(sc, ext_clk);
+ 
+ 	/* MAC speed*/
+-	mac_speed_sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 1, 1, "stmmac");
++	mac_speed_sc = sysconf_claim(CFG_CTRL_E, 1, 1, "stmmac");
+ 
+ 	/* RMII/MII pin mode */
+-	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 7, 8, "stmmac");
++	sc = sysconf_claim(CFG_CTRL_E, 7, 8, "stmmac");
+ 	sysconf_write(sc, rmii ? 2 : 3);
+ 
+ 	/* MII mode */
+-	sc = sysconf_claim(SYS_CFG, CFG_CONTROL_E, 2, 2, "stmmac");
++	sc = sysconf_claim(CFG_CTRL_E, 2, 2, "stmmac");
+ 	sysconf_write(sc, rmii ? 0 : 1);
+ 
+ 	platform_device_register(&stx5197eth_device);
+@@ -599,24 +549,125 @@ arch_initcall(stx5197_add_asc);
+ 
+ /* Early resources (sysconf and PIO) --------------------------------------- */
+ 
+-static struct platform_device sysconf_device = {
+-	.name		= "sysconf",
+-	.id		= -1,
+-	.num_resources	= 1,
+-	.resource	= (struct resource[]) {
+-		{
+-			.start	= 0xfd901000,
+-			.end	= 0xfd901000 + 4095,
+-			.flags	= IORESOURCE_MEM
++#ifdef CONFIG_PROC_FS
++
++#define SYSCONF_FIELD(field) _SYSCONF_FIELD(#field, field)
++#define _SYSCONF_FIELD(name, group, num) case num: return name
++
++static const char *stx5197_sysconf_hd_field_name(int num)
++{
++	switch (num) {
++
++	SYSCONF_FIELD(CFG_CTRL_C);
++	SYSCONF_FIELD(CFG_CTRL_D);
++	SYSCONF_FIELD(CFG_CTRL_E);
++	SYSCONF_FIELD(CFG_CTRL_F);
++	SYSCONF_FIELD(CFG_CTRL_G);
++	SYSCONF_FIELD(CFG_CTRL_H);
++	SYSCONF_FIELD(CFG_CTRL_I);
++	SYSCONF_FIELD(CFG_CTRL_J);
++
++	SYSCONF_FIELD(CFG_CTRL_K);
++	SYSCONF_FIELD(CFG_CTRL_L);
++	SYSCONF_FIELD(CFG_CTRL_M);
++	SYSCONF_FIELD(CFG_CTRL_N);
++	SYSCONF_FIELD(CFG_CTRL_O);
++	SYSCONF_FIELD(CFG_CTRL_P);
++	SYSCONF_FIELD(CFG_CTRL_Q);
++	SYSCONF_FIELD(CFG_CTRL_R);
++
++	SYSCONF_FIELD(CFG_MONITOR_C);
++	SYSCONF_FIELD(CFG_MONITOR_D);
++	SYSCONF_FIELD(CFG_MONITOR_E);
++	SYSCONF_FIELD(CFG_MONITOR_F);
++	SYSCONF_FIELD(CFG_MONITOR_G);
++	SYSCONF_FIELD(CFG_MONITOR_H);
++	SYSCONF_FIELD(CFG_MONITOR_I);
++	SYSCONF_FIELD(CFG_MONITOR_J);
++
++	SYSCONF_FIELD(CFG_MONITOR_K);
++	SYSCONF_FIELD(CFG_MONITOR_L);
++	SYSCONF_FIELD(CFG_MONITOR_M);
++	SYSCONF_FIELD(CFG_MONITOR_N);
++	SYSCONF_FIELD(CFG_MONITOR_O);
++	SYSCONF_FIELD(CFG_MONITOR_P);
++	SYSCONF_FIELD(CFG_MONITOR_Q);
++	SYSCONF_FIELD(CFG_MONITOR_R);
++
++	}
++
++	return "???";
++}
++
++static const char *stx5197_sysconf_hs_field_name(int num)
++{
++	switch (num) {
++
++	SYSCONF_FIELD(CFG_CTRL_A);
++	SYSCONF_FIELD(CFG_CTRL_B);
++
++	SYSCONF_FIELD(CFG_MONITOR_A);
++	SYSCONF_FIELD(CFG_MONITOR_B);
++
++	}
++
++	return "???";
++}
++
++#endif
++
++static struct platform_device stx5197_sysconf_devices[] = {
++	{
++		.name		= "sysconf",
++		.id		= 0,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd901000,
++				.end	= 0xfd90107f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				{
++					.group = HD_CFG,
++					.offset = 0,
++					.name = "High Density group ",
++#ifdef CONFIG_PROC_FS
++					.field_name =
++						stx5197_sysconf_hd_field_name,
++#endif
++				},
++			},
+ 		}
+-	},
+-	.dev = {
+-		.platform_data = &(struct plat_sysconf_data) {
+-			.sys_device_offset = 0,
+-			.sys_sta_offset = 0,
+-			.sys_cfg_offset = 0,
++	}, {
++		.name		= "sysconf",
++		.id		= 1,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd902000,
++				.end	= 0xfd90200f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				{
++					.group = HS_CFG,
++					.offset = 0,
++					.name = "High Speed group ",
++#ifdef CONFIG_PROC_FS
++					.field_name =
++						stx5197_sysconf_hs_field_name,
++#endif
++				},
++			},
+ 		}
+-	}
++	},
+ };
+ 
+ static struct platform_device stpio_devices[] = {
+@@ -636,11 +687,12 @@ void __init stx5197_early_device_init(void)
+ 
+ 	/* Initialise PIO and sysconf drivers */
+ 
+-	sysconf_early_init(&sysconf_device);
++	sysconf_early_init(stx5197_sysconf_devices,
++			ARRAY_SIZE(stx5197_sysconf_devices));
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+ 			 ILC_FIRST_IRQ+ILC_NR_IRQS);
+ 
+-	sc = sysconf_claim(SYS_DEV, CFG_MONITOR_H, 0, 31, "devid");
++	sc = sysconf_claim(CFG_MONITOR_H, 0, 31, "devid");
+ 	devid = sysconf_read(sc);
+ 	chip_revision = (devid >> 28) + 1;
+ 	boot_cpu_data.cut_major = chip_revision;
+@@ -701,7 +753,8 @@ subsys_initcall(stx5197_subsys_setup);
+ 
+ static struct platform_device *stx5197_devices[] __initdata = {
+ 	&fdma_device,
+-	&sysconf_device,
++	&stx5197_sysconf_devices[0],
++	&stx5197_sysconf_devices[1],
+ 	&ilc3_device,
+ };
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 2127b4f..c534f16 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1234,12 +1234,13 @@ static struct platform_device sysconf_device = {
+ 			.flags	= IORESOURCE_MEM
+ 		}
+ 	},
+-	.dev = {
+-		.platform_data = &(struct plat_sysconf_data) {
+-			.sys_device_offset = 0,
+-			.sys_sta_offset = 8,
+-			.sys_cfg_offset = 0x100,
+-		}
++	.dev.platform_data = &(struct plat_sysconf_data) {
++		.groups_num = 3,
++		.groups = (struct plat_sysconf_group []) {
++			PLAT_SYSCONF_GROUP(SYS_DEV, 0x000),
++			PLAT_SYSCONF_GROUP(SYS_STA, 0x008),
++			PLAT_SYSCONF_GROUP(SYS_CFG, 0x100),
++		},
+ 	}
+ };
+ 
+@@ -1276,7 +1277,7 @@ void __init stx7105_early_device_init(void)
+ 
+ 	/* Initialise PIO and sysconf drivers */
+ 
+-	sysconf_early_init(&sysconf_device);
++	sysconf_early_init(&sysconf_device, 1);
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+ 			 ILC_FIRST_IRQ+ILC_NR_IRQS);
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index e18d9cb..7805779 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -28,7 +28,6 @@
+ #include <asm/irl.h>
+ #include <asm/irq-ilc.h>
+ 
+-static struct sysconf_field *sc7_3;
+ static u64 st40_dma_mask = DMA_32BIT_MASK;
+ 
+ 
+@@ -373,11 +372,6 @@ void stx7111_configure_pwm(struct plat_stm_pwm_data *data)
+ 	stm_pwm_device.dev.platform_data = data;
+ 
+ 	if (data->flags & PLAT_STM_PWM_OUT0) {
+-		/* Route UART2 (in and out) and PWM_OUT0 instead of SCI to pins
+-		 * ssc2_mux_sel = 0 */
+-		if (!sc7_3)
+-			sc7_3 = sysconf_claim(SYS_CFG, 7, 3, 3, "pwm");
+-		sysconf_write(sc7_3, 0);
+ 		stpio_request_pin(4, 6, "PWM", STPIO_ALT_OUT);
+ 	}
+ 
+@@ -495,14 +489,6 @@ void __init stx7111_configure_asc(const int *ascs, int num_ascs, int console)
+ 			break;
+ 
+ 		case 2:
+-			/* Route UART2 (in and out) instead of SCI to pins.
+-			 * ssc2_mux_sel = 0 */
+-			if (!sc7_3)
+-				sc7_3 = sysconf_claim(SYS_CFG, 7, 3, 3, "asc");
+-			sysconf_write(sc7_3, 0);
+-
+-			break;
+-
+ 		case 3:
+ 			/* Nothing to do! */
+ 			break;
+@@ -825,12 +811,13 @@ static struct platform_device sysconf_device = {
+ 			.flags	= IORESOURCE_MEM
+ 		}
+ 	},
+-	.dev = {
+-		.platform_data = &(struct plat_sysconf_data) {
+-			.sys_device_offset = 0,
+-			.sys_sta_offset = 8,
+-			.sys_cfg_offset = 0x100,
+-		}
++	.dev.platform_data = &(struct plat_sysconf_data) {
++		.groups_num = 3,
++		.groups = (struct plat_sysconf_group []) {
++			PLAT_SYSCONF_GROUP(SYS_DEV, 0x000),
++			PLAT_SYSCONF_GROUP(SYS_STA, 0x008),
++			PLAT_SYSCONF_GROUP(SYS_CFG, 0x100),
++		},
+ 	}
+ };
+ 
+@@ -853,7 +840,7 @@ void __init stx7111_early_device_init(void)
+ 
+ 	/* Initialise PIO and sysconf drivers */
+ 
+-	sysconf_early_init(&sysconf_device);
++	sysconf_early_init(&sysconf_device, 1);
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+ 			 ILC_FIRST_IRQ+ILC_NR_IRQS);
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 659642b..4a4ae4e 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -1176,12 +1176,13 @@ static struct platform_device sysconf_device = {
+ 			.flags	= IORESOURCE_MEM
+ 		}
+ 	},
+-	.dev = {
+-		.platform_data = &(struct plat_sysconf_data) {
+-			.sys_device_offset = 0,
+-			.sys_sta_offset = 8,
+-			.sys_cfg_offset = 0x100,
+-		}
++	.dev.platform_data = &(struct plat_sysconf_data) {
++		.groups_num = 3,
++		.groups = (struct plat_sysconf_group []) {
++			PLAT_SYSCONF_GROUP(SYS_DEV, 0x000),
++			PLAT_SYSCONF_GROUP(SYS_STA, 0x008),
++			PLAT_SYSCONF_GROUP(SYS_CFG, 0x100),
++		},
+ 	}
+ };
+ 
+@@ -1214,7 +1215,7 @@ void __init stx7141_early_device_init(void)
+ 
+ 	/* Initialise PIO and sysconf drivers */
+ 
+-	sysconf_early_init(&sysconf_device);
++	sysconf_early_init(&sysconf_device, 1);
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+ 			 ILC_FIRST_IRQ+ILC_NR_IRQS);
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 15485bb..5593e94 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -31,7 +31,6 @@
+ #include <linux/dma-mapping.h>
+ 
+ static unsigned long chip_revision;
+-static struct sysconf_field *sc7_2;
+ 
+ /* USB resources ----------------------------------------------------------- */
+ 
+@@ -330,6 +329,8 @@ static void __init usb_soft_jtag_reset(void)
+ 
+ 	mdelay(20);
+ 	sysconf_write(sc, 0x00000040);
++
++	sysconf_release(sc);
+ }
+ 
+ void __init stx7200_configure_usb(int port)
+@@ -355,9 +356,11 @@ void __init stx7200_configure_usb(int port)
+ 		 * soft_jtag_en = 1 */
+ 		sc = sysconf_claim(SYS_CFG, 33, 6, 6, "usb");
+ 		sysconf_write(sc, 1);
++		sysconf_release(sc);
+ 		/* tck = tdi = trstn_usb = tms_usb = 0 */
+ 		sc = sysconf_claim(SYS_CFG, 33, 0, 3, "usb");
+ 		sysconf_write(sc, 0);
++		sysconf_release(sc);
+ 
+ 		if (cpu_data->cut_major < 2)
+ 			usb_soft_jtag_reset();
+@@ -794,11 +797,6 @@ void stx7200_configure_pwm(struct plat_stm_pwm_data *data)
+ 	stm_pwm_device.dev.platform_data = data;
+ 
+ 	if (data->flags & PLAT_STM_PWM_OUT0) {
+-		/* Route UART2 (in and out) and PWM_OUT0 instead of SCI to pins
+-		 * ssc2_mux_sel = 0 */
+-		if (sc7_2 == NULL)
+-			sc7_2 = sysconf_claim(SYS_CFG, 7, 2, 2, "pwm");
+-		sysconf_write(sc7_2, 0);
+ 		stpio_request_pin(4, 6, "PWM", STPIO_ALT_OUT);
+ 	}
+ 
+@@ -1138,12 +1136,6 @@ void __init stx7200_configure_asc(const int *ascs, int num_ascs, int console)
+ 				sysconf_write(sc, 0);
+ 			}
+ 
+-			/* Route UART2 (in and out) and PWM_OUT0 instead of SCI to pins.
+-			 * ssc2_mux_sel = 0 */
+-			if (sc7_2 == NULL)
+-				sc7_2 = sysconf_claim(SYS_CFG, 7, 2, 2, "asc");
+-			sysconf_write(sc7_2, 0);
+-
+ 			/* Route UART2&3/SCI outputs instead of DVP to pins.
+ 			 * conf_pad_pio[1]=0 */
+ 			sc = sysconf_claim(SYS_CFG, 7, 25, 25, "asc");
+@@ -1164,11 +1156,6 @@ void __init stx7200_configure_asc(const int *ascs, int num_ascs, int console)
+ 				sc = sysconf_claim(SYS_CFG, 7, 28, 28, "asc");
+ 				sysconf_write(sc, 0);
+ 			}
+-
+-			/* Route UART3 (in and out) instead of SCI to pins
+-			 * ssc3_mux_sel = 0 */
+-			sc = sysconf_claim(SYS_CFG, 7, 3, 3, "asc");
+-			sysconf_write(sc, 0);
+ 			break;
+ 		}
+ 
+@@ -1200,16 +1187,17 @@ static struct platform_device sysconf_device = {
+ 	.resource	= (struct resource[]) {
+ 		{
+ 			.start	= 0xfd704000,
+-			.end	= 0xfd704000 + 0x1d3,
++			.end	= 0xfd7041d3,
+ 			.flags	= IORESOURCE_MEM
+ 		}
+ 	},
+-	.dev = {
+-		.platform_data = &(struct plat_sysconf_data) {
+-			.sys_device_offset = 0,
+-			.sys_sta_offset = 8,
+-			.sys_cfg_offset = 0x100,
+-		}
++	.dev.platform_data = &(struct plat_sysconf_data) {
++		.groups_num = 3,
++		.groups = (struct plat_sysconf_group []) {
++			PLAT_SYSCONF_GROUP(SYS_DEV, 0x000),
++			PLAT_SYSCONF_GROUP(SYS_STA, 0x008),
++			PLAT_SYSCONF_GROUP(SYS_CFG, 0x100),
++		},
+ 	}
+ };
+ 
+@@ -1232,7 +1220,7 @@ void __init stx7200_early_device_init(void)
+ 
+ 	/* Initialise PIO and sysconf drivers */
+ 
+-	sysconf_early_init(&sysconf_device);
++	sysconf_early_init(&sysconf_device, 1);
+ 	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+ 		ILC_FIRST_IRQ+ILC_NR_IRQS);
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/soc-stx5197.h b/arch/sh/kernel/cpu/sh4/soc-stx5197.h
+index 360dce3..4009a76 100644
+--- a/arch/sh/kernel/cpu/sh4/soc-stx5197.h
++++ b/arch/sh/kernel/cpu/sh4/soc-stx5197.h
+@@ -87,42 +87,5 @@ enum clocks_ID {
+ 
+ #define CLK_LOCK()		writel(0x100, SYS_SERV_BASE_ADDR + CLK_LOCK_CFG);
+ 
+-
+-#define CFG_CONTROL_C   (0x00 / 4)
+-#define CFG_CONTROL_D   (0x04 / 4)
+-#define CFG_CONTROL_E   (0x08 / 4)
+-#define CFG_CONTROL_F   (0x0c / 4)
+-#define CFG_CONTROL_G   (0x10 / 4)
+-#define CFG_CONTROL_H   (0x14 / 4)
+-#define CFG_CONTROL_I   (0x18 / 4)
+-#define CFG_CONTROL_J   (0x1c / 4)
+-
+-#define CFG_CONTROL_K   (0x40 / 4)
+-#define CFG_CONTROL_L   (0x44 / 4)
+-#define CFG_CONTROL_M   (0x48 / 4)
+-#define CFG_CONTROL_N   (0x4c / 4)
+-#define CFG_CONTROL_O   (0x50 / 4)
+-#define CFG_CONTROL_P   (0x54 / 4)
+-#define CFG_CONTROL_Q   (0x58 / 4)
+-#define CFG_CONTROL_R   (0x5c / 4)
+-
+-#define CFG_MONITOR_C   (0x20 / 4)
+-#define CFG_MONITOR_D   (0x24 / 4)
+-#define CFG_MONITOR_E   (0x28 / 4)
+-#define CFG_MONITOR_F   (0x2c / 4)
+-#define CFG_MONITOR_G   (0x30 / 4)
+-#define CFG_MONITOR_H   (0x34 / 4)
+-#define CFG_MONITOR_I   (0x38 / 4)
+-#define CFG_MONITOR_J   (0x3c / 4)
+-
+-#define CFG_MONITOR_K   (0x60 / 4)
+-#define CFG_MONITOR_L   (0x64 / 4)
+-#define CFG_MONITOR_M   (0x68 / 4)
+-#define CFG_MONITOR_N   (0x6c / 4)
+-#define CFG_MONITOR_O   (0x70 / 4)
+-#define CFG_MONITOR_P   (0x74 / 4)
+-#define CFG_MONITOR_Q   (0x78 / 4)
+-#define CFG_MONITOR_R   (0x7c / 4)
+-
+ #endif
+ 
+diff --git a/drivers/stm/sysconf.c b/drivers/stm/sysconf.c
+index 3a85c74..a1a5349 100644
+--- a/drivers/stm/sysconf.c
++++ b/drivers/stm/sysconf.c
+@@ -7,91 +7,190 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/bootmem.h>
++#include <linux/io.h>
++#include <linux/list.h>
+ #include <linux/platform_device.h>
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++#include <linux/types.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/sysconf.h>
+-#include <linux/list.h>
+-#include <asm/io.h>
+ 
+-#ifdef CONFIG_PROC_FS
+-#include <linux/proc_fs.h>
+-#include <linux/seq_file.h>
+-#endif
+ 
+-#define DRIVER_NAME "sysconf"
+ 
+ struct sysconf_field {
+-	u16 offset;
++	u8 group, num;
+ 	u8 lsb, msb;
+-	char* dev;
++	void __iomem *reg;
++	const char *owner;
+ 	struct list_head list;
++#ifdef DEBUG
++	enum { magic_good = 0x600df00d, magic_bad = 0xdeadbeef } magic;
++#define MAGIC_SET(field) field->magic = magic_good
++#define MAGIC_CLEAR(field) field->magic = magic_bad
++#define MAGIC_CHECK(field) BUG_ON(field->magic != magic_good)
++#else
++#define MAGIC_SET(field)
++#define MAGIC_CLEAR(field)
++#define MAGIC_CHECK(field)
++#endif
++};
++
++struct sysconf_group {
++	void __iomem *base;
++	const char *name;
++	const char *(*field_name)(int num);
++	struct sysconf_block *block;
++};
++
++struct sysconf_block {
++	void __iomem *base;
++	unsigned long size;
++	struct platform_device *pdev;
++#ifdef CONFIG_PM
++	unsigned long *snapshot;
++#endif
+ };
+ 
+-static void __iomem *sysconf_base;
+-static int sysconf_offsets[3];
+-static DEFINE_SPINLOCK(sysconf_lock);
++static int sysconf_blocks_num;
++static struct sysconf_block *sysconf_blocks;
++
++static int sysconf_groups_num;
++static struct sysconf_group *sysconf_groups;
++
+ static LIST_HEAD(sysconf_fields);
+-static struct platform_device *sysconf_pdev;
++static DEFINE_SPINLOCK(sysconf_fields_lock);
++
++static DEFINE_SPINLOCK(sysconf_registers_lock);
++
++
+ 
+ /* We need a small stash of allocations before kmalloc becomes available */
+-#define NUM_EARLY_FIELDS 64
+-#define EARLY_BITS_MAPS_SIZE	DIV_ROUND_UP(NUM_EARLY_FIELDS, 32)
++#define NUM_EARLY_FIELDS	64
++#define EARLY_BITS_MAPS_SIZE	DIV_ROUND_UP(NUM_EARLY_FIELDS, BITS_PER_LONG)
++
+ static struct sysconf_field early_fields[NUM_EARLY_FIELDS];
+ static unsigned long early_fields_map[EARLY_BITS_MAPS_SIZE];
+ 
+-static struct sysconf_field* field_alloc(void)
++static struct sysconf_field *field_alloc(void)
+ {
+-	int bank;
+-	int first_free;
+-	struct sysconf_field *tmp;
++	int i;
+ 
+-	for (bank = 0; bank < ARRAY_SIZE(early_fields_map); ++bank) {
+-		first_free = ffz(early_fields_map[bank]);
+-		if (first_free < 32)
+-			break;
+-	}
+-	if (first_free < 32) { /* found! */
+-		spin_lock(&sysconf_lock);
+-		early_fields_map[bank] |= (1 << (first_free)); /* set as used!*/
+-		spin_unlock(&sysconf_lock);
+-		tmp = &early_fields[first_free  + (bank * 32)];
+-		return tmp;
+-	}
++	for (i = 0; i < NUM_EARLY_FIELDS; i++)
++		if (test_and_set_bit(i, early_fields_map) == 0)
++			return &early_fields[i];
++
++	return kmalloc(sizeof(struct sysconf_field), GFP_KERNEL);
++}
+ 
+-	return kzalloc(sizeof(struct sysconf_field), GFP_KERNEL);
++static void field_free(struct sysconf_field *field)
++{
++	if (field >= early_fields && field < early_fields + NUM_EARLY_FIELDS)
++		clear_bit(field - early_fields, early_fields_map);
++	else
++		kfree(field);
+ }
+ 
+-struct sysconf_field* sysconf_claim(int regtype, int regnum, int lsb, int msb,
+-				    const char *dev)
++
++
++struct sysconf_field *sysconf_claim(int group, int num, int lsb, int msb,
++				    const char *devname)
+ {
+-	struct sysconf_field *field, *pfield = NULL;
+-	struct list_head *node;
+-	int offset = sysconf_offsets[regtype] + (regnum * 4);
++	struct sysconf_field *field, *entry;
++	enum {
++		status_searching,
++		status_found_register,
++		status_add_field_here,
++		status_conflict,
++	} status = status_searching;
++	int bit_avail = 0;
++
++	pr_debug("%s(group=%d, num=%d, lsb=%d, msb=%d, devname='%s'\n",
++			__func__, group, num, lsb, msb, devname);
++
++	BUG_ON(group < 0 || group >= sysconf_groups_num);
++	BUG_ON(num < 0 || num > ((1 << 8) - 1));
++	BUG_ON(lsb < 0 || lsb > 32);
++	BUG_ON(msb < 0 || msb > 32);
++	BUG_ON(lsb > msb);
+ 
+ 	field = field_alloc();
+ 	if (!field)
+ 		return NULL;
+ 
+-	list_for_each(node, &sysconf_fields) {
+-		pfield = container_of(node, struct sysconf_field, list);
+-		if (pfield->offset < offset)
+-			continue;
+-		if (pfield->offset > offset)
+-			break;
+-		if (pfield->lsb > msb)
+-			continue;
+-		if (pfield->msb < lsb)
++	field->group = group;
++	field->num = num;
++	field->lsb = lsb;
++	field->msb = msb;
++
++	field->reg = sysconf_groups[group].base + (num * 4);
++	BUG_ON(field->reg >= sysconf_groups[group].block->base +
++			sysconf_groups[group].block->size);
++	field->owner = devname;
++	MAGIC_SET(field);
++
++	spin_lock(&sysconf_fields_lock);
++
++	/* The list is always in group->num->lsb/msb order, so it's easy to
++	 * find a place to insert a new field (and to detect conflicts) */
++	list_for_each_entry(entry, &sysconf_fields, list) {
++		if (entry->group == group && entry->num == num) {
++			status = status_found_register;
++			/* Someone already claimed a field from this
++			 * register - let's try to find some space for
++			 * requested bits... */
++			if (bit_avail <= lsb && msb < entry->lsb) {
++				status = status_add_field_here;
++				break;
++			}
++			bit_avail = entry->msb + 1;
++		} else if ((entry->group == group && entry->num > num) ||
++				entry->group > group) {
++			/* Ok, there is no point of looking further -
++			 * the group and/or num values are bigger then
++			 * the ones we are looking for */
++			if ((status == status_found_register &&
++					bit_avail <= lsb) ||
++					status == status_searching)
++				/* A remainder of the given register is not
++				 * used or the register wasn't used at all */
++				status = status_add_field_here;
++			else
++				/* Apparently some bits of the claimed field
++				 * are already in use... */
++				status = status_conflict;
+ 			break;
++		}
+ 	}
+ 
+-	field->offset = offset;
+-	field->lsb = lsb;
+-	field->msb = msb;
+-	field->dev = (char *)dev;
++	switch (status) {
++	case status_searching:
++	case status_found_register:
++		/* Either nothing was on the list at all or the claimed
++		 * field should be added as the last element... */
++		list_add_tail(&field->list, &sysconf_fields);
++		break;
++	case status_add_field_here:
++		/* So we should insert the new field between current
++		 * list entry and the previous one */
++		list_add(&field->list, entry->list.prev);
++		break;
++	case status_conflict:
++		/* Apparently there was no place in the
++		 * register to fulfill the request... */
++		MAGIC_CLEAR(field);
++		field_free(field);
++		field = NULL;
++		pr_debug("%s(): conflict!\n", __func__);
++		break;
++	default:
++		BUG();
++	}
+ 
+-	spin_lock(&sysconf_lock);
+-	list_add_tail(&field->list, node);
+-	spin_unlock(&sysconf_lock);
++	spin_unlock(&sysconf_fields_lock);
++
++	pr_debug("%s()=0x%p\n", __func__, field);
+ 
+ 	return field;
+ }
+@@ -99,223 +198,319 @@ EXPORT_SYMBOL(sysconf_claim);
+ 
+ void sysconf_release(struct sysconf_field *field)
+ {
+-	if (field >= early_fields &&
+-	    field <= &early_fields[NUM_EARLY_FIELDS]){
+-		int bank, idx;
+-		bank = (&early_fields[32] > field ? 0 : 1);
+-		idx = ((unsigned long)field -(unsigned long)&early_fields[bank])
+-			% sizeof(struct sysconf_field);
+-		spin_lock(&sysconf_lock);
+-		early_fields_map[bank] &= ~(1<<idx); /* set as free */
+-		list_del(&field->list);
+-		spin_unlock(&sysconf_lock);
+-		return ;
+-	}
+-	spin_lock(&sysconf_lock);
++	pr_debug("%s(field=0x%p)\n", __func__, field);
++
++	BUG_ON(!field);
++	MAGIC_CHECK(field);
++
++	spin_lock(&sysconf_fields_lock);
+ 	list_del(&field->list);
+-	spin_unlock(&sysconf_lock);
+-	kfree(field);
++	spin_unlock(&sysconf_fields_lock);
++
++	MAGIC_CLEAR(field);
++	field_free(field);
+ }
+ EXPORT_SYMBOL(sysconf_release);
+ 
+-void sysconf_write(struct sysconf_field *field, u64 value)
++void sysconf_write(struct sysconf_field *field, unsigned long value)
+ {
+-	void __iomem *reg;
+-	int field_bits;	/* Number of bits */
++	int field_bits;
++
++	pr_debug("%s(field=0x%p)\n", __func__, field);
++
++	BUG_ON(!field);
++	MAGIC_CHECK(field);
+ 
+-	reg = sysconf_base + field->offset;
+ 	field_bits = field->msb - field->lsb + 1;
++	BUG_ON(field_bits < 1 || field_bits > 32);
+ 
+ 	if (field_bits == 32) {
+ 		/* Operating on the whole register, nice and easy */
+-		writel(value, reg);
++		writel(value, field->reg);
+ 	} else {
++		unsigned long flags;
+ 		u32 reg_mask;
+ 		u32 tmp;
+ 
+-		reg_mask = ~(((1 << field_bits) -1) << field->lsb);
+-		spin_lock(&sysconf_lock);
+-		tmp = readl(reg);
++		reg_mask = ~(((1 << field_bits) - 1) << field->lsb);
++
++		spin_lock_irqsave(&sysconf_registers_lock, flags);
++		tmp = readl(field->reg);
+ 		tmp &= reg_mask;
+ 		tmp |= value << field->lsb;
+-		writel(tmp, reg);
+-		spin_unlock(&sysconf_lock);
++		writel(tmp, field->reg);
++		spin_unlock_irqrestore(&sysconf_registers_lock, flags);
+ 	}
+ }
+ EXPORT_SYMBOL(sysconf_write);
+ 
+-u64 sysconf_read(struct sysconf_field *field)
++unsigned long sysconf_read(struct sysconf_field *field)
+ {
+-	void __iomem *reg;
+-	int field_bits;	/* Number of bits -1 */
+-	u32 tmp;
++	int field_bits;
++	u32 result;
++
++	pr_debug("%s(field=0x%p)\n", __func__, field);
++
++	BUG_ON(!field);
++	MAGIC_CHECK(field);
+ 
+-	reg = sysconf_base + field->offset;
+-	tmp = readl(reg);
+ 	field_bits = field->msb - field->lsb + 1;
++	BUG_ON(field_bits < 1 || field_bits > 32);
++
++	result = readl(field->reg);
+ 
+ 	if (field_bits != 32) {
+-		tmp >>= field->lsb;
+-		tmp &= (1 << field_bits) -1;
++		result >>= field->lsb;
++		result &= (1 << field_bits) - 1;
+ 	}
+ 
+-	return (u64)tmp;
++	pr_debug("%s()=0x%u\n", __func__, result);
++
++	return result;
+ }
+ EXPORT_SYMBOL(sysconf_read);
+ 
+ void *sysconf_address(struct sysconf_field *field)
+ {
+-	return sysconf_base + field->offset;
++	pr_debug("%s(field=0x%p)\n", __func__, field);
++
++	BUG_ON(!field);
++	MAGIC_CHECK(field);
++
++	pr_debug("%s()=0x%p\n", __func__, field->reg);
++
++	return field->reg;
+ }
+ EXPORT_SYMBOL(sysconf_address);
+ 
+ unsigned long sysconf_mask(struct sysconf_field *field)
+ {
+-	int field_bits = field->msb - field->lsb + 1;
++	int field_bits;
++	u32 result;
++
++	pr_debug("%s(field=0x%p)\n", __func__, field);
++
++	BUG_ON(!field);
++	MAGIC_CHECK(field);
++
++	field_bits = field->msb - field->lsb + 1;
++	BUG_ON(field_bits < 1 || field_bits > 32);
++
+ 	if (field_bits == 32)
+-		return 0xffffffff;
+-	return ((1 << field_bits) -1) << field->lsb;
++		result = ~0UL;
++	else
++		result = ((1 << field_bits) - 1) << field->lsb;
++
++	pr_debug("%s()=0x%u\n", __func__, result);
++
++	return result;
+ }
+ EXPORT_SYMBOL(sysconf_mask);
+ 
++
++
+ #ifdef CONFIG_PM
++int sysconf_pm_freeze(void)
++{
++	int result = 0;
++	int i;
++
++	pr_debug("%s()\n", __func__);
++
++	for (i = 0; i < sysconf_blocks_num; i++) {
++		struct sysconf_block *block = &sysconf_blocks[i];
++		int j;
++
++		block->snapshot = kmalloc(block->size, GFP_NOWAIT);
++		if (!block->snapshot) {
++			pr_err("Failed to freeze %s!\n",
++					block->pdev->dev.bus_id);
++			result = -ENOMEM;
++			continue;
++		}
++
++		for (j = 0; j < block->size; i += sizeof(unsigned long))
++			block->snapshot[j / sizeof(unsigned long)] =
++					readl(block->base + j);
++	}
++
++	pr_debug("%s()=%d\n", __func__, result);
++
++	return result;
++}
++
++int sysconf_pm_restore(void)
++{
++	int result = 0;
++	int i;
++
++	pr_debug("%s()\n", __func__);
++
++	for (i = 0; i < sysconf_blocks_num; i++) {
++		struct sysconf_block *block = &sysconf_blocks[i];
++		int j;
++
++		if (!block->snapshot) {
++			pr_err("Failed to restore %s!\n",
++					block->pdev->dev.bus_id);
++			result = -EINVAL;
++			continue;
++		}
++
++		for (j = 0; j < block->size; i += sizeof(unsigned long))
++			writel(block->snapshot[j / sizeof(unsigned long)],
++					block->base + j);
++
++		kfree(block->snapshot);
++		block->snapshot = NULL;
++	}
++
++	pr_debug("%s()=%d\n", __func__, result);
++
++	return result;
++}
++
+ int sysconf_pm_state(pm_message_t state)
+ {
+-	unsigned long size, i;
++	int result = 0;
+ 	static unsigned long prev_state = PM_EVENT_ON;
+-	static long *saved_data;
+ 
+-	size = sysconf_pdev->resource[0].end - sysconf_pdev->resource[0].start
+-		- sysconf_offsets[SYS_CFG]; /* how many bytes I need */
++	pr_debug("%s()\n", __func__);
+ 
+ 	switch (state.event) {
+ 	case PM_EVENT_ON:
+-		if (prev_state == PM_EVENT_FREEZE && saved_data) {
+-			for (i = 0; i < size; i += sizeof(long))
+-				writel(saved_data[i/sizeof(long)],sysconf_base + i
+-					+ sysconf_offsets[SYS_CFG]);
+-			kfree(saved_data);
+-		}
++		if (prev_state == PM_EVENT_FREEZE)
++			result = sysconf_pm_restore();
++		break;
+ 	case PM_EVENT_SUSPEND:
+-		prev_state = state.event;
+ 		break;
+ 	case PM_EVENT_FREEZE:
+-		prev_state = state.event;
+-		saved_data = kmalloc(size, GFP_NOWAIT);
+-                if (!saved_data) {
+-                        printk(KERN_ERR "Unable to freeze the sysconf registers\n");
+-                        return -1;
+-                }
+-		for (i = 0; i < size; i += sizeof(long))
+-			saved_data[i/sizeof(long)] = readl(sysconf_base + i +
+-				sysconf_offsets[SYS_CFG]);
++		result = sysconf_pm_freeze();
+ 		break;
+ 	}
+-	return 0;
++
++	prev_state = state.event;
++
++	pr_debug("%s()=%d\n", __func__, result);
++
++	return result;
+ }
+ #endif
+ 
+-/* This is called early to allow board start up code to use sysconf
+- * registers (in particular console devices). */
+-void __init sysconf_early_init(struct platform_device* pdev)
++
++
++#ifdef CONFIG_PROC_FS
++enum sysconf_seq_state { state_blocks, state_groups, state_fields, state_last };
++
++static void *sysconf_seq_start(struct seq_file *s, loff_t *pos)
+ {
+-	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
+-	struct plat_sysconf_data *data = pdev->dev.platform_data;
+-
+-#if 1
+-	sysconf_base = ioremap(pdev->resource[0].start, size);
+-
+-	/* I don't like panicing here, but it we failed to ioremap, we
+-	 * probably don't have any way to report things have gone
+-	 * wrong. So a panic here at least gives some hope of being able to
+-	 * debug the problem.
+-	 */
+-	if (!sysconf_base)
+-		panic("Unable to ioremap sysconf registers");
+-#else
+-	set_fixmap_nocache(FIX_SYSCONF, pdev->resource[0].start);
+-	sysconf_base = fix_to_virt(FIX_SYSCONF);
+-#endif
++	if (*pos >= state_last)
++		return NULL;
+ 
+-	sysconf_offsets[SYS_DEV] = data->sys_device_offset;
+-	sysconf_offsets[SYS_STA] = data->sys_sta_offset;
+-	sysconf_offsets[SYS_CFG] = data->sys_cfg_offset;
++	return pos;
+ }
+ 
+-#ifdef CONFIG_PROC_FS
+ static void *sysconf_seq_next(struct seq_file *s, void *v, loff_t *pos)
+ {
+-	struct list_head *tmp;
+-	union {
+-		loff_t value;
+-		long parts[2];
+-	} ltmp;
+-
+-	ltmp.value = *pos;
+-	tmp = (struct list_head *)ltmp.parts[0];
+-	tmp = tmp->next;
+-	ltmp.parts[0] = (long)tmp;
++	(*pos)++;
+ 
+-	*pos = ltmp.value;
++	if (*pos >= state_last)
++		return NULL;
+ 
+-	if (tmp == &sysconf_fields)
+-		return NULL; /* No more to read */
+ 	return pos;
+ }
+ 
+-void *sysconf_seq_start(struct seq_file *s, loff_t *pos)
++static void sysconf_seq_stop(struct seq_file *s, void *v)
+ {
+-	if (!*pos) { /* first call! */
+-		union {
+-			loff_t value;
+-			long parts[2];
+-		} ltmp;
+-		ltmp.parts[0] = (long) sysconf_fields.next;
+-		*pos = ltmp. value;
+-		seq_puts(s, "------System Registers-----\n");
+-		seq_puts(s, " Type Num Bits    Owner\n");
+-		seq_puts(s, "---------------------------\n");
+-		return pos;
++}
++
++static int sysconf_seq_show_blocks(struct seq_file *s)
++{
++	int i;
++
++	seq_printf(s, "blocks:\n");
++
++	for (i = 0; i < sysconf_blocks_num; i++) {
++		struct sysconf_block *block = &sysconf_blocks[i];
++		struct resource *mem = platform_get_resource(block->pdev,
++				IORESOURCE_MEM, 0);
++
++		seq_printf(s, "- %s: 0x%08x (0x%p), 0x%lxb\n",
++				block->pdev->dev.bus_id, mem->start,
++				block->base, block->size);
+ 	}
+-	--(*pos); /* to realign *pos value! */
+ 
+-	return sysconf_seq_next(s, NULL, pos);
++	seq_printf(s, "\n");
++
++	return 0;
+ }
+ 
+-static int sysconf_seq_show(struct seq_file *s, void *v)
++static int sysconf_seq_show_groups(struct seq_file *s)
+ {
+-	unsigned long *l = (unsigned long *)v;
+-	struct list_head *tmp = (struct list_head *)(*l);
+-	struct sysconf_field *field =
+-			container_of(tmp, struct sysconf_field, list);
+-	int type;
+-
+-	seq_printf(s, "+ ");
+-	if (field->offset >= sysconf_offsets[SYS_CFG]) {
+-		seq_printf(s, "Cfg ");
+-		type = SYS_CFG;
+-	} else if (field->offset >= sysconf_offsets[SYS_STA]) {
+-		seq_printf(s, "Sta ");
+-		type = SYS_STA;
+-	 } else {
+-		seq_printf(s, "Dev ");
+-		type = SYS_DEV;
++	int i;
++
++	seq_printf(s, "groups:\n");
++
++	for (i = 0; i < sysconf_groups_num; i++) {
++		struct sysconf_group *group = &sysconf_groups[i];
++
++		seq_printf(s, "- %s: 0x%p (%s)\n",
++				group->name, group->base,
++				group->block->pdev->dev.bus_id);
+ 	}
+ 
+-	seq_printf(s, "%2d [%2d:%2d]",
+-		(field->offset - sysconf_offsets[type])/4,
+-		field->msb, field->lsb);
++	seq_printf(s, "\n");
+ 
+-	if (field->dev)
+-		seq_printf(s, ": %s\n", field->dev);
+-	else
+-		seq_printf(s, "\n");
++	return 0;
++}
++
++static int sysconf_seq_show_fields(struct seq_file *s)
++{
++	struct sysconf_field *field;
++
++	seq_printf(s, "claimed fields:\n");
++
++	spin_lock(&sysconf_fields_lock);
++
++	list_for_each_entry(field, &sysconf_fields, list) {
++		struct sysconf_group *group = &sysconf_groups[field->group];
++
++		if (group->field_name)
++			seq_printf(s, "- %s[", group->field_name(field->num));
++		else
++			seq_printf(s, "- %s%d[", group->name, field->num);
++
++		if (field->msb == field->lsb)
++			seq_printf(s, "%d", field->msb);
++		else
++			seq_printf(s, "%d:%d", field->msb, field->lsb);
++
++		seq_printf(s, "] = 0x%lx (0x%p, %s)\n", sysconf_read(field),
++				field->reg, field->owner);
++	}
++
++	spin_unlock(&sysconf_fields_lock);
++
++	seq_printf(s, "\n");
+ 
+ 	return 0;
+ }
+ 
+-static void sysconf_seq_stop(struct seq_file *s, void *v)
++static int sysconf_seq_show(struct seq_file *s, void *v)
+ {
++	enum sysconf_seq_state state = *((loff_t *)v);
++
++	switch (state) {
++	case state_blocks:
++		return sysconf_seq_show_blocks(s);
++	case state_groups:
++		return sysconf_seq_show_groups(s);
++	case state_fields:
++		return sysconf_seq_show_fields(s);
++	default:
++		BUG();
++		return -EINVAL;
++	}
+ }
+ 
+ static struct seq_operations sysconf_seq_ops = {
+@@ -339,33 +534,116 @@ static struct file_operations sysconf_proc_ops = {
+ };
+ #endif
+ 
++
++
++/* This is called early to allow board start up code to use sysconf
++ * registers (in particular console devices). */
++void __init sysconf_early_init(struct platform_device *pdevs, int pdevs_num)
++{
++	int i;
++
++	pr_debug("%s(pdevs=%p, pdevs_num=%d)\n", __func__, pdevs, pdevs_num);
++
++	/* I don't like panicing, but if we failed here, we probably
++	 * don't have any way to report things have gone wrong.
++	 * So a panic here at least gives some hope of being
++	 * able to debug the problem. */
++
++	sysconf_blocks_num = pdevs_num;
++	sysconf_blocks = alloc_bootmem(sizeof(*sysconf_blocks) *
++			sysconf_blocks_num);
++	if (!sysconf_blocks)
++		panic("Failed to allocate memory for sysconf blocks!");
++
++	for (i = 0; i < sysconf_blocks_num; i++) {
++		struct sysconf_block *block = &sysconf_blocks[i];
++		struct plat_sysconf_data *data = pdevs[i].dev.platform_data;
++		struct resource *mem;
++
++		block->pdev = &pdevs[i];
++
++		mem = platform_get_resource(&pdevs[i], IORESOURCE_MEM, 0);
++		BUG_ON(!mem);
++
++		block->size = mem->end - mem->start + 1;
++		block->base = ioremap(mem->start, block->size);
++		if (!block->base)
++			panic("Unable to ioremap %s registers!",
++					block->pdev->dev.bus_id);
++
++		sysconf_groups_num += data->groups_num;
++	}
++
++	sysconf_groups = alloc_bootmem(sizeof(*sysconf_groups) *
++			sysconf_groups_num);
++	if (!sysconf_groups)
++		panic("Failed to allocate memory for sysconf groups!\n");
++
++	for (i = 0; i < sysconf_blocks_num; i++) {
++		struct plat_sysconf_data *data = pdevs[i].dev.platform_data;
++		struct sysconf_block *block = &sysconf_blocks[i];
++		int j;
++
++		for (j = 0; j < data->groups_num; j++) {
++			struct plat_sysconf_group *info = &data->groups[j];
++			struct sysconf_group *group;
++
++			BUG_ON(info->group < 0 ||
++					info->group >= sysconf_groups_num);
++
++			group = &sysconf_groups[info->group];
++
++			BUG_ON(group->base != NULL);
++
++			group->base = block->base + info->offset;
++			group->name = info->name;
++			group->field_name = info->field_name;
++			group->block = block;
++		}
++
++	}
++}
++
++
++
+ static int __init sysconf_probe(struct platform_device *pdev)
+ {
+-	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
++	int result = -EINVAL;
++	int i;
+ 
+-	if (!request_mem_region(pdev->resource[0].start, size, pdev->name))
+-		return -EBUSY;
++	pr_debug("%s(pdev=%p)\n", __func__, pdev);
+ 
+-	sysconf_pdev = pdev;
+-	/* Have we already been set up through sysconf_init? */
+-	if (sysconf_base)
+-		return 0;
++	/* Confirm that the device has been initialized earlier */
++	for (i = 0; i < sysconf_blocks_num; i++) {
++		if (sysconf_blocks[i].pdev == pdev) {
++			result = 0;
++			break;
++		}
++	}
+ 
+-#if 1
+-	sysconf_early_init(pdev);
+-#else
+-	sysconf_base = ioremap(pdev->resource[0].start, size);
+-	if (!sysconf_base)
+-		return -ENOMEM;
+-#endif
++	if (result == 0) {
++		struct resource *mem = platform_get_resource(pdev,
++				IORESOURCE_MEM, 0);
+ 
+-	return 0;
++		BUG_ON(!mem);
++
++		if (request_mem_region(mem->start, mem->end -
++				mem->start + 1, pdev->name) == NULL) {
++			pr_err("Memory region request failed for %s!\n",
++					pdev->dev.bus_id);
++			result = -EBUSY;
++		}
++	}
++
++	pr_debug("%s()=%d\n", __func__, result);
++
++	return result;
+ }
+ 
+ static struct platform_driver sysconf_driver = {
+ 	.probe		= sysconf_probe,
+ 	.driver	= {
+-		.name	= DRIVER_NAME,
++		.name	= "sysconf",
+ 		.owner	= THIS_MODULE,
+ 	},
+ };
+@@ -373,12 +651,13 @@ static struct platform_driver sysconf_driver = {
+ static int __init sysconf_init(void)
+ {
+ #ifdef CONFIG_PROC_FS
+-	struct proc_dir_entry *entry =
+-		create_proc_entry("sysconf", S_IRUGO, NULL);
++	struct proc_dir_entry *entry = create_proc_entry("sysconf",
++			S_IRUGO, NULL);
++
+ 	if (entry)
+ 		entry->proc_fops = &sysconf_proc_ops;
+ #endif
++
+ 	return platform_driver_register(&sysconf_driver);
+ }
+-
+ arch_initcall(sysconf_init);
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 75f0d2e..9b4d33b 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -349,12 +349,27 @@ extern unsigned int stasc_configured_devices_count;
+ #define ASC2_PIO6		4
+ #endif
+ 
++#define PLAT_SYSCONF_GROUP(_id, _offset) \
++	{ \
++		.group = _id, \
++		.offset = _offset, \
++		.name = #_id \
++	}
++
++struct plat_sysconf_group {
++	int group;
++	unsigned long offset;
++	const char *name;
++	const char *(*field_name)(int num);
++};
++
+ struct plat_sysconf_data {
+-	int sys_device_offset;
+-	int sys_sta_offset;
+-	int sys_cfg_offset;
++	int groups_num;
++	struct plat_sysconf_group *groups;
+ };
+ 
++
++
+ /* NAND configuration data */
+ struct nand_config_data {
+ 	unsigned int emi_bank;			/* EMI Bank#			*/
+@@ -380,7 +395,7 @@ void stx5197_configure_lirc(lirc_scd_t *scd);
+ 
+ void stx7100_early_device_init(void);
+ void stb7100_configure_asc(const int *ascs, int num_ascs, int console);
+-void sysconf_early_init(struct platform_device *pdev);
++void sysconf_early_init(struct platform_device *pdevs, int pdevs_num);
+ void stpio_early_init(struct platform_device *pdev, int num_pdevs, int irq);
+ 
+ void stx7100_configure_sata(void);
+diff --git a/include/linux/stm/sysconf.h b/include/linux/stm/sysconf.h
+index e631f73..f146d7b 100644
+--- a/include/linux/stm/sysconf.h
++++ b/include/linux/stm/sysconf.h
+@@ -15,11 +15,11 @@ struct sysconf_field;
+ 
+ /**
+  * sysconf_claim - Claim ownership of a field of a sysconfig register
+- * @regtype: SYS_STA or SYS_CFG
+- * @regnum: the sysconfig register number
++ * @group: register group (ie. SYS_CFG, SYS_STA); SOC-specific, see below
++ * @num: register number
+  * @lsb: the LSB of the register we are claiming
+  * @msb: the MSB of the register we are claiming
+- * @dev: device claiming the field
++ * @devname: device claiming the field
+  *
+  * This function claims ownership of a field from a sysconfig register.
+  * The part of the sysconfig register being claimed is from bit @lsb
+@@ -29,8 +29,8 @@ struct sysconf_field;
+  * It returns a &struct sysconf_field which can be used in subsequent
+  * operations on this field.
+  */
+-struct sysconf_field* sysconf_claim(int regtype, int regnum, int lsb, int msb,
+-				    const char* dev);
++struct sysconf_field *sysconf_claim(int group, int num, int lsb, int msb,
++		const char *devname);
+ 
+ /**
+  * sysconf_release - Release ownership of a field of a sysconfig register
+@@ -49,7 +49,7 @@ void sysconf_release(struct sysconf_field *field);
+  * This writes @value into the field of the sysconfig register @field.
+  * @field must have been claimed using sysconf_claim().
+  */
+-void sysconf_write(struct sysconf_field *field, u64 value);
++void sysconf_write(struct sysconf_field *field, unsigned long value);
+ 
+ /**
+  * sysconf_read - Read a field of a sysconfig register
+@@ -58,17 +58,18 @@ void sysconf_write(struct sysconf_field *field, u64 value);
+  * This reads a field of the sysconfig register @field.
+  * @field must have been claimed using sysconf_claim().
+  */
+-u64 sysconf_read(struct sysconf_field *field);
++unsigned long sysconf_read(struct sysconf_field *field);
+ 
+-/*
+- * sysconf_address: Return the address memory of sysconfig register
++/**
++ * sysconf_address - Return the address memory of sysconfig register
+  * @field: the sysconfig field to return
+  *
+  * This returns the address memory of sysconfig register
+  * @field must have been claimed using sysconf_claim().
+  */
+ void *sysconf_address(struct sysconf_field *field);
+-/*
++
++/**
+  * sysconf_mask: Return the bitmask of sysconfig register
+  * @field: the sysconfig field to return
+  *
+@@ -77,8 +78,76 @@ void *sysconf_address(struct sysconf_field *field);
+  */
+ unsigned long sysconf_mask(struct sysconf_field *field);
+ 
+-#define SYS_DEV 0
+-#define SYS_STA 1
+-#define SYS_CFG 2
++
++
++/**
++ * Available register types:
++ */
++
++#if defined(CONFIG_CPU_SUBTYPE_STX5197)
++
++#define HS_CFG 			0
++#define HD_CFG 			1
++
++#define CFG_CTRL_A		HS_CFG, (0x00 / 4)
++#define CFG_CTRL_B		HS_CFG, (0x04 / 4)
++
++#define CFG_CTRL_C		HD_CFG, (0x00 / 4)
++#define CFG_CTRL_D		HD_CFG, (0x04 / 4)
++#define CFG_CTRL_E		HD_CFG, (0x08 / 4)
++#define CFG_CTRL_F		HD_CFG, (0x0c / 4)
++#define CFG_CTRL_G		HD_CFG, (0x10 / 4)
++#define CFG_CTRL_H		HD_CFG, (0x14 / 4)
++#define CFG_CTRL_I		HD_CFG, (0x18 / 4)
++#define CFG_CTRL_J		HD_CFG, (0x1c / 4)
++
++#define CFG_CTRL_K		HD_CFG, (0x40 / 4)
++#define CFG_CTRL_L		HD_CFG, (0x44 / 4)
++#define CFG_CTRL_M		HD_CFG, (0x48 / 4)
++#define CFG_CTRL_N		HD_CFG, (0x4c / 4)
++#define CFG_CTRL_O		HD_CFG, (0x50 / 4)
++#define CFG_CTRL_P		HD_CFG, (0x54 / 4)
++#define CFG_CTRL_Q		HD_CFG, (0x58 / 4)
++#define CFG_CTRL_R		HD_CFG, (0x5c / 4)
++
++#define CFG_MONITOR_A		HS_CFG, (0x08 / 4)
++#define CFG_MONITOR_B		HS_CFG, (0x0c / 4)
++
++#define CFG_MONITOR_C		HD_CFG, (0x20 / 4)
++#define CFG_MONITOR_D		HD_CFG, (0x24 / 4)
++#define CFG_MONITOR_E		HD_CFG, (0x28 / 4)
++#define CFG_MONITOR_F		HD_CFG, (0x2c / 4)
++#define CFG_MONITOR_G		HD_CFG, (0x30 / 4)
++#define CFG_MONITOR_H		HD_CFG, (0x34 / 4)
++#define CFG_MONITOR_I		HD_CFG, (0x38 / 4)
++#define CFG_MONITOR_J		HD_CFG, (0x3c / 4)
++
++#define CFG_MONITOR_K		HD_CFG, (0x60 / 4)
++#define CFG_MONITOR_L		HD_CFG, (0x64 / 4)
++#define CFG_MONITOR_M		HD_CFG, (0x68 / 4)
++#define CFG_MONITOR_N		HD_CFG, (0x6c / 4)
++#define CFG_MONITOR_O		HD_CFG, (0x70 / 4)
++#define CFG_MONITOR_P		HD_CFG, (0x74 / 4)
++#define CFG_MONITOR_Q		HD_CFG, (0x78 / 4)
++#define CFG_MONITOR_R		HD_CFG, (0x7c / 4)
++
++#elif defined(CONFIG_CPU_SUBTYPE_STX7108)
++
++#define NE_SYS_STA		0
++#define NE_SYS_CFG		1
++#define SE_SYS_STA		2
++#define SE_SYS_CFG		3
++#define NW_SYS_STA		4
++#define NW_SYS_CFG		5
++#define SW_SYS_STA		6
++#define SW_SYS_CFG		7
++
++#else
++
++#define SYS_DEV			0
++#define SYS_STA			1
++#define SYS_CFG			2
++
++#endif
+ 
+ #endif
+-- 
+1.6.0.6
+

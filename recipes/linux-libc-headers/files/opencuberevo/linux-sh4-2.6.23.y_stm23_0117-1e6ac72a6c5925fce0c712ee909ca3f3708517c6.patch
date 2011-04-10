@@ -1,0 +1,59 @@
+From 1e6ac72a6c5925fce0c712ee909ca3f3708517c6 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Tue, 25 Nov 2008 16:33:46 +0100
+Subject: [PATCH] fix section mismatch warnings compiling the nwhwconfig driver.
+
+If the NETPOLL support is enable, we get the following message building the
+Kernel image:
+
+WARNING: vmlinux.o(.text+0x19b050): Section mismatch: reference to
+.init.text:set_reset_devices (between 'nwhw_uconfig' and 'scsi_device_type')
+
+It is due to the nwhw_uconfig definition.
+So this patch just fixes that.
+Note: nwhw_uconfig function was added to provide the MAC address while
+forcing the device open by using he netpoll_setup function.
+It is required when kgdboe uses the stmmac, for example.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/nwhwconfig.c |    8 +++++---
+ 1 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/nwhwconfig.c b/drivers/net/nwhwconfig.c
+index 1e65a70..b99bccf 100644
+--- a/drivers/net/nwhwconfig.c
++++ b/drivers/net/nwhwconfig.c
+@@ -46,7 +46,7 @@ static struct eth_dev {
+ 	int user_duplex;
+ } nwhwdev[NWHW_MAX_DEV];
+ 
+-static int __init hex_conv_nibble(char x)
++static inline int hex_conv_nibble(char x)
+ {
+ 	if ((x >= '0') && (x <= '9'))
+ 		return x - '0';
+@@ -58,7 +58,7 @@ static int __init hex_conv_nibble(char x)
+ 	return -1;
+ }
+ 
+-static int __init parse_ether(const char *mac_addr_str, struct sockaddr *addr)
++static inline int parse_ether(const char *mac_addr_str, struct sockaddr *addr)
+ {
+ 	int i, c1, c2;
+ 	char *mac_addr = addr->sa_data;
+@@ -165,7 +165,9 @@ void nwhw_uconfig(struct net_device *dev)
+ {
+ 	struct sockaddr ether_addr;
+ 	int ndev = 0;
+-	int valid_ether = valid_ether = nwhwdev[ndev].user_hw_addr[0];
++	int valid_ether;
++
++	valid_ether = nwhwdev[ndev].user_hw_addr[0];
+ 
+ 	printk(KERN_DEBUG "%s\n", __FUNCTION__);
+ 	while (ndev < NWHW_MAX_DEV) {
+-- 
+1.5.3.6
+

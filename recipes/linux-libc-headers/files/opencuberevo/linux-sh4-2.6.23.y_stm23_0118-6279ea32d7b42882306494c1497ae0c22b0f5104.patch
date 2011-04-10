@@ -1,0 +1,234 @@
+From 6279ea32d7b42882306494c1497ae0c22b0f5104 Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Mon, 16 Feb 2009 08:36:05 +0100
+Subject: [PATCH] stm_pm: Added the clk_pm_state function call
+
+Added the clk_pm_state support to several suspend-SOC implementation
+and in the hibernation function
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c   |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c   |    5 ++++-
+ arch/sh/kernel/cpu/sh4/suspend-stx7105.c |    4 ++--
+ arch/sh/kernel/cpu/sh4/suspend-stx7111.c |    4 ++--
+ arch/sh/kernel/cpu/sh4/suspend-stx7141.c |    4 ++--
+ arch/sh/kernel/cpu/sh4/suspend-stx7200.c |   23 +++++++++++++----------
+ arch/sh/kernel/cpu/sh4/swsusp-st_socs.c  |    4 ++--
+ 7 files changed, 26 insertions(+), 20 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 2ab0ea9..d17ffe7 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -106,7 +106,7 @@ static struct platform_device usb_device[2] = {
+ 	USB_DEVICE(1, AHB2STBUS_EHCI_BASE(1), evt2irq(0x13e0),
+ 		      AHB2STBUS_OHCI_BASE(1), evt2irq(0x13c0),
+ 		      &usb_wrapper[1]),
+-
++};
+ /**
+  * stx7105_configure_usb - Configure a USB port
+  * @port: USB port number (0 or 1)
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index b9d59a5..a9c7221 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -875,7 +875,10 @@ static struct plat_lirc_data lirc_private_info = {
+ 	.sysclkdiv	= 1,
+ 	.rxpolarity	= 1,
+ 	.pio_pin_arr  = lirc_pios,
+-	.num_pio_pins = ARRAY_SIZE(lirc_pios)
++	.num_pio_pins = ARRAY_SIZE(lirc_pios),
++#ifdef CONFIG_PM
++	.clk_on_low_power = 30000000,
++#endif
+ };
+ 
+ static struct resource lirc_resource[]= {
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7105.c b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+index c4112e2..b9b88a2 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+@@ -124,7 +124,7 @@ static int stx7105_suspend_prepare(suspend_state_t state)
+ 	int ret = -EINVAL;
+ 	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
+ 	emi_pm_state(pms);
+-/*	clk_pm_state(pms);*/
++	clk_pm_state(pms);
+ 	sysconf_pm_state(pms);
+ 
+ 	switch (state) {
+@@ -173,7 +173,7 @@ static int stx7105_suspend_finish(suspend_state_t state)
+ {
+ 	pm_message_t pms = {.event = PM_EVENT_ON, };
+ 	sysconf_pm_state(pms);
+-/*	clk_pm_state(pms);*/
++	clk_pm_state(pms);
+ 	emi_pm_state(pms);
+ 	return 0;
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7111.c b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+index 98d2f06..a0b2104 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+@@ -132,7 +132,7 @@ static int stx7111_suspend_prepare(suspend_state_t state)
+ 	int ret = -EINVAL;
+ 	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
+ 	emi_pm_state(pms);
+-/*	clk_pm_state(pms);*/
++	clk_pm_state(pms);
+ 	sysconf_pm_state(pms);
+ 
+ 	switch (state) {
+@@ -181,7 +181,7 @@ static int stx7111_suspend_finish(suspend_state_t state)
+ {
+ 	pm_message_t pms = {.event = PM_EVENT_ON, };
+ 	sysconf_pm_state(pms);
+-/*	clk_pm_state(pms);*/
++	clk_pm_state(pms);
+ 	emi_pm_state(pms);
+ 	return 0;
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7141.c b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+index b647bb9..f2d131c 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+@@ -129,7 +129,7 @@ static int stx7141_suspend_prepare(suspend_state_t state)
+ 	int ret = -EINVAL;
+ 	pm_message_t pms = {.event = PM_EVENT_SUSPEND, };
+ 	emi_pm_state(pms);
+-/*	clk_pm_state(pms);*/
++	clk_pm_state(pms);
+ 	sysconf_pm_state(pms);
+ 
+ 	switch (state) {
+@@ -178,7 +178,7 @@ static int stx7141_suspend_finish(suspend_state_t state)
+ {
+ 	pm_message_t pms = {.event = PM_EVENT_ON, };
+ 	sysconf_pm_state(pms);
+-/*	clk_pm_state(pms);*/
++	clk_pm_state(pms);
+ 	emi_pm_state(pms);
+ 	return 0;
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7200.c b/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
+index fced286..320b660 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
+@@ -46,7 +46,7 @@ CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
+ CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
+ 
+ CLK_OR_LONG(CLKA_PWR_CFG, PWR_CFG_PLL0_OFF | PWR_CFG_PLL2_OFF),
+-
++#if 0
+ CLK_AND_LONG(CLKA_PLL0, ~(0x7ffff)),
+ CLK_AND_LONG(CLKA_PLL2, ~(0x7ffff)),
+ 
+@@ -57,11 +57,12 @@ CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL2_OFF)),
+ 
+ CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
+ CLK_AND_LONG(CLKA_PLL2, ~(CLKA_PLL2_BYPASS)),
+-
++#endif
+ /* END. */
+ _END(),
+ 
+ /* Restore the GenA.Pll0 and GenA.PLL2 original frequencies */
++#if 0
+ CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
+ CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
+ 
+@@ -76,7 +77,7 @@ DATA_LOAD(0x1),
+ IMMEDIATE_SRC0(CLKA_PLL2_BYPASS),
+ _OR(),
+ CLK_STORE(CLKA_PLL2),
+-
++#endif
+ CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL2_OFF)),
+ CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
+ CLK_AND_LONG(CLKA_PLL2, ~(CLKA_PLL2_BYPASS)),
+@@ -106,7 +107,7 @@ CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_BYPASS),
+ CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
+ 
+ CLK_OR_LONG(CLKA_PWR_CFG, PWR_CFG_PLL0_OFF | PWR_CFG_PLL1_OFF | PWR_CFG_PLL2_OFF),
+-
++#if 0
+ CLK_AND_LONG(CLKA_PLL0, ~(0x7ffff)),
+ CLK_AND_LONG(CLKA_PLL1, ~(0x7ffff)),
+ CLK_AND_LONG(CLKA_PLL2, ~(0x7ffff)),
+@@ -120,11 +121,12 @@ CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL1_OFF | PWR_CFG_PLL2_
+ CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
+ CLK_AND_LONG(CLKA_PLL1, ~(CLKA_PLL1_BYPASS)),
+ CLK_AND_LONG(CLKA_PLL2, ~(CLKA_PLL2_BYPASS)),
+-
++#endif
+ /* END. */
+ _END() ,
+ 
+ /* Restore the GenA.Pll0 and GenA.PLL2 original frequencies */
++#if 0
+ CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
+ CLK_OR_LONG(CLKA_PLL1, CLKA_PLL1_BYPASS),
+ CLK_OR_LONG(CLKA_PLL2, CLKA_PLL2_BYPASS),
+@@ -145,7 +147,7 @@ DATA_LOAD(0x2),
+ IMMEDIATE_SRC0(CLKA_PLL2_BYPASS),
+ _OR(),
+ CLK_STORE(CLKA_PLL2),
+-
++#endif
+ CLK_AND_LONG(CLKA_PWR_CFG, ~(PWR_CFG_PLL0_OFF | PWR_CFG_PLL1_OFF | PWR_CFG_PLL2_OFF)),
+ 
+ CLK_AND_LONG(CLKA_PLL0, ~(CLKA_PLL0_BYPASS)),
+@@ -172,7 +174,7 @@ static int stx7200_suspend_prepare(suspend_state_t state)
+ {
+ 	pm_message_t pm = {.event = PM_EVENT_SUSPEND, };
+ 	emi_pm_state(pm);
+-/*	clk_pm_state(pm);*/
++	clk_pm_state(pm);
+ 	sysconf_pm_state(pm);
+ 
+ 	switch (state) {
+@@ -213,7 +215,7 @@ static int stx7200_suspend_finish(suspend_state_t state)
+ {
+ 	pm_message_t pm = {.event = PM_EVENT_ON, };
+ 	sysconf_pm_state(pm);
+-/*	clk_pm_state(pm);*/
++	clk_pm_state(pm);
+ 	emi_pm_state(pm);
+ 	return 0;
+ }
+@@ -265,9 +267,10 @@ int __init suspend_platform_setup(struct sh4_suspend_t *st40data)
+ 	sc = sysconf_claim(SYS_CFG, 39, 20, 20, "pm");
+ 	stx7200_wrt_table[_SYS_CFG39] = (unsigned long)sysconf_address(sc);
+ 	stx7200_wrt_table[_SYS_CFG39_MASK] = sysconf_mask(sc);
++
+ #ifdef CONFIG_PM_DEBUG
+-//	ctrl_outl(0xc, CKGA_CLKOUT_SEL +
+-//		CLOCKGEN_BASE_ADDR); /* sh4:2 routed on SYSCLK_OUT */
++	ctrl_outl(0xc, CKGA_CLKOUT_SEL +
++		CLOCKGEN_BASE_ADDR); /* sh4:2 routed on SYSCLK_OUT */
+ #endif
+ 	return 0;
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c b/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c
+index 51ba1d0..1e811fc 100644
+--- a/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c
++++ b/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c
+@@ -29,11 +29,11 @@ static void st_socs_processor_state(int state)
+ 	if (state == PM_EVENT_FREEZE) {
+ 		ilc_pm_state(pm);
+ 		emi_pm_state(pm);
+-/*		clk_pm_state(pm);*/
++		clk_pm_state(pm);
+ 		sysconf_pm_state(pm);
+ 	} else {
+ 		sysconf_pm_state(pm);
+-/*		clk_pm_state(pm);*/
++		clk_pm_state(pm);
+ 		emi_pm_state(pm);
+ 		ilc_pm_state(pm);
+ 	}
+-- 
+1.5.6.3
+

@@ -1,0 +1,37 @@
+From 1aa27951e5f06c5f041e06af79927dc301e4a1ef Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Thu, 20 Aug 2009 19:35:06 +0100
+Subject: [PATCH] sh_stm: Fix version information for 7109 cut 4.0
+
+New STx7109 parts have a version register value of 3.4, however the
+parts are marked as 4.0 on the package. Update the cut information
+the kernel uses to match the package.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index 743758d..5b0b55c 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -832,6 +832,15 @@ void __init stx7100_early_device_init(void)
+ 		devid = sysconf_read(sc);
+ 		printk("Chip version %ld.%ld\n", (devid >> 4)+1, devid & 0xf);
+ 		boot_cpu_data.cut_minor = devid & 0xf;
++		if (devid == 0x24) {
++			/*
++			 * See ADCS 8135002 "STI7109 CUT 4.0 CHANGES
++			 * VERSUS CUT 3.X" for details of this change.
++			 */
++			printk("Setting version to 4.0 to match commercial branding\n");
++			boot_cpu_data.cut_major = 4;
++			boot_cpu_data.cut_minor = 0;
++		}
+ 	}
+ 
+ 	/* Configure the ST40 RTC to source its clock from clockgenB.
+-- 
+1.6.0.6
+

@@ -1,0 +1,30 @@
+From b7af73a27799085083575b96560bc5b8a0e2531b Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Wed, 20 May 2009 16:57:16 +0100
+Subject: [PATCH] sh_stm: Fix mb680/mb705 STEM CS0 offset
+
+The initial mb680/mb705 development was done using a prototype EPLD,
+which used A18-A17 to sub-decode the STM CS0 in EMI bank 4. However
+the production version uses A17-A16, so fix the offset to match.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ include/asm-sh/mb680/stem.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/asm-sh/mb680/stem.h b/include/asm-sh/mb680/stem.h
+index 8f15402..8671fb1 100644
+--- a/include/asm-sh/mb680/stem.h
++++ b/include/asm-sh/mb680/stem.h
+@@ -24,7 +24,7 @@
+  */
+ #ifdef CONFIG_SH_ST_MB705
+ #define STEM_CS0_BANK 4
+-#define STEM_CS0_OFFSET (1<<17)
++#define STEM_CS0_OFFSET (1<<16)
+ #else
+ #define STEM_CS0_BANK 2
+ #define STEM_CS0_OFFSET 0
+-- 
+1.6.0.6
+

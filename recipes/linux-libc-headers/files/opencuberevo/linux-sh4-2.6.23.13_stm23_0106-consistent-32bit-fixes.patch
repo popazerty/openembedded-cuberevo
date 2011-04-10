@@ -1,0 +1,44 @@
+Fix a couple of issues in the implementation of consistent memory with
+32 bit enabled:
+
+ - consistent_alloc() calls get_vm_area() which causes a call to
+   kmalloc(..., GFP_KERNEL), ignoring the gfp flags passed into
+   consistent_alloc. This causes problems with dma_pool_alloc() for
+   example which calls dma_alloc_coherent() with GFP_ATOMIC. So use
+   get_vm_area_node() instead, which takes a gfp argument.
+
+ - the vm_struct phys_addr was being set to a corrupted version of
+   the virtual address, not the physical address. This was spotted by
+   Marek Skuczynski <M.Skuczynski@adbglobal.com> in bugzilla 3382.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/mm/consistent.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/mm/consistent.c
++++ linux-2.6.23-stm/arch/sh/mm/consistent.c
+@@ -41,7 +41,7 @@ void *consistent_alloc(gfp_t gfp, size_t
+ 	phys_addr = virt_to_phys(kernel_addr);
+ 
+ #ifdef CONFIG_32BIT
+-	area = get_vm_area(size, VM_IOREMAP);
++	area = get_vm_area_node(size, VM_IOREMAP, -1, gfp);
+ 	if (!area) {
+ 		free_pages(gfp, order);
+ 		return NULL;
+@@ -54,7 +54,7 @@ void *consistent_alloc(gfp_t gfp, size_t
+ 		return NULL;
+ 	}
+ 
+-	area->phys_addr = virt_to_phys(ret);
++	area->phys_addr = phys_addr;
+ #else
+ 	ret = P2SEGADDR(kernel_addr);
+ #endif
+@@ -105,6 +105,7 @@ void consistent_free(void *vaddr, size_t
+ 	addr = P1SEGADDR((unsigned long)vaddr);
+ #endif
+ 
++	BUG_ON(!virt_addr_valid(addr));
+ 	page = virt_to_page(addr);
+ 
+ 	for(i=0;i<num_pages;i++) {

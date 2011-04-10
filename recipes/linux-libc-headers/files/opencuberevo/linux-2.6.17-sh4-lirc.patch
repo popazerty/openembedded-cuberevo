@@ -1,0 +1,148 @@
+ This patch updates:
+ - the LIRC stm device driver to support the 2.6.17 kernel version
+
+Signed-off-by: Angelo Castello <angelo.castello@st.com>
+=======================================================
+diff -upNrb -X dontdiff.txt linux-2.6.17/arch/sh/boards/st/stb7100mboard/setup.c linux-2.6.17-sh4-lirc/arch/sh/boards/st/stb7100mboard/setup.c
+--- linux-2.6.17/arch/sh/boards/st/stb7100mboard/setup.c	2006-08-24 06:17:56.690525000 +0000
++++ linux-2.6.17-sh4-lirc/arch/sh/boards/st/stb7100mboard/setup.c	2006-08-24 06:18:50.760817000 +0000
+@@ -214,7 +214,7 @@ static struct plat_lirc_data lirc_privat
+ 	.irbontimediv   = 0,
+ 	.irbrxmaxperiod = 0x5000,
+ 	.irbversion     = 2,
+-	.sysclkdiv	= 2,
++	.sysclkdiv	= 1,
+ 	.rxpolarity	= 1,
+ 	.subcarrwidth	= 50
+ };
+diff -upNrb -X dontdiff.txt linux-2.6.17/arch/sh/boards/st/stb7100ref/setup.c linux-2.6.17-sh4-lirc/arch/sh/boards/st/stb7100ref/setup.c
+--- linux-2.6.17/arch/sh/boards/st/stb7100ref/setup.c	2006-08-24 06:17:56.900528000 +0000
++++ linux-2.6.17-sh4-lirc/arch/sh/boards/st/stb7100ref/setup.c	2006-08-24 07:36:39.935851000 +0000
+@@ -145,7 +145,7 @@ static struct plat_lirc_data lirc_privat
+         .irbontimediv   = 0,
+         .irbrxmaxperiod = 0x5000,
+         .irbversion     = 2,
+-	.sysclkdiv	= 2,
++	.sysclkdiv	= 1,
+ 	.rxpolarity	= 1
+ };
+ 
+diff -upNrb -X dontdiff.txt linux-2.6.17/drivers/char/lirc/lirc_dev.c linux-2.6.17-sh4-lirc/drivers/char/lirc/lirc_dev.c
+--- linux-2.6.17/drivers/char/lirc/lirc_dev.c	2006-08-23 16:11:03.281378000 +0000
++++ linux-2.6.17-sh4-lirc/drivers/char/lirc/lirc_dev.c	2006-08-23 13:10:01.613137000 +0000
+@@ -24,6 +24,7 @@
+ #ifdef HAVE_CONFIG_H
+ # include <config.h>
+ #endif
++#include <linux/platform_device.h>
+ 
+ #include <linux/version.h>
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 2, 18)
+@@ -107,7 +108,7 @@ static struct irctl irctls[MAX_IRCTL_DEV
+ static struct file_operations fops;
+ 
+ /* Only used for sysfs but defined to void otherwise */
+-static struct class_simple *lirc_class;
++static struct class *lirc_class;
+ 
+ /*  helper function
+  *  initializes the irctl structure
+@@ -138,7 +139,7 @@ static void cleanup(struct irctl *ir)
+ #ifdef LIRC_HAVE_DEVFS_26
+ 	devfs_remove(DEV_LIRC "/%u", ir->p.minor);
+ #endif
+-	class_simple_device_remove(MKDEV(IRCTL_DEV_MAJOR, ir->p.minor));
++        class_device_destroy(lirc_class, MKDEV(IRCTL_DEV_MAJOR, ir->p.minor));
+ 
+ 	if (ir->buf != ir->p.rbuf){
+ 		lirc_buffer_free(ir->buf);
+@@ -382,7 +383,8 @@ int lirc_register_plugin(struct lirc_plu
+ 			S_IFCHR|S_IRUSR|S_IWUSR,
+ 			DEV_LIRC "/%u", ir->p.minor);
+ #endif
+-	(void) class_simple_device_add(lirc_class, MKDEV(IRCTL_DEV_MAJOR, ir->p.minor),
++        class_device_create(lirc_class, NULL,
++                            MKDEV(IRCTL_DEV_MAJOR, ir->p.minor),
+ 				       NULL, "lirc%u", ir->p.minor);
+ 
+ 	if(p->sample_rate || p->get_queue) {
+@@ -415,7 +417,7 @@ int lirc_register_plugin(struct lirc_plu
+ 	return minor;
+ 
+ out_sysfs:
+-	class_simple_device_remove(MKDEV(IRCTL_DEV_MAJOR, ir->p.minor));
++        class_device_destroy(lirc_class, MKDEV(IRCTL_DEV_MAJOR, ir->p.minor));
+ #ifdef LIRC_HAVE_DEVFS_24
+ 	devfs_unregister(ir->devfs_handle);
+ #endif
+@@ -887,7 +889,7 @@ static int __init lirc_dev_init(void)
+ 		goto out;
+ 	}
+ 
+-	lirc_class = class_simple_create(THIS_MODULE, "lirc");
++	lirc_class = class_create(THIS_MODULE, "lirc");
+ 	if(IS_ERR(lirc_class)) {
+ 		printk(KERN_ERR "lirc_dev: class_simple_create failed\n");
+ 		goto out_unregister;
+@@ -918,7 +920,7 @@ void __exit lirc_dev_exit(void)
+ 	driver_unregister(&lirc_driver);
+ #endif
+ 	ret = unregister_chrdev(IRCTL_DEV_MAJOR, IRCTL_DEV_NAME);
+-	class_simple_destroy(lirc_class);
++	class_destroy(lirc_class);
+ 
+ 	if(ret)
+ 		printk("lirc_dev: error in module_unregister_chrdev: %d\n", ret);
+diff -upNrb -X dontdiff.txt linux-2.6.17/drivers/char/lirc/lirc_stm.c linux-2.6.17-sh4-lirc/drivers/char/lirc/lirc_stm.c
+--- linux-2.6.17/drivers/char/lirc/lirc_stm.c	2006-08-23 16:11:03.631379000 +0000
++++ linux-2.6.17-sh4-lirc/drivers/char/lirc/lirc_stm.c	2006-08-24 08:02:03.204024000 +0000
+@@ -30,8 +30,10 @@
+ #include <linux/init.h>
+ #include <asm/uaccess.h>
+ #include <linux/device.h>
++#include <linux/platform_device.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
++#include <asm/clock.h>
+ #include <linux/ioport.h>
+ #include <linux/interrupt.h>
+ #include <linux/stpio.h>
+@@ -629,7 +631,7 @@ static ssize_t lirc_stm_write(struct fil
+ 	if (n % sizeof(lirc_t))
+ 		return (-EINVAL);
+ 
+-	retval = verify_area(VERIFY_READ, buf, n);
++	retval = access_ok(VERIFY_READ, buf, n);
+ 	if (retval)
+ 		return (retval);
+ 
+@@ -813,6 +815,7 @@ static int __init lirc_stm_init(void)
+ 	struct resource *res;
+ 	int baseclock;
+ 	unsigned int scwidth;
++        struct clk *clk;
+ 
+ 	DPRINTK("initializing the IR receiver...\n");
+ 
+@@ -887,7 +890,7 @@ static int __init lirc_stm_init(void)
+ 	}
+ 
+ 	/*  set up the hardware version dependent setup parameters */
+-	lirc_private_info = pridat->dev.platform_data;
++	lirc_private_info = (struct plat_lirc_data *)pridat->dev.platform_data;
+ 
+ 	/* Set the polarity inversion bit to the correct state */
+ 	writel(lirc_private_info->rxpolarity, IRB_RX_POLARITY_INV);
+@@ -921,8 +924,10 @@ static int __init lirc_stm_init(void)
+ 	 */
+ 
+ 	if (lirc_private_info->irbclock == 0)
+-		baseclock =
+-		    current_cpu_data.bus_clock / lirc_private_info->sysclkdiv;
++        {
++            clk = clk_get("comms_clk");
++            baseclock = clk_get_rate(clk) / lirc_private_info->sysclkdiv;
++        }
+ 	else
+ 		baseclock = lirc_private_info->irbclock;
+ 

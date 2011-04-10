@@ -1,0 +1,36 @@
+From 1c14261a97f45dcb5e989ee968078110611d2fb3 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 10 Sep 2009 09:36:46 +0200
+Subject: [PATCH] stmmac: fixed a bug while scheduling timer callback
+
+In this driver implementation, we check if there is
+pending work before scheduling the tx/rx clean functions.
+This patch fixes some wrong conditions for the transmission.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 3321d96..aa4dfec 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -928,12 +928,12 @@ void stmmac_timer_work(struct net_device *dev)
+ 	if (likely(rxret == 0))
+ 		stmmac_schedule_rx(dev);
+ 
+-	txret = priv->mac_type->ops->get_tx_owner(priv->dma_rx + txentry);
++	txret = priv->mac_type->ops->get_tx_owner(priv->dma_tx + txentry);
+ 	if (likely(txret == 0))
+ 		tasklet_schedule(&priv->tx_task);
+ 
+ 	/* Timer will be re-started later. */
+-	if (likely(rxret == 0) || (rxret == 0))
++	if (likely(rxret == 0) || (txret == 0))
+ 		priv->tm->timer_stop();
+ 
+ 	return;
+-- 
+1.6.0.6
+

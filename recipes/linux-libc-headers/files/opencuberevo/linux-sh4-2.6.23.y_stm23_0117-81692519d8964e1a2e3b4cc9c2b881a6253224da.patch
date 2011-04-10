@@ -1,0 +1,895 @@
+From 81692519d8964e1a2e3b4cc9c2b881a6253224da Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 31 Oct 2008 16:49:46 +0000
+Subject: [PATCH] sound_stm: Registers description updated.
+
+Updated the registers description, removing unnecessary parameters.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/fsynth.c          |    6 +-
+ sound/stm/reg_7105_audcfg.h |    4 +-
+ sound/stm/reg_710x_audcfg.h |    4 +-
+ sound/stm/reg_7111_audcfg.h |    4 +-
+ sound/stm/reg_7141_audcfg.h |    4 +-
+ sound/stm/reg_7200_audcfg.h |   12 +++--
+ sound/stm/reg_aud_pcmin.h   |   22 +++++-----
+ sound/stm/reg_aud_pcmout.h  |   26 ++++++-----
+ sound/stm/reg_aud_spdif.h   |   38 +++++++++--------
+ sound/stm/reg_aud_spdifpc.h |   42 ++++++++++---------
+ sound/stm/reg_audcfg_adac.h |    4 +-
+ sound/stm/reg_audcfg_fsyn.h |   94 ++++++++++++++++++++++---------------------
+ 12 files changed, 141 insertions(+), 119 deletions(-)
+
+diff --git a/sound/stm/fsynth.c b/sound/stm/fsynth.c
+index ebdaaec..241e3bf 100644
+--- a/sound/stm/fsynth.c
++++ b/sound/stm/fsynth.c
+@@ -332,12 +332,12 @@ static int snd_stm_fsynth_channel_configure(struct snd_stm_fsynth *fsynth,
+ 	}
+ 
+ 	snd_stm_printd(1, "SDIV == 0x%x, MD == 0x%x, PE == 0x%x\n", sdiv,
+-			(unsigned int)md & mask__AUDCFG_FSYN_MD__MD(fsynth,
+-			channel), pe);
++			(unsigned int)md & mask__AUDCFG_FSYN_MD__MD(fsynth),
++			pe);
+ 	set__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(fsynth, channel);
+ 	set__AUDCFG_FSYN_SDIV__SDIV(fsynth, channel, sdiv);
+ 	set__AUDCFG_FSYN_MD__MD(fsynth, channel, (unsigned int)md &
+-			mask__AUDCFG_FSYN_MD__MD(fsynth, channel));
++			mask__AUDCFG_FSYN_MD__MD(fsynth));
+ 	set__AUDCFG_FSYN_PE__PE(fsynth, channel, pe);
+ 	set__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(fsynth, channel);
+ 	set__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(fsynth, channel);
+diff --git a/sound/stm/reg_7105_audcfg.h b/sound/stm/reg_7105_audcfg.h
+index 490ee13..1e05300 100644
+--- a/sound/stm/reg_7105_audcfg.h
++++ b/sound/stm/reg_7105_audcfg.h
+@@ -10,7 +10,7 @@
+ #define offset__7105_AUDCFG_IO_CTRL(ip) 0x00
+ #define get__7105_AUDCFG_IO_CTRL(ip) readl(ip->base + \
+ 	offset__7105_AUDCFG_IO_CTRL(ip))
+-#define set__7105_AUDCFG_IO_CTRL(ip, value) writel((value), ip->base + \
++#define set__7105_AUDCFG_IO_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__7105_AUDCFG_IO_CTRL(ip))
+ 
+ /* PCM_CLK_EN */
+@@ -149,4 +149,6 @@
+ 	set__7105_AUDCFG_IO_CTRL__CLKREC_SEL(ip, \
+ 	value__7105_AUDCFG_IO_CTRL__CLKREC_SEL__PCMPL1(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_710x_audcfg.h b/sound/stm/reg_710x_audcfg.h
+index e5447ed..375ea05 100644
+--- a/sound/stm/reg_710x_audcfg.h
++++ b/sound/stm/reg_710x_audcfg.h
+@@ -10,7 +10,7 @@
+ #define offset__710X_AUDCFG_IO_CTRL(ip) 0x00
+ #define get__710X_AUDCFG_IO_CTRL(ip) readl(ip->base + \
+ 	offset__710X_AUDCFG_IO_CTRL(ip))
+-#define set__710X_AUDCFG_IO_CTRL(ip, value) writel((value), ip->base + \
++#define set__710X_AUDCFG_IO_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__710X_AUDCFG_IO_CTRL(ip))
+ 
+ /* PCM_CLK_EN */
+@@ -173,4 +173,6 @@
+ 	set__710X_AUDCFG_IO_CTRL__HDMI_AUD_SRC(ip, \
+ 	value__710X_AUDCFG_IO_CTRL__HDMI_AUD_SRC__SPDIF_PLAYER(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_7111_audcfg.h b/sound/stm/reg_7111_audcfg.h
+index 9faad5d..cdcde07 100644
+--- a/sound/stm/reg_7111_audcfg.h
++++ b/sound/stm/reg_7111_audcfg.h
+@@ -10,7 +10,7 @@
+ #define offset__7111_AUDCFG_IO_CTRL(ip) 0x00
+ #define get__7111_AUDCFG_IO_CTRL(ip) readl(ip->base + \
+ 	offset__7111_AUDCFG_IO_CTRL(ip))
+-#define set__7111_AUDCFG_IO_CTRL(ip, value) writel((value), ip->base + \
++#define set__7111_AUDCFG_IO_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__7111_AUDCFG_IO_CTRL(ip))
+ 
+ /* PCM_CLK_EN */
+@@ -149,4 +149,6 @@
+ 	set__7111_AUDCFG_IO_CTRL__CLKREC_SEL(ip, \
+ 	value__7111_AUDCFG_IO_CTRL__CLKREC_SEL__PCMPL1(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_7141_audcfg.h b/sound/stm/reg_7141_audcfg.h
+index 9e0743e..706a876 100644
+--- a/sound/stm/reg_7141_audcfg.h
++++ b/sound/stm/reg_7141_audcfg.h
+@@ -10,7 +10,7 @@
+ #define offset__7141_AUDCFG_IO_CTRL(ip) 0x00
+ #define get__7141_AUDCFG_IO_CTRL(ip) readl(ip->base + \
+ 	offset__7141_AUDCFG_IO_CTRL(ip))
+-#define set__7141_AUDCFG_IO_CTRL(ip, value) writel((value), ip->base + \
++#define set__7141_AUDCFG_IO_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__7141_AUDCFG_IO_CTRL(ip))
+ 
+ /* CLKREC_SEL */
+@@ -204,4 +204,6 @@
+ 	set__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL(ip, \
+ 	value__7141_AUDCFG_IO_CTRL__PCMR1_LRCLK_SEL__FROM_PCM_PLAYER_0(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_7200_audcfg.h b/sound/stm/reg_7200_audcfg.h
+index 64b9fcf..7e7f5c7 100644
+--- a/sound/stm/reg_7200_audcfg.h
++++ b/sound/stm/reg_7200_audcfg.h
+@@ -20,8 +20,8 @@
+ #define offset__7200_AUDCFG_IOMUX_CTRL(ip) 0x00
+ #define get__7200_AUDCFG_IOMUX_CTRL(ip) readl(ip->base + \
+ 	offset__7200_AUDCFG_IOMUX_CTRL(ip))
+-#define set__7200_AUDCFG_IOMUX_CTRL(ip, value) writel((value), \
+-	ip->base + offset__7200_AUDCFG_IOMUX_CTRL(ip))
++#define set__7200_AUDCFG_IOMUX_CTRL(ip, value) writel(value, ip->base \
++	+ offset__7200_AUDCFG_IOMUX_CTRL(ip))
+ 
+ /* PCM_CLK_EN */
+ 
+@@ -228,8 +228,8 @@
+ #define offset__7200_AUDCFG_HDMI_CTRL(ip) 0x04
+ #define get__7200_AUDCFG_HDMI_CTRL(ip) readl(ip->base + \
+ 	offset__7200_AUDCFG_HDMI_CTRL(ip))
+-#define set__7200_AUDCFG_HDMI_CTRL(ip, value) writel((value), ip->base \
+-	+ offset__7200_AUDCFG_HDMI_CTRL(ip))
++#define set__7200_AUDCFG_HDMI_CTRL(ip, value) writel(value, ip->base + \
++	offset__7200_AUDCFG_HDMI_CTRL(ip))
+ 
+ /* HDMI_DEBUG */
+ 
+@@ -288,7 +288,7 @@
+ #define offset__7200_AUDCFG_RECOVERY_CTRL(ip) 0x08
+ #define get__7200_AUDCFG_RECOVERY_CTRL(ip) readl(ip->base + \
+ 	offset__7200_AUDCFG_RECOVERY_CTRL(ip))
+-#define set__7200_AUDCFG_RECOVERY_CTRL(ip, value) writel((value), \
++#define set__7200_AUDCFG_RECOVERY_CTRL(ip, value) writel(value, \
+ 	ip->base + offset__7200_AUDCFG_RECOVERY_CTRL(ip))
+ 
+ /* RECO_EN0 */
+@@ -451,4 +451,6 @@
+ 	shift__7200_AUDCFG_RECOVERY_CTRL__RECO_EXT1(ip)), ip->base + \
+ 	offset__7200_AUDCFG_RECOVERY_CTRL(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_aud_pcmin.h b/sound/stm/reg_aud_pcmin.h
+index e2175de..61ace08 100644
+--- a/sound/stm/reg_aud_pcmin.h
++++ b/sound/stm/reg_aud_pcmin.h
+@@ -29,7 +29,7 @@
+ #define offset__AUD_PCMIN_RST(ip) 0x00
+ #define get__AUD_PCMIN_RST(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_RST(ip))
+-#define set__AUD_PCMIN_RST(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_RST(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_RST(ip))
+ 
+ /* RSTP */
+@@ -68,7 +68,7 @@
+ #define offset__AUD_PCMIN_DATA(ip) 0x04
+ #define get__AUD_PCMIN_DATA(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_DATA(ip))
+-#define set__AUD_PCMIN_DATA(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_DATA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_DATA(ip))
+ 
+ /* DATA */
+@@ -93,7 +93,7 @@
+ #define offset__AUD_PCMIN_ITS(ip) 0x08
+ #define get__AUD_PCMIN_ITS(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_ITS(ip))
+-#define set__AUD_PCMIN_ITS(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_ITS(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_ITS(ip))
+ 
+ /* OVF */
+@@ -146,7 +146,7 @@
+ #define offset__AUD_PCMIN_ITS_CLR(ip) 0x0c
+ #define get__AUD_PCMIN_ITS_CLR(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_ITS_CLR(ip))
+-#define set__AUD_PCMIN_ITS_CLR(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_ITS_CLR(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_ITS_CLR(ip))
+ 
+ /* OVF */
+@@ -195,7 +195,7 @@
+ #define offset__AUD_PCMIN_IT_EN(ip) 0x10
+ #define get__AUD_PCMIN_IT_EN(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_IT_EN(ip))
+-#define set__AUD_PCMIN_IT_EN(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_IT_EN(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_IT_EN(ip))
+ 
+ /* OVF */
+@@ -266,7 +266,7 @@
+ #define offset__AUD_PCMIN_IT_EN_SET(ip) 0x14
+ #define get__AUD_PCMIN_IT_EN_SET(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_IT_EN_SET(ip))
+-#define set__AUD_PCMIN_IT_EN_SET(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_IT_EN_SET(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_IT_EN_SET(ip))
+ 
+ /* OVF */
+@@ -326,7 +326,7 @@
+ #define offset__AUD_PCMIN_IT_EN_CLR(ip) 0x18
+ #define get__AUD_PCMIN_IT_EN_CLR(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_IT_EN_CLR(ip))
+-#define set__AUD_PCMIN_IT_EN_CLR(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_IT_EN_CLR(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_IT_EN_CLR(ip))
+ 
+ /* OVF */
+@@ -386,7 +386,7 @@
+ #define offset__AUD_PCMIN_CTRL(ip) 0x1c
+ #define get__AUD_PCMIN_CTRL(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_CTRL(ip))
+-#define set__AUD_PCMIN_CTRL(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_CTRL(ip))
+ 
+ /* MODE */
+@@ -526,7 +526,7 @@
+ #define offset__AUD_PCMIN_STA(ip) 0x20
+ #define get__AUD_PCMIN_STA(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_STA(ip))
+-#define set__AUD_PCMIN_STA(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_STA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_STA(ip))
+ 
+ /* RUN_STOP */
+@@ -660,7 +660,7 @@
+ #define offset__AUD_PCMIN_FMT(ip) 0x24
+ #define get__AUD_PCMIN_FMT(ip) readl(ip->base + \
+ 	offset__AUD_PCMIN_FMT(ip))
+-#define set__AUD_PCMIN_FMT(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMIN_FMT(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMIN_FMT(ip))
+ 
+ /* NBIT */
+@@ -1032,4 +1032,6 @@
+ 	shift__AUD_PCMIN_FMT__DMA_REQ_TRIG_LMT(ip)), ip->base + \
+ 	offset__AUD_PCMIN_FMT(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_aud_pcmout.h b/sound/stm/reg_aud_pcmout.h
+index c3d8672..20069f1 100644
+--- a/sound/stm/reg_aud_pcmout.h
++++ b/sound/stm/reg_aud_pcmout.h
+@@ -32,7 +32,7 @@
+ #define offset__AUD_PCMOUT_RST(ip) 0x00
+ #define get__AUD_PCMOUT_RST(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_RST(ip))
+-#define set__AUD_PCMOUT_RST(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_RST(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_RST(ip))
+ 
+ /* SRSTP */
+@@ -73,7 +73,7 @@
+ #define offset__AUD_PCMOUT_DATA(ip) 0x04
+ #define get__AUD_PCMOUT_DATA(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_DATA(ip))
+-#define set__AUD_PCMOUT_DATA(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_DATA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_DATA(ip))
+ 
+ /* DATA */
+@@ -98,7 +98,7 @@
+ #define offset__AUD_PCMOUT_ITS(ip) 0x08
+ #define get__AUD_PCMOUT_ITS(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_ITS(ip))
+-#define set__AUD_PCMOUT_ITS(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_ITS(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_ITS(ip))
+ 
+ /* UNF */
+@@ -152,7 +152,7 @@
+ #define offset__AUD_PCMOUT_ITS_CLR(ip) 0x0c
+ #define get__AUD_PCMOUT_ITS_CLR(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_ITS_CLR(ip))
+-#define set__AUD_PCMOUT_ITS_CLR(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_ITS_CLR(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_ITS_CLR(ip))
+ 
+ /* UNF */
+@@ -211,7 +211,7 @@
+ #define offset__AUD_PCMOUT_IT_EN(ip) 0x10
+ #define get__AUD_PCMOUT_IT_EN(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_IT_EN(ip))
+-#define set__AUD_PCMOUT_IT_EN(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_IT_EN(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_IT_EN(ip))
+ 
+ /* UNF */
+@@ -283,8 +283,8 @@
+ #define offset__AUD_PCMOUT_IT_EN_SET(ip) 0x14
+ #define get__AUD_PCMOUT_IT_EN_SET(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_IT_EN_SET(ip))
+-#define set__AUD_PCMOUT_IT_EN_SET(ip, value) writel((value), ip->base \
+-	+ offset__AUD_PCMOUT_IT_EN_SET(ip))
++#define set__AUD_PCMOUT_IT_EN_SET(ip, value) writel(value, ip->base + \
++	offset__AUD_PCMOUT_IT_EN_SET(ip))
+ 
+ /* UNF */
+ 
+@@ -343,8 +343,8 @@
+ #define offset__AUD_PCMOUT_IT_EN_CLR(ip) 0x18
+ #define get__AUD_PCMOUT_IT_EN_CLR(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_IT_EN_CLR(ip))
+-#define set__AUD_PCMOUT_IT_EN_CLR(ip, value) writel((value), ip->base \
+-	+ offset__AUD_PCMOUT_IT_EN_CLR(ip))
++#define set__AUD_PCMOUT_IT_EN_CLR(ip, value) writel(value, ip->base + \
++	offset__AUD_PCMOUT_IT_EN_CLR(ip))
+ 
+ /* UNF */
+ 
+@@ -403,7 +403,7 @@
+ #define offset__AUD_PCMOUT_CTRL(ip) 0x1c
+ #define get__AUD_PCMOUT_CTRL(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_CTRL(ip))
+-#define set__AUD_PCMOUT_CTRL(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_CTRL(ip))
+ 
+ /* MODE */
+@@ -577,7 +577,7 @@
+ #define offset__AUD_PCMOUT_STA(ip) 0x20
+ #define get__AUD_PCMOUT_STA(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_STA(ip))
+-#define set__AUD_PCMOUT_STA(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_STA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_STA(ip))
+ 
+ /* RUN_STOP */
+@@ -662,7 +662,7 @@
+ #define offset__AUD_PCMOUT_FMT(ip) 0x24
+ #define get__AUD_PCMOUT_FMT(ip) readl(ip->base + \
+ 	offset__AUD_PCMOUT_FMT(ip))
+-#define set__AUD_PCMOUT_FMT(ip, value) writel((value), ip->base + \
++#define set__AUD_PCMOUT_FMT(ip, value) writel(value, ip->base + \
+ 	offset__AUD_PCMOUT_FMT(ip))
+ 
+ /* NBIT */
+@@ -1033,4 +1033,6 @@
+ 	shift__AUD_PCMOUT_FMT__DMA_REQ_TRIG_LMT(ip)), ip->base + \
+ 	offset__AUD_PCMOUT_FMT(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_aud_spdif.h b/sound/stm/reg_aud_spdif.h
+index 5a83701..2c5e789 100644
+--- a/sound/stm/reg_aud_spdif.h
++++ b/sound/stm/reg_aud_spdif.h
+@@ -26,7 +26,7 @@
+ #define offset__AUD_SPDIF_RST(ip) 0x00
+ #define get__AUD_SPDIF_RST(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_RST(ip))
+-#define set__AUD_SPDIF_RST(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_RST(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_RST(ip))
+ 
+ /* SRSTP */
+@@ -66,7 +66,7 @@
+ #define offset__AUD_SPDIF_DATA(ip) 0x04
+ #define get__AUD_SPDIF_DATA(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_DATA(ip))
+-#define set__AUD_SPDIF_DATA(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_DATA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_DATA(ip))
+ 
+ /* DATA */
+@@ -91,7 +91,7 @@
+ #define offset__AUD_SPDIF_ITS(ip) 0x08
+ #define get__AUD_SPDIF_ITS(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_ITS(ip))
+-#define set__AUD_SPDIF_ITS(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_ITS(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_ITS(ip))
+ 
+ /* UNF */
+@@ -232,7 +232,7 @@
+ #define offset__AUD_SPDIF_ITS_CLR(ip) 0x0c
+ #define get__AUD_SPDIF_ITS_CLR(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_ITS_CLR(ip))
+-#define set__AUD_SPDIF_ITS_CLR(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_ITS_CLR(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_ITS_CLR(ip))
+ 
+ /* UNF */
+@@ -384,7 +384,7 @@
+ #define offset__AUD_SPDIF_IT_EN(ip) 0x10
+ #define get__AUD_SPDIF_IT_EN(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_IT_EN(ip))
+-#define set__AUD_SPDIF_IT_EN(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_IT_EN(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_IT_EN(ip))
+ 
+ /* UNF */
+@@ -578,7 +578,7 @@
+ #define offset__AUD_SPDIF_IT_EN_SET(ip) 0x14
+ #define get__AUD_SPDIF_IT_EN_SET(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_IT_EN_SET(ip))
+-#define set__AUD_SPDIF_IT_EN_SET(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_IT_EN_SET(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_IT_EN_SET(ip))
+ 
+ /* UNF */
+@@ -734,7 +734,7 @@
+ #define offset__AUD_SPDIF_IT_EN_CLR(ip) 0x18
+ #define get__AUD_SPDIF_IT_EN_CLR(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_IT_EN_CLR(ip))
+-#define set__AUD_SPDIF_IT_EN_CLR(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_IT_EN_CLR(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_IT_EN_CLR(ip))
+ 
+ /* UNF */
+@@ -890,7 +890,7 @@
+ #define offset__AUD_SPDIF_CTRL(ip) 0x1c
+ #define get__AUD_SPDIF_CTRL(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_CTRL(ip))
+-#define set__AUD_SPDIF_CTRL(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_CTRL(ip))
+ 
+ /* MODE */
+@@ -1068,7 +1068,7 @@
+ #define offset__AUD_SPDIF_STA(ip) 0x20
+ #define get__AUD_SPDIF_STA(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_STA(ip))
+-#define set__AUD_SPDIF_STA(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_STA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_STA(ip))
+ 
+ /* RUN_STOP */
+@@ -1293,7 +1293,7 @@
+ #define offset__AUD_SPDIF_PA_PB(ip) 0x24
+ #define get__AUD_SPDIF_PA_PB(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_PA_PB(ip))
+-#define set__AUD_SPDIF_PA_PB(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_PA_PB(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_PA_PB(ip))
+ 
+ /* PB */
+@@ -1331,7 +1331,7 @@
+ #define offset__AUD_SPDIF_PC_PD(ip) 0x28
+ #define get__AUD_SPDIF_PC_PD(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_PC_PD(ip))
+-#define set__AUD_SPDIF_PC_PD(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_PC_PD(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_PC_PD(ip))
+ 
+ /* PD */
+@@ -1369,7 +1369,7 @@
+ #define offset__AUD_SPDIF_CL1(ip) 0x2c
+ #define get__AUD_SPDIF_CL1(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_CL1(ip))
+-#define set__AUD_SPDIF_CL1(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_CL1(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_CL1(ip))
+ 
+ /* CL1 */
+@@ -1394,7 +1394,7 @@
+ #define offset__AUD_SPDIF_CR1(ip) 0x30
+ #define get__AUD_SPDIF_CR1(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_CR1(ip))
+-#define set__AUD_SPDIF_CR1(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_CR1(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_CR1(ip))
+ 
+ /* CR1 */
+@@ -1419,8 +1419,8 @@
+ #define offset__AUD_SPDIF_CL2_CR2_UV(ip) 0x34
+ #define get__AUD_SPDIF_CL2_CR2_UV(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_CL2_CR2_UV(ip))
+-#define set__AUD_SPDIF_CL2_CR2_UV(ip, value) writel((value), ip->base \
+-	+ offset__AUD_SPDIF_CL2_CR2_UV(ip))
++#define set__AUD_SPDIF_CL2_CR2_UV(ip, value) writel(value, ip->base + \
++	offset__AUD_SPDIF_CL2_CR2_UV(ip))
+ 
+ /* CL2 */
+ 
+@@ -1527,7 +1527,7 @@
+ #define offset__AUD_SPDIF_PAU_LAT(ip) 0x38
+ #define get__AUD_SPDIF_PAU_LAT(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_PAU_LAT(ip))
+-#define set__AUD_SPDIF_PAU_LAT(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_PAU_LAT(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_PAU_LAT(ip))
+ 
+ /* LAT */
+@@ -1569,7 +1569,7 @@
+ #define offset__AUD_SPDIF_BST_FL(ip) 0x3c
+ #define get__AUD_SPDIF_BST_FL(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_BST_FL(ip))
+-#define set__AUD_SPDIF_BST_FL(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_BST_FL(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_BST_FL(ip))
+ 
+ /* PDBURST */
+@@ -1612,7 +1612,7 @@
+ 	? -1 : 0x40)
+ #define get__AUD_SPDIF_CONFIG(ip) readl(ip->base + \
+ 	offset__AUD_SPDIF_CONFIG(ip))
+-#define set__AUD_SPDIF_CONFIG(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIF_CONFIG(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIF_CONFIG(ip))
+ 
+ /* P_BIT */
+@@ -1903,4 +1903,6 @@
+ 	shift__AUD_SPDIF_CONFIG__DMA_REQ_TRIG_LMT(ip)), ip->base + \
+ 	offset__AUD_SPDIF_CONFIG(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_aud_spdifpc.h b/sound/stm/reg_aud_spdifpc.h
+index 0c4dbc9..42011e4 100644
+--- a/sound/stm/reg_aud_spdifpc.h
++++ b/sound/stm/reg_aud_spdifpc.h
+@@ -26,7 +26,7 @@
+ #define offset__AUD_SPDIFPC_CFG(ip) 0x000
+ #define get__AUD_SPDIFPC_CFG(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_CFG(ip))
+-#define set__AUD_SPDIFPC_CFG(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_CFG(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_CFG(ip))
+ 
+ /* DEVICE_EN */
+@@ -239,7 +239,7 @@
+ #define offset__AUD_SPDIFPC_STA(ip) 0x004
+ #define get__AUD_SPDIFPC_STA(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_STA(ip))
+-#define set__AUD_SPDIFPC_STA(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_STA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_STA(ip))
+ 
+ /* SOFT_RESET */
+@@ -458,7 +458,7 @@
+ #define offset__AUD_SPDIFPC_IT_EN(ip) 0x008
+ #define get__AUD_SPDIFPC_IT_EN(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_IT_EN(ip))
+-#define set__AUD_SPDIFPC_IT_EN(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_IT_EN(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_IT_EN(ip))
+ 
+ /* INTERRUPT_EN */
+@@ -1035,7 +1035,7 @@
+ #define offset__AUD_SPDIFPC_ITS(ip) 0x00c
+ #define get__AUD_SPDIFPC_ITS(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_ITS(ip))
+-#define set__AUD_SPDIFPC_ITS(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_ITS(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_ITS(ip))
+ 
+ /* INTERRUPT */
+@@ -1455,7 +1455,7 @@
+ #define offset__AUD_SPDIFPC_IT_CLR(ip) 0x010
+ #define get__AUD_SPDIFPC_IT_CLR(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_IT_CLR(ip))
+-#define set__AUD_SPDIFPC_IT_CLR(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_IT_CLR(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_IT_CLR(ip))
+ 
+ /* INTERRUPT_EN */
+@@ -1882,7 +1882,7 @@
+ #define offset__AUD_SPDIFPC_VAL(ip) 0x100
+ #define get__AUD_SPDIFPC_VAL(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_VAL(ip))
+-#define set__AUD_SPDIFPC_VAL(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_VAL(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_VAL(ip))
+ 
+ /* VALIDITY_BITS */
+@@ -1910,7 +1910,7 @@
+ #define offset__AUD_SPDIFPC_DATA(ip) 0x104
+ #define get__AUD_SPDIFPC_DATA(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_DATA(ip))
+-#define set__AUD_SPDIFPC_DATA(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_DATA(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_DATA(ip))
+ 
+ /* USER_DATA_BITS */
+@@ -1938,8 +1938,8 @@
+ #define offset__AUD_SPDIFPC_CHA_STA(ip, n) (0x108 + (n) * 4)
+ #define get__AUD_SPDIFPC_CHA_STA(ip, n) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_CHA_STA(ip, n))
+-#define set__AUD_SPDIFPC_CHA_STA(ip, n, value) writel((value), \
+-	ip->base + offset__AUD_SPDIFPC_CHA_STA(ip, n))
++#define set__AUD_SPDIFPC_CHA_STA(ip, n, value) writel(value, ip->base \
++	+ offset__AUD_SPDIFPC_CHA_STA(ip, n))
+ 
+ /* CHA_STA */
+ 
+@@ -1966,7 +1966,7 @@
+ #define offset__AUD_SPDIFPC_CTRL(ip) 0x200
+ #define get__AUD_SPDIFPC_CTRL(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_CTRL(ip))
+-#define set__AUD_SPDIFPC_CTRL(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_CTRL(ip))
+ 
+ /* OPERATION */
+@@ -2161,8 +2161,8 @@
+ #define offset__AUD_SPDIFPC_SPDIFSTA(ip) 0x204
+ #define get__AUD_SPDIFPC_SPDIFSTA(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_SPDIFSTA(ip))
+-#define set__AUD_SPDIFPC_SPDIFSTA(ip, value) writel((value), ip->base \
+-	+ offset__AUD_SPDIFPC_SPDIFSTA(ip))
++#define set__AUD_SPDIFPC_SPDIFSTA(ip, value) writel(value, ip->base + \
++	offset__AUD_SPDIFPC_SPDIFSTA(ip))
+ 
+ /* RUN_STOP */
+ 
+@@ -2391,7 +2391,7 @@
+ #define offset__AUD_SPDIFPC_PAUSE(ip) 0x208
+ #define get__AUD_SPDIFPC_PAUSE(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_PAUSE(ip))
+-#define set__AUD_SPDIFPC_PAUSE(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_PAUSE(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_PAUSE(ip))
+ 
+ /* PAUSE_LENGTH */
+@@ -2435,8 +2435,8 @@
+ #define offset__AUD_SPDIFPC_DATA_BURST(ip) 0x20c
+ #define get__AUD_SPDIFPC_DATA_BURST(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_DATA_BURST(ip))
+-#define set__AUD_SPDIFPC_DATA_BURST(ip, value) writel((value), \
+-	ip->base + offset__AUD_SPDIFPC_DATA_BURST(ip))
++#define set__AUD_SPDIFPC_DATA_BURST(ip, value) writel(value, ip->base \
++	+ offset__AUD_SPDIFPC_DATA_BURST(ip))
+ 
+ /* DATA_BURST */
+ 
+@@ -2479,7 +2479,7 @@
+ #define offset__AUD_SPDIFPC_PA_PB(ip) 0x210
+ #define get__AUD_SPDIFPC_PA_PB(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_PA_PB(ip))
+-#define set__AUD_SPDIFPC_PA_PB(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_PA_PB(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_PA_PB(ip))
+ 
+ /* PB */
+@@ -2517,7 +2517,7 @@
+ #define offset__AUD_SPDIFPC_PC_PD(ip) 0x214
+ #define get__AUD_SPDIFPC_PC_PD(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_PC_PD(ip))
+-#define set__AUD_SPDIFPC_PC_PD(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_PC_PD(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_PC_PD(ip))
+ 
+ /* PD */
+@@ -2555,7 +2555,7 @@
+ #define offset__AUD_SPDIFPC_CL1(ip) 0x218
+ #define get__AUD_SPDIFPC_CL1(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_CL1(ip))
+-#define set__AUD_SPDIFPC_CL1(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_CL1(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_CL1(ip))
+ 
+ /* CHANNEL_STATUS */
+@@ -2583,7 +2583,7 @@
+ #define offset__AUD_SPDIFPC_CR1(ip) 0x21c
+ #define get__AUD_SPDIFPC_CR1(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_CR1(ip))
+-#define set__AUD_SPDIFPC_CR1(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_CR1(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_CR1(ip))
+ 
+ /* CH_STA */
+@@ -2609,7 +2609,7 @@
+ #define offset__AUD_SPDIFPC_SUV(ip) 0x220
+ #define get__AUD_SPDIFPC_SUV(ip) readl(ip->base + \
+ 	offset__AUD_SPDIFPC_SUV(ip))
+-#define set__AUD_SPDIFPC_SUV(ip, value) writel((value), ip->base + \
++#define set__AUD_SPDIFPC_SUV(ip, value) writel(value, ip->base + \
+ 	offset__AUD_SPDIFPC_SUV(ip))
+ 
+ /* CH_STA_LEFT */
+@@ -2705,4 +2705,6 @@
+ 	shift__AUD_SPDIFPC_SUV__VAL_RIGHT(ip)), ip->base + \
+ 	offset__AUD_SPDIFPC_SUV(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_audcfg_adac.h b/sound/stm/reg_audcfg_adac.h
+index 0be4ba9..a6f9f36 100644
+--- a/sound/stm/reg_audcfg_adac.h
++++ b/sound/stm/reg_audcfg_adac.h
+@@ -26,7 +26,7 @@
+ #define offset__AUDCFG_ADAC_CTRL(ip) 0x00
+ #define get__AUDCFG_ADAC_CTRL(ip) readl(ip->base + \
+ 	offset__AUDCFG_ADAC_CTRL(ip))
+-#define set__AUDCFG_ADAC_CTRL(ip, value) writel((value), ip->base + \
++#define set__AUDCFG_ADAC_CTRL(ip, value) writel(value, ip->base + \
+ 	offset__AUDCFG_ADAC_CTRL(ip))
+ 
+ /* NRST */
+@@ -203,4 +203,6 @@
+ 	set__AUDCFG_ADAC_CTRL__PDNBG(ip, \
+ 	value__AUDCFG_ADAC_CTRL__PDNBG__NORMAL(ip))
+ 
++
++
+ #endif
+diff --git a/sound/stm/reg_audcfg_fsyn.h b/sound/stm/reg_audcfg_fsyn.h
+index dc08200..86b03d9 100644
+--- a/sound/stm/reg_audcfg_fsyn.h
++++ b/sound/stm/reg_audcfg_fsyn.h
+@@ -29,7 +29,7 @@
+ #define offset__AUDCFG_FSYN_CFG(ip) 0x00
+ #define get__AUDCFG_FSYN_CFG(ip) readl(ip->base + \
+ 	offset__AUDCFG_FSYN_CFG(ip))
+-#define set__AUDCFG_FSYN_CFG(ip, value) writel((value), ip->base + \
++#define set__AUDCFG_FSYN_CFG(ip, value) writel(value, ip->base + \
+ 	offset__AUDCFG_FSYN_CFG(ip))
+ 
+ /* RSTP */
+@@ -331,20 +331,20 @@
+ #define offset__AUDCFG_FSYN_MD(ip, n) ((n + 1) * 0x10 + 0x00)
+ #define get__AUDCFG_FSYN_MD(ip, n) readl(ip->base + \
+ 	offset__AUDCFG_FSYN_MD(ip, n))
+-#define set__AUDCFG_FSYN_MD(ip, n, value) writel((value), ip->base + \
++#define set__AUDCFG_FSYN_MD(ip, n, value) writel(value, ip->base + \
+ 	offset__AUDCFG_FSYN_MD(ip, n))
+ 
+ /* MD */
+ 
+-#define shift__AUDCFG_FSYN_MD__MD(ip, n) 0
+-#define mask__AUDCFG_FSYN_MD__MD(ip, n) 0x1f
++#define shift__AUDCFG_FSYN_MD__MD(ip) 0
++#define mask__AUDCFG_FSYN_MD__MD(ip) 0x1f
+ #define get__AUDCFG_FSYN_MD__MD(ip, n) ((readl(ip->base + \
+-	offset__AUDCFG_FSYN_MD(ip, n)) >> shift__AUDCFG_FSYN_MD__MD(ip, n)) & \
+-	mask__AUDCFG_FSYN_MD__MD(ip, n))
++	offset__AUDCFG_FSYN_MD(ip, n)) >> shift__AUDCFG_FSYN_MD__MD(ip)) & \
++	mask__AUDCFG_FSYN_MD__MD(ip))
+ #define set__AUDCFG_FSYN_MD__MD(ip, n, value) writel((readl(ip->base + \
+-	offset__AUDCFG_FSYN_MD(ip, n)) & ~(mask__AUDCFG_FSYN_MD__MD(ip, n) << \
+-	shift__AUDCFG_FSYN_MD__MD(ip, n))) | (((value) & \
+-	mask__AUDCFG_FSYN_MD__MD(ip, n)) << shift__AUDCFG_FSYN_MD__MD(ip, n)), \
++	offset__AUDCFG_FSYN_MD(ip, n)) & ~(mask__AUDCFG_FSYN_MD__MD(ip) << \
++	shift__AUDCFG_FSYN_MD__MD(ip))) | (((value) & \
++	mask__AUDCFG_FSYN_MD__MD(ip)) << shift__AUDCFG_FSYN_MD__MD(ip)), \
+ 	ip->base + offset__AUDCFG_FSYN_MD(ip, n))
+ 
+ 
+@@ -356,20 +356,20 @@
+ #define offset__AUDCFG_FSYN_PE(ip, n) ((n + 1) * 0x10 + 0x04)
+ #define get__AUDCFG_FSYN_PE(ip, n) readl(ip->base + \
+ 	offset__AUDCFG_FSYN_PE(ip, n))
+-#define set__AUDCFG_FSYN_PE(ip, n, value) writel((value), ip->base + \
++#define set__AUDCFG_FSYN_PE(ip, n, value) writel(value, ip->base + \
+ 	offset__AUDCFG_FSYN_PE(ip, n))
+ 
+ /* PE */
+ 
+-#define shift__AUDCFG_FSYN_PE__PE(ip, n) 0
+-#define mask__AUDCFG_FSYN_PE__PE(ip, n) 0xffff
++#define shift__AUDCFG_FSYN_PE__PE(ip) 0
++#define mask__AUDCFG_FSYN_PE__PE(ip) 0xffff
+ #define get__AUDCFG_FSYN_PE__PE(ip, n) ((readl(ip->base + \
+-	offset__AUDCFG_FSYN_PE(ip, n)) >> shift__AUDCFG_FSYN_PE__PE(ip, n)) & \
+-	mask__AUDCFG_FSYN_PE__PE(ip, n))
++	offset__AUDCFG_FSYN_PE(ip, n)) >> shift__AUDCFG_FSYN_PE__PE(ip)) & \
++	mask__AUDCFG_FSYN_PE__PE(ip))
+ #define set__AUDCFG_FSYN_PE__PE(ip, n, value) writel((readl(ip->base + \
+-	offset__AUDCFG_FSYN_PE(ip, n)) & ~(mask__AUDCFG_FSYN_PE__PE(ip, n) << \
+-	shift__AUDCFG_FSYN_PE__PE(ip, n))) | (((value) & \
+-	mask__AUDCFG_FSYN_PE__PE(ip, n)) << shift__AUDCFG_FSYN_PE__PE(ip, n)), \
++	offset__AUDCFG_FSYN_PE(ip, n)) & ~(mask__AUDCFG_FSYN_PE__PE(ip) << \
++	shift__AUDCFG_FSYN_PE__PE(ip))) | (((value) & \
++	mask__AUDCFG_FSYN_PE__PE(ip)) << shift__AUDCFG_FSYN_PE__PE(ip)), \
+ 	ip->base + offset__AUDCFG_FSYN_PE(ip, n))
+ 
+ 
+@@ -381,22 +381,22 @@
+ #define offset__AUDCFG_FSYN_SDIV(ip, n) ((n + 1) * 0x10 + 0x08)
+ #define get__AUDCFG_FSYN_SDIV(ip, n) readl(ip->base + \
+ 	offset__AUDCFG_FSYN_SDIV(ip, n))
+-#define set__AUDCFG_FSYN_SDIV(ip, n, value) writel((value), ip->base + \
++#define set__AUDCFG_FSYN_SDIV(ip, n, value) writel(value, ip->base + \
+ 	offset__AUDCFG_FSYN_SDIV(ip, n))
+ 
+ /* SDIV */
+ 
+-#define shift__AUDCFG_FSYN_SDIV__SDIV(ip, n) 0
+-#define mask__AUDCFG_FSYN_SDIV__SDIV(ip, n) 0x7
++#define shift__AUDCFG_FSYN_SDIV__SDIV(ip) 0
++#define mask__AUDCFG_FSYN_SDIV__SDIV(ip) 0x7
+ #define get__AUDCFG_FSYN_SDIV__SDIV(ip, n) ((readl(ip->base + \
+-	offset__AUDCFG_FSYN_SDIV(ip, n)) >> shift__AUDCFG_FSYN_SDIV__SDIV(ip, \
+-	n)) & mask__AUDCFG_FSYN_SDIV__SDIV(ip, n))
++	offset__AUDCFG_FSYN_SDIV(ip, n)) >> shift__AUDCFG_FSYN_SDIV__SDIV(ip)) \
++	& mask__AUDCFG_FSYN_SDIV__SDIV(ip))
+ #define set__AUDCFG_FSYN_SDIV__SDIV(ip, n, value) \
+ 	writel((readl(ip->base + offset__AUDCFG_FSYN_SDIV(ip, n)) & \
+-	~(mask__AUDCFG_FSYN_SDIV__SDIV(ip, n) << \
+-	shift__AUDCFG_FSYN_SDIV__SDIV(ip, n))) | (((value) & \
+-	mask__AUDCFG_FSYN_SDIV__SDIV(ip, n)) << \
+-	shift__AUDCFG_FSYN_SDIV__SDIV(ip, n)), ip->base + \
++	~(mask__AUDCFG_FSYN_SDIV__SDIV(ip) << \
++	shift__AUDCFG_FSYN_SDIV__SDIV(ip))) | (((value) & \
++	mask__AUDCFG_FSYN_SDIV__SDIV(ip)) << \
++	shift__AUDCFG_FSYN_SDIV__SDIV(ip)), ip->base + \
+ 	offset__AUDCFG_FSYN_SDIV(ip, n))
+ 
+ 
+@@ -408,39 +408,41 @@
+ #define offset__AUDCFG_FSYN_PROGEN(ip, n) ((n + 1) * 0x10 + 0x0c)
+ #define get__AUDCFG_FSYN_PROGEN(ip, n) readl(ip->base + \
+ 	offset__AUDCFG_FSYN_PROGEN(ip, n))
+-#define set__AUDCFG_FSYN_PROGEN(ip, n, value) writel((value), ip->base \
+-	+ offset__AUDCFG_FSYN_PROGEN(ip, n))
++#define set__AUDCFG_FSYN_PROGEN(ip, n, value) writel(value, ip->base + \
++	offset__AUDCFG_FSYN_PROGEN(ip, n))
+ 
+ /* PROG_EN */
+ 
+-#define shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n) 0
+-#define mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n) 0x1
++#define shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip) 0
++#define mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip) 0x1
+ #define get__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n) ((readl(ip->base + \
+ 	offset__AUDCFG_FSYN_PROGEN(ip, n)) >> \
+-	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n)) & \
+-	mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n))
++	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip)) & \
++	mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip))
+ #define set__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n, value) \
+ 	writel((readl(ip->base + offset__AUDCFG_FSYN_PROGEN(ip, n)) & \
+-	~(mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n) << \
+-	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n))) | (((value) & \
+-	mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n)) << \
+-	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n)), ip->base + \
++	~(mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip) << \
++	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip))) | (((value) & \
++	mask__AUDCFG_FSYN_PROGEN__PROG_EN(ip)) << \
++	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip)), ip->base + \
+ 	offset__AUDCFG_FSYN_PROGEN(ip, n))
+ 
+-#define value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip, n) 0x0
+-#define mask__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip, n) \
+-	(value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip, n) << \
+-	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n))
++#define value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip) 0x0
++#define mask__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip) \
++	(value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip) << \
++	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip))
+ #define set__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip, n) \
+ 	set__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n, \
+-	value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip, n))
++	value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_IGNORED(ip))
+ 
+-#define value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip, n) 0x1
+-#define mask__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip, n) \
+-	(value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip, n) << \
+-	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n))
++#define value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip) 0x1
++#define mask__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip) \
++	(value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip) << \
++	shift__AUDCFG_FSYN_PROGEN__PROG_EN(ip))
+ #define set__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip, n) \
+ 	set__AUDCFG_FSYN_PROGEN__PROG_EN(ip, n, \
+-	value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip, n))
++	value__AUDCFG_FSYN_PROGEN__PROG_EN__PE0_MD0_USED(ip))
++
++
+ 
+ #endif
+-- 
+1.5.3.6
+

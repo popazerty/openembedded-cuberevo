@@ -1,0 +1,27 @@
+From 7079862029b0c8b4874ef250ffe5f9aaac48cc09 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Wed, 3 Jun 2009 13:47:07 +0100
+Subject: [PATCH] sh_stm: Add additional comment about GMAC0 configuration
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/mb628/setup.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index 68d7cfd..f6eb979 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -285,6 +285,9 @@ static int mb628_phy_reset(void *bus)
+  *     (near the PCI slot).
+  *   + SYSITRQ1 needs to be disabled, which requires removing R232
+  *     (near CN17). See DDTS INSbl29196 for details.
++ *   + PCIGNT2 needs to be disabled. This can be done either by removing
++ *     R241, or by ensuring that jumper J89 is not in position 1-2 (by
++ *     either removing it completely or putting it in position 2-3).
+  *
+  * - other jumper and switch settings for the mb539:
+  *   + J1 fit 1-2 (use on board crystal)
+-- 
+1.6.0.6
+

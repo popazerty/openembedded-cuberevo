@@ -1,0 +1,72 @@
+commit f5f8ef46abde3ea82778ce479cb622046040ec26
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Wed May 14 12:14:24 2008 +0100
+
+    ALSA/stm: Extend the range of supported frequencies
+    
+    Remove the enumerated list of supported frequencies leaving only the
+    limits on selected frequency the minimum and maximum.
+    
+    This change is motivated by FatPipe (which must support 128KHz) but
+    accurately describes the capability of the hardware so I think it is
+    a good change anyway.
+    
+    Signed-off-by: Daniel Thompson <daniel.thompson@st.com>
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 115d70a..97add4d 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -146,14 +146,7 @@ static struct snd_pcm_hardware snd_stm_pcm_player_hw = {
+ 	.formats	= (SNDRV_PCM_FMTBIT_S32_LE |
+ 				SNDRV_PCM_FMTBIT_S16_LE),
+ 
+-	.rates		= (SNDRV_PCM_RATE_32000 |
+-				SNDRV_PCM_RATE_44100 |
+-				SNDRV_PCM_RATE_48000 |
+-				SNDRV_PCM_RATE_64000 |
+-				SNDRV_PCM_RATE_88200 |
+-				SNDRV_PCM_RATE_96000 |
+-				SNDRV_PCM_RATE_176400 |
+-				SNDRV_PCM_RATE_192000),
++	.rates		= SNDRV_PCM_RATE_CONTINUOUS,
+ 	.rate_min	= 32000,
+ 	.rate_max	= 192000,
+ 
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 37d114b..873398d 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -175,14 +175,7 @@ static struct snd_pcm_hardware snd_stm_spdif_player_hw_normal = {
+ 	.formats	= (SNDRV_PCM_FMTBIT_S32_LE |
+ 				SNDRV_PCM_FMTBIT_S24_LE),
+ 
+-	.rates		= (SNDRV_PCM_RATE_32000 |
+-				SNDRV_PCM_RATE_44100 |
+-				SNDRV_PCM_RATE_48000 |
+-				SNDRV_PCM_RATE_64000 |
+-				SNDRV_PCM_RATE_88200 |
+-				SNDRV_PCM_RATE_96000 |
+-				SNDRV_PCM_RATE_176400 |
+-				SNDRV_PCM_RATE_192000),
++	.rates		= SNDRV_PCM_RATE_CONTINUOUS,
+ 	.rate_min	= 32000,
+ 	.rate_max	= 192000,
+ 
+@@ -231,14 +224,7 @@ static struct snd_pcm_hardware snd_stm_spdif_player_hw_raw = {
+ 				SNDRV_PCM_INFO_PAUSE),
+ 	.formats	= (SNDRV_PCM_FMTBIT_S32_LE),
+ 
+-	.rates		= (SNDRV_PCM_RATE_32000 |
+-				SNDRV_PCM_RATE_44100 |
+-				SNDRV_PCM_RATE_48000 |
+-				SNDRV_PCM_RATE_64000 |
+-				SNDRV_PCM_RATE_88200 |
+-				SNDRV_PCM_RATE_96000 |
+-				SNDRV_PCM_RATE_176400 |
+-				SNDRV_PCM_RATE_192000),
++	.rates		= SNDRV_PCM_RATE_CONTINUOUS,
+ 	.rate_min	= 32000,
+ 	.rate_max	= 192000,
+ 

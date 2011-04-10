@@ -1,0 +1,58 @@
+From 6c795a762444293b461e44ae734cd5cb81cec095 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Tue, 25 Nov 2008 16:15:47 +0100
+Subject: [PATCH] kgdb: kgdboe from kgdb_2.6.23 Git repo.
+
+Align our kgdb on ethernet source to the version included in:
+git://git.kernel.org/pub/scm/linux/kernel/git/jwessel/linux-2.6-kgdb.git
+kgdb_2.6.23
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/kgdboe.c |   15 +++++----------
+ 1 files changed, 5 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/net/kgdboe.c b/drivers/net/kgdboe.c
+index c09aa18..c7ed5bf 100644
+--- a/drivers/net/kgdboe.c
++++ b/drivers/net/kgdboe.c
+@@ -65,7 +65,7 @@ static void rx_hook(struct netpoll *np, int port, char *msg, int len,
+ 				sizeof(np->remote_mac));
+ 		use_dynamic_mac = 0;
+ 	}
+-#if 0
++
+ 	/*
+ 	 * This could be GDB trying to attach.  But it could also be GDB
+ 	 * finishing up a session, with kgdb_connected=0 but GDB sending
+@@ -74,22 +74,17 @@ static void rx_hook(struct netpoll *np, int port, char *msg, int len,
+ 	 * !kgdb_connected the only len == 1 packet we allow is ^C.
+ 	 */
+ 	if (!kgdb_connected && (len != 1 || msg[0] == 3) &&
+-	    !atomic_read(&kgdb_setting_breakpoint)) {
++	    !atomic_read(&kgdb_setting_breakpoint))
+ 		tasklet_schedule(&kgdb_tasklet_breakpoint);
+-	}
+-#endif
+-	if (!netpoll_trap() && len == 8 && !strncmp(msg, "$Hc-1#09", 8)){
+-                tasklet_schedule(&kgdb_tasklet_breakpoint);
+-        }
+ 
+ 	for (i = 0; i < len; i++) {
+-		if (msg[i] == 3){
++		if (msg[i] == 3)
+ 			tasklet_schedule(&kgdb_tasklet_breakpoint);
+-		}
+ 
+ 		if (atomic_read(&in_count) >= IN_BUF_SIZE) {
+ 			/* buffer overflow, clear it */
+-			in_head = in_tail = 0;
++			in_head = 0;
++			in_tail = 0;
+ 			atomic_set(&in_count, 0);
+ 			break;
+ 		}
+-- 
+1.5.3.6
+

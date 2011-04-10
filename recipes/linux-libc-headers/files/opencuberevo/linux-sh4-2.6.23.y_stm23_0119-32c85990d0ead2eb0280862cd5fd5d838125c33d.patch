@@ -1,0 +1,38 @@
+From 32c85990d0ead2eb0280862cd5fd5d838125c33d Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 6 May 2009 12:20:27 +0200
+Subject: [PATCH] stm: cpufreq: Fixed compilation error on stb7100
+
+Fixed compilation error due wrong variable name
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c |    8 ++++----
+ 1 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c b/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c
+index 4289ba2..8347321 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c
+@@ -27,14 +27,14 @@
+ #include <asm/io.h>
+ #include <asm/clock.h>
+ 
+-extern void __iomem *clkgen_base;
++extern void __iomem *clkgena_base;
+ static struct clk *pll0_clk;
+ static struct clk *sh4_ic_clk;
+ static struct clk *module_clk;
+ 
+-#define CLOCKGEN_LOCK		(clkgen_base + 0x00)
+-#define ST40_CLK_CTRL 		(clkgen_base + 0x14)
+-#define CKGA_CLKOUT_SEL 	(clkgen_base + 0x38)
++#define CLOCKGEN_LOCK		(clkgena_base + 0x00)
++#define ST40_CLK_CTRL 		(clkgena_base + 0x14)
++#define CKGA_CLKOUT_SEL 	(clkgena_base + 0x38)
+ 
+ static struct sh4_ratio {
+ 	long cpu, bus, per;
+-- 
+1.6.0.6
+

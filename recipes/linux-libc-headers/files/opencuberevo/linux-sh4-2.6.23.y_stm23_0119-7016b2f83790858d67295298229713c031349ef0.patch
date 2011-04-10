@@ -1,0 +1,69 @@
+From 7016b2f83790858d67295298229713c031349ef0 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Thu, 21 May 2009 10:49:00 +0100
+Subject: [PATCH] sh_stm: Fix partition layout for Serial Flash
+
+The previous partition table configured overalapping partitions.  We now use
+'MTDPART_OFS_NXTBLK' which sets the partition offset to be the start of the next
+erase block.
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/common/mb705.c  |    2 +-
+ arch/sh/boards/st/mb628/setup.c   |    2 +-
+ arch/sh/boards/st/pdk7105/setup.c |    6 +++---
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/mb705.c b/arch/sh/boards/st/common/mb705.c
+index 2d4421f..8a88443 100644
+--- a/arch/sh/boards/st/common/mb705.c
++++ b/arch/sh/boards/st/common/mb705.c
+@@ -163,7 +163,7 @@ static struct mtd_partition serialflash_partitions[] = {
+ 	}, {
+ 		.name = "sflash_2",
+ 		.size = MTDPART_SIZ_FULL,
+-		.offset = 0x20000
++		.offset = MTDPART_OFS_NXTBLK,
+ 	},
+ };
+ 
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index 188a93d..a52d648 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -116,7 +116,7 @@ static struct mtd_partition serialflash_partitions[] = {
+ 	}, {
+ 		.name = "sflash_2",
+ 		.size = MTDPART_SIZ_FULL,
+-		.offset = 0x20000
++		.offset = MTDPART_OFS_NXTBLK,
+ 	},
+ };
+ 
+diff --git a/arch/sh/boards/st/pdk7105/setup.c b/arch/sh/boards/st/pdk7105/setup.c
+index b61c3bd..e5a2ab9 100644
+--- a/arch/sh/boards/st/pdk7105/setup.c
++++ b/arch/sh/boards/st/pdk7105/setup.c
+@@ -196,7 +196,7 @@ static struct mtd_partition serialflash_partitions[] = {
+ 	}, {
+ 		.name = "SFLASH_2",
+ 		.size = MTDPART_SIZ_FULL,
+-		.offset = 0x20000
++		.offset = MTDPART_OFS_NXTBLK,
+ 	},
+ };
+ 
+@@ -306,8 +306,8 @@ static int __init device_init(void)
+ 	else if (boot_mode == 0x1) {
+ 		/* Swap NOR/NAND banks */
+ 		pr_info("Configuring FLASH for boot-from-NAND\n");
+-		physmap_flash.resource[0].start = bank1_start;
+-		physmap_flash.resource[0].end = bank2_start - 1;
++		pdk7105_physmap_flash.resource[0].start = bank1_start;
++		pdk7105_physmap_flash.resource[0].end = bank2_start - 1;
+ 		nand_device.id = 0;
+ 	}
+ 
+-- 
+1.6.0.6
+

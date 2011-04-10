@@ -1,0 +1,30 @@
+From e7230bd0b91627d51b28a679baf3ac5e81fadcf0 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 24 Jun 2009 17:27:11 +0200
+Subject: [PATCH] stm: fix BPA2 compilation
+
+Currently the module BPA2 support doesn't build if the Kernel is configured
+with CONFIG_PREEMPT_NONE.
+So added the missing header necessary to build it.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/module.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/module.c b/arch/sh/kernel/module.c
+index a01cea4..5101462 100644
+--- a/arch/sh/kernel/module.c
++++ b/arch/sh/kernel/module.c
+@@ -21,6 +21,7 @@
+ #include <linux/string.h>
+ #include <linux/kernel.h>
+ #if defined(CONFIG_MODULES_BPA2)
++#include <linux/io.h>
+ #include <linux/pfn.h>
+ #include <linux/bpa2.h>
+ #endif
+-- 
+1.6.0.6
+

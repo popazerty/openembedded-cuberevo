@@ -1,0 +1,13 @@
+Index: linux-2.6.23.1-stm/include/asm-sh/bitops.h
+===================================================================
+--- linux-2.6.23.1-stm.orig/include/asm-sh/bitops.h
++++ linux-2.6.23.1-stm/include/asm-sh/bitops.h
+@@ -6,7 +6,7 @@
+ /* For __swab32 */
+ #include <asm/byteorder.h>
+ 
+-#ifdef CONFIG_CPU_GRB
++#ifdef CONFIG_SH_GRB
+ #include <asm/bitops-grb.h>
+ #else
+ #include <asm/bitops-irq.h>

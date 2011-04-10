@@ -1,0 +1,338 @@
+From ac4a259c396e32f7f06015c802b0f98bebafa95e Mon Sep 17 00:00:00 2001
+From: Francesco Virlinzi <francesco.virlinzi@st.com>
+Date: Thu, 19 Nov 2009 11:09:13 +0100
+Subject: [PATCH] stm: pm: Suspend support on stx5206
+
+This patch
+ - adds the suspend support on the stx5206 platform
+ - adds the LPC device driver support to the stx5206 platform
+ - fixed the INTC.ILR encoding to allow interrupts on ILC
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-regs-stx5206.h  |    2 +
+ arch/sh/kernel/cpu/sh4/platform-pm-stx5206.c |    6 +-
+ arch/sh/kernel/cpu/sh4/setup-stx5206.c       |   18 ++-
+ arch/sh/kernel/cpu/sh4/suspend-stx5206.c     |  196 ++++++++++++++++++++++++++
+ drivers/stm/Makefile                         |    1 +
+ 5 files changed, 217 insertions(+), 6 deletions(-)
+ create mode 100644 arch/sh/kernel/cpu/sh4/suspend-stx5206.c
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-regs-stx5206.h b/arch/sh/kernel/cpu/sh4/clock-regs-stx5206.h
+index dc27ac9..7f97eaf 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-regs-stx5206.h
++++ b/arch/sh/kernel/cpu/sh4/clock-regs-stx5206.h
+@@ -23,6 +23,8 @@
+ /* --- CKGA registers (hardware specific) ----------------------------------- */
+ #define CKGA_PLL0_CFG			0x000
+ #define CKGA_PLL1_CFG			0x004
++#define   CKGA_PLL_CFG_LOCK		(1 << 31)
++
+ #define CKGA_POWER_CFG			0x010
+ #define CKGA_CLKOPSRC_SWITCH_CFG	0x014
+ #define CKGA_OSC_ENABLE_FB		0x018
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx5206.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx5206.c
+index bc7d904..0f4bd06 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx5206.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx5206.c
+@@ -67,7 +67,7 @@ static int usb_pwr_ack(struct platform_device *dev, int host_phy, int ack)
+ 		sc = sysconf_claim(SYS_STA, 15, 4, 4, "USB");
+ 
+ 	for (i = 5; i; --i) {
+-		if (sysconf_read(sc[port]) == ack)
++		if (sysconf_read(sc) == ack)
+ 			return 0;
+ 		mdelay(10);
+ 	}
+@@ -75,8 +75,8 @@ static int usb_pwr_ack(struct platform_device *dev, int host_phy, int ack)
+ }
+ 
+ static struct platform_device_pm stx5206_pm_devices[] = {
+-	pm_plat_name("emi", NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
+-	pm_plat_dev(&usb_device, NULL, usb_pwr_req, usb_pwr_ack, NULL),
++pm_plat_dev(&stx5206_emi, NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
++pm_plat_dev(&stx5206_usb_device, NULL, usb_pwr_req, usb_pwr_ack, NULL),
+ };
+ 
+ #endif
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5206.c b/arch/sh/kernel/cpu/sh4/setup-stx5206.c
+index 6cca007..29de085 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5206.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5206.c
+@@ -24,6 +24,7 @@
+ #include <linux/stm/soc.h>
+ #include <linux/stm/soc_init.h>
+ #include <linux/stm/sysconf.h>
++#include <asm/irl.h>
+ #include <asm/irq-ilc.h>
+ 
+ 
+@@ -921,7 +922,11 @@ void __init stx5206_early_device_init(void)
+ 	disable_hlt();
+ }
+ 
++static struct platform_device stx5206_emi = STEMI();
+ 
++static struct platform_device stx5206_lpc =
++	STLPC_DEVICE(0xfd008000, ILC_EXT_IRQ(7), IRQ_TYPE_EDGE_FALLING,
++			0, 1, "CLKB_LPC");
+ 
+ /* Late devices initialisation -------------------------------------------- */
+ 
+@@ -932,6 +937,8 @@ static struct platform_device *stx5206_devices[] __initdata = {
+ 	&stx5206_rng_dev_hwrandom_device,
+ 	&stx5206_rng_dev_random_device,
+ 	&stx5206_temp_device,
++	&stx5206_emi,
++	&stx5206_lpc,
+ };
+ 
+ #include "./platform-pm-stx5206.c"
+@@ -1131,6 +1138,9 @@ static DECLARE_INTC_DESC(stx5206_intc_desc, "stx5206", stx5206_intc_vectors,
+ 		stx5206_intc_groups, stx5206_intc_mask_registers,
+ 		stx5206_intc_prio_registers, NULL);
+ 
++#define INTC_ICR	0xffd00000UL
++#define INTC_ICR_IRLM   (1<<7)
++
+ void __init plat_irq_setup(void)
+ {
+ 	unsigned long intc2_base = (unsigned long)ioremap(0xfe001300, 0x100);
+@@ -1148,10 +1158,10 @@ void __init plat_irq_setup(void)
+ 
+ 	register_intc_controller(&stx5206_intc_desc);
+ 
+-	/* IRL0-3 are simply connected to ILC remote outputs 1-4 */
++	/* Disable encoded interrupts */
++	ctrl_outw(ctrl_inw(INTC_ICR) | INTC_ICR_IRLM, INTC_ICR);
+ 
+-	ilc_early_init(&stx5206_ilc3_device);
+-	ilc_demux_init();
++	/* IRL0-3 are simply connected to ILC remote outputs 1-4 */
+ 
+ 	for (i = 0; i < ARRAY_SIZE(intc_irl_irqs); i++) {
+ 		/* This is a hack to allow for the fact that we don't
+@@ -1163,4 +1173,6 @@ void __init plat_irq_setup(void)
+ 
+ 		set_irq_chained_handler(intc_irl_irqs[i], ilc_irq_demux);
+ 	}
++	ilc_early_init(&stx5206_ilc3_device);
++	ilc_demux_init();
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx5206.c b/arch/sh/kernel/cpu/sh4/suspend-stx5206.c
+new file mode 100644
+index 0000000..178e838
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx5206.c
+@@ -0,0 +1,196 @@
++/*
++ * -------------------------------------------------------------------------
++ * <linux_root>/arch/sh/kernel/cpu/sh4/suspend-stx5206.c
++ * -------------------------------------------------------------------------
++ * Copyright (C) 2009  STMicroelectronics
++ * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License V.2 ONLY.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
++
++#include <linux/init.h>
++#include <linux/suspend.h>
++#include <linux/errno.h>
++#include <linux/time.h>
++#include <linux/delay.h>
++#include <linux/irqflags.h>
++#include <linux/stm/pm.h>
++#include <linux/stm/sysconf.h>
++#include <asm/system.h>
++#include <asm/io.h>
++#include <asm/pm.h>
++#include <asm/irq.h>
++#include <asm/irq-ilc.h>
++
++#include "clock-regs-stx5206.h"
++
++/* *************************
++ * STANDBY INSTRUCTION TABLE
++ * *************************
++ */
++static unsigned long stx5206_standby_table[] __cacheline_aligned = {
++/* 1. Move all the clock on OSC */
++CLK_POKE(CKGA_CLKOPSRC_SWITCH_CFG, 0x0),
++CLK_POKE(CKGA_OSC_DIV_CFG(0x5), 29), /* ic_if_100 @ 1 MHz to be safe for Lirc*/
++
++IMMEDIATE_DEST(0x1f),
++/* reduces OSC_st40 */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++/* reduces OSC_clk_ic */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++/* END. */
++_END(),
++
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG),
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++DATA_LOAD(0x3),
++CLK_STORE(CKGA_OSC_DIV_CFG(5)),
++/* END. */
++_END()
++};
++
++
++#define SYSCONF(x)	((x * 0x4) + 0x100)
++#define SYSSTA(x)	((x * 0x4) + 0x8)
++/* *********************
++ * MEM INSTRUCTION TABLE
++ * *********************
++ */
++static unsigned long stx5206_mem_table[] __cacheline_aligned = {
++/* 1. Enables the DDR self refresh mode */
++SYS_OR_LONG(SYSCONF(38), (1 << 20)),
++/* waits until the ack bit is zero */
++SYS_WHILE_NEQ(SYSSTA(4), 1, 1),
++/* 1.1 Turn-off the ClockGenD */
++SYS_OR_LONG(SYSCONF(11), (1 << 12)),
++
++IMMEDIATE_DEST(0x1f),
++/* reduces OSC_st40 */
++CLK_STORE(CKGA_OSC_DIV_CFG(4)),
++/* reduces OSC_clk_ic */
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++/* reduces OSC_clk_ic_if_200 */
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),
++/* 2. Move all the clock on OSC */
++
++CLK_POKE(CKGA_OSC_DIV_CFG(5), 29), /* ic_if_100 @ 1MHz to be safe for Lirc*/
++
++IMMEDIATE_DEST(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG2),
++/* PLLs in power down */
++CLK_OR_LONG(CKGA_POWER_CFG, 0x3),
++ /* END. */
++_END(),
++
++/* Turn-on the PLLs */
++CLK_AND_LONG(CKGA_POWER_CFG, ~3),
++/* Wait PLLS lock */
++CLK_WHILE_NEQ(CKGA_PLL0_CFG, CKGA_PLL_CFG_LOCK, CKGA_PLL_CFG_LOCK),
++CLK_WHILE_NEQ(CKGA_PLL1_CFG, CKGA_PLL_CFG_LOCK, CKGA_PLL_CFG_LOCK),
++
++/* 1. Turn-on the LMI ClocksGenD */
++SYS_AND_LONG(SYSCONF(11), ~(1 << 12)),
++/* Wait LMI ClocksGenD lock */
++SYS_WHILE_NEQ(SYSSTA(4), 1, 1),
++
++/* 2. Disables the DDR self refresh mode */
++SYS_AND_LONG(SYSCONF(38), ~(1 << 20)),
++/* waits until the ack bit is zero */
++SYS_WHILE_NEQ(SYSSTA(4), 1, 0),
++
++IMMEDIATE_DEST(0x10000),
++CLK_STORE(CKGA_PLL0LS_DIV_CFG(4)),
++
++/* 3. Restore the previous clocks setting */
++DATA_LOAD(0x0),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG),
++DATA_LOAD(0x1),
++CLK_STORE(CKGA_CLKOPSRC_SWITCH_CFG2),
++DATA_LOAD(0x3),
++CLK_STORE(CKGA_OSC_DIV_CFG(5)),
++DATA_LOAD(0x2),
++CLK_STORE(CKGA_OSC_DIV_CFG(0x0)),
++DATA_LOAD(0x4),
++CLK_STORE(CKGA_OSC_DIV_CFG(17)),
++
++_DELAY(),
++_DELAY(),
++_DELAY(),
++_END()
++};
++
++static unsigned long stx5206_wrt_table[5] __cacheline_aligned;
++
++static int stx5206_suspend_prepare(suspend_state_t state)
++{
++	stx5206_wrt_table[0] = /* swith config */
++		   ioread32(CKGA_BASE_ADDRESS + CKGA_CLKOPSRC_SWITCH_CFG);
++	stx5206_wrt_table[1] = /* swith config 1 */
++		   ioread32(CKGA_BASE_ADDRESS + CKGA_CLKOPSRC_SWITCH_CFG2);
++	stx5206_wrt_table[2] = /* clk_STNoc */
++		   ioread32(CKGA_BASE_ADDRESS + CKGA_OSC_DIV_CFG(0));
++	stx5206_wrt_table[3] = /* clk_ic_if_100 */
++		   ioread32(CKGA_BASE_ADDRESS + CKGA_OSC_DIV_CFG(5));
++	stx5206_wrt_table[4] = /* clk_ic_if_200 */
++		   ioread32(CKGA_BASE_ADDRESS + CKGA_OSC_DIV_CFG(17));
++	return 0;
++}
++
++static unsigned long stx5206_iomem[4] __cacheline_aligned = {
++		stx5206_wrt_table,
++		CKGA_BASE_ADDRESS,
++		0, /* no clock Gen B */
++		SYSCFG_BASE_ADDRESS
++};
++
++static int stx5206_evt_to_irq(unsigned long evt)
++{
++	return ((evt < 0x400) ? ilc2irq(evt) : evt2irq(evt));
++}
++
++static struct sh4_suspend_t stx5206_suspend_data __cacheline_aligned = {
++	.iobase = stx5206_iomem,
++	.ops.prepare = stx5206_suspend_prepare,
++	.evt_to_irq = stx5206_evt_to_irq,
++
++	.stby_tbl = (unsigned long)stx5206_standby_table,
++	.stby_size = DIV_ROUND_UP(ARRAY_SIZE(stx5206_standby_table) *
++			sizeof(long), L1_CACHE_BYTES),
++
++	.mem_tbl = (unsigned long)stx5206_mem_table,
++	.mem_size = DIV_ROUND_UP(ARRAY_SIZE(stx5206_mem_table) * sizeof(long),
++			L1_CACHE_BYTES),
++	.wrt_tbl = (unsigned long)stx5206_wrt_table,
++	.wrt_size = DIV_ROUND_UP(ARRAY_SIZE(stx5206_wrt_table) * sizeof(long),
++			L1_CACHE_BYTES),
++};
++
++static int __init suspend_platform_setup(void)
++{
++	int i;
++	struct sysconf_field *sc[4];
++	sc[0] = sysconf_claim(SYS_CFG, 38, 20, 20, "pm");
++	sc[1] = sysconf_claim(SYS_CFG, 11, 12, 12, "pm");
++	sc[2] = sysconf_claim(SYS_STA, 4, 0, 0, "pm");
++	sc[3] = sysconf_claim(SYS_STA, 3, 0, 0, "pm");
++
++	for (i = 0; i < ARRAY_SIZE(sc); ++i)
++		if (!sc[i])
++			goto error;
++
++	return sh4_suspend_register(&stx5206_suspend_data);
++error:
++	printk(KERN_ERR "[STM][PM] Error to acquire the sysconf registers\n");
++	for (i = 0; i > ARRAY_SIZE(sc); ++i)
++		if (sc[i])
++			sysconf_release(sc[i]);
++
++	return -1;
++}
++
++late_initcall(suspend_platform_setup);
+diff --git a/drivers/stm/Makefile b/drivers/stm/Makefile
+index 56c2591..2babc0b 100644
+--- a/drivers/stm/Makefile
++++ b/drivers/stm/Makefile
+@@ -16,6 +16,7 @@ obj-$(CONFIG_PMS)		+= pms.o
+ 
+ ifdef CONFIG_STM_LPC
+ obj-$(CONFIG_CPU_SUBTYPE_STX5197) += lpc_5xxx.o
++obj-$(CONFIG_CPU_SUBTYPE_STX5206) += lpc_7xxx.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7111) += lpc_7xxx.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7141) += lpc_7xxx.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7200) += lpc_7xxx.o
+-- 
+1.6.0.6
+

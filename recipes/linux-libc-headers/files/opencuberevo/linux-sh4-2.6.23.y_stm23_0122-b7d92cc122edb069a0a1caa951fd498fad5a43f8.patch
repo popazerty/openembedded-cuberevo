@@ -1,0 +1,61 @@
+From b7d92cc122edb069a0a1caa951fd498fad5a43f8 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 1 Oct 2009 12:01:13 +0200
+Subject: [PATCH] stmmac: add a parameter to make the Magic Frame the default
+
+If the device can wake-up the system adding the option below the
+Magic Frame will be automatically turned-on (it is disable by default).
+  stmmaceth=wol:1
+Nota that this can be done by using the ethtool command at user level.
+
+See the Bug: 7184
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |   16 ++++++++++++++++
+ 1 files changed, 16 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index aa4dfec..2129254 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -101,6 +101,13 @@ static int tc = TC_DEFAULT;
+ module_param(tc, int, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(tc, "DMA threshold control value");
+ 
++#ifdef CONFIG_PM
++/* By deafult, WoL is off and can be turned-on by ethtool */
++static int wol;
++module_param(wol, int, S_IRUGO | S_IWUSR);
++MODULE_PARM_DESC(wol, "Enable WoL throgh Magic-Frame only");
++#endif
++
+ #define RX_NO_COALESCE	1	/* Always interrupt on completion */
+ #define TX_NO_COALESCE	-1	/* No moderation by default */
+ 
+@@ -1207,6 +1214,11 @@ static int stmmac_open(struct net_device *dev)
+ 	if (priv->phydev)
+ 		phy_start(priv->phydev);
+ 
++#ifdef CONFIG_PM
++	/* This could be done by using ethtool too*/
++	if ((priv->wolenabled == PMT_SUPPORTED) && (wol != 0))
++		priv->wolopts = WAKE_MAGIC;
++#endif
+ 	netif_start_queue(dev);
+ 	return 0;
+ }
+@@ -2327,6 +2339,10 @@ static int __init stmmac_cmdline_opt(char *str)
+ 			tx_coalesce = simple_strtoul(opt + 12, NULL, 0);
+ 		} else if (!strncmp(opt, "rx_coalesce:", 12)) {
+ 			rx_coalesce = simple_strtoul(opt + 12, NULL, 0);
++#ifdef CONFIG_PM
++		} else if (!strncmp(opt, "wol:", 4)) {
++			wol = simple_strtoul(opt + 4, NULL, 0);
++#endif
+ #ifdef CONFIG_STMMAC_TIMER
+ 		} else if (!strncmp(opt, "tmrate:", 7)) {
+ 			tmrate = simple_strtoul(opt + 7, NULL, 0);
+-- 
+1.6.0.6
+

@@ -1,0 +1,99 @@
+From 2a7d622fefb08618a39720e7951188de3c194e55 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 6 May 2009 12:20:18 +0200
+Subject: [PATCH] stm: pm: Added pm support to the i2c device drivers
+
+This patch adds the suspend/resume functions to the
+i2c device drivers
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/i2c/busses/i2c-st40-pio.c |   28 ++++++++++++++++++++++++++--
+ drivers/i2c/busses/i2c-stm.c      |   16 ++++++++++++++++
+ 2 files changed, 42 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-st40-pio.c b/drivers/i2c/busses/i2c-st40-pio.c
+index c6b8ec1..5ed6a05 100644
+--- a/drivers/i2c/busses/i2c-st40-pio.c
++++ b/drivers/i2c/busses/i2c-st40-pio.c
+@@ -154,17 +154,41 @@ static int i2c_st40_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PM
++static int i2c_st40_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	struct ssc_pio_t *pio_info =
++		(struct ssc_pio_t *)pdev->dev.platform_data;
++	stpio_configure_pin(pio_info->clk, STPIO_IN);
++	stpio_configure_pin(pio_info->sdout, STPIO_IN);
++	return 0;
++}
++static int i2c_st40_resume(struct platform_device *pdev)
++{
++	struct ssc_pio_t *pio_info =
++		(struct ssc_pio_t *)pdev->dev.platform_data;
++	stpio_configure_pin(pio_info->clk, STPIO_BIDIR);
++	stpio_configure_pin(pio_info->sdout, STPIO_BIDIR);
++
++	stpio_set_pin(pio_info->clk, 1);
++	stpio_set_pin(pio_info->sdout, 1);
++	return 0;
++}
++#else
++  #define i2c_st40_suspend	NULL
++  #define i2c_st40_resume	NULL
++#endif
+ static struct platform_driver i2c_sw_driver = {
+ 	.driver.name = "i2c_st",
+ 	.driver.owner = THIS_MODULE,
+ 	.probe = i2c_st40_probe,
+ 	.remove= i2c_st40_remove,
++	.suspend = i2c_st40_suspend,
++	.resume = i2c_st40_resume,
+ };
+ 
+ static int __init i2c_st40_pio_init(void)
+ {
+-	int i;
+-
+ 	printk(KERN_INFO NAME": ST40 PIO based I2C Driver\n");
+ 
+ 	platform_driver_register(&i2c_sw_driver);
+diff --git a/drivers/i2c/busses/i2c-stm.c b/drivers/i2c/busses/i2c-stm.c
+index ca2527a..5d4b808 100644
+--- a/drivers/i2c/busses/i2c-stm.c
++++ b/drivers/i2c/busses/i2c-stm.c
+@@ -1229,6 +1229,13 @@ static int iic_stm_remove(struct platform_device *pdev)
+ static int iic_stm_suspend(struct platform_device *pdev, pm_message_t state)
+ {
+ 	struct iic_ssc *i2c_bus = pdev->dev.driver_data;
++	struct ssc_pio_t *pio_info =
++		(struct ssc_pio_t *)pdev->dev.platform_data;
++
++	if (pio_info->pio[0].pio_port != SSC_NO_PIO) {
++		stpio_configure_pin(pio_info->clk, STPIO_IN);
++		stpio_configure_pin(pio_info->sdout, STPIO_IN);
++	}
+ 	ssc_store32(i2c_bus, SSC_IEN, 0);
+ 	ssc_store32(i2c_bus, SSC_CTL, 0);
+ 	return 0;
+@@ -1236,6 +1243,15 @@ static int iic_stm_suspend(struct platform_device *pdev, pm_message_t state)
+ static int iic_stm_resume(struct platform_device *pdev)
+ {
+ 	struct iic_ssc *i2c_bus = pdev->dev.driver_data;
++	struct ssc_pio_t *pio_info =
++		(struct ssc_pio_t *)pdev->dev.platform_data;
++
++	if (pio_info->pio[0].pio_port != SSC_NO_PIO) {
++		/* configure the pins */
++		stpio_configure_pin(pio_info->clk, (pio_info->clk_unidir ?
++			STPIO_ALT_BIDIR : STPIO_ALT_BIDIR));
++		stpio_configure_pin(pio_info->sdout, STPIO_ALT_BIDIR);
++	}
+ 	iic_stm_setup_timing(i2c_bus, clk_get_rate(clk_get(NULL, "comms_clk")));
+ 	return 0;
+ }
+-- 
+1.6.0.6
+

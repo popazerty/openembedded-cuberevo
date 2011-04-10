@@ -1,0 +1,98 @@
+This patch fixes a couple of problems with the changes to the generic
+SH DMA API made as part of the FDMA work. When changes have been made,
+they also include reverting stylistically to the origional code, which
+may make the patches slightly larger than they would other wise be.
+This has not been done where no problem has been identified, although
+it would be desirable as part of any future work.
+
+Identified problems:
+ - off by one error in get_dma_info
+ - unclear what the interface to register_chan_caps is, but whatever
+   the intention the implementation will walk write past the end
+   of arrays.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux-2.6.17/drivers/stm/710x_fdma2.c
+===================================================================
+--- linux-2.6.17.orig/drivers/stm/710x_fdma2.c
++++ linux-2.6.17/drivers/stm/710x_fdma2.c
+@@ -537,14 +537,15 @@ static int fdma_register_caps(void)
+ {
+ 	int channel = chip.ch_min;
+ 	int res=0;
+-	struct dma_chan_caps  dmac_caps[chip.ch_max];
++	int num_caps = chip.ch_max - chip.ch_min + 1;
++	struct dma_chan_caps  dmac_caps[num_caps];
+ 	const char  * dmac_id = (const char *)STM_DMAC_ID;
+ 	static const char* hb_caps[] = {STM_DMA_CAP_HIGH_BW,NULL};
+ 	static const char* lb_caps[] = {STM_DMA_CAP_LOW_BW,NULL};
+ 
+ 	for (;channel <= chip.ch_max;channel++) {
+-		dmac_caps[channel].ch_num = channel;
+-		dmac_caps[channel].caplist =
++		dmac_caps[channel-chip.ch_min].ch_num = channel;
++		dmac_caps[channel-chip.ch_min].caplist =
+ 			(channel < 4) ? hb_caps : lb_caps;
+ 	}
+ 	res= register_chan_caps(dmac_id,&dmac_caps[chip.ch_min]);
+Index: linux-2.6.17/arch/sh/drivers/dma/dma-api.c
+===================================================================
+--- linux-2.6.17.orig/arch/sh/drivers/dma/dma-api.c
++++ linux-2.6.17/arch/sh/drivers/dma/dma-api.c
+@@ -60,15 +60,17 @@ static LIST_HEAD(registered_dmac_list);
+ struct dma_info *get_dma_info(unsigned int chan)
+ {
+ 	struct dma_info *info;
++
+ 	/*
+ 	 * Look for each DMAC's range to determine who the owner of
+ 	 * the channel is.
+ 	 */
+-	list_for_each_entry(info, &registered_dmac_list, list)
+-		if 	((chan >= info->first_channel_nr) &&
+-			(chan <= info->first_channel_nr + info->nr_channels )){
+-			return info;
++	list_for_each_entry(info, &registered_dmac_list, list) {
++		if ((chan <  info->first_channel_nr) ||
++		    (chan >= info->first_channel_nr + info->nr_channels ))
++			continue;
+ 
++		return info;
+ 	}
+ 
+ 	return NULL;
+@@ -284,27 +286,13 @@ int register_chan_caps(const char *dmac,
+ 
+ dmac_match:
+ 
+-	if(info->first_channel_nr ==0)
+-		max_chans  =( (info->nr_channels-1));
+-	else
+-		max_chans  =( (info->nr_channels));
+-
+-	for(;caps;caps++){
+-		assigned =0;
+-		for(i=0; i <= max_chans; i++) {
+-			channel = &info->channels[i];
+-			if(channel->chan  == caps->ch_num){
+-				channel->caps = caps->caplist;
+-				assigned=1;
+-				break;
+-			}
+-		}
+-		if(!assigned)
+-			return  -ENODEV;
+-		if(i >= max_chans)
+-			return 0;
++	for (i = 0; i < info->nr_channels; i++, caps++) {
++		if ((info->first_channel_nr + i) != caps->ch_num)
++			return -EINVAL;
++		channel = &info->channels[i];
++		channel->caps = caps->caplist;
+ 	}
+-	return -EINVAL;
++	return 0;
+ }
+ 
+ 

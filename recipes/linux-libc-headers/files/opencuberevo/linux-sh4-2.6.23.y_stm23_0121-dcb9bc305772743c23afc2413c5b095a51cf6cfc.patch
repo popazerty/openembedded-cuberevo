@@ -1,0 +1,92 @@
+From dcb9bc305772743c23afc2413c5b095a51cf6cfc Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 27 Jul 2009 10:40:24 +0200
+Subject: [PATCH] stmmac: fix the ability to change the phy link via nwhwconfig
+
+Attaching the phy before opening the interface, it's now possible
+to force the phy link setting through nwhwconfig.
+
+Below some examples how to use the nwhwconfig option in command line:
+nwhwconf=device:eth0,hwaddr:<MAC_ADD>,speed:100,duplex:half
+nwhwconf=device:eth0,hwaddr:<MAC_ADD>,speed:100,duplex:full
+nwhwconf=device:eth0,hwaddr:<MAC_ADD>,speed:10,duplex:half
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_ethtool.c |   11 ++++++-----
+ drivers/net/stmmac/stmmac_main.c    |   22 ++++++++++++++--------
+ 2 files changed, 20 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_ethtool.c b/drivers/net/stmmac/stmmac_ethtool.c
+index 918bca9..8421e61 100644
+--- a/drivers/net/stmmac/stmmac_ethtool.c
++++ b/drivers/net/stmmac/stmmac_ethtool.c
+@@ -49,11 +49,12 @@ int stmmac_ethtool_getsettings(struct net_device *dev, struct ethtool_cmd *cmd)
+ 		return -ENODEV;
+ 	}
+ 
+-	if (!netif_running(dev)) {
+-		printk(KERN_ERR "%s: interface is disabled: we cannot track "
+-		       "link speed / duplex setting\n", dev->name);
+-		return -EBUSY;
+-	}
++	/* In this case, indeed, we should return with -EBUSY.
++	 * Unfortunately, this can generate a failure while forcing the link
++	 * setting through nwhwconfig. */
++	if (!netif_running(dev))
++		printk(KERN_WARNING "stmmac: interface is disabled..."
++			"trying to force link setting?\n");
+ 
+ 	cmd->transceiver = XCVR_INTERNAL;
+ 	spin_lock_irq(&priv->lock);
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index ab215ac..08febdc 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -354,8 +354,7 @@ static int stmmac_init_phy(struct net_device *dev)
+ 	snprintf(phy_id, BUS_ID_SIZE, PHY_ID_FMT, priv->bus_id, priv->phy_addr);
+ 	printk(KERN_DEBUG "stmmac_init_phy:  trying to attach to %s\n", phy_id);
+ 
+-	phydev =
+-	    phy_connect(dev, phy_id, &stmmac_adjust_link, 0,
++	phydev = phy_connect(dev, phy_id, &stmmac_adjust_link, 0,
+ 			priv->phy_interface);
+ 
+ 	if (IS_ERR(phydev)) {
+@@ -1108,12 +1107,13 @@ static int stmmac_open(struct net_device *dev)
+ 
+ 	stmmac_verify_args();
+ 
+-	/* Attach the PHY */
+-	ret = stmmac_init_phy(dev);
+-	if (ret) {
+-		printk(KERN_ERR "%s: Cannot attach to PHY (error: %d)\n",
+-		       __FUNCTION__, ret);
+-		return -ENODEV;
++	if (priv->phydev == NULL) {
++		ret = stmmac_init_phy(dev);
++		if (ret) {
++			printk(KERN_ERR "%s: Cannot attach to PHY"
++				" (error: %d)\n", __FUNCTION__, ret);
++			return -ENODEV;
++		}
+ 	}
+ 
+ 	/* Request the IRQ lines */
+@@ -2092,6 +2092,12 @@ static int stmmac_dvr_probe(struct platform_device *pdev)
+ 		goto out;
+ 	printk(KERN_DEBUG "\tMDIO bus registered!\n");
+ 
++	/* Attach the PHY while probing. It can help when force link
++	 * setting through nwhwconfig */
++	ret = stmmac_init_phy(ndev);
++	if (ret)
++		printk(KERN_ERR "%s: Cannot attach to PHY (error: %d)\n",
++		       __FUNCTION__, ret);
+ out:
+ 	if (ret < 0) {
+ 		platform_set_drvdata(pdev, NULL);
+-- 
+1.6.0.6
+

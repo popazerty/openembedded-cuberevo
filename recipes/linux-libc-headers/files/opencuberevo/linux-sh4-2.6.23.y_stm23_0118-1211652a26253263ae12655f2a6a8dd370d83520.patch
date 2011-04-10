@@ -1,0 +1,152 @@
+From 1211652a26253263ae12655f2a6a8dd370d83520 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Wed, 11 Feb 2009 13:41:03 +0000
+Subject: [PATCH] stmmac: use first detected phy
+
+This change allows the stmmac's platform data to specify the PHY address
+as -1, in which case the first available PHY on the bus will be used.
+
+This avoids problems when the PHY address changes between board revisions
+for example. Also output some diagnostic messages which can be useful to
+help diagnose PHY problems.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/cb102/setup.c  |    2 +-
+ arch/sh/boards/st/mb618/setup.c  |    2 +-
+ arch/sh/boards/st/mb628/setup.c  |    2 +-
+ arch/sh/boards/st/mb671/setup.c  |    2 +-
+ arch/sh/boards/st/mb680/setup.c  |    2 +-
+ arch/sh/boards/st/mb704/setup.c  |    2 +-
+ drivers/net/stmmac/stmmac_mdio.c |   25 ++++++++++++++++++++++++-
+ 7 files changed, 30 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/boards/st/cb102/setup.c b/arch/sh/boards/st/cb102/setup.c
+index 121e63f..05dcfaf 100644
+--- a/arch/sh/boards/st/cb102/setup.c
++++ b/arch/sh/boards/st/cb102/setup.c
+@@ -102,7 +102,7 @@ static int cb102_phy_reset(void *bus)
+ static struct plat_stmmacphy_data cb102_phy_private_data = {
+ 	/* MAC0: SMSC LAN8700 */
+ 	.bus_id = 0,
+-	.phy_addr = 0,
++	.phy_addr = -1,
+ 	.phy_mask = 0,
+ 	.interface = PHY_INTERFACE_MODE_MII,
+ 	.phy_reset = cb102_phy_reset,
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index 05b149c..929b499 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -176,7 +176,7 @@ static int mb618_phy_reset(void *bus)
+ static struct plat_stmmacphy_data phy_private_data = {
+ 	/* SMSC LAN 8700 */
+ 	.bus_id = 0,
+-	.phy_addr = 0,
++	.phy_addr = -1,
+ 	.phy_mask = 0,
+ 	.interface = PHY_INTERFACE_MODE_MII,
+ 	.phy_reset = &mb618_phy_reset,
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index 443d654..1b8576a 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -302,7 +302,7 @@ static struct plat_stmmacphy_data phy_private_data[2] = {
+ {
+ 	/* GMAC0: MII connector CN17. We assume a mb539 (SMSC 8700). */
+ 	.bus_id = 0,
+-	.phy_addr = 0,
++	.phy_addr = -1,
+ 	.phy_mask = 0,
+ 	.interface = PHY_INTERFACE_MODE_MII,
+ 	.phy_reset = mb628_phy_reset,
+diff --git a/arch/sh/boards/st/mb671/setup.c b/arch/sh/boards/st/mb671/setup.c
+index e4e4718..0393436 100644
+--- a/arch/sh/boards/st/mb671/setup.c
++++ b/arch/sh/boards/st/mb671/setup.c
+@@ -105,7 +105,7 @@ static struct plat_stmmacphy_data phy_private_data[2] = {
+ 	{
+ 		/* MII0: SMSC LAN8700 */
+ 		.bus_id = 0,
+-		.phy_addr = 0,
++		.phy_addr = -1,
+ 		.phy_mask = 0,
+ 		.interface = PHY_INTERFACE_MODE_RMII,
+ 	}, {
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 916cb17..3095711 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -112,7 +112,7 @@ static int mb680_phy_reset(void* bus)
+ static struct plat_stmmacphy_data phy_private_data = {
+ 	/* National Semiconductor DP83865 (rev A/B) or SMSC 8700 (rev C) */
+ 	.bus_id = 0,
+-	.phy_addr = 1,
++	.phy_addr = -1,
+ 	.phy_mask = 0,
+ 	.interface = PHY_INTERFACE_MODE_MII,
+ 	.phy_reset = &mb680_phy_reset,
+diff --git a/arch/sh/boards/st/mb704/setup.c b/arch/sh/boards/st/mb704/setup.c
+index 40d163e..42adec3 100644
+--- a/arch/sh/boards/st/mb704/setup.c
++++ b/arch/sh/boards/st/mb704/setup.c
+@@ -82,7 +82,7 @@ static struct platform_device mb704_leds = {
+ static struct plat_stmmacphy_data phy_private_data = {
+ 	/* SMSC LAN 8700 on the mb762 */
+ 	.bus_id = 0,
+-	.phy_addr = 0,
++	.phy_addr = -1,
+ 	.phy_mask = 0,
+ 	.interface = PHY_INTERFACE_MODE_MII,
+ };
+diff --git a/drivers/net/stmmac/stmmac_mdio.c b/drivers/net/stmmac/stmmac_mdio.c
+index b69cbb5..5782755 100644
+--- a/drivers/net/stmmac/stmmac_mdio.c
++++ b/drivers/net/stmmac/stmmac_mdio.c
+@@ -141,12 +141,14 @@ int stmmac_mdio_register(struct net_device *ndev)
+ 	struct mii_bus *new_bus = kzalloc(sizeof(struct mii_bus), GFP_KERNEL);
+ 	int *irqlist = kzalloc(sizeof(int) * PHY_MAX_ADDR, GFP_KERNEL);
+ 	struct stmmac_priv *priv = netdev_priv(ndev);
++	int addr, found;
+ 
+ 	if (new_bus == NULL)
+ 		return -ENOMEM;
+ 
+ 	/* Assign IRQ to phy at address phy_addr */
+-	irqlist[priv->phy_addr] = priv->phy_irq;
++	if (priv->phy_addr != -1)
++		irqlist[priv->phy_addr] = priv->phy_irq;
+ 
+ 	new_bus->name = "STMMAC MII Bus";
+ 	new_bus->read = &stmmac_mdio_read;
+@@ -168,6 +170,27 @@ int stmmac_mdio_register(struct net_device *ndev)
+ 
+ 	priv->mii = new_bus;
+ 
++	found = 0;
++	for (addr = 0; addr < 32; addr++) {
++		struct phy_device *phydev = new_bus->phy_map[addr];
++		if (phydev) {
++			if (priv->phy_addr == -1) {
++				priv->phy_addr = addr;
++				phydev->irq = priv->phy_irq;
++				irqlist[addr] = priv->phy_irq;
++			}
++			printk(KERN_INFO
++			       "%s: PHY ID %08x at %d IRQ %d (%s)%s\n",
++			       ndev->name, phydev->phy_id, addr,
++			       phydev->irq, phydev->dev.bus_id,
++			       (addr == priv->phy_addr) ? " active" : "");
++			found = 1;
++		}
++	}
++
++	if (!found)
++		printk(KERN_WARNING "%s: No PHY found\n", ndev->name);
++
+ 	return 0;
+       bus_register_fail:
+ 	kfree(new_bus);
+-- 
+1.5.6.3
+

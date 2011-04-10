@@ -1,0 +1,84 @@
+sh_stm: Add default interrupt priorities for 7100 and 7111
+
+Add default interrupt priorities based on recomendations from the
+validation team. This matches the interrupt priorities used by OS21.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -1030,7 +1030,34 @@ static struct intc_group groups[] = {
+ };
+ 
+ static struct intc_prio priorities[] = {
+-	INTC_PRIO(SCIF, 3),
++/* INTC */
++	INTC_PRIO(RTC,        4),
++	INTC_PRIO(TMU2,      15),
++	INTC_PRIO(TMU1,      15),
++	INTC_PRIO(TMU0,       1),
++	INTC_PRIO(WDT,       15),
++	INTC_PRIO(HUDI,      15),
++	INTC_PRIO(SCIF,       7),
++/* INTC2 */
++	INTC_PRIO(PIO0,       5),
++	INTC_PRIO(PIO1,       5),
++	INTC_PRIO(PIO2,       5),
++	INTC_PRIO(SATA_SPLIT, 9),
++	INTC_PRIO(GROUP0,     6),
++	INTC_PRIO(GROUP1,     7),
++	INTC_PRIO(GROUP3,     7),
++	INTC_PRIO(GROUP4,     7),
++	INTC_PRIO(GROUP5,     8),
++	INTC_PRIO(GROUP6,    12),
++	INTC_PRIO(GROUP7,    10),
++	INTC_PRIO(GROUP8,    11),
++	INTC_PRIO(GROUP9,    12),
++	INTC_PRIO(GROUP10,   13),
++	INTC_PRIO(GROUP11,    5),
++	INTC_PRIO(GROUP12,    9),
++	INTC_PRIO(GROUP13,    8),
++	INTC_PRIO(GROUP14,    9),
++	INTC_PRIO(GROUP15,    7),
+ };
+ 
+ static struct intc_prio_reg prio_registers[] = {
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -957,6 +957,33 @@ static struct intc_group groups[] = {
+ };
+ 
+ static struct intc_prio priorities[] = {
++/* INTC */
++	INTC_PRIO(RTC,        4),
++	INTC_PRIO(TMU2,      15),
++	INTC_PRIO(TMU1,      15),
++	INTC_PRIO(TMU0,       1),
++	INTC_PRIO(WDT,       15),
++	INTC_PRIO(HUDI,      15),
++	/* INTC_PRIO(SCIF,       7), */
++/* INTC2 */
++	INTC_PRIO(PCI_DEV0,  12),
++	INTC_PRIO(GROUP0_1,  12),
++	INTC_PRIO(GROUP0_2,   7),
++	INTC_PRIO(GROUP1,     6),
++	INTC_PRIO(GROUP2,     7),
++	INTC_PRIO(GROUP3,     7),
++	INTC_PRIO(GROUP4,     7),
++	INTC_PRIO(GROUP5,     7),
++	INTC_PRIO(GROUP6,     8),
++	INTC_PRIO(GROUP7,    12),
++	INTC_PRIO(GROUP8,    10),
++	INTC_PRIO(GROUP9,    11),
++	INTC_PRIO(GROUP10,   12),
++	INTC_PRIO(GROUP11,   13),
++	INTC_PRIO(GROUP12,    9),
++	INTC_PRIO(GROUP13,    9),
++	INTC_PRIO(GROUP15,    9),
++	INTC_PRIO(GROUP15,    7),
+ };
+ 
+ static struct intc_prio_reg prio_registers[] = {

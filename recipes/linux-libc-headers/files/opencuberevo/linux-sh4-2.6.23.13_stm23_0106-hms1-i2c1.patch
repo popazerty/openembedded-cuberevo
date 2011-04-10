@@ -1,0 +1,18 @@
+Change SSC1 from SPI to I2C. Strictly speaking either is correct, as this
+goes to the NIM slot which can be either. However in practice it is only
+ever used as I2C, and doing this prevents the I2C bus numbers changing.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/hms1/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+@@ -38,7 +38,7 @@ static struct plat_stm_pwm_data pwm_priv
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  =
+ 		ssc0_has(SSC_I2C_CAPABILITY) |
+-		ssc1_has(SSC_SPI_CAPABILITY) |
++		ssc1_has(SSC_I2C_CAPABILITY) |
+ 		ssc2_has(SSC_I2C_CAPABILITY),
+ };
+ 

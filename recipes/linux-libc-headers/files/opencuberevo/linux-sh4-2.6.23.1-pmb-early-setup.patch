@@ -1,0 +1,79 @@
+Move the PMB initialisation to early in the kernel boot sequence. This
+makes more sense, easpecially if we have to recode this in position
+independant assembler one day.
+
+Also statically initialise the cached_to_uncached offset, so that we can
+use it immediatly.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23.1-stm/arch/sh/kernel/cpu/init.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/cpu/init.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/cpu/init.c
+@@ -228,6 +228,10 @@ asmlinkage void __cpuinit sh_cpu_init(vo
+ 	if (current_cpu_data.type == CPU_SH_NONE)
+ 		panic("Unknown CPU");
+ 
++#ifdef CONFIG_32BIT
++	pmb_init();
++#endif
++
+ 	/* Init the cache */
+ 	cache_init();
+ 
+Index: linux-2.6.23.1-stm/arch/sh/kernel/setup.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/setup.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/setup.c
+@@ -297,9 +297,6 @@ void __init setup_arch(char **cmdline_p)
+ 	/* Setup bootmem with available RAM */
+ 	setup_memory();
+ 	sparse_init();
+-#ifdef CONFIG_32BIT
+-	pmb_init();
+-#endif
+ 
+ #ifdef CONFIG_DUMMY_CONSOLE
+ 	conswitchp = &dummy_con;
+Index: linux-2.6.23.1-stm/arch/sh/mm/init.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/mm/init.c
++++ linux-2.6.23.1-stm/arch/sh/mm/init.c
+@@ -28,7 +28,12 @@ void (*copy_page)(void *from, void *to);
+ void (*clear_page)(void *to);
+ 
+ extern char _start_uncached, _end_uncached;
+-unsigned long cached_to_uncached;
++
++/* Offset of the uncached section from its cached alias.  Default
++ * value only valid in 29 bit mode, in 32bit mode will be overridden
++ * in pmb_init.
++ */
++unsigned long cached_to_uncached = 0x20000000;
+ 
+ void show_mem(void)
+ {
+@@ -209,9 +214,6 @@ void __init paging_init(void)
+ 	free_area_init_nodes(max_zone_pfns);
+ 
+ 	set_fixmap_nocache(FIX_UNCACHED_CODE, __pa(&_start_uncached));
+-#ifndef CONFIG_32BIT
+-	cached_to_uncached = 0x20000000;
+-#endif
+ }
+ 
+ static struct kcore_list kcore_mem, kcore_vmalloc;
+Index: linux-2.6.23.1-stm/include/asm-sh/system.h
+===================================================================
+--- linux-2.6.23.1-stm.orig/include/asm-sh/system.h
++++ linux-2.6.23.1-stm/include/asm-sh/system.h
+@@ -157,7 +157,8 @@ do {							\
+ 		: "=&r" (__dummy));			\
+ } while (0)
+ 
+-#define __uses_jump_to_uncached __attribute__ ((__section__ (".uncached")))
++#define __uses_jump_to_uncached \
++	noinline __attribute__ ((__section__ (".uncached")))
+ 
+ #if defined(CONFIG_SH_GRB)
+ static inline unsigned long xchg_u32(volatile u32 * m, unsigned long val)

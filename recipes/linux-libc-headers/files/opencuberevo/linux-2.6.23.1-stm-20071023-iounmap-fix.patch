@@ -1,0 +1,13 @@
+Index: linux-2.6.23.1-stm/arch/sh/mm/ioremap.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/mm/ioremap.c
++++ linux-2.6.23.1-stm/arch/sh/mm/ioremap.c
+@@ -138,7 +138,7 @@ void __iounmap(void __iomem *addr)
+ 	unsigned long vaddr = (unsigned long __force)addr;
+ 	struct vm_struct *p;
+ 
+-	if (PXSEG(phys_addr) == P4SEG)
++	if (PXSEG(vaddr) == P4SEG)
+ 		return;
+ 
+ #ifndef CONFIG_32BIT

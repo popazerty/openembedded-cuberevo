@@ -1,0 +1,122 @@
+From 2045fd59e3d25cdd66bcc1566fda8973884713f9 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 4 Dec 2008 10:56:01 +0100
+Subject: [PATCH] stmmac: fix the TX/RX threshold values into the DMA Bus mode register
+
+This patch fixes the TX/RX threshold values. They have to be set within the
+CSR6 DMA register, in case of Store-and-Forward capability is turned-off.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/gmac.c |   28 +++++++++++++++++-----------
+ drivers/net/stmmac/gmac.h |   22 ++++++++++++----------
+ 2 files changed, 29 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/net/stmmac/gmac.c b/drivers/net/stmmac/gmac.c
+index 1f3ad7c..ad7d933 100644
+--- a/drivers/net/stmmac/gmac.c
++++ b/drivers/net/stmmac/gmac.c
+@@ -93,40 +93,46 @@ static void gmac_dma_operation_mode(unsigned long ioaddr, int txmode,
+ 	u32 csr6 = readl(ioaddr + DMA_CONTROL);
+ 
+ 	if (txmode == SF_DMA_MODE) {
++		DBG(KERN_DEBUG "GMAC: enabling TX store and forward mode\n");
+ 		/* Transmit COE type 2 cannot be done in cut-through mode. */
+ 		csr6 |= DMA_CONTROL_TSF;
+ 		/* Operating on second frame increase the performance
+ 		 * especially when transmit store-and-forward is used.*/
+ 		csr6 |= DMA_CONTROL_OSF;
+ 	} else {
++		DBG(KERN_DEBUG "GMAC: disabling TX store and forward mode"
++			      " (threshold = %d)\n", txmode);
+ 		csr6 &= ~DMA_CONTROL_TSF;
++		csr6 &= DMA_CONTROL_TC_TX_MASK;
+ 		/* Set the transmit threashold */
+-		if (txmode <= 32) {
++		if (txmode <= 32)
+ 			csr6 |= DMA_CONTROL_TTC_32;
+-		} else if (txmode <= 64) {
++		else if (txmode <= 64)
+ 			csr6 |= DMA_CONTROL_TTC_64;
+-		} else if (txmode <= 128) {
++		else if (txmode <= 128)
+ 			csr6 |= DMA_CONTROL_TTC_128;
+-		} else if (txmode <= 192) {
++		else if (txmode <= 192)
+ 			csr6 |= DMA_CONTROL_TTC_192;
+-		} else {
++		else
+ 			csr6 |= DMA_CONTROL_TTC_256;
+-		}
+ 	}
+ 
+ 	if (rxmode == SF_DMA_MODE) {
++		DBG(KERN_DEBUG "GMAC: enabling RX store and forward mode\n");
+ 		csr6 |= DMA_CONTROL_RSF;
+ 	} else {
++		DBG(KERN_DEBUG "GMAC: disabling RX store and forward mode"
++			      " (threshold = %d)\n", rxmode);
+ 		csr6 &= ~DMA_CONTROL_RSF;
+-		if (rxmode <= 32) {
++		csr6 &= DMA_CONTROL_TC_RX_MASK;
++		if (rxmode <= 32)
+ 			csr6 |= DMA_CONTROL_RTC_32;
+-		} else if (rxmode <= 64) {
++		else if (rxmode <= 64)
+ 			csr6 |= DMA_CONTROL_RTC_64;
+-		} else if (rxmode <= 96) {
++		else if (rxmode <= 96)
+ 			csr6 |= DMA_CONTROL_RTC_96;
+-		} else {
++		else
+ 			csr6 |= DMA_CONTROL_RTC_128;
+-		}
+ 	}
+ 
+ 	writel(csr6, ioaddr + DMA_CONTROL);
+diff --git a/drivers/net/stmmac/gmac.h b/drivers/net/stmmac/gmac.h
+index 873ece4..8e8bbd1 100644
+--- a/drivers/net/stmmac/gmac.h
++++ b/drivers/net/stmmac/gmac.h
+@@ -157,14 +157,15 @@ enum rfd {
+ 
+ enum ttc_control {
+ 	DMA_CONTROL_TTC_64 = 0x00000000,
+-	DMA_CONTROL_TTC_128 = 0x00040000,
+-	DMA_CONTROL_TTC_192 = 0x00080000,
+-	DMA_CONTROL_TTC_256 = 0x000c0000,
+-	DMA_CONTROL_TTC_40 = 0x00100000,
+-	DMA_CONTROL_TTC_32 = 0x00140000,
+-	DMA_CONTROL_TTC_24 = 0x00180000,
+-	DMA_CONTROL_TTC_16 = 0x001c0000,
++	DMA_CONTROL_TTC_128 = 0x00004000,
++	DMA_CONTROL_TTC_192 = 0x00008000,
++	DMA_CONTROL_TTC_256 = 0x0000c000,
++	DMA_CONTROL_TTC_40 = 0x00010000,
++	DMA_CONTROL_TTC_32 = 0x00014000,
++	DMA_CONTROL_TTC_24 = 0x00018000,
++	DMA_CONTROL_TTC_16 = 0x0001c000,
+ };
++#define DMA_CONTROL_TC_TX_MASK	0xfffe3fff
+ 
+ #define DMA_CONTROL_EFC		0x00000100
+ #define DMA_CONTROL_FEF		0x00000080
+@@ -172,10 +173,11 @@ enum ttc_control {
+ 
+ enum rtc_control {
+ 	DMA_CONTROL_RTC_64 = 0x00000000,
+-	DMA_CONTROL_RTC_32 = 0x00000010,
+-	DMA_CONTROL_RTC_96 = 0x00000020,
+-	DMA_CONTROL_RTC_128 = 0x00000030,
++	DMA_CONTROL_RTC_32 = 0x00000008,
++	DMA_CONTROL_RTC_96 = 0x00000010,
++	DMA_CONTROL_RTC_128 = 0x00000018,
+ };
++#define DMA_CONTROL_TC_RX_MASK	0xffffffe7
+ 
+ #define DMA_CONTROL_OSF	0x00000004	/* operate on second frame */
+ 
+-- 
+1.5.3.6
+

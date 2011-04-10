@@ -1,0 +1,98 @@
+From 903ce26036cd0ec0ce31bbade286667b655fad78 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 4 Mar 2009 09:16:13 +0100
+Subject: [PATCH] stmmac: review ethtool reg dump support for the gmac.
+
+This patch reviews the ethtool register dump
+function in order to get the right information
+for both the mac100 and the gmac.
+
+New ethtool command version is required.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/gmac.c           |    2 +-
+ drivers/net/stmmac/stmmac_ethtool.c |   41 +++++++++++++++++++++++++---------
+ 2 files changed, 31 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/net/stmmac/gmac.c b/drivers/net/stmmac/gmac.c
+index ad7d933..65daef9 100644
+--- a/drivers/net/stmmac/gmac.c
++++ b/drivers/net/stmmac/gmac.c
+@@ -150,7 +150,7 @@ static void gmac_dump_dma_regs(unsigned long ioaddr)
+ {
+ 	int i;
+ 	printk(KERN_INFO " DMA registers\n");
+-	for (i = 0; i < 9; i++) {
++	for (i = 0; i < 22; i++) {
+ 		if ((i < 9) || (i > 17)) {
+ 			int offset = i * 4;
+ 			printk(KERN_INFO
+diff --git a/drivers/net/stmmac/stmmac_ethtool.c b/drivers/net/stmmac/stmmac_ethtool.c
+index 43419b1..afe5be6 100644
+--- a/drivers/net/stmmac/stmmac_ethtool.c
++++ b/drivers/net/stmmac/stmmac_ethtool.c
+@@ -20,11 +20,19 @@
+ #include "stmmac.h"
+ 
+ #define REG_SPACE_SIZE	0x1054
++#define MAC100_ETHTOOL_NAME	"st_mac100"
++#define GMAC_ETHTOOL_NAME	"st_gmac"
+ 
+ void stmmac_ethtool_getdrvinfo(struct net_device *dev,
+ 			       struct ethtool_drvinfo *info)
+ {
+-	strcpy(info->driver, ETH_RESOURCE_NAME);
++	struct stmmac_priv *priv = netdev_priv(dev);
++
++	if (!priv->is_gmac)
++		strcpy(info->driver, MAC100_ETHTOOL_NAME);
++	else
++		strcpy(info->driver, GMAC_ETHTOOL_NAME);
++
+ 	strcpy(info->version, DRV_MODULE_VERSION);
+ 	info->fw_version[0] = '\0';
+ 	return;
+@@ -98,18 +106,29 @@ void stmmac_ethtool_gregs(struct net_device *dev,
+ 	int i;
+ 	u32 *reg_space = (u32 *) space;
+ 
++	struct stmmac_priv *priv = netdev_priv(dev);
++
+ 	memset(reg_space, 0x0, REG_SPACE_SIZE);
+-	/* MAC registers */
+-	for (i = 0; i < 12; i++) {
+-		reg_space[i] = readl(dev->base_addr + (i * 4));
+-	}
+-	/* DMA registers */
+-	for (i = 0; i < 9; i++) {
+-		reg_space[i + 12] =
+-		    readl(dev->base_addr + (DMA_BUS_MODE + (i * 4)));
++
++	if (!priv->is_gmac) {
++		/* MAC registers */
++		for (i = 0; i < 12; i++)
++			reg_space[i] = readl(dev->base_addr + (i * 4));
++		/* DMA registers */
++		for (i = 0; i < 9; i++)
++			reg_space[i + 12] =
++			    readl(dev->base_addr + (DMA_BUS_MODE + (i * 4)));
++		reg_space[22] = readl(dev->base_addr + DMA_CUR_TX_BUF_ADDR);
++		reg_space[23] = readl(dev->base_addr + DMA_CUR_RX_BUF_ADDR);
++	} else {
++		/* MAC registers */
++		for (i = 0; i < 55; i++)
++			reg_space[i] = readl(dev->base_addr + (i * 4));
++		/* DMA registers */
++		for (i = 0; i < 22; i++)
++			reg_space[i + 55] =
++			    readl(dev->base_addr + (DMA_BUS_MODE + (i * 4)));
+ 	}
+-	reg_space[22] = readl(dev->base_addr + DMA_CUR_TX_BUF_ADDR);
+-	reg_space[23] = readl(dev->base_addr + DMA_CUR_RX_BUF_ADDR);
+ 
+ 	return;
+ }
+-- 
+1.6.0.6
+

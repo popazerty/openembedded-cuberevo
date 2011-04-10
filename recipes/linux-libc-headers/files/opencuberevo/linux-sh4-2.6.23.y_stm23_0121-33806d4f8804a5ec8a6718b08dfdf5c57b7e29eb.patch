@@ -1,0 +1,159 @@
+From 33806d4f8804a5ec8a6718b08dfdf5c57b7e29eb Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Tue, 7 Jul 2009 16:25:10 +0200
+Subject: [PATCH] sh: add sleazy FPU optimization
+
+sh port of the sLeAZY-fpu feature currently implemented for some architectures
+such us i386.
+
+Right now the SH kernel has a 100% lazy fpu behaviour.
+This is of course great for applications that have very sporadic or no FPU use.
+However for very frequent FPU users...  you take an extra trap every context
+switch.
+The patch below adds a simple heuristic to this code: after 5 consecutive
+context switches of FPU use, the lazy behavior is disabled and the context
+gets restored every context switch.
+After 256 switches, this is reset and the 100% lazy behavior is returned.
+
+Tests with LMbench showed no regression.
+I saw a little improvement due to the prefetching (~2%).
+
+The tests below also show that, with this sLeazy patch, indeed,
+the number of FPU exceptions is reduced.
+To test this. I hacked the lat_ctx LMBench to use the FPU a little more.
+
+   sLeasy implementation
+   ===========================================
+   switch_to calls            |  79326
+   sleasy   calls             |  42577
+   do_fpu_state_restore  calls|  59232
+   restore_fpu   calls        |  59032
+
+   Exceptions:  0x800 (FPU disabled  ): 16604
+
+   100% Leazy (default implementation)
+   ===========================================
+   switch_to  calls            |  79690
+   do_fpu_state_restore calls  |  53299
+   restore_fpu  calls          |   53101
+
+   Exceptions: 0x800 (FPU disabled  ):  53273
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/fpu.c |    3 ++-
+ arch/sh/kernel/process.c     |   16 ++++++++++++++++
+ arch/sh/kernel/traps.c       |    3 ---
+ include/asm-sh/processor.h   |    5 +++--
+ include/asm-sh/system.h      |    6 ++++++
+ 5 files changed, 27 insertions(+), 6 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/fpu.c b/arch/sh/kernel/cpu/sh4/fpu.c
+index 87366cd..ed0783d 100644
+--- a/arch/sh/kernel/cpu/sh4/fpu.c
++++ b/arch/sh/kernel/cpu/sh4/fpu.c
+@@ -493,7 +493,7 @@ do_fpu_state_restore(unsigned long r4, unsigned long r5, unsigned long r6,
+ 	struct task_struct *tsk = current;
+ 
+ 	grab_fpu(regs);
+-	if (!user_mode(regs)) {
++	if (unlikely(!user_mode(regs))) {
+ 		printk(KERN_ERR "BUG: FPU is used in kernel mode.\n");
+ 		return;
+ 	}
+@@ -507,4 +507,5 @@ do_fpu_state_restore(unsigned long r4, unsigned long r5, unsigned long r6,
+ 		set_used_math();
+ 	}
+ 	set_tsk_thread_flag(tsk, TIF_USEDFPU);
++	tsk->fpu_counter++;
+ }
+diff --git a/arch/sh/kernel/process.c b/arch/sh/kernel/process.c
+index d64fc9d..6343218 100644
+--- a/arch/sh/kernel/process.c
++++ b/arch/sh/kernel/process.c
+@@ -353,9 +353,14 @@ static void ubc_set_tracing(int asid, unsigned long pc)
+ struct task_struct *__switch_to(struct task_struct *prev,
+ 				struct task_struct *next)
+ {
++	struct thread_struct *next_t = &next->thread;
++
+ #if defined(CONFIG_SH_FPU)
+ 	unlazy_fpu(prev, task_pt_regs(prev));
+ #endif
++	/* we're going to use this soon, after a few expensive things */
++	if (next->fpu_counter > 5)
++		prefetch(&next_t->fpu.hard);
+ 
+ #ifdef CONFIG_MMU
+ 	/*
+@@ -385,6 +390,17 @@ struct task_struct *__switch_to(struct task_struct *prev,
+ 		ctrl_outw(0, UBC_BBRB);
+ #endif
+ 	}
++	/* If the task has used fpu the last 5 timeslices, just do a full
++	 * restore of the math state immediately to avoid the trap; the
++	 * chances of needing FPU soon are obviously high now
++	 */
++	if (next->fpu_counter > 5) {
++		/* pass ptregs because the do_fpu_state_restore
++		   checks if the FPU is used in Kernel space. */
++		do_fpu_state_restore(0, 0, 0, 0, *task_pt_regs(next));
++		/* we have to re-grab the fpu for the "next" tsk. */
++		task_pt_regs(next)->sr &= ~SR_FD;
++	}
+ 
+ 	return prev;
+ }
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index 8237b67..2a503d9 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -785,10 +785,7 @@ asmlinkage void do_divide_error(unsigned long r4, unsigned long r5,
+ }
+ #endif
+ 
+-/* arch/sh/kernel/cpu/sh4/fpu.c */
+ extern int do_fpu_inst(unsigned short, struct pt_regs *);
+-extern asmlinkage void do_fpu_state_restore(unsigned long r4, unsigned long r5,
+-		unsigned long r6, unsigned long r7, struct pt_regs __regs);
+ 
+ asmlinkage void do_reserved_inst(unsigned long r4, unsigned long r5,
+ 				unsigned long r6, unsigned long r7,
+diff --git a/include/asm-sh/processor.h b/include/asm-sh/processor.h
+index 211c8ab..eb9aaac 100644
+--- a/include/asm-sh/processor.h
++++ b/include/asm-sh/processor.h
+@@ -232,9 +232,10 @@ static __inline__ void grab_fpu(struct pt_regs *regs)
+ extern void save_fpu(struct task_struct *__tsk, struct pt_regs *regs);
+ 
+ #define unlazy_fpu(tsk, regs) do {			\
+-	if (test_tsk_thread_flag(tsk, TIF_USEDFPU)) {	\
++	if (test_tsk_thread_flag(tsk, TIF_USEDFPU))	\
+ 		save_fpu(tsk, regs);			\
+-	}						\
++	else						\
++		tsk->fpu_counter = 0;			\
+ } while (0)
+ 
+ #define clear_fpu(tsk, regs) do {				\
+diff --git a/include/asm-sh/system.h b/include/asm-sh/system.h
+index d68e8a9..615d711 100644
+--- a/include/asm-sh/system.h
++++ b/include/asm-sh/system.h
+@@ -364,6 +364,12 @@ asmlinkage void bug_trap_handler(unsigned long r4, unsigned long r5,
+ 				 unsigned long r6, unsigned long r7,
+ 				 struct pt_regs __regs);
+ 
++#if defined(CONFIG_CPU_SH4) && defined(CONFIG_CPU_SUBTYPE_SHX3) || \
++	defined(CONFIG_SH_FPU)
++asmlinkage void do_fpu_state_restore(unsigned long r4, unsigned long r5,
++	unsigned long r6, unsigned long r7, struct pt_regs __regs);
++#endif
++
+ #define arch_align_stack(x) (x)
+ 
+ #endif
+-- 
+1.6.0.6
+

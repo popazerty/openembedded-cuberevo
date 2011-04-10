@@ -1,0 +1,46 @@
+This fixes a problem seen on the 710x, where the system crashes
+shortly after a reboot (using either the reboot command or watchdog), but
+is fine when hitting the reset button.
+
+The problem with the reset is that after the st231 firmware is loaded it leaves
+the reset chain such that a watchdog reset will not cause the on-chip
+perihperals to be reset. This patch fixes the reset channing problem,
+and allows a watchdog reset to work correctly.
+
+This resolves bugzilla 1614
+
+Signed-off-by: Peter Bennett <peter.bennett@st.com>
+Index: linux/drivers/stm/copro-stb7100.c
+===================================================================
+--- linux.orig/drivers/stm/copro-stb7100.c
++++ linux/drivers/stm/copro-stb7100.c
+@@ -50,11 +50,15 @@ int coproc_cpu_grant(coproc_t * cop, uns
+ 		xstring(PLATFORM), cpu, bootAddr);
+ 
+ 	/* stick it into the System configuration and... good luck! */
+-	writel((readl(SYSCFG_09) | 0x18000000), SYSCFG_09);
++	writel((readl(SYSCFG_09) | 0x08000000), SYSCFG_09);
+ 	writel(bootAddr, SYSCFG_BOOT_REG(cpu));
+ 	writel((readl(SYSCFG_RESET_REG(cpu)) | 0x1), SYSCFG_RESET_REG(cpu));
+ 	writel((readl(SYSCFG_RESET_REG(cpu)) & ~0x1), SYSCFG_RESET_REG(cpu));
+ 
++	msleep(10);
++
++	writel((readl(SYSCFG_09) & ~0x18000000), SYSCFG_09);
++
+ 	cop->control |= COPROC_RUNNING;
+ 	return (0);
+ }
+@@ -75,8 +79,11 @@ int coproc_cpu_reset(coproc_t * cop)
+ 	writel((readl(SYSCFG_RESET_REG(cpu)) | 0x1), SYSCFG_RESET_REG(cpu));
+ 	writel((readl(SYSCFG_RESET_REG(cpu)) & ~0x1), SYSCFG_RESET_REG(cpu));
+ 
++	msleep(10);
++
+ 	/* Disable the ST231 CPUs to be resetted */
+-	writel((readl(SYSCFG_09) | 0x18000000), SYSCFG_09);
++	writel((readl(SYSCFG_09) & ~0x18000000), SYSCFG_09);
++
+ 	return 0;
+ }
+ 

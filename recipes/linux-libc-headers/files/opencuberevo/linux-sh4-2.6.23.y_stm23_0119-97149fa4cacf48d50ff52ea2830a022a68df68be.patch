@@ -1,0 +1,336 @@
+From 97149fa4cacf48d50ff52ea2830a022a68df68be Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 6 May 2009 12:20:37 +0200
+Subject: [PATCH] stm: pm: Removed all the clk_pm_state implementation
+
+This patch removes all the clk_pm_state in the SOC-clock files.
+Now this function isn't required because all the PM operation
+are managed at clock framework level via sysdev device
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stb7100.c |   65 +++++++++++++------------------
+ arch/sh/kernel/cpu/sh4/clock-stx5197.c |   15 -------
+ arch/sh/kernel/cpu/sh4/clock-stx7105.c |   30 ---------------
+ arch/sh/kernel/cpu/sh4/clock-stx7111.c |   32 ----------------
+ arch/sh/kernel/cpu/sh4/clock-stx7141.c |   29 --------------
+ arch/sh/kernel/cpu/sh4/clock-stx7200.c |   48 +++++++++++++----------
+ 6 files changed, 54 insertions(+), 165 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stb7100.c b/arch/sh/kernel/cpu/sh4/clock-stb7100.c
+index 7373065..c4def60 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stb7100.c
+@@ -187,10 +187,13 @@ static struct clk_ops clokgenA_ops = {
+ 	.disable	= clockgenA_clk_disable,
+ };
+ 
+-#define CLKGENA(_id, clock, pll, _ctrl_reg, _div, _ratio)	\
++#define DEF_FLAG	CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES
++#define PM_1024		(10<<CLK_PM_EXP_SHIFT)
++
++#define CLKGENA(_id, clock, pll, _ctrl_reg, _div, _ratio, _flags)\
+ [_id] = {							\
+ 	.name	= #clock "_clk",				\
+-	.flags	= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,	\
++	.flags	= (_flags),					\
+ 	.parent	= &(pll),					\
+ 	.ops	= &clokgenA_ops,				\
+ 	.id	= (_id),					\
+@@ -202,18 +205,28 @@ static struct clk_ops clokgenA_ops = {
+ 	}
+ 
+ struct clk clkgena_clks[] = {
+-CLKGENA(SH4_CLK_ID,	sh4, pll0_clk, CLOCKGEN_PLL0_CLK1_CTRL, 1, ratio1),
+-CLKGENA(SH4IC_CLK_ID, sh4_ic, pll0_clk, CLOCKGEN_PLL0_CLK2_CTRL, 1, ratio2),
+-CLKGENA(MODULE_ID,	module,   pll0_clk, CLOCKGEN_PLL0_CLK3_CTRL, 1, ratio3),
+-CLKGENA(SLIM_ID,	slim,     pll0_clk, CLOCKGEN_PLL0_CLK4_CTRL, 1, ratio4),
+-
+-CLKGENA(LX_AUD_ID,	st231aud, pll1_clk, CLOCKGEN_CLK_EN, 1, NULL),
+-CLKGENA(LX_VID_ID,	st231vid, pll1_clk, CLOCKGEN_CLK_EN, 1, NULL),
+-CLKGENA(LMISYS_ID,	lmisys,   pll1_clk, 0, 1, NULL),
+-CLKGENA(LMIVID_ID,	lmivid,   pll1_clk, 0, 1, NULL),
+-CLKGENA(IC_ID,	ic,	  pll1_clk, 0, 2, NULL),
+-CLKGENA(IC_100_ID,	ic_100,   pll1_clk, 0, 4, NULL),
+-CLKGENA(EMI_ID,	emi,      pll1_clk, 0, 4, NULL)
++CLKGENA(SH4_CLK_ID,	sh4, pll0_clk, CLOCKGEN_PLL0_CLK1_CTRL,
++	1, ratio1, DEF_FLAG),
++CLKGENA(SH4IC_CLK_ID, sh4_ic, pll0_clk, CLOCKGEN_PLL0_CLK2_CTRL,
++	1, ratio2, DEF_FLAG),
++CLKGENA(MODULE_ID,	module,   pll0_clk, CLOCKGEN_PLL0_CLK3_CTRL,
++	1, ratio3, DEF_FLAG),
++CLKGENA(SLIM_ID,	slim,     pll0_clk, CLOCKGEN_PLL0_CLK4_CTRL,
++	1, ratio4, DEF_FLAG),
++CLKGENA(LX_AUD_ID,	st231aud, pll1_clk, CLOCKGEN_CLK_EN,
++	1, NULL, DEF_FLAG | PM_1024),
++CLKGENA(LX_VID_ID,	st231vid, pll1_clk, CLOCKGEN_CLK_EN,
++	1, NULL, DEF_FLAG | PM_1024),
++CLKGENA(LMISYS_ID,	lmisys,   pll1_clk, 0,
++	1, NULL, DEF_FLAG),
++CLKGENA(LMIVID_ID,	lmivid,   pll1_clk, 0,
++	1, NULL, DEF_FLAG),
++CLKGENA(IC_ID,	ic,	  pll1_clk, 0,
++	2, NULL, DEF_FLAG),
++CLKGENA(IC_100_ID,	ic_100,   pll1_clk, 0,
++	4, NULL, DEF_FLAG),
++CLKGENA(EMI_ID,	emi,      pll1_clk, 0,
++	4, NULL, DEF_FLAG)
+ };
+ 
+ static void comms_clk_recalc(struct clk *clk)
+@@ -237,30 +250,6 @@ static struct clk *onchip_clocks[] = {
+ 	&pll1_clk,
+ };
+ 
+-#ifdef CONFIG_PM
+-int clk_pm_state(pm_message_t state)
+-{
+-	switch (state.event) {
+-	case PM_EVENT_ON:
+-		clockgenA_clk_set_rate(&clkgena_clks[LX_AUD_ID],
+-			clkgena_clks[LX_AUD_ID].rate * 1024);
+-		clockgenA_clk_set_rate(&clkgena_clks[LX_VID_ID],
+-			clkgena_clks[LX_VID_ID].rate * 1024);
+-			/* enables the analog parts for ClockGenB*/
+-		break;
+-	case PM_EVENT_SUSPEND:
+-		clockgenA_clk_set_rate(&clkgena_clks[LX_AUD_ID],
+-			clkgena_clks[LX_AUD_ID].rate / 1024);
+-		clockgenA_clk_set_rate(&clkgena_clks[LX_VID_ID],
+-			clkgena_clks[LX_VID_ID].rate / 1024);
+-		break;
+-	case PM_EVENT_FREEZE:
+-		break;
+-	}
+-	return 0;
+-}
+-#endif
+-
+ int __init clk_init(void)
+ {
+ 	int i, ret = 0;
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx5197.c b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+index bb96c5b..42aa81e 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+@@ -383,21 +383,6 @@ static struct clk generic_comms_clk = {
+ 	.ops		= &generic_clk_ops,
+ };
+ 
+-#ifdef CONFIG_PM
+-int clk_pm_state(pm_message_t state)
+-{
+-	static int prev_state = PM_EVENT_ON;
+-	switch (state.event) {
+-	case PM_EVENT_ON:
+-	case PM_EVENT_SUSPEND:
+-	case PM_EVENT_FREEZE:
+-		prev_state = state.event;
+-		break;
+-	}
+-	return 0;
+-}
+-#endif
+-
+ int __init clk_init(void)
+ {
+ 	int i, ret;
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7105.c b/arch/sh/kernel/cpu/sh4/clock-stx7105.c
+index de8369c..257e98c 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7105.c
+@@ -409,36 +409,6 @@ static struct clk clkgend_clk = {
+ 	.ops		= &clkgend_clk_ops,
+ };
+ 
+-#ifdef CONFIG_PM
+-int clk_pm_state(pm_message_t state)
+-{
+-	static int prev_state = PM_EVENT_ON;
+-	int i;
+-	switch (state.event) {
+-	case PM_EVENT_ON:
+-	if (prev_state == PM_EVENT_FREEZE) {
+-		/* osc */
+-		clkgena_clk_osc_init(&clkgena_clk_osc);
+-		/* pll */
+-		for (i = 0; i < ARRAY_SIZE(pllclks); ++i)
+-			pll_clk_recalc(&pllclks[i].clk);
+-		/* clock gen A */
+-		for (i = 0; i < ARRAY_SIZE(clkgenaclks); ++i){
+-			if (clkgena_clk_setrate(&clkgenaclks[i],
+-				clkgenaclks[i].rate) < 0)
+-				clkgena_clk_recalc(&clkgenaclks[i]);
+-		}
+-
+-	}
+-	case PM_EVENT_SUSPEND:
+-	case PM_EVENT_FREEZE:
+-		prev_state = state.event;
+-		break;
+-	}
+-	return 0;
+-}
+-#endif
+-
+ /* ------------------------------------------------------------------------- */
+ 
+ int __init clk_init(void)
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7111.c b/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+index bc36ef7..b68e844 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+@@ -380,38 +380,6 @@ static struct clk generic_comms_clk = {
+ 	.ops		= &generic_clk_ops,
+ };
+ 
+-
+-#ifdef CONFIG_PM
+-int clk_pm_state(pm_message_t state)
+-{
+-	static int prev_state = PM_EVENT_ON;
+-	int i;
+-	switch (state.event) {
+-	case PM_EVENT_ON:
+-	if (prev_state == PM_EVENT_FREEZE) {
+-	/* osc */
+-	clkgena_clk_osc_init(&clkgena_clk_osc);
+-	/* PLLs */
+-	for (i = 0; i< ARRAY_SIZE(pllclks); ++i)
+-		pll_clk_recalc(&pllclks[i]);
+-	/* Clocn Gen A */
+-	for (i = 0; i< ARRAY_SIZE(clkgena_clks); ++i) {
+-		clkgena_clk_init(&clkgena_clks[i]);
+-		if (clkgena_clk_setrate(&clkgena_clks[i],
+-			clkgena_clks[i].rate) < 0 )
+-				clkgena_clk_recalc(&clkgena_clks[i]);
+-		}
+-	}
+-
+-	case PM_EVENT_SUSPEND:
+-	case PM_EVENT_FREEZE:
+-		prev_state = state.event;
+-		break;
+-	}
+-	return 0;
+-}
+-#endif
+-
+ int __init clk_init(void)
+ {
+ 	int i, ret;
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7141.c b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+index fcca576..ff35db8 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+@@ -375,35 +375,6 @@ static struct clk clkgend_clk = {
+ 	.ops		= &clkgend_clk_ops,
+ };
+ 
+-#ifdef CONFIG_PM
+-int clk_pm_state(pm_message_t state)
+-{
+-	static int prev_state = PM_EVENT_ON;
+-	int i;
+-	struct clk *clk;
+-	switch (state.event) {
+-	case PM_EVENT_ON:
+-	if (prev_state == PM_EVENT_FREEZE) {
+-		/* osc */
+-		clkgena_clk_osc_init(&clkgena_clk_osc);
+-		/* pll */
+-		for (i = 0; i < ARRAY_SIZE(pllclks); ++i)
+-			pll_clk_recalc(&pllclks[i].clk);
+-		/* clocn gen A */
+-		for (i = 0; i < ARRAY_SIZE(clkgenaclks); ++i) {
+-			clk = &clkgenaclks[i];
+-			clkgena_clk_setrate(clk, clk->rate);
+-		}
+-
+-	}
+-	case PM_EVENT_SUSPEND:
+-	case PM_EVENT_FREEZE:
+-		prev_state = state.event;
+-		break;
+-	}
+-	return 0;
+-}
+-#endif
+ /* ------------------------------------------------------------------------- */
+ 
+ int __init clk_init(void)
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7200.c b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+index cf03964..78e9ccb 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+@@ -393,32 +393,37 @@ static void pll_clkB_init(struct clk *clk)
+ 	}
+ }
+ 
+-static int pll_clkB_XXable(struct clk *clk, int enable)
+-{
+-	unsigned long bps = ctrl_inl(CLOCKGENB_PLL0_CFG);
+-	unsigned long pwr = ctrl_inl(CLOCKGENB_POWER_CFG);
+-
+-	if (enable) {
+-		ctrl_outl(pwr & ~(1<<15), CLOCKGENB_POWER_CFG);	 /* turn-on  */
+-		mdelay(1);
+-		ctrl_outl(bps & ~(1<<20), CLOCKGENB_PLL0_CFG);	/* bypass off*/
+-		pll_clkB_init(clk); /* to evaluate the rate */
+-	} else {
+-		ctrl_outl(bps | 1<<20, CLOCKGENB_PLL0_CFG);	/* bypass on */
+-		ctrl_outl(pwr | 1<<15, CLOCKGENB_POWER_CFG); 	/* turn-off  */
+-		clk->rate = 0;
+-	}
+-	return 0;
+-}
+-
+ static int pll_clkB_enable(struct clk *clk)
+ {
+-	return pll_clkB_XXable(clk, 1);
++	unsigned long tmp;
++	/* Restore the GenB.Pll0 frequency */
++	tmp = readl(CLOCKGENB_BASE_ADDR + CLKB_PWR_CFG);
++	writel(tmp & ~CLKB_PLL0_OFF,
++		CLOCKGENB_BASE_ADDR + CLKB_PWR_CFG);
++	/* Wait PllB lock */
++	while ((readl(CLOCKGENB_BASE_ADDR + CLKB_PLL0_CFG)
++		& CLKB_PLL0_LOCK) == 0);
++	tmp = readl(CLOCKGENB_BASE_ADDR + CLKB_PLL0_CFG);
++	writel(tmp & ~CLKB_PLL0_BYPASS,
++		CLOCKGENB_BASE_ADDR + CLKB_PLL0_CFG);
++	pll_clkB_init(clk);
++
++	mdelay(10); /* wait for stable signal */
++	return 0;
+ }
+ 
+ static int pll_clkB_disable(struct clk *clk)
+ {
+-	return pll_clkB_XXable(clk, 0);
++	unsigned long tmp;
++	tmp = readl(CLOCKGENB_BASE_ADDR + CLKB_PLL0_CFG);
++	writel(tmp | CLKB_PLL0_BYPASS,
++		CLOCKGENB_BASE_ADDR + CLKB_PLL0_CFG);
++	tmp = readl(CLOCKGENB_BASE_ADDR + CLKB_PWR_CFG);
++	writel(tmp | CLKB_PLL0_OFF,
++		CLOCKGENB_BASE_ADDR + CLKB_PWR_CFG);
++	clk->rate = 0;
++
++	return 0;
+ }
+ 
+ static struct clk_ops pll_clkB_ops = {
+@@ -431,7 +436,8 @@ static struct clk clkB_pllclks[1] =
+ {
+ 	{
+ 	.name		= "b_pll0_clk",
+-	.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++	.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES |
++			  CLK_PM_TURNOFF,
+ 	.ops		= &pll_clkB_ops,
+ 	.private_data	= NULL,
+ 	}
+-- 
+1.6.0.6
+

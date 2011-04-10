@@ -1,0 +1,52 @@
+From f4f0769c6637ccc60f8fb01424ed53848a2eb15b Mon Sep 17 00:00:00 2001
+From: Andre DRASZIK <andre.draszik@st.com>
+Date: Thu, 13 Nov 2008 13:29:39 +0000
+Subject: [PATCH] sh: ratelimit unaligned fixups
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This patch makes sure we see messages about unaligned access fixups
+every now and then. Else especially userspace apps suffering from
+bad programming won't ever be noticed...
+
+Signed-off by: André Draszik <andre.draszik@st.com>
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/traps.c |   11 ++++-------
+ 1 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
+index 55debf1..da5806d 100644
+--- a/arch/sh/kernel/traps.c
++++ b/arch/sh/kernel/traps.c
+@@ -376,8 +376,6 @@ static inline int handle_unaligned_delayslot(struct pt_regs *regs)
+  * opcodes..
+  */
+ #ifndef CONFIG_CPU_SH2A
+-static int handle_unaligned_notify_count = 10;
+-
+ static int handle_unaligned_access(u16 instruction, struct pt_regs *regs)
+ {
+ 	u_int rm;
+@@ -386,12 +384,11 @@ static int handle_unaligned_access(u16 instruction, struct pt_regs *regs)
+ 	index = (instruction>>8)&15;	/* 0x0F00 */
+ 	rm = regs->regs[index];
+ 
+-	/* shout about the first ten userspace fixups */
+-	if (user_mode(regs) && handle_unaligned_notify_count>0) {
+-		handle_unaligned_notify_count--;
+-
+-		printk(KERN_NOTICE "Fixing up unaligned userspace access "
++	/* shout about userspace fixups */
++	if (printk_ratelimit ()) {
++		printk(KERN_NOTICE "Fixing up unaligned %s access "
+ 		       "in \"%s\" pid=%d pc=0x%p ins=0x%04hx\n",
++		       user_mode(regs) ? "userspace" : "kernel",
+ 		       current->comm,current->pid,(u16*)regs->pc,instruction);
+ 	}
+ 
+-- 
+1.5.3.6
+

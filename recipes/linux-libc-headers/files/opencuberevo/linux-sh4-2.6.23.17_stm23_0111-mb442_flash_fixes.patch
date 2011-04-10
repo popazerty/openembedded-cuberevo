@@ -1,0 +1,132 @@
+Patch to fix problems observed with onboard nor-flash on mb442/coco
+board.
+	- Added VPP support.
+	
+	- Changed the unlock blocks timeout to an absolute value.
+          Previously, the timeout was specified in terms of HZ.  For
+          HZ=250, the timeout worked out as 4000us.  However, this is
+          insufficient for "legacy lock/unlock" chips where an unlock
+          affects the entire chip and typically takes around 0.75s!
+
+	- Changed the unlock blocks code to restrict the operation to a
+          single block for "legacy lock/unlock" chips.  The operation
+          will unlock the entire chip so no point in performing the
+          unlock on multiple individual blocks.
+	  
+Signed-off-by: Angus Clark <angus.clark@st.com>
+
+Index: linux/arch/sh/boards/st/mb442/setup.c
+===================================================================
+--- linux.orig/arch/sh/boards/st/mb442/setup.c	2008-05-21 10:42:37.000000000 +0100
++++ linux/arch/sh/boards/st/mb442/setup.c	2008-05-21 11:32:40.000000000 +0100
+@@ -80,9 +80,15 @@
+ 	}
+ };
+ 
++static struct stpio_pin *vpp_pio;
++static void set_vpp(struct map_info *info, int enable)
++{
++	stpio_set_pin(vpp_pio, enable);
++}
++
+ static struct physmap_flash_data physmap_flash_data = {
+ 	.width		= 2,
+-	.set_vpp	= NULL,
++	.set_vpp	= set_vpp,
+ 	.nr_parts	= ARRAY_SIZE(mtd_parts_table),
+ 	.parts		= mtd_parts_table
+ };
+@@ -167,6 +173,8 @@
+ 	stx7100_configure_lirc(&lirc_scd);
+ 	stx7100_configure_pata(3, IRL1_IRQ);
+ 
++	vpp_pio = stpio_request_set_pin(2, 7, "flash_VPP", STPIO_OUT, 0);
++
+ 	phy_reset_pin = stpio_request_set_pin(2, 4, "ste100p_reset",
+ 					      STPIO_OUT, 1);
+ 	stx7100_configure_ethernet(0, 0, 0);
+Index: linux/drivers/mtd/chips/cfi_cmdset_0001.c
+===================================================================
+--- linux.orig/drivers/mtd/chips/cfi_cmdset_0001.c	2008-05-21 10:42:33.000000000 +0100
++++ linux/drivers/mtd/chips/cfi_cmdset_0001.c	2008-05-21 11:32:40.000000000 +0100
+@@ -1077,7 +1077,8 @@
+ 	struct cfi_private *cfi = map->fldrv_priv;
+ 	map_word status, status_OK = CMD(0x80);
+ 	int chip_state = chip->state;
+-	unsigned int timeo, sleep_time;
++	unsigned int sleep_time;
++	long int timeo;
+ 
+ 	spin_unlock(chip->mutex);
+ 	if (inval_len)
+@@ -1095,7 +1096,7 @@
+ 		if (map_word_andequal(map, status, status_OK, status_OK))
+ 			break;
+ 
+-		if (!timeo) {
++		if (timeo <= 0) {
+ 			map_write(map, CMD(0x70), cmd_adr);
+ 			chip->state = FL_STATUS;
+ 			return -ETIME;
+@@ -1762,7 +1763,8 @@
+ 			printk(KERN_ERR "%s: block erase error: (bad command sequence, status 0x%lx)\n", map->name, chipstatus);
+ 			ret = -EINVAL;
+ 		} else if (chipstatus & 0x02) {
+-			/* Protection bit set */
++			printk(KERN_ERR "%s: block erase error: (protection bit"
++			       " set, status 0x%lx)\n", map->name, chipstatus);
+ 			ret = -EROFS;
+ 		} else if (chipstatus & 0x8) {
+ 			/* Voltage */
+@@ -1908,11 +1910,17 @@
+ 	} else
+ 		BUG();
+ 
+-	/*
+-	 * If Instant Individual Block Locking supported then no need
+-	 * to delay.
+-	 */
+-	udelay = (!extp || !(extp->FeatureSupport & (1 << 5))) ? 1000000/HZ : 0;
++	/* Time for operation... */
++	if (extp && (extp->FeatureSupport & (1 << 5))) {
++		/* Instant Individual Block Locking supported: no delay */
++		udelay = 0;
++	} else if (thunk == DO_XXLOCK_ONEBLOCK_LOCK) {
++		/* Lock Block = 100us (typical) */
++		udelay = 100;
++	} else {
++		/* Unlock Blocks = 0.75s (typical) */
++		udelay = 750000;
++	}
+ 
+ 	ret = WAIT_TIMEOUT(map, chip, adr, udelay);
+ 	if (ret) {
+@@ -1955,6 +1963,9 @@
+ 
+ static int cfi_intelext_unlock(struct mtd_info *mtd, loff_t ofs, size_t len)
+ {
++	struct map_info *map = mtd->priv;
++	struct cfi_private *cfi = map->fldrv_priv;
++	struct cfi_pri_intelext *extp = cfi->cmdset_priv;
+ 	int ret;
+ 
+ #ifdef DEBUG_LOCK_BITS
+@@ -1964,9 +1975,15 @@
+ 		ofs, len, 0);
+ #endif
+ 
+-	ret = cfi_varsize_frob(mtd, do_xxlock_oneblock,
+-					ofs, len, DO_XXLOCK_ONEBLOCK_UNLOCK);
+-
++	/* 'unlock' in legacy mode will unlock entire chip, so no point
++	   in performing the operation more than once. */
++	if (extp && (extp->FeatureSupport & (1 << 3)))
++		ret = cfi_varsize_frob(mtd, do_xxlock_oneblock,
++				       ofs, mtd->erasesize,
++				       DO_XXLOCK_ONEBLOCK_UNLOCK);
++	else
++		ret = cfi_varsize_frob(mtd, do_xxlock_oneblock,
++				       ofs, len, DO_XXLOCK_ONEBLOCK_UNLOCK);
+ #ifdef DEBUG_LOCK_BITS
+ 	printk(KERN_DEBUG "%s: lock status after, ret=%d\n",
+ 	       __FUNCTION__, ret);

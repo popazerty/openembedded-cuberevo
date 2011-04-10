@@ -1,0 +1,37 @@
+From 1d00dc3e5306e9a201f3f6ea409135188240d000 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Fri, 12 Dec 2008 18:18:22 +0000
+Subject: [PATCH] stm_fdma: Allow stb710x_fdma_get_residue to be called on an unconfigured channel
+
+Move a structure dereference after the test for an idle channel, when it
+is known to be safe.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/stm/710x_fdma2.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/stm/710x_fdma2.c b/drivers/stm/710x_fdma2.c
+index ac058fa..edbe0f1 100644
+--- a/drivers/stm/710x_fdma2.c
++++ b/drivers/stm/710x_fdma2.c
+@@ -874,14 +874,14 @@ static int stb710x_fdma_get_residue(struct dma_channel *channel)
+ 	struct fdma_dev *fd = FDMA_DEV(channel);
+ 	struct channel_status *chan = FDMA_CHAN(channel);
+ 	struct stm_dma_params *params = chan->params;
+-	struct dma_xfer_descriptor *desc =
+-		(struct dma_xfer_descriptor*)params->priv;
+ 	unsigned long irqflags;
+ 	u32 count = 0;
+ 
+ 	spin_lock_irqsave(&fd->channel_lock, irqflags);
+ 
+ 	if (likely(chan->sw_state != FDMA_IDLE)) {
++		struct dma_xfer_descriptor *desc =
++			(struct dma_xfer_descriptor*)params->priv;
+ 		void __iomem *chan_base = fd->io_base +
+ 				(channel->chan * NODE_DATA_OFFSET);
+ 		unsigned long current_node_phys;
+-- 
+1.5.3.6
+

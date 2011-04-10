@@ -1,0 +1,116 @@
+From d38d8a12c6a3bda25cf86ff2921f47843e12ef19 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:23 +0200
+Subject: [PATCH] stm: clk: Update the stx7200 to the new clk frmwk
+
+This patch updates the STX7200 clock implementation due to the new clock
+framework
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx7200.c |   37 +++++++++++++-------------------
+ 1 files changed, 15 insertions(+), 22 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7200.c b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+index 3d1a84e..698bae1 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+@@ -12,7 +12,7 @@
+ #include <linux/errno.h>
+ #include <linux/delay.h>
+ #include <linux/pm.h>
+-#include <asm/clock.h>
++#include <linux/stm/clk.h>
+ #include <asm/freq.h>
+ #include <asm/io.h>
+ 
+@@ -180,6 +180,7 @@ static void sh4_clk_recalc(struct clk *clk)
+ }
+ 
+ static struct clk_ops sh4_clk_ops = {
++	.init		= sh4_clk_recalc,
+ 	.recalc		= sh4_clk_recalc,
+ };
+ 
+@@ -261,6 +262,7 @@ static struct clk_ops fdma_clk_ops = {
+ };
+ 
+ static struct clk_ops lx_clk_ops = {
++	.init		= fdmalx_clk_recalc,
+ 	.recalc		= fdmalx_clk_recalc,
+ 	.enable		= lx_clk_enable,
+ 	.disable	= lx_clk_disable,
+@@ -515,6 +517,7 @@ static int clkgenb_div2_disable(struct clk *clk)
+ }
+ 
+ static struct clk_ops clkgenb_div2_ops = {
++	.init		= clkgenb_div2_recalc,
+ 	.enable		= clkgenb_div2_enable,
+ 	.disable	= clkgenb_div2_disable,
+ 	.recalc		= clkgenb_div2_recalc,
+@@ -561,6 +564,7 @@ static int icreg_emi_eth_clk_disable(struct clk *clk)
+ }
+ 
+ static struct clk_ops icreg_emi_eth_clk_ops = {
++	.init		= icreg_emi_eth_clk_recalc,
+ 	.recalc		= icreg_emi_eth_clk_recalc,
+ #if 0
+ /* I have to check why the following function have problem on cut 2 */
+@@ -596,6 +600,7 @@ static void comms_clk_recalc(struct clk *clk)
+ }
+ 
+ static struct clk_ops comms_clk_ops = {
++	.init		= comms_clk_recalc,
+ 	.recalc		= comms_clk_recalc,
+ };
+ 
+@@ -624,21 +629,6 @@ int __init clk_init(void)
+ 		ret |= clk_register(clk);
+ 		clk_enable(clk);
+ 	}
+-	if (cpu_data->cut_major < 2) {
+-		/* module clock */
+-		ret |= clk_register(&sh4clks[2]);
+-		clk_enable(&sh4clks[2]);
+-
+-		/* interconnect clock */
+-		ret |= clk_register(&sh4clks[1]);
+-		clk_enable(&sh4clks[1]);
+-	}
+-
+-	/* Propagate the PLL values down */
+-	for (i=0; i<3; i++) {
+-		clk_set_rate(&pllclks[i], clk_get_rate(&pllclks[i]));
+-		clk_put(&pllclks[i]);
+-	}
+ 
+ 	/* Clockgen B */
+ 	ctrl_outl(ctrl_inl(CLOCKGENB_IN_MUX_CFG) & ~0xf, CLOCKGENB_IN_MUX_CFG);
+@@ -655,15 +645,18 @@ int __init clk_init(void)
+ 	 * type  and use the correct source. Also cut 2 no longer has the
+ 	 * interconnect clock so don't register it */
+ 
+-	if (cpu_data->cut_major > 1) {
++	if (cpu_data->cut_major < 2) {
++		/* module clock */
++		ret |= clk_register(&sh4clks[2]);
++		clk_enable(&sh4clks[2]);
++
++		/* interconnect clock */
++		ret |= clk_register(&sh4clks[1]);
++		clk_enable(&sh4clks[1]);
++	} else {
+ 		ret |= clk_register(&new_module_clk);
+ 		clk_enable(&new_module_clk);
+ 	}
+ 
+-	for (i = 0; i < ARRAY_SIZE(clkB_pllclks); ++i) {
+-		clk_set_rate(&clkB_pllclks[i], clk_get_rate(&clkB_pllclks[i]));
+-		clk_put(&clkB_pllclks[i]);
+-	}
+-
+ 	return ret;
+ }
+-- 
+1.6.0.6
+

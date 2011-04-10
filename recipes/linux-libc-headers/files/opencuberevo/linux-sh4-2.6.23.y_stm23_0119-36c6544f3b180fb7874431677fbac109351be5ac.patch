@@ -1,0 +1,44 @@
+From 36c6544f3b180fb7874431677fbac109351be5ac Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 4 Mar 2009 09:16:14 +0100
+Subject: [PATCH] Fix multicast device ioctl checks
+
+SIOCADDMULTI/SIOCDELMULTI check whether the driver has a set_multicast_list
+method to determine whether it supports multicast. Drivers implementing
+secondary unicast support use set_rx_mode however.
+
+Check for both dev->set_multicast_mode and dev->set_rx_mode to determine
+multicast capabilities.
+
+Signed-off-by: Patrick McHardy <kaber@trash.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ net/core/dev.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/net/core/dev.c b/net/core/dev.c
+index 4ab204a..2972af9 100644
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -3053,7 +3053,7 @@ static int dev_ifsioc(struct ifreq *ifr, unsigned int cmd)
+ 			return -EOPNOTSUPP;
+ 
+ 		case SIOCADDMULTI:
+-			if (!dev->set_multicast_list ||
++			if ((!dev->set_multicast_list && !dev->set_rx_mode) ||
+ 			    ifr->ifr_hwaddr.sa_family != AF_UNSPEC)
+ 				return -EINVAL;
+ 			if (!netif_device_present(dev))
+@@ -3062,7 +3062,7 @@ static int dev_ifsioc(struct ifreq *ifr, unsigned int cmd)
+ 					  dev->addr_len, 1);
+ 
+ 		case SIOCDELMULTI:
+-			if (!dev->set_multicast_list ||
++			if ((!dev->set_multicast_list && !dev->set_rx_mode) ||
+ 			    ifr->ifr_hwaddr.sa_family != AF_UNSPEC)
+ 				return -EINVAL;
+ 			if (!netif_device_present(dev))
+-- 
+1.6.0.6
+

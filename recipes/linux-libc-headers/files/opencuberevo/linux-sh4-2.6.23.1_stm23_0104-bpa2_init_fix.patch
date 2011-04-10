@@ -1,0 +1,47 @@
+BPA2 initialization fix.
+
+BPA2 initialization was failing when partition was below normal memory.
+
+Also, previously it was assumed that the bpa2 partition list would
+always contain a legacy bigphysarea partition. However this is not
+necessary true, so add a check for this.
+
+Also fixed minor printf formating problem.
+
+Signed-off-by: Pawel MOLL <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux-2.6.23-stm/mm/bpa2.c
+===================================================================
+--- linux-2.6.23-stm.orig/mm/bpa2.c
++++ linux-2.6.23-stm/mm/bpa2.c
+@@ -163,7 +163,7 @@ void __init bpa2_init(struct bpa2_partit
+ 			ok = bpa2_alloc_low(bp);
+ 		} else if ((start_pfn >= min_low_pfn) && (end_pfn <= max_low_pfn)) {
+ 			ok = bpa2_init_low(bp);
+-		} else if ((start_pfn > max_low_pfn) || (end_pfn > min_low_pfn)) {
++		} else if ((start_pfn > max_low_pfn) || (end_pfn < min_low_pfn)) {
+ 			ok = bpa2_init_ext(bp);
+ 		} else {
+ 			bpa2_init_failure(bp, "spans low memory boundary");
+@@ -189,9 +189,8 @@ void __init bpa2_init(struct bpa2_partit
+ 		partdescs++;
+ 	}
+ 
+-	if (bpa2_bigphysarea_part == NULL) {
+-		bp = bpa2_find_part("bigphysarea");
+-
++	if ((bpa2_bigphysarea_part == NULL) &&
++	    ((bp = bpa2_find_part("bigphysarea")) != NULL)) {
+ 		if (bp->low_mem) {
+ 			bpa2_bigphysarea_part = bp;
+ 		} else {
+@@ -513,7 +512,7 @@ static char* get_part_info(char *p, stru
+ 			used_max = ptr->size;
+ 	}
+ 
+-	p += sprintf(p, "Partition: %s, size %ld kB\n", bp->name,
++	p += sprintf(p, "Partition: %s, size %d kB\n", bp->name,
+ 		     (bp->res.end - bp->res.start + 1) / 1024);
+ 	if (bp->aka) {
+ 		const char** aka;

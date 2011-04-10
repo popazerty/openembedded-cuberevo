@@ -1,0 +1,38 @@
+From 1d62faefc7e83a568ed9e3010e54db08628c17b3 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Mon, 9 Mar 2009 18:50:29 +0000
+Subject: [PATCH] sh_stm: Add support for STx5197 cut 2
+
+STx5197 cut 2 uses a different device ID from cut 1.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/probe.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/probe.c b/arch/sh/kernel/cpu/sh4/probe.c
+index 0dfab11..37e562b 100644
+--- a/arch/sh/kernel/cpu/sh4/probe.c
++++ b/arch/sh/kernel/cpu/sh4/probe.c
+@@ -164,6 +164,7 @@ int __init detect_cpu_and_cache_system(void)
+ 			cpu_data->type = CPU_STX7105;
+ 			break;
+ 		case 0x9f:
++			/* 5197 cut 1.x */
+ 			cpu_data->type = CPU_STX5197;
+ 			break;
+ 		case 0x9092:
+@@ -183,6 +184,10 @@ int __init detect_cpu_and_cache_system(void)
+ 			/* 7105 (cut 2.0 = 0x9e20) */
+ 			cpu_data->type = CPU_STX7105;
+ 			break;
++		case 0x9f00 ... 0x9fff:
++			/* 5197 (cut 2.0 = 0x9f02) */
++			cpu_data->type = CPU_STX5197;
++			break;
+ 		default:
+ 			cpu_data->type = CPU_SH_NONE;
+ 			break;
+-- 
+1.6.0.6
+

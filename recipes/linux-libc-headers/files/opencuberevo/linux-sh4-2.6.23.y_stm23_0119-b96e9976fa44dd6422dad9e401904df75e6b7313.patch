@@ -1,0 +1,461 @@
+From b96e9976fa44dd6422dad9e401904df75e6b7313 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Mon, 18 May 2009 11:07:14 +0100
+Subject: [PATCH] hwmon_stm: Support for internal temperature sensor in new ST chips
+
+This patch adds a driver and platform devices for internal temperature
+sensors present in new SOCs - 7105, 7111 and 7141.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |   15 +++
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |   15 +++
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |   56 ++++++++
+ drivers/hwmon/Kconfig                  |    8 ++
+ drivers/hwmon/Makefile                 |    1 +
+ drivers/hwmon/stm-temp.c               |  216 ++++++++++++++++++++++++++++++++
+ include/linux/stm/soc.h                |   13 ++
+ 7 files changed, 324 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/hwmon/stm-temp.c
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 89f09f1..489bdaa 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1178,6 +1178,8 @@ static void __init pio_late_setup(void)
+ 	}
+ }
+ 
++/* Other devices ----------------------------------------------------------- */
++
+ static struct platform_device ilc3_device = {
+ 	.name		= "ilc3",
+ 	.id		= -1,
+@@ -1191,6 +1193,18 @@ static struct platform_device ilc3_device = {
+ 	},
+ };
+ 
++static struct platform_device stx7105_temp_device = {
++	.name			= "stm-temp",
++	.id			= -1,
++	.dev.platform_data	= &(struct plat_stm_temp_data) {
++		.name = "STx7105 chip temperature",
++		.pdn = { SYS_CFG, 41, 4, 4 },
++		.dcorrect = { SYS_CFG, 41, 5, 9 },
++		.overflow = { SYS_STA, 12, 8, 8 },
++		.data = { SYS_STA, 12, 10, 16 },
++	},
++};
++
+ /* Pre-arch initialisation ------------------------------------------------- */
+ 
+ static int __init stx7105_postcore_setup(void)
+@@ -1222,6 +1236,7 @@ static struct platform_device *stx7105_devices[] __initdata = {
+ 	&ilc3_device,
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
++	&stx7105_temp_device,
+ };
+ 
+ #include "./platform-pm-stx7105.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index fc27334..1c81c44 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -840,6 +840,8 @@ static void __init pio_late_setup(void)
+ 	}
+ }
+ 
++/* Other devices ----------------------------------------------------------- */
++
+ static struct platform_device ilc3_device = {
+ 	.name		= "ilc3",
+ 	.id		= -1,
+@@ -853,6 +855,18 @@ static struct platform_device ilc3_device = {
+ 	},
+ };
+ 
++static struct platform_device stx7111_temp_device = {
++	.name			= "stm-temp",
++	.id			= -1,
++	.dev.platform_data	= &(struct plat_stm_temp_data) {
++		.name = "STx7111 chip temperature",
++		.pdn = { SYS_CFG, 41, 4, 4 },
++		.dcorrect = { SYS_CFG, 41, 5, 9 },
++		.overflow = { SYS_STA, 12, 8, 8 },
++		.data = { SYS_STA, 12, 10, 16 },
++	},
++};
++
+ /* Pre-arch initialisation ------------------------------------------------- */
+ 
+ static int __init stx7111_postcore_setup(void)
+@@ -884,6 +898,7 @@ static struct platform_device *stx7111_devices[] __initdata = {
+ 	&ilc3_device,
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
++	&stx7111_temp_device,
+ };
+ 
+ #include "./platform-pm-stx7111.c"
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 36e951b..8f4eb92 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -1212,6 +1212,8 @@ static void __init pio_late_setup(void)
+ 		platform_device_register(pdev);
+ }
+ 
++/* Other devices ----------------------------------------------------------- */
++
+ /* This is the eSTB ILC3 */
+ static struct platform_device ilc3_device = {
+ 	.name		= "ilc3",
+@@ -1226,6 +1228,57 @@ static struct platform_device ilc3_device = {
+ 	},
+ };
+ 
++static unsigned long stx7141_temp1_get_data(void *priv)
++{
++	/* Some "bright sparkle" decided to split the data field
++	 * between SYS_STA12 & SYS_STA13 registers, having 11 (!!!)
++	 * bits unused in the SYS_STA13... WHY OH WHY?!?!?! */
++	static struct sysconf_field *data1_0_3, *data1_4_6;
++
++	if (!data1_0_3)
++		data1_0_3 = sysconf_claim(SYS_STA, 12, 28, 31, "stm-temp.1");
++	if (!data1_4_6)
++		data1_4_6 = sysconf_claim(SYS_STA, 13, 0, 2, "stm-temp.1");
++	if (!data1_0_3 || !data1_4_6)
++		return 0;
++
++	return (sysconf_read(data1_4_6) << 4) | sysconf_read(data1_0_3);
++}
++
++static struct platform_device stx7141_temp_devices[] = {
++	{
++		.name			= "stm-temp",
++		.id			= 0,
++		.dev.platform_data	= &(struct plat_stm_temp_data) {
++			.name = "STx7141 chip temperature 0",
++			.pdn = { SYS_CFG, 41, 4, 4 },
++			.dcorrect = { SYS_CFG, 41, 5, 9 },
++			.overflow = { SYS_STA, 12, 8, 8 },
++			.data = { SYS_STA, 12, 10, 16 },
++		},
++	}, {
++		.name			= "stm-temp",
++		.id			= 1,
++		.dev.platform_data	= &(struct plat_stm_temp_data) {
++			.name = "STx7141 chip temperature 1",
++			.pdn = { SYS_CFG, 41, 14, 14 },
++			.dcorrect = { SYS_CFG, 41, 15, 19 },
++			.overflow = { SYS_STA, 12, 26, 26 },
++			.custom_get_data = stx7141_temp1_get_data,
++		},
++	}, {
++		.name			= "stm-temp",
++		.id			= 2,
++		.dev.platform_data	= &(struct plat_stm_temp_data) {
++			.name = "STx7141 chip temperature 2",
++			.pdn = { SYS_CFG, 41, 24, 24 },
++			.dcorrect = { SYS_CFG, 41, 25, 29 },
++			.overflow = { SYS_STA, 13, 12, 12 },
++			.data = { SYS_STA, 13, 14, 20 },
++		},
++	}
++};
++
+ /* Pre-arch initialisation ------------------------------------------------- */
+ 
+ static int __init stx7141_postcore_setup(void)
+@@ -1257,6 +1310,9 @@ static struct platform_device *stx7141_devices[] __initdata = {
+ 	&ilc3_device,
+ 	&hwrandom_rng_device,
+ 	&devrandom_rng_device,
++	&stx7141_temp_devices[0],
++	&stx7141_temp_devices[1],
++	&stx7141_temp_devices[2],
+ };
+ 
+ #include "./platform-pm-stx7141.c"
+diff --git a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
+index 510dd88..7cd8479 100644
+--- a/drivers/hwmon/Kconfig
++++ b/drivers/hwmon/Kconfig
+@@ -540,6 +540,14 @@ config SENSORS_STM_PWM
+ 	  ratio to be set, which is sufficient for many purposes, including
+ 	  controlling the speed of a fan.
+ 
++config SENSORS_STM_TEMP
++	tristate "STMicroelectronics temperature sensor"
++	depends on CPU_SUBTYPE_ST40
++	help
++	  If you say yes here you get driver for the temperature
++	  sensor existing inside many of the modern ST SOCs.
++
++
+ config SENSORS_VIA686A
+ 	tristate "VIA686A"
+ 	depends on PCI
+diff --git a/drivers/hwmon/Makefile b/drivers/hwmon/Makefile
+index 43a0a7d..7ec313c 100644
+--- a/drivers/hwmon/Makefile
++++ b/drivers/hwmon/Makefile
+@@ -57,6 +57,7 @@ obj-$(CONFIG_SENSORS_SMSC47B397)+= smsc47b397.o
+ obj-$(CONFIG_SENSORS_SMSC47M1)	+= smsc47m1.o
+ obj-$(CONFIG_SENSORS_SMSC47M192)+= smsc47m192.o
+ obj-$(CONFIG_SENSORS_STM_PWM)	+= stm-pwm.o
++obj-$(CONFIG_SENSORS_STM_TEMP)	+= stm-temp.o
+ obj-$(CONFIG_SENSORS_THMC50)	+= thmc50.o
+ obj-$(CONFIG_SENSORS_VIA686A)	+= via686a.o
+ obj-$(CONFIG_SENSORS_VT1211)	+= vt1211.o
+diff --git a/drivers/hwmon/stm-temp.c b/drivers/hwmon/stm-temp.c
+new file mode 100644
+index 0000000..48ac8b9
+--- /dev/null
++++ b/drivers/hwmon/stm-temp.c
+@@ -0,0 +1,216 @@
++/*
++ * Copyright (C) 2009 STMicroelectronics Limited
++ * Author: Pawel Moll <pawel.moll@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/sysfs.h>
++#include <linux/err.h>
++#include <linux/hwmon.h>
++#include <linux/hwmon-sysfs.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/soc.h>
++
++struct stm_temp_sensor {
++	struct class_device *class_dev;
++
++	struct plat_stm_temp_data *plat_data;
++
++	struct sysconf_field *pdn;
++	struct sysconf_field *dcorrect;
++	struct sysconf_field *overflow;
++	struct sysconf_field *data;
++
++	unsigned long (*custom_get_data)(void *priv);
++};
++
++static ssize_t stm_temp_show_temp(struct device *dev,
++		struct device_attribute *devattr, char *buf)
++{
++	ssize_t result;
++	struct stm_temp_sensor *sensor = dev_get_drvdata(dev);
++	unsigned long overflow, data;
++
++
++	overflow = sysconf_read(sensor->overflow);
++	if (sensor->plat_data->custom_get_data)
++		data = sensor->plat_data->custom_get_data(
++				sensor->plat_data->custom_priv);
++	else
++		data = sysconf_read(sensor->data);
++	overflow |= sysconf_read(sensor->overflow);
++
++	if (!overflow)
++		result = sprintf(buf, "%lu\n", (data + 20) * 1000);
++	else
++		result = sprintf(buf, "!\n");
++
++	return result;
++}
++
++static ssize_t stm_temp_show_name(struct device *dev,
++		struct device_attribute *devattr, char *buf)
++{
++	struct stm_temp_sensor *sensor = dev_get_drvdata(dev);
++
++	return sprintf(buf, "%s\n", sensor->plat_data->name);
++}
++
++static DEVICE_ATTR(temp1_input, S_IRUGO, stm_temp_show_temp, NULL);
++static DEVICE_ATTR(temp1_label, S_IRUGO, stm_temp_show_name, NULL);
++
++static int __devinit stm_temp_probe(struct platform_device *pdev)
++{
++	struct stm_temp_sensor *sensor = platform_get_drvdata(pdev);
++	struct plat_stm_temp_data *plat_data = pdev->dev.platform_data;
++	int err;
++
++	sensor = kzalloc(sizeof(*sensor), GFP_KERNEL);
++	if (!sensor) {
++		dev_err(&pdev->dev, "Out of memory!\n");
++		err = -ENOMEM;
++		goto error_kzalloc;
++	}
++
++	sensor->plat_data = plat_data;
++
++	err = -EBUSY;
++
++	sensor->pdn = sysconf_claim(plat_data->pdn.group,
++			plat_data->pdn.num, plat_data->pdn.lsb,
++			plat_data->pdn.msb, pdev->dev.bus_id);
++	if (!sensor->pdn) {
++		dev_err(&pdev->dev, "Can't claim PDN sysconf bit!\n");
++		goto error_pdn;
++	}
++
++	if (!plat_data->custom_set_dcorrect) {
++		sensor->dcorrect = sysconf_claim(plat_data->dcorrect.group,
++				plat_data->dcorrect.num,
++				plat_data->dcorrect.lsb,
++				plat_data->dcorrect.msb, pdev->dev.bus_id);
++		if (!sensor->dcorrect) {
++			dev_err(&pdev->dev, "Can't claim DCORRECT sysconf "
++					"bits!\n");
++			goto error_dcorrect;
++		}
++	}
++
++	sensor->overflow = sysconf_claim(plat_data->overflow.group,
++			plat_data->overflow.num, plat_data->overflow.lsb,
++			plat_data->overflow.msb, pdev->dev.bus_id);
++	if (!sensor->overflow) {
++		dev_err(&pdev->dev, "Can't claim OVERFLOW sysconf bit!\n");
++		goto error_overflow;
++	}
++
++	if (!plat_data->custom_get_data) {
++		sensor->data = sysconf_claim(plat_data->data.group,
++				plat_data->data.num, plat_data->data.lsb,
++				plat_data->data.msb, pdev->dev.bus_id);
++		if (!sensor->data) {
++			dev_err(&pdev->dev, "Can't claim DATA sysconf bits!\n");
++			goto error_data;
++		}
++	}
++
++	sensor->class_dev = hwmon_device_register(&pdev->dev);
++	if (IS_ERR(sensor->class_dev)) {
++		err = PTR_ERR(sensor->class_dev);
++		dev_err(&pdev->dev, "Failed to register hwmon device!\n");
++		goto error_class_dev;
++	}
++
++	if (device_create_file(&pdev->dev, &dev_attr_temp1_input) != 0) {
++		dev_err(&pdev->dev, "Failed to create temp1_input file!\n");
++		goto error_temp1_input;
++	}
++	if (plat_data->name)
++		if (device_create_file(&pdev->dev, &dev_attr_temp1_label)
++				!= 0) {
++			dev_err(&pdev->dev, "Failed to create temp1_label "
++					"file!\n");
++			goto error_temp1_label;
++		}
++
++	if (plat_data->custom_set_dcorrect) {
++		plat_data->custom_set_dcorrect(plat_data->custom_priv);
++	} else {
++		if (!plat_data->calibrated)
++			plat_data->calibration_value = 16;
++
++		sysconf_write(sensor->dcorrect, plat_data->calibration_value);
++	}
++
++	sysconf_write(sensor->pdn, 1);
++
++	platform_set_drvdata(pdev, sensor);
++
++	return 0;
++
++error_temp1_label:
++	device_remove_file(&pdev->dev, &dev_attr_temp1_input);
++error_temp1_input:
++	hwmon_device_unregister(sensor->class_dev);
++error_class_dev:
++	if (sensor->data)
++		sysconf_release(sensor->data);
++error_data:
++	sysconf_release(sensor->overflow);
++error_overflow:
++	if (sensor->dcorrect)
++		sysconf_release(sensor->dcorrect);
++error_dcorrect:
++	sysconf_release(sensor->pdn);
++error_pdn:
++	kfree(sensor);
++error_kzalloc:
++	return err;
++}
++
++static int __devexit stm_temp_remove(struct platform_device *pdev)
++{
++	struct stm_temp_sensor *sensor = platform_get_drvdata(pdev);
++
++	hwmon_device_unregister(sensor->class_dev);
++
++	sysconf_write(sensor->pdn, 0);
++
++	sysconf_release(sensor->pdn);
++	if (sensor->dcorrect)
++		sysconf_release(sensor->dcorrect);
++	sysconf_release(sensor->overflow);
++	if (sensor->data)
++		sysconf_release(sensor->data);
++
++	kfree(sensor);
++
++	return 0;
++}
++
++static struct platform_driver stm_temp_driver = {
++	.driver.name	= "stm-temp",
++	.probe		= stm_temp_probe,
++	.remove		= stm_temp_remove,
++};
++
++static int __init stm_temp_init(void)
++{
++	return platform_driver_register(&stm_temp_driver);
++}
++
++static void __exit stm_temp_exit(void)
++{
++	platform_driver_unregister(&stm_temp_driver);
++}
++
++module_init(stm_temp_init);
++module_exit(stm_temp_exit);
++
++MODULE_AUTHOR("Pawel Moll <pawel.moll@st.com>");
++MODULE_DESCRIPTION("STMicroelectronics SOC internal temperature sensor driver");
++MODULE_LICENSE("GPL");
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 22d835b..684efa5 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -227,6 +227,19 @@ struct plat_stm_pwm_data {
+ #define PWM_OUT1_PIO13_1	(1 << 1)
+ #endif
+ 
++/* Platform data for the temperature sensor driver */
++struct plat_stm_temp_data {
++	const char *name;
++	struct {
++		int group, num, lsb, msb;
++	} pdn, dcorrect, overflow, data;
++	int calibrated:1;
++	int calibration_value;
++	void (*custom_set_dcorrect)(void *priv);
++	unsigned long (*custom_get_data)(void *priv);
++	void *custom_priv;
++};
++
+ /* This is the private platform data for the lirc driver */
+ #define LIRC_PIO_ON		0x08	/* PIO pin available */
+ #define LIRC_IR_RX		0x04	/* IR RX PIO line available */
+-- 
+1.6.0.6
+

@@ -1,0 +1,90 @@
+commit cb694358cc27700e9f75fbdf822d291cbb8c587f
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Thu Jul 24 09:30:33 2008 +0100
+
+    sound_stm: Under/overrun handling fixed.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 2c94072..413b128 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -117,11 +117,13 @@ static irqreturn_t snd_stm_pcm_player_irq_handler(int irq, void *dev_id)
+ 	if (unlikely(status & mask__AUD_PCMOUT_ITS__UNF__PENDING(pcm_player))) {
+ 		snd_stm_printe("Underflow detected in PCM player '%s'!\n",
+ 				pcm_player->device->bus_id);
+-		result = IRQ_HANDLED;
+-	}
+ 
+-	/* Period successfully played */
+-	if (likely(status & mask__AUD_PCMOUT_ITS__NSAMPLE__PENDING(pcm_player)))
++		snd_pcm_stop(pcm_player->substream, SNDRV_PCM_STATE_XRUN);
++
++		result = IRQ_HANDLED;
++	} else if (likely(status &
++			mask__AUD_PCMOUT_ITS__NSAMPLE__PENDING(pcm_player))) {
++		/* Period successfully played */
+ 		do {
+ 			snd_stm_assert(pcm_player->substream, break);
+ 
+@@ -131,6 +133,7 @@ static irqreturn_t snd_stm_pcm_player_irq_handler(int irq, void *dev_id)
+ 
+ 			result = IRQ_HANDLED;
+ 		} while (0);
++	}
+ 
+ 	/* Some alien interrupt??? */
+ 	snd_stm_assert(result == IRQ_HANDLED);
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 67bf958..a098d3d 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -111,8 +111,10 @@ static irqreturn_t snd_stm_pcm_reader_irq_handler(int irq, void *dev_id)
+ 	if (unlikely(status & mask__AUD_PCMIN_ITS__OVF__PENDING(pcm_reader))) {
+ 		snd_stm_printe("Overflow detected in PCM reader '%s'!\n",
+ 				pcm_reader->device->bus_id);
+-		result = IRQ_HANDLED;
++
+ 		snd_pcm_stop(pcm_reader->substream, SNDRV_PCM_STATE_XRUN);
++
++		result = IRQ_HANDLED;
+ 	}
+ 
+ 	/* Some alien interrupt??? */
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index ce87cdb..2da5b13 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -137,17 +137,17 @@ static irqreturn_t snd_stm_spdif_player_irq_handler(int irq, void *dev_id)
+ 	set__AUD_SPDIF_ITS_CLR(spdif_player, status);
+ 	preempt_enable();
+ 
+-	/* Underflow? */
+ 	if (unlikely(status &
+ 			mask__AUD_SPDIF_ITS__UNF__PENDING(spdif_player))) {
+ 		snd_stm_printe("Underflow detected in SPDIF player '%s'!\n",
+ 				spdif_player->device->bus_id);
+-		result = IRQ_HANDLED;
+-	}
+ 
+-	/* Period successfully played */
+-	if (likely(status &
+-			mask__AUD_SPDIF_ITS__NSAMPLE__PENDING(spdif_player)))
++		snd_pcm_stop(spdif_player->substream, SNDRV_PCM_STATE_XRUN);
++
++		result = IRQ_HANDLED;
++	} else if (likely(status &
++			mask__AUD_SPDIF_ITS__NSAMPLE__PENDING(spdif_player))) {
++		/* Period successfully played */
+ 		do {
+ 			snd_stm_assert(spdif_player->substream, break);
+ 
+@@ -157,6 +157,7 @@ static irqreturn_t snd_stm_spdif_player_irq_handler(int irq, void *dev_id)
+ 
+ 			result = IRQ_HANDLED;
+ 		} while (0);
++	}
+ 
+ 	/* Some alien interrupt??? */
+ 	snd_stm_assert(result == IRQ_HANDLED);

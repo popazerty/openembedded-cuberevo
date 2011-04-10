@@ -1,0 +1,36 @@
+From 988c29f58691e6432ce29d338a224c30152aa647 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 5 Oct 2009 12:14:20 +0200
+Subject: [PATCH] stm: clk: Fixed the clk_enable and propagation in the ST clk frwk
+
+This patch fixes the
+ - propagation system and
+ - the clk_enable (due to an issue in the stx5197)
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/stm/clk.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/stm/clk.c b/drivers/stm/clk.c
+index 82067cd..baa63a9 100644
+--- a/drivers/stm/clk.c
++++ b/drivers/stm/clk.c
+@@ -167,11 +167,11 @@ int clk_enable(struct clk *clk)
+ 	if (clk_is_always_enabled(clk))
+ 		/* No enable required! */
+ 		return 0;
+-
++/*
+ 	if (clk_get_rate(clk))
+-		/* clock already enabled */
++		clock already enabled
+ 		return 0;
+-
++*/
+ 	clk_notify_to_parent(_CHILD_CLK_ENABLED, clk->parent);
+ 
+ 	ret = __clk_enable(clk);
+-- 
+1.6.0.6
+

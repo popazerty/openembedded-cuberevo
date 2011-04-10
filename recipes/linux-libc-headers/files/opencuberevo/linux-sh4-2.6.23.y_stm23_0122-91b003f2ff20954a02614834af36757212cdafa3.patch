@@ -1,0 +1,178 @@
+From 91b003f2ff20954a02614834af36757212cdafa3 Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Wed, 18 Nov 2009 17:01:56 +0100
+Subject: [PATCH] LKM: Fast loader tidy-up
+
+Minor changes:
+- Add proper license statement and Copyright assignement
+- Fix code styling
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ Makefile                 |    2 +-
+ scripts/mod/ksymhash.c   |   27 ++++++++++++++++++++++-----
+ scripts/mod/ktablehash.c |   42 +++++++++++++++++++++++++++++-------------
+ 3 files changed, 52 insertions(+), 19 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index d386122..3377791 100644
+--- a/Makefile
++++ b/Makefile
+@@ -623,7 +623,7 @@ vmlinux-htable := $(tmp-vmlinux).mod.o
+ 
+ # A temporary vmlinux is built for creating the related ELF
+ # hash table through the modpost stage
+-.tmp_vmlinux: $(vmlinux-lds) $(vmlinux-all) FORCE
++.tmp_vmlinux: $(vmlinux-all) FORCE
+ 	$(call cmd,vmlinux-modpost)
+ 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost $@
+ 
+diff --git a/scripts/mod/ksymhash.c b/scripts/mod/ksymhash.c
+index ac8bb48..50a25dd 100644
+--- a/scripts/mod/ksymhash.c
++++ b/scripts/mod/ksymhash.c
+@@ -1,8 +1,26 @@
+ /*
+- * Copyright STMicroelectronics Ltd (2008)
++ * Post-process kernel image and kernel modules for Fast LKM hash loader
+  *
+- * Author: Carmelo Amoroso <carmelo.amoroso@st.com>
++ * Copyright (C) 2008-2009 STMicroelectronics Ltd
+  *
++ * Author(s): Carmelo Amoroso <carmelo.amoroso@st.com>, STMicroelectronics
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * Usage: it is called directly by kbuild
++ *        (see $(rule_ksymhash) defined in scripts/Makefile.ksymhash)
+  */
+ 
+ #include <stdio.h>
+@@ -12,6 +30,7 @@
+ #include <sys/mman.h>
+ #include <string.h>
+ #include <sys/stat.h>
++
+ #include "elflib.h"
+ 
+ static inline
+@@ -66,13 +85,11 @@ int main(int argc, char **argv)
+ 	if (!parse_writable_elf(&info, argv[1]))
+ 		exit(1);
+ 
+-	/* Skip __ksymtab_strings */
+-	for (k = KSYMTAB; k < KSYMTAB_ALL; k++) {
++	for (k = KSYMTAB; k < KSYMTAB_ALL; k++)
+ 		if (info.ksym_tables[k].name)
+ 			/* Compute hash value for exported symbols */
+ 			compute_exported_hash(&info, k);
+ 
+-	}
+ 	compute_unresolved_hash(&info);
+ 
+ 	parse_elf_finish(&info);
+diff --git a/scripts/mod/ktablehash.c b/scripts/mod/ktablehash.c
+index 6079406..41f3a0b 100644
+--- a/scripts/mod/ktablehash.c
++++ b/scripts/mod/ktablehash.c
+@@ -1,7 +1,23 @@
+ /*
+- * Copyright STMicroelectronics Ltd (2008)
++ * Functions used by modpost to create data sections for Fast LKM hash loader
+  *
+- * Author: Carmelo Amoroso <carmelo.amoroso@st.com>
++ * Copyright (C) 2008-2009 STMicroelectronics Ltd
++ *
++ * Author(s): Carmelo Amoroso <carmelo.amoroso@st.com>, STMicroelectronics
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * any later version.
++
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  *
+  */
+ 
+@@ -47,8 +63,7 @@ static const size_t elf_buckets[] = {
+ };
+ 
+ /* FIXME: must implement the optimized algorithm for best size choosing */
+-static uint32_t
+-compute_bucket_count(unsigned long int nsyms, int gnu_hash)
++static uint32_t compute_bucket_count(unsigned long int nsyms, int gnu_hash)
+ {
+ 	uint32_t best_size = 0;
+ 	unsigned int i;
+@@ -150,23 +165,24 @@ static int fill_hashtable(struct elf_htable *htable,
+ 
+ static void add_elf_hashtable(struct buffer *b, const struct elf_info *elf,
+ 			      enum ksymtab_type type)
+-
+ {
+ 	const char *table = elf->ksym_tables[type].name;
+ 	struct kernel_symbol *kstart = elf->ksym_tables[type].start;
+ 	struct kernel_symbol *kstop = elf->ksym_tables[type].stop;
+ 
+ 	struct elf_htable htable = {
+-					.nbucket = 0,
+-					.nchain = 0,
+-					.elf_buckets = NULL,
+-					.chains = NULL,
+-				};
++		.nbucket = 0,
++		.nchain = 0,
++		.elf_buckets = NULL,
++		.chains = NULL,
++	};
++
+ 	unsigned long nsyms = (unsigned long)(kstop - kstart);
+ 	unsigned long i;
+ 
+ 	htable.nbucket = compute_bucket_count(nsyms, 0);
+-	htable.elf_buckets = (uint32_t *) malloc(htable.nbucket * sizeof(uint32_t));
++	htable.elf_buckets = (uint32_t *)
++				malloc(htable.nbucket * sizeof(uint32_t));
+ 
+ 	if (!htable.elf_buckets)
+ 		return;
+@@ -175,7 +191,7 @@ static void add_elf_hashtable(struct buffer *b, const struct elf_info *elf,
+ 	 * exported symbols should be put in the chain
+ 	 */
+ 	htable.nchain = nsyms;
+-	htable.chains = (uint32_t *)malloc(htable.nchain * sizeof(uint32_t));
++	htable.chains = (uint32_t *) malloc(htable.nchain * sizeof(uint32_t));
+ 	if (!htable.chains)
+ 		return;
+ 
+@@ -216,7 +232,7 @@ static void add_elf_hashtable(struct buffer *b, const struct elf_info *elf,
+ }
+ 
+ /*
+- * Add hash table (old style) for exported symbols
++ * Add hash table (ELF SysV) for exported symbols
+  */
+ void add_ksymtable_hash(struct buffer *b, struct module *mod)
+ {
+-- 
+1.6.0.6
+

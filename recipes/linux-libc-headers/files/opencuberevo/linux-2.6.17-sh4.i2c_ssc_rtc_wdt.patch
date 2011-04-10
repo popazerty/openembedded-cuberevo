@@ -1,0 +1,319 @@
+ This patch updates:
+ - the rtc device driver to support the 2.6.17 kernel version
+ - the wdt device driver to support the 2.6.17 kernel version
+ - the i2c-ssc device driver to support the 2.6.17 kernel version
+ - the st_ssc layer to support the new clock API
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+===========================================================
+diff -upNr -X notdiff.txt linux-2.6.17/arch/sh/boards/st/st220eval/setup.c linux-2.6.17-sh4/arch/sh/boards/st/st220eval/setup.c
+--- linux-2.6.17/arch/sh/boards/st/st220eval/setup.c	2006-08-23 07:03:31.975222000 +0000
++++ linux-2.6.17-sh4/arch/sh/boards/st/st220eval/setup.c	2006-08-23 08:55:02.601099000 +0000
+@@ -75,7 +75,6 @@ static struct plat_ssc_pio_t ssc_pio[] =
+ };
+ 
+ static struct plat_ssc_data ssc_private_info = {
+-         .sscclk      = 133333333,
+          .capability  = 0x9,
+          .pio         = ssc_pio
+ };
+diff -upNr -X notdiff.txt linux-2.6.17/arch/sh/boards/st/stb7100mboard/setup.c linux-2.6.17-sh4/arch/sh/boards/st/stb7100mboard/setup.c
+--- linux-2.6.17/arch/sh/boards/st/stb7100mboard/setup.c	2006-08-23 07:03:33.475231000 +0000
++++ linux-2.6.17-sh4/arch/sh/boards/st/stb7100mboard/setup.c	2006-08-23 08:53:49.570707000 +0000
+@@ -189,7 +189,6 @@ static struct plat_ssc_pio_t ssc_pio[] =
+         {4, 0, 4, 1, 0xff, 0xff},
+ };
+ static struct plat_ssc_data ssc_private_info = {
+-         .sscclk      = 133333333,
+          .capability  = 0x1f,
+          .pio         = ssc_pio
+ };
+diff -upNr -X notdiff.txt linux-2.6.17/arch/sh/boards/st/stb7100ref/setup.c linux-2.6.17-sh4/arch/sh/boards/st/stb7100ref/setup.c
+--- linux-2.6.17/arch/sh/boards/st/stb7100ref/setup.c	2006-08-23 07:03:33.805235000 +0000
++++ linux-2.6.17-sh4/arch/sh/boards/st/stb7100ref/setup.c	2006-08-23 08:54:01.690772000 +0000
+@@ -120,7 +120,6 @@ static struct plat_ssc_pio_t ssc_pio[] =
+ 	{4, 0, 4, 1, 0xff, 0xff},
+ };
+ static struct plat_ssc_data ssc_private_info = {
+-	.sscclk      = 133333333,
+ 	.capability  = 0x1b,
+ 	.pio         = ssc_pio
+ };
+diff -upNr -X notdiff.txt linux-2.6.17/arch/sh/boards/st/stb7109eref/setup.c linux-2.6.17-sh4/arch/sh/boards/st/stb7109eref/setup.c
+--- linux-2.6.17/arch/sh/boards/st/stb7109eref/setup.c	2006-08-23 07:03:34.155237000 +0000
++++ linux-2.6.17-sh4/arch/sh/boards/st/stb7109eref/setup.c	2006-08-23 08:54:37.080965000 +0000
+@@ -169,7 +169,6 @@ static struct plat_ssc_pio_t ssc_pio[] =
+ 	{4, 0, 4, 1, 0xff, 0xff},
+ };
+ static struct plat_ssc_data ssc_private_info = {
+-	 .sscclk      = 133333333,
+ 	 .capability  = 0x1f,
+ 	 .pio	      = ssc_pio
+ };
+diff -upNr -X notdiff.txt linux-2.6.17/arch/sh/boards/st/sti5528espresso/setup.c linux-2.6.17-sh4/arch/sh/boards/st/sti5528espresso/setup.c
+--- linux-2.6.17/arch/sh/boards/st/sti5528espresso/setup.c	2006-08-23 07:03:34.315235000 +0000
++++ linux-2.6.17-sh4/arch/sh/boards/st/sti5528espresso/setup.c	2006-08-23 08:55:16.311172000 +0000
+@@ -115,7 +115,6 @@ static struct plat_ssc_pio_t ssc_pio[] =
+         {3, 3, 3, 2, 0xff, 0xff}
+ };
+ static struct plat_ssc_data ssc_private_info = {
+-         .sscclk      = 133333333,
+          .capability  = 5,
+          .pio         = ssc_pio
+ };
+diff -upNr -X notdiff.txt linux-2.6.17/arch/sh/boards/st/sti5528eval/setup.c linux-2.6.17-sh4/arch/sh/boards/st/sti5528eval/setup.c
+--- linux-2.6.17/arch/sh/boards/st/sti5528eval/setup.c	2006-08-23 07:03:34.475237000 +0000
++++ linux-2.6.17-sh4/arch/sh/boards/st/sti5528eval/setup.c	2006-08-23 08:55:27.851234000 +0000
+@@ -153,7 +153,6 @@ static struct plat_ssc_pio_t ssc_pio[] =
+ 	{3, 3, 3, 2, 0xff, 0xff}
+ };
+ static struct plat_ssc_data ssc_private_info = {
+-	.sscclk      = 133333333,
+ 	.capability  = 5,
+ 	.pio         = ssc_pio
+ };
+diff -upNr -X notdiff.txt linux-2.6.17/drivers/char/st-rtc.c linux-2.6.17-sh4/drivers/char/st-rtc.c
+--- linux-2.6.17/drivers/char/st-rtc.c	2006-08-23 07:03:44.465293000 +0000
++++ linux-2.6.17-sh4/drivers/char/st-rtc.c	2006-08-23 07:47:48.279468000 +0000
+@@ -631,7 +631,7 @@ static int stm_rtc_hw_resrc_init(void)
+              "ERROR: rtc %d Request MEM Region NOT Done\n",0);
+         return -ENODEV;
+    }
+-   rtc.base = (unsigned long)ioremap(res->start, res->end - res->start);
++   rtc.base = (unsigned long)ioremap_nocache(res->start, res->end - res->start);
+ 
+ /* 2. Request of IRQ */
+    res = platform_get_resource(rtc_device_data, IORESOURCE_IRQ, 0);
+diff -upNr -X notdiff.txt linux-2.6.17/drivers/char/watchdog/Kconfig linux-2.6.17-sh4/drivers/char/watchdog/Kconfig
+--- linux-2.6.17/drivers/char/watchdog/Kconfig	2006-08-23 07:03:44.575292000 +0000
++++ linux-2.6.17-sh4/drivers/char/watchdog/Kconfig	2006-08-23 07:46:01.228892000 +0000
+@@ -66,6 +66,12 @@ config STM_WD
+         help
+           This is the driver for the STM Watchdog.
+ 
++config STM_WDT_DEBUG
++	bool "STM Watchdog debug"
++	depends on STM_WD
++	help
++	  Enable some printk to debug
++
+ # ARM Architecture
+ 
+ config AT91_WATCHDOG
+diff -upNr -X notdiff.txt linux-2.6.17/drivers/char/watchdog/stm_wdt.c linux-2.6.17-sh4/drivers/char/watchdog/stm_wdt.c
+--- linux-2.6.17/drivers/char/watchdog/stm_wdt.c	2006-08-23 07:03:44.645292000 +0000
++++ linux-2.6.17-sh4/drivers/char/watchdog/stm_wdt.c	2006-08-23 07:57:14.772504000 +0000
+@@ -26,9 +26,11 @@
+ 	       	Added shutdown notifier support
+   		Added WATCHDOG_NOWAYOUT support
+   						Carl Shaw <carl.shaw@st.com>
+-  29th ug 2005  Added ST40 support
++  29th Aug 2005 Added ST40 support
+   		               Francesco Virlinzi <francesco.virlinzi@st.com>
+ 
++  23th Aug 2006 Modified to support the 2.6.17 kernel version
++				Francesco Virlinzi <francesco.virlinzi@st.com> 
+ */
+ 
+ #include <linux/ioport.h>
+@@ -37,7 +39,7 @@
+ #include <linux/module.h>
+ #include <linux/kernel.h>
+ #include <linux/fs.h>
+-#include <linux/platform.h>
++#include <linux/platform_device.h>
+ #include <linux/device.h>
+ #include <linux/miscdevice.h>
+ #include <linux/watchdog.h>
+@@ -50,10 +52,6 @@
+ #include <asm/uaccess.h>
+ #include <asm/param.h>		/* for HZ */
+ 
+-/*
+- * #define CONFIG_STM_WDT_DEBUG
+- */
+-
+ #undef DPRINTK(fmt, args...)
+ 
+ #ifdef  CONFIG_STM_WDT_DEBUG
+@@ -359,7 +357,7 @@ static int __init stm_watchdog_init(void
+ 		return -EBUSY;
+ 	};
+ 
+-	wdt->base = (unsigned long)ioremap(res->start, res->end - res->start);
++	wdt->base = (unsigned long)ioremap_nocache(res->start, res->end - res->start);
+ 	wdt->status = 0;
+ 	wdt->timeout = 0;
+ /*
+diff -upNr -X notdiff.txt linux-2.6.17/drivers/i2c/busses/i2c-stm.c linux-2.6.17-sh4/drivers/i2c/busses/i2c-stm.c
+--- linux-2.6.17/drivers/i2c/busses/i2c-stm.c	2006-08-23 07:03:44.875292000 +0000
++++ linux-2.6.17-sh4/drivers/i2c/busses/i2c-stm.c	2006-08-23 09:00:26.342837000 +0000
+@@ -1,32 +1,21 @@
+ /*
+-   --------------------------------------------------------------------
+-
+-   i2c-stm.c
+-   i2c algorithms for STMicroelectronics SSC device
+-
+-   --------------------------------------------------------------------
+-
+- *  This program is free software; you can redistribute  it and/or modify it
+- *  under  the terms of  the GNU General  Public License as published by the
+- *  Free Software Foundation;  either version 2 of the  License, or (at your
+- *  option) any later version.
++ * --------------------------------------------------------------------
+  *
+- *  THIS  SOFTWARE  IS PROVIDED   ``AS  IS'' AND   ANY  EXPRESS OR IMPLIED
+- *  WARRANTIES,   INCLUDING, BUT NOT  LIMITED  TO, THE IMPLIED WARRANTIES OF
+- *  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+- *  NO  EVENT  SHALL   THE AUTHOR  BE    LIABLE FOR ANY   DIRECT, INDIRECT,
+- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+- *  NOT LIMITED   TO, PROCUREMENT OF  SUBSTITUTE GOODS  OR SERVICES; LOSS OF
+- *  USE, DATA,  OR PROFITS; OR  BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+- *  ANY THEORY OF LIABILITY, WHETHER IN  CONTRACT, STRICT LIABILITY, OR TORT
+- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ * i2c-stm.c
++ * i2c algorithms for STMicroelectronics SSC device
+  *
+- *  You should have received a copy of the  GNU General Public License along
+- *  with this program; if not, write  to the Free Software Foundation, Inc.,
+- *  675 Mass Ave, Cambridge, MA 02139, USA.
+-
+-*/
++ * --------------------------------------------------------------------
++ *
++ *  Copyright (C) 2006  Virlinzi Francesco
++ *                   <francesco.virlinzi@st.com>
++ *
++ * 23 August 2006 - Modified to support the 2.6.17 kernel version
++ *	Virlinzi Francesco <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ */
+ 
+ #include <linux/i2c.h>
+ #include <linux/stpio.h>
+@@ -52,11 +41,10 @@
+ 
+ /* --- Defines for I2C --- */
+ #define DEVICE_ID                    0x041175
+-#define I2C_STM_ALGO                 DEVICE_ID
+ 
+-#define STI2C_RATE_NORMAL            100000
+-#define STI2C_RATE_FASTMODE          400000
+-#define NANOSEC_PER_SEC              1000000000
++#define I2C_RATE_NORMAL            100000
++#define I2C_RATE_FASTMODE          400000
++#define NANOSEC_PER_SEC            1000000000
+ 
+ #define REP_START_HOLD_TIME_NORMAL   4000	/* standard */
+ #define REP_START_HOLD_TIME_FAST     3500	/* it should be 600 */
+@@ -457,7 +445,7 @@ static void iic_algo_stm_setup_timing(st
+ 	if (check_fastmode(adap)) {
+ 		ssc_bus->i2c_timing = SSC_I2C_READY_FAST;
+ 		iic_baudrate = ssc_get_clock()
+-		    / (2 * STI2C_RATE_FASTMODE);
++		    / (2 * I2C_RATE_FASTMODE);
+ 		iic_rep_start_hold = REP_START_HOLD_TIME_FAST / NSPerCyc;
+ 		iic_start_hold = START_HOLD_TIME_FAST / NSPerCyc;
+ 		iic_rep_start_setup = REP_START_SETUP_TIME_FAST / NSPerCyc;
+@@ -467,7 +455,7 @@ static void iic_algo_stm_setup_timing(st
+ 	} else {
+ 		ssc_bus->i2c_timing = SSC_I2C_READY_NORMAL;
+ 		iic_baudrate = ssc_get_clock()
+-		    / (2 * STI2C_RATE_NORMAL);
++		    / (2 * I2C_RATE_NORMAL);
+ 		iic_rep_start_hold = REP_START_HOLD_TIME_NORMAL / NSPerCyc;
+ 		iic_start_hold = START_HOLD_TIME_NORMAL / NSPerCyc;
+ 		iic_rep_start_setup = REP_START_SETUP_TIME_NORMAL / NSPerCyc;
+@@ -524,8 +512,6 @@ static u32 iic_algo_stm_func(struct i2c_
+ }
+ 
+ static struct i2c_algorithm iic_stm_algo = {
+-	.name = "stm i2c algorithm",
+-	.id = I2C_STM_ALGO,
+ 	.master_xfer = iic_algo_stm_xfer,
+ 	.functionality = iic_algo_stm_func,
+ 	.algo_control = iic_algo_stm_control
+@@ -561,9 +547,10 @@ static int __init iic_stm_bus_init()
+ 		memset(&(iic_stm->adapter), 0, sizeof(struct i2c_adapter));
+ 		iic_stm->adapter.nr = idx;
+ 		iic_stm->adapter.owner = THIS_MODULE;
+-		iic_stm->adapter.id = I2C_STM_ALGO;
++		iic_stm->adapter.id = idx ;
+ 		iic_stm->adapter.timeout = 4;
+ 		iic_stm->adapter.retries = 0;
++		sprintf(iic_stm->adapter.name,"i2c-ssc-%d",idx);
+ 		iic_stm->adapter.algo = &iic_stm_algo;
+ 		iic_stm->adapter.dev.bus = &i2c_bus_type;
+ 		iic_stm->adapter.dev.parent = &(ssc_device_request(idx)->dev);
+diff -upNr -X notdiff.txt linux-2.6.17/drivers/stm/stm_ssc.c linux-2.6.17-sh4/drivers/stm/stm_ssc.c
+--- linux-2.6.17/drivers/stm/stm_ssc.c	2006-08-23 07:03:51.155326000 +0000
++++ linux-2.6.17-sh4/drivers/stm/stm_ssc.c	2006-08-23 09:01:40.003233000 +0000
+@@ -3,29 +3,23 @@
+    stm_ssc.c
+    -------------------------------------------------------------------------
+    STMicroelectronics
+-
+-
+    -------------------------------------------------------------------------
+-
+-    This program is free software; you can redistribute it and/or modify
+-    it under the terms of the GNU General Public License as published by
+-    the Free Software Foundation; either version 2 of the License, or
+-    (at your option) any later version.
+-
+-    This program is distributed in the hope that it will be useful,
+-    but WITHOUT ANY WARRANTY; without even the implied warranty of
+-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-    GNU General Public License for more details.
+-
+-    You should have received a copy of the GNU General Public License
+-    along with this program; if not, wrssc to the Free Software
+-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                */
+-/* ------------------------------------------------------------------------- */
++ *  Copyright (C) 2006  Virlinzi Francesco
++ *                   <francesco.virlinzi@st.com>
++ *
++ * 23 August 2006 - Modified to support the 2.6.17 kernel version
++ *      Virlinzi Francesco <francesco.virlinzi@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * ------------------------------------------------------------------------- */
+ 
+ #include "stm_ssc.h"
+ #include <linux/platform_device.h>
+ #include <linux/interrupt.h>
+ #include <asm/semaphore.h>
++#include <asm/clock.h>
+ #include <linux/st_soc.h>
+ #include <linux/wait.h>
+ #include <linux/module.h>
+@@ -68,10 +62,7 @@ unsigned int ssc_device_available()
+ 
+ unsigned int ssc_get_clock()
+ {
+-	struct plat_ssc_data *info;
+-	info = (struct plat_ssc_data *)
+-	    (ssc_device_data->dev.platform_data);
+-	return info->sscclk;
++	return clk_get_rate(clk_get("sh4_ic_clk"));
+ }
+ 
+ struct ssc_t *ssc_device_request(unsigned int device_id)
+diff -upNr -X notdiff.txt linux-2.6.17/include/linux/st_soc.h linux-2.6.17-sh4/include/linux/st_soc.h
+--- linux-2.6.17/include/linux/st_soc.h	2006-08-23 07:03:57.415359000 +0000
++++ linux-2.6.17-sh4/include/linux/st_soc.h	2006-08-23 08:56:19.851512000 +0000
+@@ -70,7 +70,6 @@ struct plat_ssc_pio_t {
+ } ;
+ 
+ struct plat_ssc_data {
+-        unsigned int    sscclk;       /* SSC clock rate in Hz*/
+         unsigned short  capability;   /* bitmask on the ssc capability */
+         struct plat_ssc_pio_t *pio;   /* the Pio map */
+ };

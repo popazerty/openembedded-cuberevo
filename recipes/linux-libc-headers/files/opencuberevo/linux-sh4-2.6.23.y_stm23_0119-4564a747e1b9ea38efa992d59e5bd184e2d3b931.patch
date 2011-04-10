@@ -1,0 +1,40 @@
+From 4564a747e1b9ea38efa992d59e5bd184e2d3b931 Mon Sep 17 00:00:00 2001
+From: Alexey Korolev <akorolev@infradead.org>
+Date: Mon, 18 May 2009 18:32:13 +0100
+Subject: [PATCH] Fix missing kernel-doc
+
+[Reported by Randy Dunlap]
+
+Signed-off-by: Alexey Korolev <akorolev@infradead.org>
+Signed-off-by: David Woodhouse <David.Woodhouse@intel.com>
+---
+ drivers/mtd/nand/nand_ecc.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_ecc.c b/drivers/mtd/nand/nand_ecc.c
+index d99e569..fd19787 100644
+--- a/drivers/mtd/nand/nand_ecc.c
++++ b/drivers/mtd/nand/nand_ecc.c
+@@ -150,8 +150,8 @@ static const char addressbits[256] = {
+ /**
+  * nand_calculate_ecc - [NAND Interface] Calculate 3-byte ECC for 256-byte block
+  * @mtd:	MTD block structure (unused)
+- * @dat:	raw data
+- * @ecc_code:	buffer for ECC
++ * @buf:	input buffer with raw data
++ * @code:	output buffer with ECC
+  */
+ int nand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf,
+ 		       unsigned char *code)
+@@ -390,7 +390,7 @@ EXPORT_SYMBOL(nand_calculate_ecc);
+ /**
+  * nand_correct_data - [NAND Interface] Detect and correct bit error(s)
+  * @mtd:	MTD block structure (unused)
+- * @dat:	raw data read from the chip
++ * @buf:	raw data read from the chip
+  * @read_ecc:	ECC from the chip
+  * @calc_ecc:	the ECC calculated from raw data
+  *
+-- 
+1.6.0.6
+

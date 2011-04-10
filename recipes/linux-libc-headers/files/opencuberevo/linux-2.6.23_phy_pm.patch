@@ -1,0 +1,96 @@
+This patch adds the suspend and resume support into PAL.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+=====================================================================
+--- linux.orig/drivers/net/phy/phy_device.c	2008-03-13 08:17:50.630000000 +0100
++++ linux/drivers/net/phy/phy_device.c	2008-03-13 14:06:48.539999000 +0100
+@@ -616,6 +616,36 @@ static int genphy_config_init(struct phy
+ 	return 0;
+ }
+ 
++int genphy_suspend(struct phy_device *phydev)
++{
++	int value;
++
++	spin_lock_bh(&phydev->lock);
++
++	value = phy_read(phydev, MII_BMCR);
++	phy_write(phydev, MII_BMCR, (value | BMCR_PDOWN));
++
++	spin_unlock_bh(&phydev->lock);
++
++	return 0;
++}
++EXPORT_SYMBOL(genphy_suspend);
++
++int genphy_resume(struct phy_device *phydev)
++{
++	int value;
++
++	spin_lock_bh(&phydev->lock);
++
++	value = phy_read(phydev, MII_BMCR);
++	phy_write(phydev, MII_BMCR, (value & ~BMCR_PDOWN));
++
++	spin_unlock_bh(&phydev->lock);
++
++	return 0;
++}
++
++EXPORT_SYMBOL(genphy_resume);
+ 
+ /**
+  * phy_probe - probe and init a PHY device
+@@ -690,8 +720,9 @@ static int phy_remove(struct device *dev
+ int phy_driver_register(struct phy_driver *new_driver)
+ {
+ 	int retval;
+-
+-	memset(&new_driver->driver, 0, sizeof(new_driver->driver));
++/*
++ *	memset(&new_driver->driver, 0, sizeof(new_driver->driver));
++ */
+ 	new_driver->driver.name = new_driver->name;
+ 	new_driver->driver.bus = &mdio_bus_type;
+ 	new_driver->driver.probe = phy_probe;
+--- linux.orig/drivers/net/phy/mdio_bus.c	2008-03-13 08:17:15.639998000 +0100
++++ linux/drivers/net/phy/mdio_bus.c	2008-03-12 16:20:07.880000000 +0100
+@@ -143,9 +143,11 @@ static int mdio_bus_suspend(struct devic
+ {
+ 	int ret = 0;
+ 	struct device_driver *drv = dev->driver;
++	struct phy_driver *phydrv = to_phy_driver(drv);
++	struct phy_device *phydev = to_phy_device(dev);
+ 
+-	if (drv && drv->suspend)
+-		ret = drv->suspend(dev, state);
++	if (phydrv && phydrv->suspend)
++		ret = phydrv->suspend(phydev);
+ 
+ 	return ret;
+ }
+@@ -154,9 +156,11 @@ static int mdio_bus_resume(struct device
+ {
+ 	int ret = 0;
+ 	struct device_driver *drv = dev->driver;
++	struct phy_driver *phydrv = to_phy_driver(drv);
++	struct phy_device *phydev = to_phy_device(dev);
+ 
+-	if (drv && drv->resume)
+-		ret = drv->resume(dev);
++	if (phydrv && phydrv->resume)
++		ret = phydrv->resume(phydev);
+ 
+ 	return ret;
+ }
+--- linux.orig/include/linux/phy.h	2007-10-09 22:31:38.000000000 +0200
++++ linux/include/linux/phy.h	2008-03-12 14:49:41.349998000 +0100
+@@ -384,6 +384,8 @@ int genphy_restart_aneg(struct phy_devic
+ int genphy_config_aneg(struct phy_device *phydev);
+ int genphy_update_link(struct phy_device *phydev);
+ int genphy_read_status(struct phy_device *phydev);
++int genphy_suspend(struct phy_device *phydev);
++int genphy_resume(struct phy_device *phydev);
+ void phy_driver_unregister(struct phy_driver *drv);
+ int phy_driver_register(struct phy_driver *new_driver);
+ void phy_prepare_link(struct phy_device *phydev,

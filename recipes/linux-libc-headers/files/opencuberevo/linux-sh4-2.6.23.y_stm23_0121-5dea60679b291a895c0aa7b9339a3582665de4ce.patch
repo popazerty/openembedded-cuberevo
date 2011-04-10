@@ -1,0 +1,31 @@
+From 5dea60679b291a895c0aa7b9339a3582665de4ce Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Thu, 20 Aug 2009 19:56:20 +0100
+Subject: [PATCH] sh_stm: Remove cfs EXTRAVERSION addition
+
+Commit d0020266ad5e19b4a3f150a6f57f239412d3e207 "sched: updated the
+scheduler to the v24.1." modified the EXTRAVERSION string to include
+a cfs specific string. This is likely to confuse tools which parse
+the ST version string, so remove this change.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ Makefile |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 5f34659..19fbd5d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,7 +1,7 @@
+ VERSION = 2
+ PATCHLEVEL = 6
+ SUBLEVEL = 23
+-EXTRAVERSION = .17-cfs-v24.1
++EXTRAVERSION = .17
+ NAME = Arr Matey! A Hairy Bilge Rat!
+ 
+ # *DOCUMENTATION*
+-- 
+1.6.0.6
+

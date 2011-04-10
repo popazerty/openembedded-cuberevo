@@ -1,0 +1,29 @@
+From b62d3ee47f3ad6ad204926cf513f588c5fc2e558 Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Fri, 25 Sep 2009 10:17:23 +0100
+Subject: [PATCH] kptrace: Output ioctl requests in hex
+
+This KPTrace patch outputs ioctl requests in hex, making them easier
+to decode.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+---
+ arch/sh/kernel/kptrace.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index db91ac9..4831a69 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -1711,7 +1711,7 @@ static void init_syscall_logging(void)
+ 	INIT_SYSCALL_PROBE(sys_getegid16);
+ 	INIT_SYSCALL_PROBE(sys_acct);
+ 	INIT_SYSCALL_PROBE(sys_umount);
+-	INIT_CUSTOM_SYSCALL_PROBE(sys_ioctl, syscall_iihh_pre_handler);
++	INIT_CUSTOM_SYSCALL_PROBE(sys_ioctl, syscall_ihhh_pre_handler);
+ 	INIT_SYSCALL_PROBE(sys_fcntl);
+ 	INIT_SYSCALL_PROBE(sys_setpgid);
+ 	INIT_SYSCALL_PROBE(sys_umask);
+-- 
+1.6.0.6
+

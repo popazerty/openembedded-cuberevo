@@ -1,0 +1,34 @@
+From 7677f784da5128da9831b88ac37d1c2875affa1a Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:29 +0200
+Subject: [PATCH] stm: asc: Fixed clock included file due to the new clk frmwk
+
+This patch fixes the clk header file
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/serial/stasc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index b8cf87e..33c78fd 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -20,13 +20,13 @@
+ #include <linux/spinlock.h>
+ #include <linux/platform_device.h>
+ #include <linux/stm/soc.h>
++#include <linux/stm/clk.h>
+ 
+ #include <asm/system.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
+ #include <asm/uaccess.h>
+ #include <asm/bitops.h>
+-#include <asm/clock.h>
+ 
+ #ifdef CONFIG_KGDB
+ #include <linux/kgdb.h>
+-- 
+1.6.0.6
+

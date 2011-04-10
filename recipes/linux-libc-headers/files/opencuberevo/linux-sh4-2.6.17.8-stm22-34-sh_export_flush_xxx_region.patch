@@ -1,0 +1,17 @@
+sh: Reinstate the __flush_xxx_region functions to the SH4 module interface
+
+Signed-off-by: Daniel R Thompson <daniel.thompson@st.com>
+Index: linux-sh4-2.6.17.8_stm22-34/arch/sh/kernel/sh_ksyms.c
+===================================================================
+--- linux-sh4-2.6.17.8_stm22-34.orig/arch/sh/kernel/sh_ksyms.c	2006-08-24 13:20:44.000000000 +0100
++++ linux-sh4-2.6.17.8_stm22-34/arch/sh/kernel/sh_ksyms.c	2006-08-25 16:24:59.000000000 +0100
+@@ -86,7 +86,9 @@
+ EXPORT_SYMBOL(flush_cache_all);
+ EXPORT_SYMBOL(flush_cache_range);
+ EXPORT_SYMBOL(flush_dcache_page);
++EXPORT_SYMBOL(__flush_wback_region);
+ EXPORT_SYMBOL(__flush_purge_region);
++EXPORT_SYMBOL(__flush_invalidate_region);
+ EXPORT_SYMBOL(clear_user_page);
+ EXPORT_SYMBOL(copy_user_page);
+ #endif

@@ -1,0 +1,275 @@
+sh: Make pointers outputs from atomic rollback asm inlines
+
+It is possible for addresses that are stack allocated to be
+handed to the inlines in r15 (e.g. a sem_t at the top of the
+stack). Since the first thing the inlines do is modify r15 to
+a small negative value this always results in following a
+broken pointer. Oddly this does not result in a successful
+register dump but a hang.
+
+There are no contraints that can rename r15 to r1 during the
+atomic operation, nor are there any that prevent the compiler
+from using r15. This means we have to fudge things a little.
+By making pointers appear as input/outputs (instead of input
+only) we presuade the compiler not to use r15 since the
+compiler doesn't want to see this get clobbered.
+
+This resolves: https://bugzilla.stlinux.com/show_bug.cgi?id=817
+
+Signed-off-by: Daniel Thompson <daniel.thompson@st.com>
+
+Index: linux/include/asm-sh/atomic.h
+===================================================================
+--- linux.orig/include/asm-sh/atomic.h
++++ linux/include/asm-sh/atomic.h
+@@ -43,9 +43,9 @@ static __inline__ void atomic_add(int i,
+                 "   add     %2,   %0      \n\t" // add
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t"  // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v),       // 1
+-                  "r"   (i)        // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++                : "r"   (i)        // 2
+                 : "memory" , "r0", "r1" );
+ }
+ 
+@@ -61,9 +61,9 @@ static __inline__ void atomic_sub(int i,
+                 "   sub     %2,   %0      \n\t" // sub
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v),       // 1
+-                  "r"   (i)        // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++                : "r"   (i)        // 2
+                 : "memory" , "r0", "r1");
+ }
+ 
+@@ -79,9 +79,9 @@ static __inline__ int atomic_add_return(
+                 "   add     %2,   %0      \n\t" // add
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v),       // 1
+-                  "r"   (i)        // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++                : "r"   (i)        // 2
+                 : "memory" , "r0", "r1");
+         return tmp;
+ }
+@@ -100,9 +100,9 @@ static __inline__ int atomic_sub_return(
+                 "   sub     %2,   %0      \n\t" // sub
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v),       // 1
+-                  "r"   (i)        // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++                : "r"   (i)        // 2
+                 : "memory", "r0", "r1" );
+         return tmp;
+ }
+@@ -119,8 +119,9 @@ static __inline__ void atomic_inc(atomic
+                 "   add     #1,   %0      \n\t" // add 1
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v)        // 1
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++		:                  // no (pure) inputs
+                 : "memory" , "r0", "r1" );
+ }
+ 
+@@ -136,8 +137,9 @@ static __inline__ void atomic_dec(atomic
+                 "   add    #-1,   %0      \n\t" // add -1
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v)        // 1
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++		:                  // no (pure) inputs
+                 : "memory" , "r0", "r1" );
+ }
+ 
+@@ -153,8 +155,9 @@ static __inline__ int atomic_inc_return(
+                 "   add     #1,   %0      \n\t" // add 1
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v)        // 1
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++		:                  // no (pure) inputs
+                 : "memory" , "r0", "r1" );
+ 	return tmp;
+ }
+@@ -171,8 +174,9 @@ static __inline__ int atomic_dec_return(
+                 "   add    #-1,   %0      \n\t" // add -1
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v)        // 1
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++		:                  // no (pure) inputs
+                 : "memory" , "r0", "r1" );
+ 	return tmp;
+ }
+@@ -347,9 +351,9 @@ static __inline__ void atomic_clear_mask
+                 "   and     %2,   %0      \n\t" // add
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v),       // 1
+-                  "r"   (_mask)    // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++                : "r"   (_mask)    // 2
+                 : "memory" , "r0", "r1" );
+ }
+ 
+@@ -365,9 +369,9 @@ static __inline__ void atomic_set_mask(u
+                 "   or      %2,   %0      \n\t" // or
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (v),       // 1
+-                  "r"   (mask)    // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (v)        // 1
++                : "r"   (mask)     // 2
+                 : "memory" , "r0", "r1" );
+ }
+ #else
+Index: linux/include/asm-sh/bitops.h
+===================================================================
+--- linux.orig/include/asm-sh/bitops.h
++++ linux/include/asm-sh/bitops.h
+@@ -30,9 +30,9 @@ static inline void set_bit(int nr, volat
+                 "   or      %2,   %0      \n\t" // or
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (a),       // 1
+-                  "r"   (mask)     // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (a)        // 1
++                : "r"   (mask)     // 2
+                 : "memory" , "r0", "r1" );
+ }
+ #else
+@@ -73,9 +73,9 @@ static inline void clear_bit(int nr, vol
+                 "   and     %2,   %0      \n\t" // and
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (a),       // 1
+-                  "r"   (mask)     // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (a)        // 1
++                : "r"   (mask)     // 2
+                 : "memory" , "r0", "r1" );
+ }
+ #else
+@@ -111,9 +111,9 @@ static inline void change_bit(int nr, vo
+                 "   xor     %2,   %0      \n\t" // xor
+                 "   mov.l   %0,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (tmp)      // 0
+-                : "r"   (a),       // 1
+-                  "r"   (mask)     // 2
++                : "=&r" (tmp),     // 0
++                  "+r"  (a)        // 1
++                : "r"   (mask)     // 2
+                 : "memory" , "r0", "r1" );
+ }
+ #else
+@@ -158,9 +158,9 @@ static inline int test_and_set_bit(int n
+                 "   mov.l   %0,  @%2      \n\t" // store new value
+                 "1: mov     r1,  r15      \n\t" // LOGOUT
+                 : "=&r" (tmp),     // 0
+-                  "=&r" (retval)   // 1
+-                : "r"   (a),       // 2
+-                  "r"   (mask)     // 3
++                  "=&r" (retval),  // 1
++                  "+r"  (a)        // 2
++                : "r"   (mask)     // 3
+                 : "memory" , "r0", "r1" ,"t");
+ 
+         return retval;
+@@ -212,9 +212,9 @@ static inline int test_and_clear_bit(int
+                 "   mov.l   %0,  @%2      \n\t" // store new value
+ 		"1: mov     r1,   r15     \n\t" // LOGOUT
+ 		: "=&r" (tmp),     // 0
+-		  "=&r" (retval)   // 1
+-		: "r"   (a),       // 2
+-		  "r"   (mask),    // 3
++		  "=&r" (retval),  // 1
++		  "+r"  (a)        // 2
++		: "r"   (mask),    // 3
+ 		  "r"   (not_mask) // 4
+ 		: "memory" , "r0", "r1", "t" );
+ 
+@@ -265,9 +265,9 @@ static inline int test_and_change_bit(in
+                 "   mov.l   %0,  @%2      \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+                 : "=&r" (tmp),     // 0
+-                  "=&r" (retval)   // 1
+-                : "r"   (a),       // 2
+-                  "r"   (mask)     // 3
++                  "=&r" (retval),  // 1
++                  "+r"  (a)        // 2
++                : "r"   (mask)     // 3
+                 : "memory" , "r0", "r1", "t" );
+         return retval;
+ }
+Index: linux/include/asm-sh/system.h
+===================================================================
+--- linux.orig/include/asm-sh/system.h
++++ linux/include/asm-sh/system.h
+@@ -315,9 +315,9 @@ static inline unsigned long xchg_u32(vol
+                 "   mov.l  @%1,   %0      \n\t" // load  old value
+                 "   mov.l   %2,   @%1     \n\t" // store new value
+                 "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (retval)   // 0
+-                : "r"   (m),       // 1
+-                  "r"   (val)      // 2
++                : "=&r" (retval),  // 0
++                  "+r"  (m)        // 1
++                : "r"   (val)      // 2
+                 : "memory", "r0", "r1" );
+ 
+         return retval;
+@@ -337,9 +337,9 @@ static inline unsigned long xchg_u8(vola
+                "   extu.b  %0,   %0      \n\t" // extend as unsigned
+                "   mov.b   %2,   @%1     \n\t" // store new value
+                "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (retval)  // 0
+-                : "r"   (m),      // 1
+-                  "r"   (val)     // 2
++                : "=&r" (retval), // 0
++                  "+r"  (m)       // 1
++                : "r"   (val)     // 2
+                 : "memory" , "r0", "r1");
+         return retval ;
+ }
+@@ -408,9 +408,9 @@ static inline unsigned long __cmpxchg_u3
+                "   bf            1f      \n\t" // if not equal
+                "   mov.l   %2,   @%1     \n\t" // store new value
+                "1: mov     r1,   r15     \n\t" // LOGOUT
+-                : "=&r" (retval)   // 0
+-                : "r"   (m),       // 1
+-                  "r"   (new)      // 2
++                : "=&r" (retval),  // 0
++                  "+r"  (m)        // 1
++                : "r"   (new)      // 2
+                 : "memory" , "r0", "r1", "t");
+         return retval;
+ }

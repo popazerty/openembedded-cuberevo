@@ -1,0 +1,54 @@
+commit a7656d849db40bee59635900e3b680528fe70f9d
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Tue Jul 15 16:59:22 2008 +0100
+
+    sh_stm: STEM information fixed for MB519 and MB671, comment for DB679
+    
+    - STEM CS1 bank & offset data were wrong in case of MB519 & MB671
+    - DB679 comment was copied from NAND STEM module, without changing description
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/common/db679.c b/arch/sh/boards/st/common/db679.c
+index 729d58e..fddaca5 100644
+--- a/arch/sh/boards/st/common/db679.c
++++ b/arch/sh/boards/st/common/db679.c
+@@ -7,7 +7,7 @@
+  * May be copied or modified under the terms of the GNU General Public
+  * License.  See linux/COPYING for more information.
+  *
+- * STMicroelectronics NAND Flash STEM board
++ * STMicroelectronics Parallel ATA STEM board
+  *
+  * This code assumes that STEM_notCS0 and STEM_notINTR0 lines are used,
+  * so jumpers J1 and J2 shall be set to 1-2 positions.
+diff --git a/include/asm-sh/mb519/stem.h b/include/asm-sh/mb519/stem.h
+index c176dc1..a02ae7b 100644
+--- a/include/asm-sh/mb519/stem.h
++++ b/include/asm-sh/mb519/stem.h
+@@ -14,8 +14,8 @@
+ #define STEM_CS0_BANK 1
+ #define STEM_CS0_OFFSET 0
+ 
+-#define STEM_CS1_BANK 4
+-#define STEM_CS1_OFFSET 0
++#define STEM_CS1_BANK 1
++#define STEM_CS1_OFFSET (1 << 23)
+ 
+ #define STEM_INTR0_IRQ ILC_IRQ(6)
+ 
+diff --git a/include/asm-sh/mb671/stem.h b/include/asm-sh/mb671/stem.h
+index 07db681..26f65e3 100644
+--- a/include/asm-sh/mb671/stem.h
++++ b/include/asm-sh/mb671/stem.h
+@@ -14,8 +14,8 @@
+ #define STEM_CS0_BANK 1
+ #define STEM_CS0_OFFSET 0
+ 
+-#define STEM_CS1_BANK 4
+-#define STEM_CS1_OFFSET 0
++#define STEM_CS1_BANK 1
++#define STEM_CS1_OFFSET (1 << 23)
+ 
+ #define STEM_INTR0_IRQ ILC_IRQ(6)
+ 

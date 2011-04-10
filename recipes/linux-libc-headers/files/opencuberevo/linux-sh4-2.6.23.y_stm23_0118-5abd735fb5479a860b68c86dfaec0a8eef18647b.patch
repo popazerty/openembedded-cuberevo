@@ -1,0 +1,1432 @@
+From 5abd735fb5479a860b68c86dfaec0a8eef18647b Mon Sep 17 00:00:00 2001
+From: David McKay <david.mckay@st.com>
+Date: Wed, 11 Feb 2009 13:33:21 +0000
+Subject: [PATCH] sh: add support for ST PCI hardware
+
+Adds support for the PCI block found on the latest STMicro chips.  The
+PCI signals are multiplexed with the EMI, in order to save pincount.
+Cut 2 silicon is needed for both 7105 and 7111.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/Kconfig                        |   18 +
+ arch/sh/boards/st/mb618/setup.c        |   26 ++-
+ arch/sh/boards/st/mb680/setup.c        |   29 ++-
+ arch/sh/drivers/pci/Makefile           |    3 +-
+ arch/sh/drivers/pci/pci-synopsys.c     |  585 ++++++++++++++++++++++++++++++++
+ arch/sh/drivers/pci/pci-synopsys.h     |  135 ++++++++
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |  164 +++++++++
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |  112 ++++++
+ include/linux/stm/soc.h                |   99 ++++++
+ include/linux/stm/soc_init.h           |   47 +++
+ 10 files changed, 1207 insertions(+), 11 deletions(-)
+ create mode 100644 arch/sh/drivers/pci/pci-synopsys.c
+ create mode 100644 arch/sh/drivers/pci/pci-synopsys.h
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 57a8507..c03dc92 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -47,6 +47,7 @@ config GENERIC_IRQ_PROBE
+ 
+ config GENERIC_IOMAP
+ 	bool
++	default n
+ 
+ config GENERIC_TIME
+ 	def_bool n
+@@ -438,6 +439,18 @@ config SH_ST_STPM_HD_V2
+ 	bool
+ 	default n
+ 
++
++# Old style PCI controller, used on ST40RA, GX1 etc
++config SH_ST_ST40RA_PCI
++	bool
++	default n
++
++# Completely different PCI controller from synopsys
++config SH_ST_SYNOPSYS_PCI
++	bool
++	select GENERIC_IOMAP
++	default n
++
+ config SH_ST_CB101
+ 	bool "cb101: ST Customer board 101"
+ 	depends on CPU_SUBTYPE_STX7200
+@@ -477,6 +490,7 @@ config SH_ST_MB374
+ 	select SYS_SUPPORTS_PCI
+ 	select SH_ST_HARP_IRQ
+ 	select SH_ST_STEM
++	select SH_ST_ST40RA_PCI
+ 	help
+ 	  Select ST40RA-Starter if configuring for an
+ 	  STMicroelectronics ST40RA Starter Board (also known as the
+@@ -549,6 +563,8 @@ config SH_ST_MB618
+ 	depends on CPU_SUBTYPE_STX7111
+ 	select SH_ST_EPLD
+ 	select SH_ST_STEM
++	select SYS_SUPPORTS_PCI
++	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select STx7111 Validation if configuring for an
+ 	  STMicroelectronics STx7111 Validation Board (product code:
+@@ -584,6 +600,8 @@ config SH_ST_MB680
+ 	depends on CPU_SUBTYPE_STX7105
+ 	select SH_ST_STEM
+ 	select SH_ST_STPM_HD_V2
++	select SYS_SUPPORTS_PCI
++	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select STx7105 Validation if configuring for an
+ 	  STMicroelectronics STx7105 Validation Board (product code:
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index 7f5217a..05b149c 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -253,6 +253,25 @@ static struct nand_config_data mb618_nand_config = {
+ 	.nr_parts		= ARRAY_SIZE(nand_partitions),
+ };
+ 
++
++/* We don't bother with INT[BCD] as they are shared with the ssc
++ * J20-A must be removed, J20-B must be 5-6
++ */
++static struct pci_config_data  pci_config = {
++	.pci_irq = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
++	.serr_irq = PCI_PIN_UNUSED,
++	.idsel_lo = 30,
++	.idsel_hi = 30,
++	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
++	.pci_clk = 33333333
++};
++
++int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
++{
++       /* We can use the standard function on this board */
++       return  stx7111_pcibios_map_platform_irq(&pci_config, pin);
++}
++
+ static struct platform_device *mb618_devices[] __initdata = {
+ 	&mb618_leds,
+ 	&epld_device,
+@@ -308,6 +327,7 @@ static struct i2c_board_info mb618_scart_audio __initdata = {
+ 
+ static int __init device_init(void)
+ {
++	stx7111_configure_pci(&pci_config);
+ 	stx7111_configure_pwm(&pwm_private_info);
+ 	stx7111_configure_ssc(&ssc_private_info);
+ 	stx7111_configure_usb(1); /* Enable inverter */
+@@ -401,9 +421,5 @@ static void __init mb618_init_irq(void)
+ }
+ 
+ struct sh_machine_vector mv_mb618 __initmv = {
+-	.mv_name		= "mb618",
+-	.mv_setup		= mb618_setup,
+-	.mv_nr_irqs		= NR_IRQS,
+-	.mv_init_irq		= mb618_init_irq,
+-	.mv_ioport_map		= mb618_ioport_map,
++	STM_MACHINE_VEC(mb618)
+ };
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 36ca3f6..01667ea 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -126,8 +126,28 @@ lirc_scd_t lirc_scd = {
+ 	.noiserecov = 0,
+ };
+ 
++
++
++/* PCI configuration */
++
++static struct pci_config_data  pci_config = {
++	.pci_irq = {PCI_PIN_DEFAULT, PCI_PIN_DEFAULT, PCI_PIN_DEFAULT, PCI_PIN_DEFAULT},
++	.serr_irq = PCI_PIN_UNUSED,
++	.idsel_lo = 30,
++	.idsel_hi = 30,
++	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
++	.pci_clk = 33333333
++};
++
++int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
++{
++       /* We can use the standard function on this board */
++       return  stx7105_pcibios_map_platform_irq(&pci_config, pin);
++}
++
+ static int __init device_init(void)
+ {
++	stx7105_configure_pci(&pci_config);
+ 	stx7200_configure_sata(0);
+ 	stx7200_configure_sata(1);
+ 	stx7105_configure_pwm(&pwm_private_info);
+@@ -153,6 +173,8 @@ static int __init device_init(void)
+ }
+ arch_initcall(device_init);
+ 
++
++#ifndef CONFIG_GENERIC_IOMAP
+ static void __iomem *mb680_ioport_map(unsigned long port, unsigned int size)
+ {
+ 	/* However picking somewhere safe isn't as easy as you might think.
+@@ -162,6 +184,7 @@ static void __iomem *mb680_ioport_map(unsigned long port, unsigned int size)
+ 	 */
+ 	return (void __iomem *)CCN_PVR;
+ }
++#endif
+ 
+ static void __init mb680_init_irq(void)
+ {
+@@ -173,9 +196,5 @@ static void __init mb680_init_irq(void)
+ }
+ 
+ struct sh_machine_vector mv_mb680 __initmv = {
+-	.mv_name		= "mb680",
+-	.mv_setup		= mb680_setup,
+-	.mv_nr_irqs		= NR_IRQS,
+-	.mv_init_irq		= mb680_init_irq,
+-	.mv_ioport_map		= mb680_ioport_map,
++	STM_MACHINE_VEC(mb680)
+ };
+diff --git a/arch/sh/drivers/pci/Makefile b/arch/sh/drivers/pci/Makefile
+index d5c3632..10d2da4 100644
+--- a/arch/sh/drivers/pci/Makefile
++++ b/arch/sh/drivers/pci/Makefile
+@@ -5,7 +5,8 @@
+ obj-y					+= pci.o
+ obj-$(CONFIG_PCI_AUTO)			+= pci-auto.o
+ 
+-obj-$(CONFIG_CPU_SUBTYPE_ST40)		+= pci-st40.o
++obj-$(CONFIG_SH_ST_ST40RA_PCI)		+= pci-st40.o
++obj-$(CONFIG_SH_ST_SYNOPSYS_PCI) 	+= pci-synopsys.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH7751)	+= pci-sh7751.o ops-sh4.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH7751R)	+= pci-sh7751.o ops-sh4.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH7780)	+= pci-sh7780.o ops-sh4.o
+diff --git a/arch/sh/drivers/pci/pci-synopsys.c b/arch/sh/drivers/pci/pci-synopsys.c
+new file mode 100644
+index 0000000..ef78756
+--- /dev/null
++++ b/arch/sh/drivers/pci/pci-synopsys.c
+@@ -0,0 +1,585 @@
++/*
++ * arch/sh/drivers/pci/pci-synopsys.c
++ *
++ * PCI support for the STMicroelectronics EMISS PCI cell
++ *
++ * Copyright 2009 ST Microelectronics (R&D) Ltd.
++ * Author: David J. McKay (david.mckay@st.com)
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the top level directory for more details.
++ *
++ */
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/interrupt.h>
++#include <linux/spinlock.h>
++#include <linux/platform_device.h>
++#include <linux/pci.h>
++#include <linux/errno.h>
++#include <linux/io.h>
++#include <linux/stm/soc.h>
++#include <linux/cache.h>
++#include <linux/clk.h>
++#include <asm/clock.h>
++#include "pci-synopsys.h"
++
++
++/* Due to the brain dead hardware we have to take the lock when we do inb(), or config operations */
++static DEFINE_SPINLOCK(stm_pci_io_lock);
++
++/* I doubt we will ever have more than one EMI/PCI controller, so we may as well make
++ * the register pointers global
++ */
++static void __iomem *emiss; /* pointer to emiss register area */
++static void __iomem *ahb_pci; /* Ditto for AHB registers */
++
++/* Static lookup table to precompute byte enables for various
++ * transaction size. Stolen from Doug, as it is clearer than
++ * computing it:-)
++ */
++struct byte_enables {
++  unsigned char enables;
++  signed   char shift;
++};
++
++static struct byte_enables be_table[3][4] =
++{
++  {
++    { 0x0e,  0 }, /* BYTE read offset 0: legal */
++    { 0x0d,  8 }, /* BYTE read offset 1: legal */
++    { 0x0b, 16 }, /* BYTE read offset 2: legal */
++    { 0x07, 24 }  /* BYTE read offset 3: legal */
++  },
++  {
++    { 0x0c,  0 }, /* WORD read offset 0: legal   */
++    { 0xff, -1 }, /* WORD read offset 1: illegal */
++    { 0x03, 16 }, /* WORD read offset 2: legal   */
++    { 0xff, -1 }  /* WORD read offset 3: illegal */
++  },
++  {
++    { 0x00,  0 }, /* DWORD read offset 0: legal   */
++    { 0xff, -1 }, /* DWORD read offset 1: illegal */
++    { 0xff, -1 }, /* DWORD read offset 2: illegal */
++    { 0xff, -1 }  /* DWORD read offset 3: illegal */
++  }
++};
++
++#define BYTE_ENABLE(addr,size) be_table[(size) / 2][(addr) & 3].enables
++#define BYTE_ENABLE_SHIFT(addr,size) be_table[(size) / 2][(addr) & 3].shift
++#define SIZE_MASK(size) ( (size == 4) ? ~0 : (1 << (size << 3)) - 1)
++
++#define pci_crp_readb(fn, addr)   pci_crp_read(fn, addr, 1)
++#define pci_crp_readw(fn, addr)   pci_crp_read(fn, addr, 2)
++#define pci_crp_readl(fn, addr)   pci_crp_read(fn, addr, 4)
++
++/* size is either 1, 2, or 4 */
++static u32 pci_crp_read(unsigned fn, int addr, int size)
++{
++	unsigned char be = BYTE_ENABLE(addr,size);
++	int shift = BYTE_ENABLE_SHIFT(addr,size);
++	u32 ret;
++
++	/* The spin lock is not needed as this are basically used only
++	 * in the init function. But that may change
++	 */
++	spin_lock(&stm_pci_io_lock);
++
++	writel(PCI_CRP(addr, fn, PCI_CONFIG_READ, be), ahb_pci + PCI_CRP_ADDR);
++	ret = readl(ahb_pci + PCI_CRP_RD_DATA);
++
++	spin_unlock(&stm_pci_io_lock);
++
++	return (ret >> shift) & SIZE_MASK(size);
++}
++
++
++#define pci_crp_writeb(fn, addr, val) pci_crp_write(fn, addr, 1, val)
++#define pci_crp_writew(fn, addr, val) pci_crp_write(fn, addr, 2, val)
++#define pci_crp_writel(fn, addr, val) pci_crp_write(fn, addr, 4, val)
++
++static void pci_crp_write(unsigned fn, int addr, int size, u32 val)
++{
++	unsigned char be = BYTE_ENABLE(addr,size);
++	int shift = BYTE_ENABLE_SHIFT(addr,size);
++
++	spin_lock(&stm_pci_io_lock);
++
++	writel(PCI_CRP(addr, fn, PCI_CONFIG_WRITE, be), ahb_pci + PCI_CRP_ADDR);
++	writel(val << shift , ahb_pci + PCI_CRP_WR_DATA);
++
++	spin_unlock(&stm_pci_io_lock);
++}
++
++/* Generate a read cycle with the specified command type
++ * and byte enables
++ */
++static inline u32 __pci_csr_read(u32 addr, u32 cmd)
++{
++	writel(addr, ahb_pci + PCI_CSR_ADDR);
++	writel(cmd, ahb_pci + PCI_CSR_BE_CMD);
++
++	return readl(ahb_pci + PCI_CSR_RD_DATA);
++}
++
++/* As above but take the lock. Has to be irqsave as can be used in interrupt context */
++static inline u32 pci_csr_read(u32 addr, u32 cmd)
++{
++	unsigned long flags;
++	u32 val;
++
++	spin_lock_irqsave(&stm_pci_io_lock, flags);
++
++	val = __pci_csr_read(addr, cmd);
++
++	spin_unlock_irqrestore(&stm_pci_io_lock, flags);
++
++	return val;
++}
++
++/* Generate a write cycle with the specified command type
++ * and byte enables
++ */
++static inline void __pci_csr_write(u32 addr, u32 cmd, u32 val)
++{
++	writel(addr, ahb_pci + PCI_CSR_ADDR);
++	writel(cmd, ahb_pci + PCI_CSR_BE_CMD);
++	writel(val, ahb_pci + PCI_CSR_WR_DATA);
++}
++
++static inline void pci_csr_write(u32 addr, u32 cmd, u32 val)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&stm_pci_io_lock, flags);
++
++	__pci_csr_write(addr, cmd, val);
++
++	spin_unlock_irqrestore(&stm_pci_io_lock, flags);
++}
++
++/* This is a bit ugly, but it means that pci slots will always start with 0.
++ * Is there a way to get back from the bus to the device?
++ */
++static int idsel_lo, max_slot;
++
++#define TYPE0_CONFIG_CYCLE(fn, where) ( ((fn)<<8) | ((where) &~3)
++#define TYPE1_CONFIG_CYCLE(bus, devfn, where) (((bus) << 16) | ((devfn) << 8) | ((where) & ~3) | 1)
++
++static int pci_stm_config_read(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 *val)
++{
++	int slot = PCI_SLOT(devfn);
++	int fn = PCI_FUNC(devfn);
++	u32 addr, cmd, raw;
++
++	if(bus->number == 0 ) {
++		if(slot > max_slot) {
++			*val = SIZE_MASK(size);
++			return PCIBIOS_DEVICE_NOT_FOUND;
++		}
++		addr = TYPE0_CONFIG_CYCLE(fn,where) | ( (1 << (idsel_lo + slot)) ));
++	} else {
++		addr = TYPE1_CONFIG_CYCLE(bus->number, devfn, where);
++	}
++
++	cmd = PCI_CSR_BE_CMD_VAL(PCI_CONFIG_READ, BYTE_ENABLE(where, size));
++
++	/* I'm assuming we can use config read/write in interrupt context, safer */
++	raw = pci_csr_read(addr, cmd);
++
++	*val = (raw >> BYTE_ENABLE_SHIFT(where, size)) & SIZE_MASK(size);
++
++	return PCIBIOS_SUCCESSFUL;
++}
++
++static int pci_stm_config_write(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 val)
++{
++	int slot = PCI_SLOT(devfn);
++	int fn = PCI_FUNC(devfn);
++	u32 addr, cmd;
++
++	if(bus->number == 0 ) {
++		if(slot > max_slot) {
++			return PCIBIOS_DEVICE_NOT_FOUND;
++		}
++		addr = TYPE0_CONFIG_CYCLE(fn,where) | ( (1 << (idsel_lo + slot)) ));
++	} else {
++		addr = TYPE1_CONFIG_CYCLE(bus->number, devfn, where);
++	}
++
++	cmd = PCI_CSR_BE_CMD_VAL(PCI_CONFIG_WRITE, BYTE_ENABLE(where, size));
++	val <<= BYTE_ENABLE_SHIFT(where, size);
++
++	pci_csr_write(addr, cmd, val);
++
++	return PCIBIOS_SUCCESSFUL;
++}
++
++static inline u32 pci_synopsys_in(unsigned long port, int size)
++{
++	unsigned be = BYTE_ENABLE(port,size);
++	u32 raw;
++
++	/* ad[1:0] must be passed through for IO port read/write */
++	raw = pci_csr_read(port, PCI_CSR_BE_CMD_VAL(PCI_IO_READ, be));
++
++	return (raw >> BYTE_ENABLE_SHIFT(port,size)) & SIZE_MASK(size);
++}
++
++static inline void pci_synopsys_out(u32 val, unsigned long port, int size)
++{
++	unsigned be = BYTE_ENABLE(port, size);
++	u32 cmd;
++
++	cmd = PCI_CSR_BE_CMD_VAL(PCI_IO_WRITE, be);
++	val <<=  BYTE_ENABLE_SHIFT(port, size);
++
++	pci_csr_write(port, cmd, val);
++}
++
++/* As above, but does NOT take the lock. Beware */
++static inline u32 __pci_synopsys_in(unsigned long port, int size)
++{
++	unsigned be = BYTE_ENABLE(port,size);
++	u32 raw;
++
++	/* ad[1:0] must be passed through for IO port read/write */
++	raw = __pci_csr_read(port, PCI_CSR_BE_CMD_VAL(PCI_IO_READ, be));
++
++	return (raw >> BYTE_ENABLE_SHIFT(port,size)) & SIZE_MASK(size);
++}
++
++static inline void __pci_synopsys_out(u32 val, unsigned long port, int size)
++{
++	unsigned be = BYTE_ENABLE(port, size);
++	u32 cmd;
++
++	cmd = PCI_CSR_BE_CMD_VAL(PCI_IO_WRITE, be);
++	val <<=  BYTE_ENABLE_SHIFT(port, size);
++
++	__pci_csr_write(port, cmd, val);
++}
++
++#define in_func(size, ext) 					\
++u##size pci_synopsys_in##ext(unsigned long port)		\
++{								\
++	return (u##size) pci_synopsys_in(port, size >> 3);	\
++}
++
++in_func(8, b)
++in_func(16, w)
++in_func(32, l)
++
++/* Just does the same thing for now, I don't think we need a pause here, as there is quite a bit of
++ * overhead anyway
++ */
++
++#define in_pause_func(size, ext)  \
++		u##size pci_synopsys_in##ext##_p(unsigned long port) { return pci_synopsys_in##ext(port); }
++
++in_pause_func(8,  b)
++in_pause_func(16, w)
++in_pause_func(32, l)
++
++/* For the string functions, in order to try to improve performance, I've chunked
++ * the write together rather than taking/release the lock for each transaction. This
++ * makes interrupt latency worse but should improve performance
++ */
++
++#define PCI_IO_CHUNK_SIZE 32 /* Correct size ? */
++
++#define string_in_func(size, ext) \
++void pci_synopsys_ins##ext(unsigned long port, void *dst, unsigned long count) 		\
++{											\
++	u##size * buf= (u##size *) dst;							\
++	unsigned long flags;								\
++	unsigned long chunk;								\
++											\
++	while(count >= PCI_IO_CHUNK_SIZE) {						\
++		spin_lock_irqsave(&stm_pci_io_lock, flags);				\
++		for(chunk = count - PCI_IO_CHUNK_SIZE; count > chunk; count--)	 	\
++			*buf++ = __pci_synopsys_in(port, size >> 3);			\
++		spin_unlock_irqrestore(&stm_pci_io_lock, flags);			\
++	}										\
++	/* Tail end  */									\
++	spin_lock_irqsave(&stm_pci_io_lock, flags);					\
++	while(count--) {								\
++		*buf++ =  __pci_synopsys_in(port, size >> 3);				\
++	}										\
++	spin_unlock_irqrestore(&stm_pci_io_lock, flags);				\
++}
++
++string_in_func(8,  b)
++string_in_func(16, w)
++string_in_func(32, l)
++
++#define out_func(size, ext)					\
++void pci_synopsys_out##ext(u##size val, unsigned long port)	\
++{								\
++	pci_synopsys_out(val, port, size >> 3 );		\
++}
++
++out_func(8, b)
++out_func(16, w)
++out_func(32, l)
++
++#define out_pause_func(size, ext) \
++	void pci_synopsys_out##ext##_p(u##size val, unsigned long port) { pci_synopsys_out##ext(val, port); }
++
++out_pause_func(8,  b)
++out_pause_func(16, w)
++out_pause_func(32, l)
++
++#define string_out_func(size, ext) 							\
++void pci_synopsys_outs##ext(unsigned long port, const void *src, unsigned long count) 	\
++{											\
++	u##size * buf= (u##size *) src;							\
++	unsigned long flags;								\
++	unsigned long chunk;								\
++											\
++	while(count >= PCI_IO_CHUNK_SIZE) {						\
++		spin_lock_irqsave(&stm_pci_io_lock, flags);				\
++		for(chunk = count - PCI_IO_CHUNK_SIZE; count > chunk; count--)	 	\
++			__pci_synopsys_out(*buf++, port, size >> 3);			\
++		spin_unlock_irqrestore(&stm_pci_io_lock, flags);			\
++	}										\
++	/* Tail end  */									\
++	spin_lock_irqsave(&stm_pci_io_lock, flags);					\
++	while(count--) {								\
++		__pci_synopsys_out(*buf++, port, size >> 3);				\
++	}										\
++	spin_unlock_irqrestore(&stm_pci_io_lock, flags);				\
++}
++
++string_out_func(8, b)
++string_out_func(16, w)
++string_out_func(32, l)
++
++
++static void __iomem __devinit *plat_ioremap_region(struct platform_device *pdev, int region)
++{
++	struct resource *res;
++	unsigned long size;
++	void __iomem *p;
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, region);
++	if(res == NULL) return NULL;
++
++	size = res->end - res->start + 1;
++
++	if(!devm_request_mem_region(&pdev->dev, res->start, size, res->name))  return NULL;
++
++	p = devm_ioremap_nocache(&pdev->dev,res->start,size);
++
++	if(p == NULL) printk(KERN_ERR "pci-stm: Failed to map address 0x%08lx\n", (unsigned long)res->start);
++
++	return p;
++}
++
++static irqreturn_t pci_stm_serr_irq(int irq, void *data)
++{
++	panic("pci_stm: SERR INTERRUPT RAISED\n");
++
++	return IRQ_HANDLED;
++}
++
++static irqreturn_t pci_stm_dma_irq(int irq, void *data)
++{
++
++	printk("pci_stm: Transaction with no associated function\n");
++
++	writel(~0, emiss + PCI_BRIDGE_INT_DMA_CLEAR);
++
++	return IRQ_HANDLED;
++}
++
++/* The configuration read/write functions */
++static struct pci_ops pci_config_ops = {
++	.read = pci_stm_config_read,
++	.write = pci_stm_config_write,
++};
++
++/* This is a global used by the sh PCI infrastructure
++ * The resources are filled in from the platform data by
++ * the probe() code
++ */
++struct pci_channel board_pci_channels[] = {
++	{&pci_config_ops, NULL, NULL, 0, 256},
++	{NULL, NULL, NULL, 0, 0}
++};
++
++char * __devinit pcibios_setup(char *str)
++{
++	return str;
++}
++
++static void __devinit pci_stm_setup(struct pci_config_data *pci_config, unsigned long pci_window_start, unsigned long pci_window_size)
++{
++	unsigned long lmi_base, lmi_end, mbar_size;
++	int fn;
++	unsigned v;
++	unsigned long req_gnt_mask = 0;
++	int i;
++
++	/* You HAVE to have either wrap or ping-pong enabled, even though they
++	 * are different bits. Very strange
++	 */
++	writel(PCI_BRIDGE_CONFIG_RESET | PCI_BRIDGE_CONFIG_HOST_NOT_DEVICE |
++	       PCI_BRIDGE_CONFIG_WRAP_ENABLE_ALL, emiss + PCI_BRIDGE_CONFIG);
++
++	v = readl(emiss + EMISS_CONFIG);
++	writel((v & ~EMISS_CONFIG_CLOCK_SELECT_MASK) | EMISS_CONFIG_PCI_CLOCK_MASTER
++		| EMISS_CONFIG_CLOCK_SELECT_PCI | EMISS_CONFIG_PCI_HOST_NOT_DEVICE, emiss + EMISS_CONFIG);
++
++	/* Figure out what req/gnt lines we are using */
++	for(i = 0 ; i < 4; i++) {
++		if(pci_config->req_gnt[i] != PCI_PIN_UNUSED) {
++			req_gnt_mask |= EMISS_ARBITER_CONFIG_MASK_BUS_REQ(i);
++		}
++	}
++	/* Configure the arbiter. More work needed to understand what all these fields do */
++	v =  readl(emiss + EMISS_ARBITER_CONFIG);
++	writel((v & ~req_gnt_mask) | EMISS_ARBITER_CONFIG_PCI_NOT_EMI, emiss + EMISS_ARBITER_CONFIG);
++
++	/* This field will need to be parameterised by the soc layer for sure, all silicon will likely be different */
++	writel( PCI_AD_CONFIG_READ_AHEAD(pci_config->ad_read_ahead) | PCI_AD_CONFIG_CHUNKS_IN_MSG(pci_config->ad_chunks_in_msg) |
++		PCI_AD_CONFIG_PCKS_IN_CHUNK(pci_config->ad_pcks_in_chunk) | PCI_AD_CONFIG_TRIGGER_MODE(pci_config->ad_trigger_mode) |
++		PCI_AD_CONFIG_MAX_OPCODE(pci_config->ad_max_opcode) | PCI_AD_CONFIG_POSTED(pci_config->ad_posted) |
++		PCI_AD_CONFIG_THRESHOLD(pci_config->ad_threshold), emiss +  PCI_AD_CONFIG);
++
++	/* Now we can start to program up the BARs and probe the bus */
++
++	/* Set up the window from the STBUS space to PCI space
++	 * We want a one to one physical mapping, anything else is far too
++	 * complicated (and pointless)
++	 */
++	writel(pci_window_start, emiss + PCI_FRAME_ADDR);
++	/* Largest PCI address will form the mask in effect. Assumes pci_window_size is ^2 */
++	writel(pci_window_size  - 1, emiss + PCI_FRAMEADDR_MASK);
++
++	/* Now setup the reverse mapping, using as many functions as we have to. Each function maps 256Megs */
++
++	lmi_base = CONFIG_MEMORY_START; /* This does not have to be on a 256 Meg boundary */
++	lmi_end = lmi_base + CONFIG_MEMORY_SIZE - 1; /* Rarely a multiple of 256 Megs */
++
++	/* Attempt to size the MBARS */
++	pci_crp_writel(0, PCI_BASE_ADDRESS_0, ~0);
++	mbar_size = ~(pci_crp_readl(0, PCI_BASE_ADDRESS_0) & PCI_BASE_ADDRESS_MEM_MASK) + 1;
++	/* The mbar size should be 256Megs, but doing it this way means it can change */
++
++	/* Drop lmi base so that it is a multiple of the mbar size */
++	lmi_base = lmi_base & ~(mbar_size - 1);
++
++	for(fn = 0; fn < 8 && lmi_base < lmi_end; fn++) {
++
++		pci_crp_writel(fn, PCI_BASE_ADDRESS_0, lmi_base);
++		pci_crp_writeb(fn, PCI_CACHE_LINE_SIZE, L1_CACHE_BYTES >> 2);
++		pci_crp_writeb(fn, PCI_LATENCY_TIMER, 0xff);
++		pci_crp_writew(fn, PCI_COMMAND, PCI_COMMAND_SERR | PCI_COMMAND_PARITY |
++				   PCI_COMMAND_MASTER | PCI_COMMAND_MEMORY);
++
++		/* Update the emiss registers, we just have a one to one translation */
++		writel(lmi_base, emiss + PCI_BUFFADDR_FUNC(fn,0));
++		writel(lmi_base, emiss + PCI_BUFFADDR_FUNC(fn,1));
++
++		writel(mbar_size, emiss + PCI_FUNC_BUFFDEPTH(fn));
++		writel(PCI_FUNC_BUFF_CONFIG_ENABLE | PCI_FUNC_BUFF_CONFIG_FUNC_ID(fn), emiss + PCI_FUNC_BUFF_CONFIG(fn));
++
++		lmi_base += mbar_size;
++	}
++
++	/* Generate an error if we get a transaction that isn't claimed by anybody */
++	writel(PCI_BRIDGE_INT_DMA_ENABLE_INT_ENABLE | PCI_BRIDGE_INT_DMA_ENABLE_INT_UNDEF_FN_ENABLE,
++	       emiss + PCI_BRIDGE_INT_DMA_ENABLE);
++
++}
++
++/* Probe function for PCI data
++ * When we get here, we can assume that the PCI block is powered up and ready
++ * to rock, and that all sysconfigs have been set correctly. All mangling
++ * of emiss arbiter registers is done here
++ */
++static int __devinit pci_stm_probe(struct platform_device *pdev)
++{
++	struct resource *res;
++	int ret,irq;
++	unsigned long pci_window_start, pci_window_size;
++	struct pci_config_data *pci_config = pdev->dev.platform_data;
++	struct clk *pci_clk;
++
++	emiss = plat_ioremap_region(pdev, 0);
++	if(emiss == NULL)  return -ENOMEM;
++
++	ahb_pci = plat_ioremap_region(pdev, 1);
++	if(ahb_pci == NULL)  return -ENOMEM;
++
++	/* We don't use any of the ping-pong wierdness, but sometimes the errors are useful */
++	irq = platform_get_irq(pdev, 0);
++	ret = devm_request_irq(&pdev->dev, irq, pci_stm_dma_irq, 0, "PCI DMA", NULL);
++	if(ret) printk(KERN_ERR "pci-stm: Cannot request irq %d\n",irq);
++
++	irq = platform_get_irq(pdev, 1);
++	/* Don't hook the SERR interrupt if we are told not to */
++	if(irq > 0 ) {
++		ret = devm_request_irq(&pdev->dev, irq, pci_stm_serr_irq, 0, "PCI SERR", NULL);
++		if(ret) printk(KERN_ERR "pci-stm: Cannot request irq %d\n",irq);
++	}
++
++	pci_clk = clk_get(&pdev->dev,"pci");
++	if(pci_clk) {
++		unsigned long pci_clk_rate = (pci_config->pci_clk == 0) ? 33333333 : pci_config->pci_clk;
++		unsigned long pci_clk_mhz = pci_clk_rate/1000000;
++		printk("pci_stm: Setting PCI clock to %luMHz\n",pci_clk_mhz);
++		if(clk_set_rate(pci_clk, pci_clk_rate)) {
++			printk(KERN_ERR "pci_stm: Unable to set PCI clock to %luMHz\n",pci_clk_mhz);
++		}
++	} else {
++		printk(KERN_ERR "pci_stm: Unable to find pci clock\n");
++	}
++
++
++	/* Set up the sh board channel stuff to point at the platform data we have passed in */
++	board_pci_channels[0].mem_resource = pdev->resource + 2;
++	board_pci_channels[0].io_resource = pdev->resource + 3;
++
++	/* Extract where the PCI window is suppossed to be */
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
++	if(res == NULL) return -ENXIO;
++
++	pci_window_start = res->start;
++	pci_window_size = res->end - res->start + 1 ;
++
++	/* Copy over into globals used by config read/write code */
++	idsel_lo = pci_config->idsel_lo;
++	max_slot = pci_config->idsel_hi - idsel_lo;
++
++	/* Set the maximum devfn to probe, prevents the generic code
++	 * trying to probe for slots that we already know do not exist
++	 */
++	board_pci_channels[0].last_devfn = PCI_DEVFN(max_slot,7);
++
++	/* Now do all the register poking */
++	pci_stm_setup(pci_config, pci_window_start, pci_window_size);
++
++	return 0;
++}
++
++/* There is no power management for PCI at the moment
++ * should be relatively straightforward to add I think
++ * once the main driver is stable.
++ */
++static struct platform_driver pci_stm_driver = {
++	.driver.name = "pci_stm",
++	.driver.owner = THIS_MODULE,
++	.probe = pci_stm_probe,
++};
++
++
++static int __init pci_stm_init(void)
++{
++	return	platform_driver_register(&pci_stm_driver);
++}
++
++/* Has to be pretty early */
++arch_initcall(pci_stm_init);
++
+diff --git a/arch/sh/drivers/pci/pci-synopsys.h b/arch/sh/drivers/pci/pci-synopsys.h
+new file mode 100644
+index 0000000..1331b10
+--- /dev/null
++++ b/arch/sh/drivers/pci/pci-synopsys.h
+@@ -0,0 +1,135 @@
++/*
++ * arch/sh/drivers/pci/pci-synopsys.h
++ *
++ * Defines for the EMISS PCI cell on STMicro devices
++ *
++ * Copyright 2009 ST Microelectronics (R&D) Ltd.
++ * Author: David J. McKay (david.mckay@st.com)
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the top level directory for more details.
++ *
++ */
++
++#ifndef __PCI_SYNOPSYS_H__
++#define __PCI_SYNOPSYS_H__
++
++
++/* Controls various aspects of PCI. Since concievably other
++ * drivers may want to to muck around with this stuff, should
++ * this be in a separate driver? Probably, but this will do
++ * for now until I know what i am doing
++ */
++
++#define EMISS_CONFIG				0x1000
++#define EMISS_CONFIG_PCI_CLOCK_MASTER 		0x1
++#define EMISS_CONFIG_PCI_HOST_NOT_DEVICE	(0x1 << 5)
++#define EMISS_CONFIG_CLOCK_SELECT_MASK 		(0x3 << 1)
++#define EMISS_CONFIG_CLOCK_SELECT_PCI		(0x2 << 1)
++
++
++#define EMISS_ARBITER_CONFIG			0x1004
++#define EMISS_ARBITER_CONFIG_PCI_NOT_EMI	(1<< 8)
++#define EMISS_ARBITER_CONFIG_MASK_BUS_REQ0 	(1<< 4)
++#define EMISS_ARBITER_CONFIG_MASK_BUS_REQ(n)	( 1 << (4 + n)) // OK for REQ0
++#define EMISS_FRAME_LENGTH(n)			(0x1010 + ((n)*0x10))
++#define EMISS_HOLDOFF				(0x1014 + ((n)*0x10))
++#define EMISS_PRIORITY				(0x1018 + ((n)*4))
++#define EMISS_BANDWIDTH_LIMIT			(0x101c + ((n)*0x10)
++
++#define PCI_BRIDGE_CONFIG		(0x1400 + 0x000)
++#define PCI_BRIDGE_CONFIG_RESET		  0x2
++#define PCI_BRIDGE_CONFIG_HOST_NOT_DEVICE 0x1
++#define PCI_BRIDGE_CONFIG_WRAP_ENABLE_ALL (0xff << 24)
++
++#define PCI_BRIDGE_INT_DMA_ENABLE	(0x1400 + 0x004)
++#define PCI_BRIDGE_INT_DMA_ENABLE_INT_ENABLE (1<<0)
++#define PCI_BRIDGE_INT_DMA_ENABLE_INT_UNDEF_FN_ENABLE (1<<24)
++
++
++#define PCI_BRIDGE_INT_DMA_STATUS	(0x1400 + 0x008)
++#define PCI_BRIDGE_INT_DMA_CLEAR	(0x1400 + 0x00c)
++#define PCI_TARGID_BARHIT		(0x1400 + 0x010)
++#define PCI_INTERRUPT_OUT		(0x1400 + 0x040)
++#define PCI_DEVICEINTMASK_INT_ENABLE	(0x1400 + 0x044)
++#define PCI_DEVICEINTMASK_INT_STATUS	(0x1400 + 0x048)
++#define PCI_DEVICEINTMASK_INT_CLEAR	(0x1400 + 0x04c)
++#define PCI_PME_STATUSIN_STATEACK	(0x1400 + 0x080)
++#define PCI_POWER_STATE			(0x1400 + 0x084)
++#define PCI_PME_ENABLE_CLEAR		(0x1400 + 0x088)
++#define PCI_PME_STATUSCHG_INT_ENABLE	(0x1400 + 0x090)
++#define PCI_PME_STATUSCHG_INT_STATUS	(0x1400 + 0x094)
++#define PCI_PME_STATUSCHG_INT_CLEAR	(0x1400 + 0x098)
++#define PCI_PME_STATECHG_INT_ENABLE	(0x1400 + 0x0a0)
++#define PCI_PME_STATECHG_INT_STATUS	(0x1400 + 0x0a4)
++#define PCI_PME_STATECHG_INT_CLEAR	(0x1400 + 0x0a8)
++#define PCI_BUFFADDR_FUNC(fn,m)	 	(0x1400	+ 0x100 + 0x20*(fn) + 0x04 * (m))
++#define PCI_FUNC_BUFF_CONFIG(fn) 	(0x1400 + 0x100 + 0x20*(fn) + 0x08)
++#define PCI_FUNC_BUFF_CONFIG_ENABLE	(1<<31)
++#define PCI_FUNC_BUFF_CONFIG_FUNC_ID(n)	((n)<<8)
++
++#define PCI_FUNC_BUFFDEPTH(fn)		(0x1400 + 0x100 + 0x20*(fn) + 0x0c)
++#define PCI_CURADDRPTR_FUNC(fn)		(0x1400 + 0x100 + 0x20*(fn) + 0x10)
++#define PCI_FRAME_ADDR			(0x1400 + 0x200)
++#define PCI_FRAMEADDR_MASK		(0x1400 + 0x204)
++#define PCI_BOOTCFG_ADDR		(0x1400 + 0x300)
++#define PCI_BOOTCFG_DATA		(0x1400 + 0x304)
++#define PCI_SD_CONFIG			(0x1400 + 0x340)
++
++#define PCI_AD_CONFIG			(0x1400 + 0x344)
++#define PCI_AD_CONFIG_THRESHOLD(n)	 	(n)
++#define PCI_AD_CONFIG_CHUNKS_IN_MSG(n)	 	((n) << 4)	// Chunks in a message
++#define PCI_AD_CONFIG_PCKS_IN_CHUNK(n) 		((n) << 9)	// Packets in a chunk
++#define PCI_AD_CONFIG_TRIGGER_MODE(n)	 	((n) << 14)
++#define PCI_AD_CONFIG_POSTED(n)			((n) << 15)
++#define PCI_AD_CONFIG_MAX_OPCODE(n)		((n) << 16)
++#define PCI_AD_CONFIG_READ_AHEAD(n)		((n) << 21)
++
++#define PCI_AD_CONFIG_BUSY			(1<<31)
++
++
++/* NEW BLOCK OF REGISTERS */
++
++#define PCI_CRP_ADDR				0x000
++#define PCI_CRP_ADDR_CRP_ADDRESS_MASK		0xff
++#define PCI_CRP_ADDR_CRP_FUNCTION_MASK		(0x7<<8)
++#define PCI_CRP_ADDR_CRP_COMMAND_MASK		(0xf<<16)
++#define PCI_CRP_ADDR_CRP_BYTE_ENABLE_MASK	(0xf<<20) /* ACTIVE LOW!!! */
++
++#define PCI_CRP(addr, func, cmd, be)  ( ( ((addr) & 0xff) << 0 ) | \
++				        ( ((func) & 0x07) << 8 ) | \
++				        ( ((cmd) & 0x0f) << 16 ) | \
++				        ( ((be) & 0x0f)  << 20 ) )
++
++
++
++#define PCI_CRP_WR_DATA				0x004
++#define PCI_CRP_RD_DATA				0x008
++#define PCI_CSR_ADDR				0x00c
++#define PCI_CSR_BE_CMD				0x010
++#define PCI_CSR_BE_CMD_VAL(cmd,be)	(((be) << 4) | (cmd))
++
++#define PCI_CSR_WR_DATA				0x014
++#define PCI_CSR_RD_DATA				0x018
++#define PCI_CSR_PCI_ERROR			0x01c
++#define PCI_CSR_PCI_ERROR_ADDR			0x020
++#define PCI_CSR_AHB_ERROR			0x024
++#define PCI_CSR_AHB_ERROR_ADDR			0x028
++#define PCI_CSR_FLUSH_PCI_FIFO			0x02c
++#define PCI_CSR_TAR				0x030
++#define PCI_CSR_MAS_ID				0x034
++
++
++/* The PCI COMMAND types, the CRP takes these directly */
++#define PCI_IO_READ                              0x2
++#define PCI_IO_WRITE                             0x3
++#define PCI_MEMORY_READ                          0x6
++#define PCI_MEMORY_WRITE                         0x7
++#define PCI_CONFIG_READ 	                 0xa
++#define PCI_CONFIG_WRITE        	         0xb
++#define PCI_MEMORY_READ_LINE                     0xe
++#define PCI_MEMORY_READ_MULTIPLE                 0xc
++#define PCI_MEMORY_WRITE_INVALIDATE              0xf
++
++
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index ed487d3..fbbc37b 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -66,6 +66,19 @@ static void stx7105_pio_sysconf(int bank, int pin, int alt, const char* name)
+ 	sysconf_write(sc[2], ((alt-1) >> 2) & 1);
+ }
+ 
++/* Most of the PIO pins are sane in that alternative 1 is 0 alternative2 is 1,
++ * etc. However, there are some where the alternatives are not fully specified
++ * so alternative 3 is 0 etc. This function just wraps the above to add one
++ * so you can pass in what the datasheet says.
++ */
++static inline void stx7105_pio_sysconf_alt(int bank, int pin, int alt_val, const char *name)
++{
++	stx7105_pio_sysconf(bank, pin, alt_val + 1, name);
++}
++
++
++
++
+ /* USB resources ----------------------------------------------------------- */
+ 
+ #define UHOST2C_BASE(N)			(0xfe100000 + ((N)*0x00900000))
+@@ -1050,6 +1063,157 @@ void __init stx7105_configure_nand(struct nand_config_data *data)
+ 	platform_device_register(&nand_flash[emi_bank]);
+ }
+ 
++/*
++ * PCI Bus initialisation
++ *
++ */
++
++
++/*
++ * This function assumes you are using the dedicated pins. Production boards will
++ * more likely use the external interrupt pins and save the PIOs
++ */
++
++int stx7105_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin)
++{
++	int irq;
++	int pin_type;
++
++	if((pin > 4) || (pin < 1)) return -1;
++
++	pin_type = pci_config->pci_irq[pin - 1];
++
++	switch(pin_type) {
++		case PCI_PIN_DEFAULT:
++		case PCI_PIN_ALTERNATIVE:
++			irq = ILC_EXT_IRQ(pin + 25);
++			break;
++		case PCI_PIN_UNUSED:
++			irq = -1; /* Not used */
++			break;
++		default:
++			irq = pin_type; /* Take whatever interrupt you are told */
++			break;
++	}
++
++	return irq;
++}
++
++#ifdef CONFIG_32BIT
++#define PCI_WINDOW_START 0xc0000000
++#define PCI_WINDOW_SIZE  0x20000000 /* 512 Megs */
++#else
++#define PCI_WINDOW_START 0x08000000
++#define PCI_WINDOW_SIZE  0x04000000 /* 64 Megs */
++#endif
++
++/* Various controls bits in sysconfig 5 */
++/* Relative to the start of the PCI block, so they
++ * can be plugged into sysconf(read/write) calls
++ */
++
++#define PCI_DEVICE_NOT_HOST_ENABLE 	(1<<13)
++#define PCI_CLOCK_MASTER_NOT_SLAVE 	(1<<12)
++#define PCI_INT0_SRC_SEL		(1<<11)
++#define PCI_LOCK_IN_SEL			(1<<9)
++#define PCI_SYS_ERROR_ENABLE		(1<<8)
++#define PCI_RESETN_ENABLE		(1<<7)
++#define PCI_INT_TO_HOST_ENABLE		(1<<6)
++#define PCI_INT_FROM_DEVICE(n)		(1 << (5 - (n)))
++#define PCI_LOCK_IN_ENABLE		(1<<1)
++#define PCI_PME_IN_ENABLE		(1<<0)
++
++
++static struct platform_device pci_device =
++	PCI_DEVICE(0xfe400000, 0xfe560000, PCI_WINDOW_START, PCI_WINDOW_SIZE, evt2irq(0x1280), ILC_IRQ(25));
++
++void __init stx7105_configure_pci(struct pci_config_data *pci_conf)
++{
++#ifndef CONFIG_PCI
++	return;
++#else
++	int i;
++	struct sysconf_field *sc;
++	struct stpio_pin *pin;
++	static const char *int_name[] = {"PCI INT A","PCI INT B","PCI INT C","PCI INT D"};
++	static const char *req_name[] = {"PCI REQ 0 ","PCI REQ 1","PCI REQ 2","PCI REQ 3"};
++	static const char *gnt_name[] = {"PCI GNT 0 ","PCI GNT 1","PCI GNT 2","PCI GNT 3"};
++	int use_alt_for_int0;
++	int sys5_int_enables = 0;
++
++	/* Fill in the default values for the 7105 */
++	if(!pci_conf->ad_override_default) {
++		pci_conf->ad_threshold = 5;pci_conf->ad_read_ahead = 1;
++		pci_conf->ad_chunks_in_msg = 0; pci_conf->ad_pcks_in_chunk = 0;
++		pci_conf->ad_trigger_mode = 1; pci_conf->ad_max_opcode = 5;
++		pci_conf->ad_posted = 1;
++	}
++
++	/* Copy over platform specific data to driver */
++	pci_device.dev.platform_data = pci_conf;
++
++	/* Claim and power up the PCI cell */
++	sc = sysconf_claim(SYS_CFG, 32, 2, 2, "PCI Power");
++	sysconf_write(sc, 0); // We will need to stash this somewhere for power management.
++
++	sc = sysconf_claim(SYS_STA, 15, 2, 2, "PCI Power status");
++	while(sysconf_read(sc)); // Loop until powered up
++
++	/* Claim and set pads into PCI mode */
++	sc = sysconf_claim(SYS_CFG, 31, 20, 20, "PCI");
++	sysconf_write(sc, 1);
++
++	/* SERR is only an output on Cut2, designed for device mode. So no point in enabling it.
++	 * LOCK is totally pointless, the SOCs do not support any form of coherency
++	 */
++	sc = sysconf_claim(SYS_CFG, 5, 16, 29, "PCI Config");
++	use_alt_for_int0 = (pci_conf->pci_irq[0] == PCI_PIN_ALTERNATIVE);
++	sysconf_write(sc, PCI_CLOCK_MASTER_NOT_SLAVE | ( (use_alt_for_int0) ? PCI_INT0_SRC_SEL : 0 ) );
++
++	if(use_alt_for_int0 ) {
++		set_irq_type(ILC_EXT_IRQ(26), IRQ_TYPE_LEVEL_LOW);
++		pin = stpio_request_pin(15, 3, int_name[0], STPIO_IN);
++		if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",int_name[0]);
++		sys5_int_enables |= PCI_INT_FROM_DEVICE(0);
++	}
++
++	for(i = 0; i < 4; i++) {
++                if(pci_conf->pci_irq[i] == PCI_PIN_DEFAULT) {
++			set_irq_type(ILC_EXT_IRQ(26 + i), IRQ_TYPE_LEVEL_LOW);
++			pin = stpio_request_pin(6, i, int_name[i], STPIO_IN);
++			if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",int_name[i]);
++			/* Set the alternate function correctly in sysconfig */
++			sys5_int_enables |= PCI_INT_FROM_DEVICE(i);
++                }
++        }
++
++	/* Set the approprate enabled interrupts */
++	sysconf_write(sc, sysconf_read(sc) | sys5_int_enables);
++
++	/* REQ/GNT 0 are dedicated pins, so we start  from 1 */
++	for(i = 1; i < 4; i++ ) {
++		if(pci_conf->req_gnt[i] == PCI_PIN_DEFAULT) {
++			pin = stpio_request_pin(6, 4 + i, req_name[i], STPIO_IN);
++			if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",req_name[i]);
++			pin = stpio_request_pin(7, i, gnt_name[i], STPIO_ALT_OUT);
++			if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",gnt_name[i]);
++			stx7105_pio_sysconf_alt(7, i, 0x11, gnt_name[i]);
++		}
++	}
++
++	/* Enable the SERR interrupt if wired up */
++	if(pci_conf->serr_irq == PCI_PIN_DEFAULT ) {
++		/* Use the default */
++		pin = stpio_request_pin(6, 4, pci_device.resource[5].name, STPIO_IN);
++	} else {
++		pci_device.resource[5].start = 	pci_device.resource[5].end = pci_conf->serr_irq;
++	}
++
++	platform_device_register(&pci_device);
++
++#endif /* CONFIG_PCI */
++}
++
+ /* Early resources (sysconf and PIO) --------------------------------------- */
+ 
+ static struct platform_device sysconf_device = {
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index f6a9653..7c78090 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -713,6 +713,118 @@ void __init stx7111_configure_nand(struct nand_config_data *data)
+ 	platform_device_register(&nand_flash[emi_bank]);
+ }
+ 
++/*
++ * PCI Bus initialisation
++ *
++ */
++
++
++/* This function assumes you are using the dedicated pins. Production boards will
++ * more likely use the external interrupt pins and save the PIOs
++ */
++int stx7111_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin)
++{
++	int irq;
++	int pin_type;
++
++	if((pin > 4) || (pin < 1)) return -1;
++
++	pin_type = pci_config->pci_irq[pin - 1];
++
++	switch(pin_type) {
++		case PCI_PIN_DEFAULT:
++			irq = evt2irq(0xa00 + ( (pin - 1) * 0x20 ));
++			break;
++		case PCI_PIN_UNUSED:
++			irq = -1; /* Not used */
++			break;
++		default:
++			irq = pin_type; /* Take whatever interrupt you are told */
++			break;
++	}
++
++	return irq;
++}
++
++#ifdef CONFIG_32BIT
++#define PCI_WINDOW_START 0xc0000000
++#define PCI_WINDOW_SIZE  0x20000000 /* 512 Megs */
++#else
++#define PCI_WINDOW_START 0x08000000
++#define PCI_WINDOW_SIZE  0x04000000 /* 64 Megs */
++#endif
++
++static struct platform_device pci_device =
++	PCI_DEVICE(0xfe400000, 0xfe560000, PCI_WINDOW_START, PCI_WINDOW_SIZE, evt2irq(0x1280), evt2irq(0x1200));
++
++void __init stx7111_configure_pci(struct pci_config_data *pci_conf)
++{
++	int i;
++	struct sysconf_field *sc;
++	struct stpio_pin *pin;
++	static const char *int_name[] = {"PCI INT A","PCI INT B","PCI INT C","PCI INT D"};
++	static const char *req_name[] = {"PCI REQ 0 ","PCI REQ 1","PCI REQ 2","PCI REQ 3"};
++	static const char *gnt_name[] = {"PCI GNT 0 ","PCI GNT 1","PCI GNT 2","PCI GNT 3"};
++
++
++#ifndef CONFIG_PCI
++	return;
++#else
++
++	/* Fill in the default values for the 7111 */
++	if(!pci_conf->ad_override_default) {
++		pci_conf->ad_threshold = 5;pci_conf->ad_read_ahead = 1;
++		pci_conf->ad_chunks_in_msg = 0; pci_conf->ad_pcks_in_chunk = 0;
++		pci_conf->ad_trigger_mode = 1; pci_conf->ad_max_opcode = 5;
++		pci_conf->ad_posted = 1;
++	}
++
++	/* Copy over platform specific data to driver */
++	pci_device.dev.platform_data = pci_conf;
++
++	/* Claim and power up the PCI cell */
++	sc = sysconf_claim(SYS_CFG, 32, 2, 2, "PCI Power");
++	sysconf_write(sc, 0); // We will need to stash this somewhere for power management.
++
++	sc = sysconf_claim(SYS_STA, 15, 2, 2, "PCI Power status");
++	while(sysconf_read(sc)); // Loop until powered up
++
++	/* Claim and set pads into PCI mode */
++	sc = sysconf_claim(SYS_CFG, 31, 20, 20, "PCI");
++	sysconf_write(sc, 1);
++
++	for(i = 0; i < 4; i++) {
++                if(pci_conf->pci_irq[i] == PCI_PIN_DEFAULT) {
++			/* Set the alternate function correctly in sysconfig */
++			pin = stpio_request_pin(3, (i == 0) ? 7 : (3 - i), int_name[i], STPIO_IN);
++			sc = sysconf_claim(SYS_CFG, 5, 9 + i, 9 + i, int_name[i]);
++			sysconf_write(sc, 1);
++                }
++        }
++
++	/* REQ/GNT 0 are dedicated pins */
++	for( i = 1; i < 4; i++ ) {
++		if(pci_conf->req_gnt[i] == PCI_PIN_DEFAULT) {
++			pin = stpio_request_pin(0, ((3 - i) * 2) + 2, req_name[i], STPIO_IN);
++			pin = stpio_request_pin(2, (3 - i) + 5 , gnt_name[i], STPIO_ALT_OUT);
++			sc = sysconf_claim(SYS_CFG, 5, (3 - i) + 2,  (3 - i) + 2, req_name[i]);
++			sysconf_write(sc, 1);
++		}
++	}
++
++	/* Enable the SERR interrupt if wired up */
++	if(pci_conf->serr_irq == PCI_PIN_DEFAULT ) {
++		/* Use the default */
++		pin = stpio_request_pin(5, 5, pci_device.resource[5].name, STPIO_IN);
++	} else {
++		pci_device.resource[5].start = 	pci_device.resource[5].end = pci_conf->serr_irq;
++	}
++
++	platform_device_register(&pci_device);
++#endif
++}
++
++
+ /* Early resources (sysconf and PIO) --------------------------------------- */
+ 
+ static struct platform_device sysconf_device = {
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 452544c..12e95f6 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -2,6 +2,7 @@
+ #define __LINUX_STM_SOC_H
+ 
+ #include <linux/lirc.h>
++#include <linux/compiler.h>
+ 
+ /* This is the private platform data for the ssc driver */
+ struct ssc_pio_t {
+@@ -109,6 +110,100 @@ struct plat_ssc_data {
+ #define SPI_NO_CHIPSELECT	(spi_set_cs(19, 7) + 1)
+ 
+ 
++#define PCI_PIN_ALTERNATIVE -2 	/* Use alternative PIO rather than default */
++#define PCI_PIN_DEFAULT -1 	/* Use whatever the default is for that pin */
++#define PCI_PIN_UNUSED   0	/* Pin not in use */
++
++/* In the board setup, you can pass in the external interrupt numbers instead
++ * if you have wired up your board that way. It has the advantage that the PIO
++ * pins freed up can then be used for something else
++ */
++struct pci_config_data {
++	int pci_irq[4]; /* PCI_PIN_DEFAULT/PCI_PIN_UNUSED. Other IRQ can be passed in */
++	int serr_irq;   /* As above for SERR */
++	char idsel_lo;	/* Lowest address line connected to an idsel  - slot 0 */
++	char idsel_hi;	/* Highest address line connected to an idsel - slot n */
++	char req_gnt[4]; /* Set to PCI_PIN_DEFAULT if the corresponding req/gnt lines are in use */
++	unsigned pci_clk; /* PCI clock rate in Hz. If zero will default to 33MHz*/
++
++	/* Various PCI tuning parameters. Set by SOC layer. You don't have to specify
++	 * these as the defaults are usually fine. However, if you need to change them, you
++	 * can set ad_override_default and plug in your own values
++	 */
++	unsigned ad_threshold:4;
++	unsigned ad_chunks_in_msg:5;
++	unsigned ad_pcks_in_chunk:5;
++	unsigned ad_trigger_mode:1;
++	unsigned ad_posted:1;
++	unsigned ad_max_opcode:4;
++	unsigned ad_read_ahead:1;
++
++	unsigned ad_override_default:1; /* Set to override default values for your board */
++};
++
++u8 pci_synopsys_inb(unsigned long port);
++u16 pci_synopsys_inw(unsigned long port);
++u32 pci_synopsys_inl(unsigned long port);
++
++u8 pci_synopsys_inb_p(unsigned long port);
++u16 pci_synopsys_inw_p(unsigned long port);
++u32 pci_synopsys_inl_p(unsigned long port);
++
++void pci_synopsys_insb(unsigned long port, void *dst, unsigned long count);
++void pci_synopsys_insw(unsigned long port, void *dst, unsigned long count);
++void pci_synopsys_insl(unsigned long port, void *dst, unsigned long count);
++
++void pci_synopsys_outb(u8 val, unsigned long port);
++void pci_synopsys_outw(u16 val, unsigned long port);
++void pci_synopsys_outl(u32 val, unsigned long port);
++
++void pci_synopsys_outb_p(u8 val, unsigned long port);
++void pci_synopsys_outw_p(u16 val, unsigned long port);
++void pci_synopsys_outl_p(u32 val, unsigned long port);
++
++void pci_synopsys_outsb(unsigned long port, const void *src, unsigned long count);
++void pci_synopsys_outsw(unsigned long port, const void *src, unsigned long count);
++void pci_synopsys_outsl(unsigned long port, const void *src, unsigned long count);
++
++/* Macro used to fill in the IO machine vector at the board level */
++#ifdef CONFIG_SH_ST_SYNOPSYS_PCI
++/* We have to hook all the in/out functions as they cannot be memory
++ * mapped with the synopsys PCI IP
++ *
++ * Also, for PCI we use the generic iomap implementation, and so do
++ * not need the ioport_map function, instead using the generic cookie
++ * based implementation.
++ */
++#define STM_PCI_IO_MACHINE_VEC(board)		\
++	.mv_inb = pci_synopsys_inb,		\
++        .mv_inw = pci_synopsys_inw,		\
++        .mv_inl = pci_synopsys_inl,		\
++        .mv_outb = pci_synopsys_outb,		\
++        .mv_outw = pci_synopsys_outw,		\
++        .mv_outl = pci_synopsys_outl,		\
++        .mv_inb_p = pci_synopsys_inb_p,		\
++        .mv_inw_p = pci_synopsys_inw,		\
++        .mv_inl_p = pci_synopsys_inl,		\
++        .mv_outb_p = pci_synopsys_outb_p,	\
++        .mv_outw_p = pci_synopsys_outw,		\
++        .mv_outl_p = pci_synopsys_outl,		\
++        .mv_insb = pci_synopsys_insb,		\
++        .mv_insw = pci_synopsys_insw,		\
++        .mv_insl = pci_synopsys_insl,		\
++        .mv_outsb = pci_synopsys_outsb,		\
++        .mv_outsw = pci_synopsys_outsw,		\
++        .mv_outsl = pci_synopsys_outsl,
++#else
++#define STM_PCI_IO_MACHINE_VEC(board)	board##_ioport_map,
++#endif
++
++#define STM_MACHINE_VEC(board)				\
++	.mv_name		= #board,		\
++	.mv_setup		= board##_setup,	\
++	.mv_nr_irqs		= NR_IRQS,		\
++	.mv_init_irq		= board##_init_irq,	\
++	STM_PCI_IO_MACHINE_VEC(board)
++
+ /* Private data for the SATA driver */
+ struct plat_sata_data {
+ 	unsigned long phy_init;
+@@ -301,6 +396,8 @@ void stx7105_configure_nand(struct nand_config_data *data);
+ void stx7105_configure_lirc(lirc_scd_t *scd);
+ void stx7105_configure_pata(int bank, int pc_mode, int irq);
+ void stx7105_configure_audio_pins(int pcmout, int spdif, int pcmin);
++void stx7105_configure_pci(struct pci_config_data *pci_config);
++int  stx7105_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin);
+ 
+ void stx7111_early_device_init(void);
+ void stx7111_configure_asc(const int *ascs, int num_ascs, int console);
+@@ -310,6 +407,8 @@ void stx7111_configure_usb(int inv_enable);
+ void stx7111_configure_ethernet(int en_mii, int sel, int ext_clk, int phy_bus);
+ void stx7111_configure_nand(struct nand_config_data *data);
+ void stx7111_configure_lirc(lirc_scd_t *scd);
++void stx7111_configure_pci(struct pci_config_data *pci_config);
++int  stx7111_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin);
+ 
+ void stx7141_early_device_init(void);
+ void stx7141_configure_asc(const int *ascs, int num_ascs, int console);
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index b18be95..79d56d1 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -187,3 +187,50 @@
+ 		}							\
+ 	}								\
+ }
++
++
++#define PCI_DEVICE(_emiss_addr, _ahb_pci_addr, _pci_window_addr, _pci_window_size, _dma_irq, _irq_serr) \
++{											\
++	.name = "pci_stm",								\
++	.id = 0,									\
++	.num_resources = 6,								\
++	.resource = (struct resource[]) {						\
++		[0] = {									\
++			.start = _emiss_addr,						\
++			.end = (_emiss_addr) + 0x17fc,					\
++			.flags = IORESOURCE_MEM,					\
++		},									\
++		[1] = {									\
++			.start = _ahb_pci_addr,						\
++			.end = (_ahb_pci_addr) + 0xff,					\
++			.flags = IORESOURCE_MEM,					\
++		},									\
++		[2] = {									\
++			.start = _pci_window_addr,					\
++			.end = (_pci_window_addr) + (_pci_window_size) - 1,		\
++			.flags = IORESOURCE_MEM,					\
++		},									\
++		[3] = {									\
++			.start = 0x1024,						\
++			.end = 0xffff,							\
++			.flags = IORESOURCE_IO,						\
++		},									\
++		[4] = {									\
++				.name = "PCI DMA",					\
++				.start = _dma_irq,					\
++				.end = _dma_irq,					\
++				.flags= IORESOURCE_IRQ,					\
++		},									\
++		[5] = {									\
++				.name = "PCI SERR",					\
++				.start = _irq_serr,					\
++				.end = _irq_serr,					\
++				.flags= IORESOURCE_IRQ,					\
++		}									\
++	}										\
++}
++
++
++
++
++
+-- 
+1.5.6.3
+

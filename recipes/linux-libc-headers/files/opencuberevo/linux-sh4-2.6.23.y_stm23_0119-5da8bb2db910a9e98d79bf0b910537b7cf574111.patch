@@ -1,0 +1,30 @@
+From 5da8bb2db910a9e98d79bf0b910537b7cf574111 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Fri, 5 Jun 2009 12:55:34 +0100
+Subject: [PATCH] sh_stm: Fix silly typo
+
+Commit af39019a0d214a8e708a1bcfc13cb757d34cd176 "sh_stm: Don't write
+to sysconfig for PIO pins which don't need it" introduced a silly typo.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Acked-by: Carl Shaw <carl.shaw@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 735e281..f6cbac9 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -57,7 +57,7 @@ static void stx7105_pio_sysconf(int bank, int pin, int alt, const char* name)
+ 	int cfg = pio_sysconf[bank].syscfg;
+ 	struct sysconf_field *sc[3];
+ 
+-	if ((cfg == 0) || alt == -1))
++	if ((cfg == 0) || (alt == -1))
+ 		return;
+ 
+ 	sc[0] = sysconf_claim(SYS_CFG, cfg, pin, pin, name);
+-- 
+1.6.0.6
+

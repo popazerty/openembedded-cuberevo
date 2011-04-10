@@ -1,0 +1,813 @@
+This patch upgrades the SMSC reference driver from version 1.21r5 to 1.25r5,
+based on the file smsc9118_xscale_v1.25r5.zip.
+
+Unfortuntaly the SMSC provided version of this file has replaced all
+occurances of "11x" with "118", including renaming files. Using this directly
+would loose any history, or result in patches which are much larger than
+this one, so I have ignored all changes which are simply as a result of
+this rename. Of course it is possible that this has resulted in a genuine
+change getting lost as well...
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/drivers/net/smsc_911x/cmd911x.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/cmd911x.c
++++ linux/drivers/net/smsc_911x/cmd911x.c
+@@ -530,6 +530,7 @@ void GetFlowParams(PCOMMAND_DATA command
+ 		printf("  RxFlowMeasuredMaxThroughput     = 0x%08lX\n",data[0]);
+ 		printf("  RxFlowMeasuredMaxPacketCount    = 0x%08lX\n",data[1]);
+ 		printf("  RxFlowParameters.MaxThroughput  = 0x%08lX\n",data[2]);
++
+ 		printf("  RxFlowParameters.MaxPacketCount = 0x%08lX\n",data[3]);
+ 		printf("  RxFlowParameters.PacketCost     = 0x%08lX\n",data[4]);
+ 		printf("  RxFlowParameters.BurstPeriod    = 0x%08lX\n",data[5]);
+@@ -627,6 +628,7 @@ void ReadWord(PCOMMAND_DATA commandData,
+ 	} else {
+ 		printf("Failed to Read Memory\n");
+ 	}
++
+ }
+ void ReadDWord(PCOMMAND_DATA commandData,unsigned long address)
+ {
+@@ -777,6 +779,7 @@ void PhySetReg(
+ }
+ 
+ bool Initialize(PCOMMAND_DATA commandData,const char *ethName) {
++
+ 	if(commandData==NULL) return false;
+ 	if(ethName==NULL) return false;
+ 	commandData->hSockFD=socket(AF_INET,SOCK_DGRAM,0);
+@@ -998,6 +1001,7 @@ void RunServer(PCOMMAND_DATA commandData
+ 				break;
+ 			}
+ 		}
++
+ 		break;
+ 	default:
+ 		exit(0);
+@@ -1086,6 +1090,7 @@ unsigned long ReadThroughput(char * file
+ 		while(fread(&ch,1,1,filePtr)!=0) {
+ 			switch(ch) {
+ 			case '0':case '1':case '2':case '3':case '4':
++
+ 			case '5':case '6':case '7':case '8':case '9':
+ 				if(clearFlag) {
+ 					result=0;
+@@ -1322,6 +1327,7 @@ char * av[];
+ 	unsigned long portNum=0;
+ 	bool pSet=false;
+ 
++
+ 	iam=av[0];
+ 	ethName[0]=0;
+ 	hostName[0]=0;
+@@ -1430,6 +1436,7 @@ char * av[];
+ 			if(!ParseNumber(optarg,&data)) {
+ 				goto BAD_USAGE;
+ 			}
++
+ 			dSet=true;
+ 			break;
+ 		default:
+Index: linux/drivers/net/smsc_911x/ioctl_11x.h
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/ioctl_11x.h
++++ linux/drivers/net/smsc_911x/ioctl_11x.h
+@@ -23,7 +23,7 @@
+ #ifndef IOCTL_11x_H
+ #define IOCTL_11x_H
+ 
+-#define DRIVER_VERSION	(0x00000121UL)
++#define DRIVER_VERSION	(0x00000125UL)
+ 
+ #define SMSC911x_DRIVER_SIGNATURE	(0x82745BACUL+DRIVER_VERSION)
+ #define SMSC911x_APP_SIGNATURE		(0x987BEF28UL+DRIVER_VERSION)
+Index: linux/drivers/net/smsc_911x/readme.txt
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/readme.txt
++++ linux/drivers/net/smsc_911x/readme.txt
+@@ -294,6 +294,23 @@ Still version 1.21 Fix bugs for version 
+ 11/07/2005 - Phong Le
+ Still version 1.21 Fix bugs for version 1.21.
+ 
++12/06/2005 Bryan Whitehead, Version 1.22
++Added support for LAN9218, LAN9217, LAN9216, LAN9215
++
++03/03/2006 Bryan Whitehead, Version 1.23
++Fixed External Phy Support for LAN9217, LAN9215 (Bug 102)
++Fixed Interrupt handler to only process enabled interrupts (Bug 96)
++Fixed Multicast workaround to not rely on link status
++   which may have been out dated (Bug 95)
++
++03/22/2006 Bryan Whitehead, Version 1.24
++Made driver future proof. Such that if the revision of a
++chip increases it should still work.
++
++03/23/2006 Bryan Whitehead, Version 1.25
++Added print message to display date code on start up
++Updated chip names to LAN9218, LAN9217, LAN9216, LAN9215
++
+ #######################################################
+ #################### FILES ############################
+ #######################################################
+Index: linux/drivers/net/smsc_911x/smsc911x.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/smsc911x.c
++++ linux/drivers/net/smsc_911x/smsc911x.c
+@@ -528,6 +528,7 @@ typedef struct _PRIVATE_DATA {
+ 	DWORD dwIdRev;
+ 	DWORD dwFpgaRev;
+ 	struct net_device *dev;
++	DWORD dwGeneration;//used to decide which workarounds apply
+ 
+ 	spinlock_t IntEnableLock;
+ 	BOOLEAN LanInitialized;
+@@ -922,12 +923,10 @@ BOOLEAN Eeprom_SaveMacAddress(
+ 	DWORD dwHi16,DWORD dwLo32);
+ 
+ 
+-#define OLD_REGISTERS(privData) (((privData->dwIdRev&0x0000FFFFUL)==0UL)&& \
++#define OLD_REGISTERS(privData) (((privData->dwIdRev)==0x01180000UL)&& \
+ 								 ((privData->dwFpgaRev)>=0x01)&& \
+ 								 ((privData->dwFpgaRev)<=0x25))
+ 
+-#define IS_REV_A(privData)	((privData->dwIdRev&0x0000FFFFUL)==0UL)
+-
+ extern volatile DWORD g_GpioSetting;
+ extern DWORD debug_mode;
+ #define GP_0	(0x01UL)
+@@ -935,9 +934,12 @@ extern DWORD debug_mode;
+ #define GP_2	(0x04UL)
+ #define GP_3	(0x08UL)
+ #define GP_4	(0x10UL)
+-#define GP_ISR	GP_0
+-#define GP_RX	GP_1
+-#define GP_TX	GP_2
++#define GP_OFF  (0x00UL)
++#define GP_ISR	GP_OFF
++#define GP_RX	GP_OFF
++#define GP_TX	GP_OFF
++#define GP_BEGIN_MULTICAST_UPDATE		GP_OFF
++#define GP_COMPLETE_MULTICAST_UPDATE	GP_OFF
+ 
+ #define SET_GPIO(gpioBit)					\
+ if(debug_mode&0x04UL) {						\
+@@ -1101,11 +1103,13 @@ int Smsc911x_init_module(void)
+ {
+ 	int result=0;
+ 	int device_present=0;
++
+ 	SMSC_TRACE("--> init_module()");
+ 	SMSC_TRACE("Driver Version = %lX.%02lX",
+ 		(DRIVER_VERSION>>8),(DRIVER_VERSION&0xFFUL));
+ 	SMSC_TRACE("Compiled: %s, %s",__DATE__,__TIME__);
+ 	SMSC_TRACE("Platform: %s",PLATFORM_NAME);
++	SMSC_TRACE("Date Code: %s",date_code);
+ 	SMSC_TRACE("Driver Parameters");
+ 	if(lan_base==0UL) {
+ 		SMSC_TRACE("  lan_base         = 0x%08lX, driver will decide",lan_base);
+@@ -1362,23 +1366,144 @@ int Smsc911x_init(struct net_device *dev
+ 		//this may mean the chip is set for 32 bit
+ 		//  while the bus is reading as 16 bit
+ UNKNOWN_CHIP:
+-		SMSC_WARNING("  LAN911x NOT Identified, dwIdRev==0x%08lX",dwIdRev);
++		SMSC_WARNING("  LAN911x Family NOT Identified, dwIdRev==0x%08lX",dwIdRev);
+ 		result=-ENODEV;
+ 		goto DONE;
+ 	}
+ 	switch(dwIdRev&0xFFFF0000UL) {
+ 	case 0x01180000UL:
+-		SMSC_TRACE("  LAN9118 identified, dwIdRev==0x%08lX",dwIdRev);break;
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			SMSC_TRACE("  LAN9118 Beacon identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=0;
++			break;
++		case 1UL:
++			SMSC_TRACE("  LAN9118 Concord A0 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=1;
++			break;
++		case 2UL:
++			SMSC_TRACE("  LAN9118 Concord A1 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		default:
++			SMSC_TRACE("  LAN9118 Concord A1 identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		};break;
+ 	case 0x01170000UL:
+-		SMSC_TRACE("  LAN9117 identified, dwIdRev==0x%08lX",dwIdRev);break;
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			SMSC_TRACE("  LAN9117 Beacon identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=0;
++			break;
++		case 1UL:
++			SMSC_TRACE("  LAN9117 Concord A0 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=1;
++			break;
++		case 2UL:
++			SMSC_TRACE("  LAN9117 Concord A1 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		default:
++			SMSC_TRACE("  LAN9117 Concord A1 identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		};break;
+ 	case 0x01160000UL:
+-		SMSC_TRACE("  LAN9116 identified, dwIdRev==0x%08lX",dwIdRev);break;
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			goto UNKNOWN_CHIP;
++		case 1UL:
++			SMSC_TRACE("  LAN9116 Concord A0 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=1;
++			break;
++		case 2UL:
++			SMSC_TRACE("  LAN9116 Concord A1 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		default:
++			SMSC_TRACE("  LAN9116 Concord A1 identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		};break;
+ 	case 0x01150000UL:
+-		SMSC_TRACE("  LAN9115 identified, dwIdRev==0x%08lX",dwIdRev);break;
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			goto UNKNOWN_CHIP;
++		case 1UL:
++			SMSC_TRACE("  LAN9115 Concord A0 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=1;
++			break;
++		case 2UL:
++			SMSC_TRACE("  LAN9115 Concord A1 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		default:
++			SMSC_TRACE("  LAN9115 Concord A1 identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		};break;
+ 	case 0x01120000UL:
+-		SMSC_TRACE("  LAN9112 identified, dwIdRev==0x%08lX",dwIdRev);break;
+-	default:
+-		goto UNKNOWN_CHIP;
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			goto UNKNOWN_CHIP;
++		case 1UL:
++			SMSC_TRACE("  LAN9112 Concord A0 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=1;
++			break;
++		case 2UL:
++			SMSC_TRACE("  LAN9112 Concord A1 identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		default:
++			SMSC_TRACE("  LAN9112 Concord A1 identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=2;
++			break;
++		};break;
++	case 0x118A0000UL:
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			SMSC_TRACE("  LAN9218 Boylston identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		default:
++			SMSC_TRACE("  LAN9218 Boylston identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		};break;
++	case 0x117A0000UL:
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			SMSC_TRACE("  LAN9217 Boylston identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		default:
++			SMSC_TRACE("  LAN9217 Boylston identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		};break;
++	case 0x116A0000UL:
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			SMSC_TRACE("  LAN9216 Boylston identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		default:
++			SMSC_TRACE("  LAN9216 Boylston identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		};break;
++	case 0x115A0000UL:
++		switch(dwIdRev&0x0000FFFFUL) {
++		case 0UL:
++			SMSC_TRACE("  LAN9215 Boylston identified, dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		default:
++			SMSC_TRACE("  LAN9215 Boylston identified (NEW), dwIdRev==0x%08lX",dwIdRev);
++			privateData->dwGeneration=3;
++			break;
++		};break;
+ 	}
+ 	dwFpgaRev=Lan_GetRegDW(FPGA_REV);
+ 	SMSC_TRACE("  FPGA_REV == 0x%08lX",dwFpgaRev);
+@@ -1762,7 +1887,7 @@ struct net_device_stats * Smsc911x_get_s
+ 		return NULL;
+ 	}
+ 	if(dev->priv==NULL) {
+-		SMSC_WARNING("Smsc911x_get_stats(dev->priv==NULL)");
++	//	SMSC_WARNING("Smsc911x_get_stats(dev->priv==NULL)");
+ 		return NULL;
+ 	}
+ 
+@@ -2527,6 +2652,8 @@ irqreturn_t Smsc911x_ISR(int Irq, void *
+ {
+ 	DWORD dwIntCfg=0;
+ 	DWORD dwIntSts=0;
++	DWORD dwIntEn=0;
++	DWORD dwIntBits=0;
+ 	PPRIVATE_DATA privateData=(PPRIVATE_DATA)dev_id;
+ 	BOOLEAN serviced=FALSE;
+ 
+@@ -2564,28 +2691,30 @@ irqreturn_t Smsc911x_ISR(int Irq, void *
+ 	}
+ 
+ 	dwIntSts=Lan_GetRegDW(INT_STS);
++	dwIntEn=Lan_GetRegDW(INT_EN);
++	dwIntBits=dwIntSts&dwIntEn;
+ 	privateData->LastIntStatus3=privateData->LastIntStatus2;
+ 	privateData->LastIntStatus2=privateData->LastIntStatus1;
+-	privateData->LastIntStatus1=dwIntSts;
+-	if(Lan_HandleSoftwareInterrupt(privateData,dwIntSts)) {
++	privateData->LastIntStatus1=dwIntBits;
++	if(Lan_HandleSoftwareInterrupt(privateData,dwIntBits)) {
+ 		serviced=TRUE;
+ 	}
+-	if(Gpt_HandleInterrupt(privateData,dwIntSts)) {
++	if(Gpt_HandleInterrupt(privateData,dwIntBits)) {
+ 		serviced=TRUE;
+ 	}
+-	if(Tx_HandleInterrupt(privateData,dwIntSts)) {
++	if(Tx_HandleInterrupt(privateData,dwIntBits)) {
+ 		serviced=TRUE;
+ 	}
+-	if(RxStop_HandleInterrupt(privateData,dwIntSts)) {
++	if(RxStop_HandleInterrupt(privateData,dwIntBits)) {
+ 		serviced=TRUE;
+ 	}
+-	if(Rx_HandleInterrupt(privateData,dwIntSts)) {
++	if(Rx_HandleInterrupt(privateData,dwIntBits)) {
+ 		serviced=TRUE;
+ 	}
+ 
+ 	if(!serviced) {
+-		SMSC_WARNING("unserviced interrupt dwIntCfg=0x%08lX,dwIntSts=0x%08lX,INT_EN=0x%08lX",
+-			dwIntCfg,dwIntSts,Lan_GetRegDW(INT_EN));
++		SMSC_WARNING("unserviced interrupt dwIntCfg=0x%08lX,dwIntSts=0x%08lX,dwIntEn=0x%08lX,dwIntBits=0x%08lX",
++			dwIntCfg,dwIntSts,dwIntEn,dwIntBits);
+ 	}
+ 
+ ALMOST_DONE:
+@@ -2962,10 +3091,15 @@ BOOLEAN Phy_Initialize(
+ 
+ 	if(dwPhyAddr!=0xFFFFFFFFUL) {
+ 		switch(privateData->dwIdRev&0xFFFF0000) {
++		case 0x117A0000UL:
++		case 0x115A0000UL:
++			goto EXTERNAL_PHY_SUPPORTED;
+ 		case 0x01170000UL:
+ 		case 0x01150000UL:
+ 			if(privateData->dwIdRev&0x0000FFFF) {
+-				DWORD dwHwCfg=Lan_GetRegDW(HW_CFG);
++				DWORD dwHwCfg=0;
++EXTERNAL_PHY_SUPPORTED:
++				dwHwCfg=Lan_GetRegDW(HW_CFG);
+ 				if(dwHwCfg&HW_CFG_EXT_PHY_DET_) {
+                     //External phy is requested, supported, and detected
+ 					//Attempt to switch
+@@ -3066,7 +3200,13 @@ BOOLEAN Phy_Initialize(
+ USE_INTERNAL_PHY:
+ 		privateData->dwPhyAddress=1;
+ #ifdef USE_LED1_WORK_AROUND
+-		privateData->NotUsingExtPhy=1;
++		if(privateData->dwGeneration<=2) {
++			privateData->NotUsingExtPhy=1;
++		} else {
++			//Generation 3 or higher has the LED problem fixed
++			//  to disable the workaround pretend the phy is external
++			privateData->NotUsingExtPhy=0;
++		}
+ #endif
+ 	}
+ 
+@@ -3105,11 +3245,13 @@ USE_INTERNAL_PHY:
+ 	}
+ 
+ #ifdef USE_PHY_WORK_AROUND
+-	if(!Phy_LoopBackTest(privateData)) {
+-		SMSC_WARNING("Failed Loop back test");
+-		goto DONE;
+-	} else {
+-		SMSC_TRACE("Passed Loop Back Test");
++	if(privateData->dwGeneration<=2) {
++		if(!Phy_LoopBackTest(privateData)) {
++			SMSC_WARNING("Failed Loop back test");
++			goto DONE;
++		} else {
++			SMSC_TRACE("Passed Loop Back Test");
++		}
+ 	}
+ #endif
+ 	Phy_SetLink(privateData,dwLinkRequest);
+@@ -3965,7 +4107,7 @@ void Rx_Initialize(
+ 	Lan_SetRSFL(privateData,0x00);
+ 	privateData->RxInterrupts=INT_EN_RSFL_EN_;
+ 	privateData->RxInterrupts|=INT_EN_RXE_EN_;
+-	if(IS_REV_A(privateData)) {
++	if(privateData->dwGeneration==0) {
+ 		privateData->RxInterrupts|=INT_EN_RDFL_EN_;
+ 		privateData->RxSkbsMax = 1;
+ 	} else {
+@@ -3978,7 +4120,7 @@ void Rx_Initialize(
+ 
+ static void Rx_HandleOverrun(PPRIVATE_DATA privateData)
+ {
+-	if(IS_REV_A(privateData)) {
++	if(privateData->dwGeneration==0) {
+ 		if(privateData->RxOverrun==FALSE) {
+ 			Rx_ReceiverOff(privateData);
+ 			privateData->RxUnloadProgress=
+@@ -4002,7 +4144,6 @@ static void Rx_HandOffSkb(
+ {
+ 	int result=0;
+ 
+-
+ 	skb->dev=privateData->dev;
+ 	skb->protocol= eth_type_trans(skb,privateData->dev);
+ 	skb->ip_summed = CHECKSUM_NONE;
+@@ -4036,6 +4177,7 @@ void Rx_CompleteMulticastUpdate (PPRIVAT
+ 
+ 	keyCode=Vl_WaitForLock(&(privateData->MacPhyLock),&dwIntFlags);
+ 	if (privateData->MulticastUpdatePending) {
++		SET_GPIO(GP_COMPLETE_MULTICAST_UPDATE);
+ 		Mac_SetRegDW(privateData,HASHH,privateData->HashHi,keyCode);
+ 		Mac_SetRegDW(privateData,HASHL,privateData->HashLo,keyCode);
+ 		local_MACCR = Mac_GetRegDW(privateData,MAC_CR,keyCode);
+@@ -4044,6 +4186,7 @@ void Rx_CompleteMulticastUpdate (PPRIVAT
+ 		Mac_SetRegDW(privateData,MAC_CR,local_MACCR,keyCode);
+ 		Rx_ReceiverOn(privateData, keyCode);
+ 		privateData->MulticastUpdatePending = FALSE;
++		CLEAR_GPIO(GP_COMPLETE_MULTICAST_UPDATE);
+ 	}
+ 	Vl_ReleaseLock(&(privateData->MacPhyLock),keyCode,&dwIntFlags);
+ }
+@@ -4054,76 +4197,61 @@ void Rx_BeginMulticastUpdate (PPRIVATE_D
+ 	DWORD timeout;
+ 	DWORD flags;
+ 
+-	if (privateData->dwLinkSpeed == LINK_SPEED_100HD ||
+-		privateData->dwLinkSpeed == LINK_SPEED_100FD) {
++	SET_GPIO(GP_BEGIN_MULTICAST_UPDATE);
+ 
+-		// this assure our driver is not interrupted by other drivers
+-		// turn off local cpu interrupts
+-		local_irq_save (flags);
+-		Rx_ReceiverOff (privateData);
+-		if(!IS_REV_A(privateData)) {
+-			// since this is concord or later there is no
+-			// overrun processing that might turn off the receiver.
+-			// there for we can rely on RxStop Int.
+-
+-			/* poll for MAC RX to stop */
+-			timeout = 200UL;
+-			while (!(Lan_GetRegDW(INT_STS)&(INT_STS_RXSTOP_INT_))) {
+-
+-				// wait 1 uSec
+-				startTime=Lan_GetRegDW(FREE_RUN);
+-				while (1) {
+-					currentTime=Lan_GetRegDW(FREE_RUN);
+-					if (currentTime-startTime >= 25UL)
+-						break;
+-				}
+-				if (timeout == 0UL) {
+-					SMSC_TRACE("timeout waiting for RXSTOP INT");
++	//NOTE: we can't rely on privateData->dwLinkSpeed because
++	// it updates only once per second and may be out dated.
++
++	local_irq_save(flags);
++	Rx_ReceiverOff(privateData);
++	if(privateData->dwGeneration>0) {
++		//since this is concord or later there is no
++		// overrun processing that might turn off the receiver.
++		// there for we can rely on RxStop Int.
++
++		//if the speed is 100Mb then lets poll rx stop to get the
++		//  quickest response.
++		timeout = 200UL;
++		while ((timeout)&&(!(Lan_GetRegDW(INT_STS)&(INT_STS_RXSTOP_INT_)))) {
++			// wait 1 uSec
++			startTime=Lan_GetRegDW(FREE_RUN);
++			while (1) {
++				currentTime=Lan_GetRegDW(FREE_RUN);
++				if (currentTime-startTime >= 25UL)
+ 					break;
+-				}
+-				timeout--;
+ 			}
+-			Lan_SetRegDW(INT_STS,INT_STS_RXSTOP_INT_);
++			timeout--;
+ 		}
+-		else {
+-			// for rev A we cant rely on Rx stop because
+-			// the receiver may have already been stopped due to
+-			// overflow processing
+-			// wait 200 uS
+-			udelay (200);
+-		}
+-		Rx_CompleteMulticastUpdate (privateData);
+-		local_irq_restore (flags);
+-	}
+-	else if (privateData->dwLinkSpeed == LINK_SPEED_10HD ||
+-		privateData->dwLinkSpeed == LINK_SPEED_10FD) {
+-		if(!IS_REV_A(privateData)) {
+-			// prepare RxStop interrupt
++		if(timeout==0) {
++			//this is probably a 10Mb link, therefore prepare
++			// interrupt for update later.
+ 			Lan_EnableInterrupt(privateData,INT_EN_RXSTOP_INT_EN_);
+-			if (privateData->dwLinkSpeed == LINK_SPEED_10HD) {
+-				// 10Mbps half duplex is 99.6% reliable,
+-				// in the event that is not reliable
+-				// prepare GPT callback
+-				// prepare GPT callback 2mS
+-				Gpt_ScheduleCallBack(privateData,GptCB_RxCompleteMulticast, 20UL);
+-			}
+-		}
+-		else {
+-			// we can't rely on Rx stop because the
+-			// receiver may have already been stopped
+-			// due to overflow processing
+-			// the simplest solution is to use the
+-			// GPT callback
+-			// prepare GPT callback 2mS
+-			Gpt_ScheduleCallBack(privateData,GptCB_RxCompleteMulticast, 20UL);
++
++			// if this is a 10Mbps half duplex connection
++			//  then Rx stop is only 99.6%  reliable
++			//  Therefor we must schedule Gpt callback as
++			//  back up
++
++			// using 18*(100uS) because we already waited 200uS
++			Gpt_ScheduleCallBack(privateData,GptCB_RxCompleteMulticast, 18UL);
++		} else {
++			//Rx is stopped
++			Lan_SetRegDW(INT_STS,INT_STS_RXSTOP_INT_);//clear interrupt signal
++			Rx_CompleteMulticastUpdate(privateData);
+ 		}
+-		Rx_ReceiverOff (privateData);
+-	}
+-	else {
+-		// assume link is down so do update immediately
+-		Rx_ReceiverOff (privateData);
+-		Rx_CompleteMulticastUpdate (privateData);
++	} else {
++		// for generation 0 we can't rely on Rx stop because
++		// the receiver may have already been stopped due to
++		// overflow processing
++
++		// for the same reason we can't just wait 200uS and
++		// check stopped status there for we must rely on GP timer
++		// and we must assume a worse case of 10Mb speed
++
++		Gpt_ScheduleCallBack(privateData,GptCB_RxCompleteMulticast, 20UL);
+ 	}
++	local_irq_restore (flags);
++	CLEAR_GPIO(GP_BEGIN_MULTICAST_UPDATE);
+ }
+ 
+ static DWORD Rx_PopRxStatus(
+@@ -4135,14 +4263,13 @@ static DWORD Rx_PopRxStatus(
+ 	{
+ 		if(result&0x00FF0000UL) {
+ 			DWORD dwIntSts=Lan_GetRegDW(INT_STS);
+-			if(IS_REV_A(privateData)) {
++			if(privateData->dwGeneration==0) {
+ 				if(dwIntSts&INT_STS_RDFL_) {
+ 					Lan_SetRegDW(INT_STS,INT_STS_RDFL_);
+ 					Rx_HandleOverrun(privateData);
+ 				}
+ 			} else {
+ 				if(dwIntSts&INT_STS_RDFO_) {
+-
+ 					Lan_SetRegDW(INT_STS,INT_STS_RDFO_);
+ 					Rx_HandleOverrun(privateData);
+ 				}
+@@ -4570,7 +4697,7 @@ BOOLEAN Rx_HandleInterrupt(
+ 		result=TRUE;
+ 	}
+ 
+-	if(IS_REV_A(privateData)) {
++	if(privateData->dwGeneration==0) {
+ 		if(dwIntSts&(INT_STS_RDFL_)) {
+ 			Lan_SetRegDW(INT_STS,INT_STS_RDFL_);
+ 			Rx_HandleOverrun(privateData);
+@@ -4624,7 +4751,6 @@ BOOLEAN RxStop_HandleInterrupt(
+ 
+ 	if(dwIntSts&INT_STS_RXSTOP_INT_) {
+ 		result=TRUE;
+-
+ 		Gpt_CancelCallBack (privateData, GptCB_RxCompleteMulticast);
+ 		Rx_CompleteMulticastUpdate (privateData);
+ 		Lan_SetRegDW(INT_STS,INT_STS_RXSTOP_INT_);
+@@ -4710,14 +4836,14 @@ void Rx_SetMulticastList(
+ 			if((mc_list->dmi_addrlen)==6) {
+ 				DWORD dwMask=0x01UL;
+ 				DWORD dwBitNum=Rx_Hash(mc_list->dmi_addr);
+-				SMSC_TRACE("Multicast: enable dwBitNum=%ld,addr=%02X %02X %02X %02X %02X %02X",
+-					dwBitNum,
+-					((BYTE *)(mc_list->dmi_addr))[0],
+-					((BYTE *)(mc_list->dmi_addr))[1],
+-					((BYTE *)(mc_list->dmi_addr))[2],
+-					((BYTE *)(mc_list->dmi_addr))[3],
+-					((BYTE *)(mc_list->dmi_addr))[4],
+-					((BYTE *)(mc_list->dmi_addr))[5]);
++			//	SMSC_TRACE("Multicast: enable dwBitNum=%ld,addr=%02X %02X %02X %02X %02X %02X",
++			//		dwBitNum,
++			//		((BYTE *)(mc_list->dmi_addr))[0],
++			//		((BYTE *)(mc_list->dmi_addr))[1],
++			//		((BYTE *)(mc_list->dmi_addr))[2],
++			//		((BYTE *)(mc_list->dmi_addr))[3],
++			//		((BYTE *)(mc_list->dmi_addr))[4],
++			//		((BYTE *)(mc_list->dmi_addr))[5]);
+ 				dwMask<<=(dwBitNum&0x1FUL);
+ 				if(dwBitNum&0x20UL) {
+ 					dwHashH|=dwMask;
+@@ -4747,14 +4873,24 @@ void Rx_SetMulticastList(
+ 	}
+ 
+ PREPARE:
+-	if (privateData->MulticastUpdatePending == FALSE) {
+-		privateData->MulticastUpdatePending = TRUE;
+-		// prepare to signal software interrupt
+-		Lan_SignalSoftwareInterrupt(privateData);
+-	}
+-	else {
+-		// Rx_CompleteMulticastUpdate has not yet been called
+-		// therefore these latest settings will be used instead
++	if(privateData->dwGeneration<=1) {
++		if (privateData->MulticastUpdatePending == FALSE) {
++			privateData->MulticastUpdatePending = TRUE;
++			// prepare to signal software interrupt
++			Lan_SignalSoftwareInterrupt(privateData);
++		}
++		else {
++			// Rx_CompleteMulticastUpdate has not yet been called
++			// therefore these latest settings will be used instead
++		}
++	} else {
++		DWORD local_MACCR;
++		Mac_SetRegDW(privateData,HASHH,privateData->HashHi,keyCode);
++		Mac_SetRegDW(privateData,HASHL,privateData->HashLo,keyCode);
++		local_MACCR = Mac_GetRegDW(privateData,MAC_CR,keyCode);
++		local_MACCR |= privateData->set_bits_mask;
++		local_MACCR &= ~(privateData->clear_bits_mask);
++		Mac_SetRegDW(privateData,MAC_CR,local_MACCR,keyCode);
+ 	}
+ 	Vl_ReleaseLock(&(privateData->MacPhyLock),keyCode,&dwIntFlags);
+ 	return;
+@@ -4957,7 +5093,7 @@ BOOLEAN Eeprom_SaveMacAddress(
+ 	Eeprom_EnableAccess(privateData);
+ 	if(!Eeprom_EnableEraseAndWrite(privateData)) goto DONE;
+ 	if(!Eeprom_EraseAll(privateData)) goto DONE;
+-	if(IS_REV_A(privateData)) {
++	if(privateData->dwGeneration==0) {
+ 		if(!Eeprom_EnableEraseAndWrite(privateData)) goto DONE;
+ 		if(!Eeprom_WriteLocation(privateData,0,0xA5)) goto DONE;
+ 		if(!Eeprom_EnableEraseAndWrite(privateData)) goto DONE;
+@@ -5018,7 +5154,7 @@ BOOLEAN Lan_Initialize(
+ 	SMSC_ASSERT(privateData!=NULL);
+ 
+ 	//Reset the LAN911x
+-	if(!IS_REV_A(privateData)) {
++	if(privateData->dwGeneration>0) {
+ 		dwResetCount=1;
+ 	}
+ 	while(dwResetCount>0) {
+@@ -5122,7 +5258,6 @@ BOOLEAN Lan_Initialize(
+ 		g_GpioSetting = 0x70070000UL;
+ 	}
+ 	Lan_SetRegDW(GPIO_CFG,g_GpioSetting);
+-	SMSC_TRACE("<--g_GpioSetting set");
+ 
+ 	//initialize interrupts
+ 	Lan_SetRegDW(INT_EN,0);
+Index: linux/drivers/net/smsc_911x/st40.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/st40.c
++++ linux/drivers/net/smsc_911x/st40.c
+@@ -95,7 +95,7 @@
+ #define PLATFORM_RX_DMA	(TRANSFER_PIO)
+ #define PLATFORM_TX_DMA	(TRANSFER_PIO)
+ #endif
+-#define PLATFORM_NAME		"ST40 STMICRO r3"
++#define PLATFORM_NAME		"ST40 STMICRO r4"
+ 
+ //the dma threshold has not been thoroughly tuned but it is
+ //  slightly better than using zero
+@@ -310,6 +310,8 @@ void Platform_GetFlowControlParameters(
+ 			case 0x01180000UL:
+ 			case 0x01170000UL:
+ 			case 0x01120000UL:
++			case 0x118A0000UL:
++			case 0x117A0000UL:
+ 				//117/118,16 bit,DMA
+ 				flowControlParameters->MaxThroughput=(0xEAF0CUL);
+ 				flowControlParameters->MaxPacketCount=(0x282UL);
+@@ -319,6 +321,8 @@ void Platform_GetFlowControlParameters(
+ 				break;
+ 			case 0x01160000UL:
+ 			case 0x01150000UL:
++			case 0x116A0000UL:
++			case 0x115A0000UL:
+ 				//115/116,16 bit,DMA
+ 				flowControlParameters->MaxThroughput=0xB3A3CUL;
+ 				flowControlParameters->MaxPacketCount=0x1E6UL;
+@@ -334,6 +338,8 @@ void Platform_GetFlowControlParameters(
+ 			case 0x01180000UL:
+ 			case 0x01170000UL:
+ 			case 0x01120000UL:
++			case 0x118A0000UL:
++			case 0x117A0000UL:
+ 				//117/118,32 bit,DMA
+ 				flowControlParameters->MaxThroughput=(0xC7F82UL);
+ 				flowControlParameters->MaxPacketCount=(0x21DUL);
+@@ -343,6 +349,8 @@ void Platform_GetFlowControlParameters(
+ 				break;
+ 			case 0x01160000UL:
+ 			case 0x01150000UL:
++			case 0x116A0000UL:
++			case 0x115A0000UL:
+ 				//115/116,32 bit,DMA
+ 				flowControlParameters->MaxThroughput=0xABE0AUL;
+ 				flowControlParameters->MaxPacketCount=0x1D1UL;
+@@ -359,6 +367,8 @@ void Platform_GetFlowControlParameters(
+ 			case 0x01180000UL:
+ 			case 0x01170000UL:
+ 			case 0x01120000UL:
++			case 0x118A0000UL:
++			case 0x117A0000UL:
+ 				//117/118,16 bit,PIO
+ 				flowControlParameters->MaxThroughput=(0xA0C9EUL);
+ 				flowControlParameters->MaxPacketCount=(0x1B3UL);
+@@ -368,6 +378,8 @@ void Platform_GetFlowControlParameters(
+ 				break;
+ 			case 0x01160000UL:
+ 			case 0x01150000UL:
++			case 0x116A0000UL:
++			case 0x115A0000UL:
+ 				//115/116,16 bit,PIO
+ 				flowControlParameters->MaxThroughput=(0x76A6AUL);
+ 				flowControlParameters->MaxPacketCount=(0x141UL);
+@@ -383,6 +395,8 @@ void Platform_GetFlowControlParameters(
+ 			case 0x01180000UL:
+ 			case 0x01170000UL:
+ 			case 0x01120000UL:
++			case 0x118A0000UL:
++			case 0x117A0000UL:
+ 				//117/118,32 bit,PIO
+ 				flowControlParameters->MaxThroughput=(0xAE5C8UL);
+ 				flowControlParameters->MaxPacketCount=(0x1D8UL);
+@@ -392,6 +406,8 @@ void Platform_GetFlowControlParameters(
+ 				break;
+ 			case 0x01160000UL:
+ 			case 0x01150000UL:
++			case 0x116A0000UL:
++			case 0x115A0000UL:
+ 				//115/116,32 bit,PIO
+ 				flowControlParameters->MaxThroughput=(0x9E338UL);
+ 				flowControlParameters->MaxPacketCount=(0x1ACUL);
+@@ -440,14 +456,14 @@ void Platform_WriteFifo(
+ 	DWORD *pdwBuf,
+ 	DWORD dwDwordCount)
+ {
+-	writesl(dwLanBase+TX_DATA_FIFO, pdwBuf, dwDwordCount);
++	writesl((void __iomem *)(dwLanBase+TX_DATA_FIFO), pdwBuf, dwDwordCount);
+ }
+ void Platform_ReadFifo(
+ 	DWORD dwLanBase,
+ 	DWORD *pdwBuf,
+ 	DWORD dwDwordCount)
+ {
+-	readsl(dwLanBase+RX_DATA_FIFO, pdwBuf, dwDwordCount);
++	readsl((void __iomem *)(dwLanBase+RX_DATA_FIFO), pdwBuf, dwDwordCount);
+ }
+ #endif
+ 

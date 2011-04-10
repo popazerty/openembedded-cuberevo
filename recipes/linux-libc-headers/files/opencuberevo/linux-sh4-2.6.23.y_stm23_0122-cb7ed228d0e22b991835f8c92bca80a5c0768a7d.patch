@@ -1,0 +1,160 @@
+From cb7ed228d0e22b991835f8c92bca80a5c0768a7d Mon Sep 17 00:00:00 2001
+From: Francesco Virlinzi <francesco.virlinzi@st.com>
+Date: Thu, 19 Nov 2009 09:45:41 +0100
+Subject: [PATCH] stm: cpufreq: Fixed-header-files
+
+This patch updates several files the include file to use the ST clk framework
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c |    6 ++----
+ arch/sh/kernel/cpu/sh4/cpufreq-stm.c     |    7 ++++---
+ arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c |    8 +++-----
+ arch/sh/kernel/cpu/sh4/cpufreq-stx7105.c |    6 ++----
+ arch/sh/kernel/cpu/sh4/cpufreq-stx7111.c |    6 ++----
+ arch/sh/kernel/cpu/sh4/cpufreq-stx7141.c |    5 ++---
+ arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c |    8 +++-----
+ 7 files changed, 18 insertions(+), 28 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c b/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c
+index 8347321..86e8c2a 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stb7100.c
+@@ -20,12 +20,10 @@
+ #include <linux/cpumask.h>
+ #include <linux/smp.h>
+ #include <linux/sched.h>	/* set_cpus_allowed() */
+-#include <linux/stm/pm.h>
++#include <linux/stm/clk.h>
++#include <linux/io.h>
+ 
+ #include <asm/processor.h>
+-#include <asm/freq.h>
+-#include <asm/io.h>
+-#include <asm/clock.h>
+ 
+ extern void __iomem *clkgena_base;
+ static struct clk *pll0_clk;
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stm.c b/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
+index c0691b9..5d0651f 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
+@@ -21,11 +21,12 @@
+ #include <linux/smp.h>
+ #include <linux/sched.h>	/* set_cpus_allowed() */
+ #include <linux/stm/pm.h>
++#include <linux/io.h>
++#include <linux/stm/clk.h>
+ 
+ #include <asm/processor.h>
+-#include <asm/freq.h>
+-#include <asm/io.h>
+-#include <asm/clock.h>
++
++
+ 
+ static struct clk *sh4_clk;
+ static struct cpufreq_frequency_table cpu_freqs[] = {
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c b/arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c
+index 9698a37..ef34032 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stx5197.c
+@@ -20,14 +20,12 @@
+ #include <linux/cpumask.h>
+ #include <linux/smp.h>
+ #include <linux/sched.h>	/* set_cpus_allowed() */
+-#include <linux/stm/pm.h>
++#include <linux/stm/clk.h>
++#include <linux/io.h>
+ 
+ #include <asm/processor.h>
+-#include <asm/freq.h>
+-#include <asm/io.h>
+-#include <asm/clock.h>
+ 
+-#include "./soc-stx5197.h"
++#include "soc-stx5197.h"
+ 
+ #ifdef CONFIG_STM_CPU_FREQ_OBSERVE
+ #include <linux/stm/sysconf.h>
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stx7105.c b/arch/sh/kernel/cpu/sh4/cpufreq-stx7105.c
+index 9a0875d..1d554cd 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stx7105.c
+@@ -20,12 +20,10 @@
+ #include <linux/cpumask.h>
+ #include <linux/smp.h>
+ #include <linux/sched.h>	/* set_cpus_allowed() */
+-#include <linux/stm/pm.h>
++#include <linux/stm/clk.h>
++#include <linux/io.h>
+ 
+ #include <asm/processor.h>
+-#include <asm/freq.h>
+-#include <asm/io.h>
+-#include <asm/clock.h>
+ 
+ #define clk_iomem			0xfe213000      /* Clockgen A */
+ #define CKGA_PLL0LS_DIV_CFG(x)		(0xa10 + (((x) -4) *4))
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stx7111.c b/arch/sh/kernel/cpu/sh4/cpufreq-stx7111.c
+index db1848a..68168ca 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stx7111.c
+@@ -20,12 +20,10 @@
+ #include <linux/cpumask.h>
+ #include <linux/smp.h>
+ #include <linux/sched.h>	/* set_cpus_allowed() */
+-#include <linux/stm/pm.h>
++#include <linux/stm/clk.h>
++#include <linux/io.h>
+ 
+ #include <asm/processor.h>
+-#include <asm/freq.h>
+-#include <asm/io.h>
+-#include <asm/clock.h>
+ 
+ #define clk_iomem			0xfe213000 /* Clockgen A */
+ #define CKGA_PLL0LS_DIV_CFG(x)		(0xa10 + (((x) - 4) * 4))
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stx7141.c b/arch/sh/kernel/cpu/sh4/cpufreq-stx7141.c
+index 868ed85..cfb3030 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stx7141.c
+@@ -20,12 +20,11 @@
+ #include <linux/cpumask.h>
+ #include <linux/smp.h>
+ #include <linux/sched.h>	/* set_cpus_allowed() */
+-#include <linux/stm/pm.h>
++#include <linux/io.h>
++#include <linux/stm/clk.h>
+ 
+ #include <asm/processor.h>
+ #include <asm/freq.h>
+-#include <asm/io.h>
+-#include <asm/clock.h>
+ 
+ #ifdef CONFIG_STM_CPU_FREQ_OBSERVE
+ #include <linux/stm/sysconf.h>
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c b/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c
+index 9b6fb46..4249395 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c
+@@ -20,13 +20,11 @@
+ #include <linux/cpumask.h>
+ #include <linux/smp.h>
+ #include <linux/sched.h>	/* set_cpus_allowed() */
+-#include <linux/stm/pm.h>
+-
++#include <linux/io.h>
++#include <linux/stm/clk.h>
+ #include <asm/processor.h>
+ #include <asm/system.h>
+-#include <asm/freq.h>
+-#include <asm/io.h>
+-#include <asm/clock.h>
++
+ 
+ static struct clk *pll0_clk;
+ static struct clk *sh4_ic_clk;
+-- 
+1.6.0.6
+

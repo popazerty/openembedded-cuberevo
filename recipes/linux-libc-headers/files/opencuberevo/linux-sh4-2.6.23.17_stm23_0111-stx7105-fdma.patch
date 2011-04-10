@@ -1,0 +1,77 @@
+Add support for the FDMA driver on the STx7105.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -169,7 +169,6 @@ void __init stx7105_configure_usb(int po
+ 	platform_device_register(&st40_ehci_devices[port]);
+ }
+ 
+-#if 0
+ /* FDMA resources ---------------------------------------------------------- */
+ 
+ #ifdef CONFIG_STM_DMA
+@@ -288,7 +287,6 @@ static struct platform_device fdma_xbar_
+ 		},
+ 	},
+ };
+-#endif
+ 
+ /* SSC resources ----------------------------------------------------------- */
+ 
+@@ -1044,9 +1042,9 @@ static int __init stx7105_subsys_setup(v
+ subsys_initcall(stx7105_subsys_setup);
+ 
+ static struct platform_device *stx7105_devices[] __initdata = {
+-	//&fdma0_device,
+-	//&fdma1_device,
+-	//&fdma_xbar_device,
++	&fdma0_device,
++	&fdma1_device,
++	&fdma_xbar_device,
+ 	&sysconf_device,
+ 	&ilc3_device,
+ 	&hwrandom_rng_device,
+Index: linux-2.6.23-stm/drivers/stm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Kconfig
++++ linux-2.6.23-stm/drivers/stm/Kconfig
+@@ -20,7 +20,7 @@ config STM_PIO
+ 
+ config STM_DMA
+ 	bool "STMicroelectronics DMA API"
+-	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7200
++	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7105 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7200
+ 	select SH_DMA_API
+ 	default y
+ 	---help---
+Index: linux-2.6.23-stm/include/linux/stm/fdma-plat.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/fdma-plat.h
++++ linux-2.6.23-stm/include/linux/stm/fdma-plat.h
+@@ -17,6 +17,13 @@
+ #define STB7109_DMEM_OFFSET					STB7100_DMEM_OFFSET
+ #define STB7109_IMEM_OFFSET					STB7100_IMEM_OFFSET
+ 
++#define STX7105_FDMA0_BASE					0xfe220000
++#define STX7105_FDMA1_BASE					0xfe410000
++#define STX7105_XBAR_BASE					0xfe420000
++
++#define STX7105_IMEM_OFFSET					STB7100_IMEM_OFFSET
++#define STX7105_DMEM_OFFSET					STB7100_DMEM_OFFSET
++
+ #define STX7111_FDMA0_BASE					0xfe220000
+ #define STX7111_FDMA1_BASE					0xfe410000
+ #define STX7111_XBAR_BASE					0xfe420000
+@@ -78,6 +85,8 @@
+ 
+ #define LINUX_FDMA_STB7100_IRQ_VECT			140
+ #define LINUX_FDMA_STB7109_IRQ_VECT			LINUX_FDMA_STB7100_IRQ_VECT
++#define LINUX_FDMA0_STX7105_IRQ_VECT			evt2irq(0x1380)
++#define LINUX_FDMA1_STX7105_IRQ_VECT			evt2irq(0x13a0)
+ #define LINUX_FDMA0_STX7111_IRQ_VECT			evt2irq(0x1380)
+ #define LINUX_FDMA1_STX7111_IRQ_VECT			evt2irq(0x13a0)
+ #define LINUX_FDMA0_STB7200_IRQ_VECT			ILC_IRQ(13)

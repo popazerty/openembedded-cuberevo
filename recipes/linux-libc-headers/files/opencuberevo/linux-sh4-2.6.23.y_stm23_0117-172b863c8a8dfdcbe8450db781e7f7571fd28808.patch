@@ -1,0 +1,117 @@
+From 172b863c8a8dfdcbe8450db781e7f7571fd28808 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 28 Nov 2008 12:36:18 +0000
+Subject: [PATCH] sound_stm: Probing debug messages unified
+
+Added generic debug messages for _probe and _remove functions in PCM
+drivers, removed some other shouting messages.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/pcm_player.c   |    8 +++++---
+ sound/stm/pcm_reader.c   |    8 +++++---
+ sound/stm/spdif_player.c |    8 +++++---
+ 3 files changed, 15 insertions(+), 9 deletions(-)
+
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 7ba57b3..95bda3d 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -900,7 +900,9 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 	struct snd_card *card = snd_stm_card_get();
+ 	int i;
+ 
+-	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
++	snd_stm_printd(1, "snd_stm_pcm_player_probe(pdev=%p)\n", pdev);
++
++	snd_stm_printd(0, "Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+ 	snd_stm_assert(card != NULL, return -EINVAL);
+ 
+@@ -1033,8 +1035,6 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, pcm_player);
+ 
+-	snd_stm_printd(0, "--- Probed successfully!\n");
+-
+ 	return 0;
+ 
+ error_conv_register_source:
+@@ -1061,6 +1061,8 @@ static int snd_stm_pcm_player_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_pcm_player *pcm_player = platform_get_drvdata(pdev);
+ 
++	snd_stm_printd(1, "snd_stm_pcm_player_remove(pdev=%p)\n", pdev);
++
+ 	snd_stm_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 6ab5c12..3415f3e 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -829,7 +829,9 @@ static int snd_stm_pcm_reader_probe(struct platform_device *pdev)
+ 	struct snd_card *card = snd_stm_card_get();
+ 	int i;
+ 
+-	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
++	snd_stm_printd(1, "snd_stm_pcm_reader_probe(pdev=%p)\n", pdev);
++
++	snd_stm_printd(0, "Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+ 	snd_stm_assert(card != NULL, return -EINVAL);
+ 
+@@ -962,8 +964,6 @@ static int snd_stm_pcm_reader_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, pcm_reader);
+ 
+-	snd_stm_printd(0, "--- Probed successfully!\n");
+-
+ 	return 0;
+ 
+ error_conv_register_source:
+@@ -990,6 +990,8 @@ static int snd_stm_pcm_reader_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_pcm_reader *pcm_reader = platform_get_drvdata(pdev);
+ 
++	snd_stm_printd(1, "snd_stm_pcm_reader_remove(pdev=%p)\n", pdev);
++
+ 	snd_stm_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index e96da9b..0d77a75 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -1496,7 +1496,9 @@ static int snd_stm_spdif_player_probe(struct platform_device *pdev)
+ 	struct snd_card *card = snd_stm_card_get();
+ 	int buffer_bytes_max;
+ 
+-	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
++	snd_stm_printd(1, "snd_stm_spdif_player_probe(pdev=%p)\n", pdev);
++
++	snd_stm_printd(0, "Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+ 	snd_stm_assert(card != NULL, return -EINVAL);
+ 
+@@ -1609,8 +1611,6 @@ static int snd_stm_spdif_player_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, spdif_player);
+ 
+-	snd_stm_printd(0, "--- Probed successfully!\n");
+-
+ 	return 0;
+ 
+ error_conv_register_source:
+@@ -1637,6 +1637,8 @@ static int snd_stm_spdif_player_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_spdif_player *spdif_player = platform_get_drvdata(pdev);
+ 
++	snd_stm_printd(1, "snd_stm_spdif_player_remove(pdev=%p)\n", pdev);
++
+ 	snd_stm_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
+-- 
+1.5.3.6
+

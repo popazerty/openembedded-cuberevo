@@ -1,0 +1,33 @@
+From 8742f52ddab140c378f8f0b26d4a1e5ef11ecf16 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Fri, 13 Mar 2009 11:49:59 +0000
+Subject: [PATCH] jffs2: fix size of JFFS2 cleanmarker node
+
+The revamped OOB handling (introduced in 2.6.22) accidentally switched to
+12-byte cleanmarkers which is incompatible with the userspace utility,
+'flash_eraseall -j'.  This patch returns to 8-byte cleanmarkers (as now adopted
+in 2.6.24).
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ fs/jffs2/wbuf.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/jffs2/wbuf.c b/fs/jffs2/wbuf.c
+index 91d1d0f..0dc9cc6 100644
+--- a/fs/jffs2/wbuf.c
++++ b/fs/jffs2/wbuf.c
+@@ -966,8 +966,8 @@ exit:
+ 
+ #define NR_OOB_SCAN_PAGES 4
+ 
+-/* For historical reasons we use only 12 bytes for OOB clean marker */
+-#define OOB_CM_SIZE 12
++/* For historical reasons we use only 8 bytes for OOB clean marker */
++#define OOB_CM_SIZE 8
+ 
+ static const struct jffs2_unknown_node oob_cleanmarker =
+ {
+-- 
+1.6.0.6
+

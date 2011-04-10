@@ -1,0 +1,36 @@
+From 4c66519c2372e876e477f103be26b59e3773407f Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Tue, 29 Sep 2009 18:36:37 +0100
+Subject: [PATCH] sh: Kernel threads should not inherit FPU flags from parent
+
+Prior to this patch kernel threads would inherit the FPU usage flags
+from their creating process. This was not a problem because nothing
+ever looked at these flags for a kernel thread. However commit
+33806d4f8804a5ec8a6718b08dfdf5c57b7e29eb "sh: add sleazy FPU
+optimization" changed this, because __switch_to() now looks at the
+FPU flags when determining whether to load the FPU regs before
+executing the thread.
+
+This patch clears the FPU flags when creating a kernel thread.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/process.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/process.c b/arch/sh/kernel/process.c
+index 6343218..eb849e1 100644
+--- a/arch/sh/kernel/process.c
++++ b/arch/sh/kernel/process.c
+@@ -290,6 +290,8 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
+ 	} else {
+ 		childregs->regs[15] = (unsigned long)childregs;
+ 		ti->addr_limit = KERNEL_DS;
++		clear_thread_flag(TIF_USEDFPU);
++		p->fpu_counter = 0;
+ 	}
+ 
+ 	if (clone_flags & CLONE_SETTLS)
+-- 
+1.6.0.6
+

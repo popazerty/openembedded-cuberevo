@@ -1,0 +1,56 @@
+commit 0083bb0d83318db81508a7d9c239a134e2d8697d
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Fri Jul 18 16:48:57 2008 +0100
+
+    sound_stm: PCM Readers names fix.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/stx710x.c b/sound/stm/stx710x.c
+index 964a507..460409d 100644
+--- a/sound/stm/stx710x.c
++++ b/sound/stm/stx710x.c
+@@ -234,7 +234,7 @@ static struct platform_device conv_i2sspdif = {
+ /* PCM reader */
+ 
+ struct snd_stm_pcm_reader_info pcm_reader_info = {
+-	.name = "PCM reader",
++	.name = "PCM Reader",
+ 	/* .ver = see snd_stm_stx710x_init() */
+ 	.card_device = 3,
+ 	.channels = 2,
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index ff7600d..8611a7f 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -315,7 +315,7 @@ static struct platform_device pcm_reader = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_pcm_reader_info) {
+-		.name = "PCM reader",
++		.name = "PCM Reader",
+ 		.ver = 4,
+ 		.card_device = 3,
+ 		.channels = 2,
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index 97c39a2..9e5190e 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -480,7 +480,7 @@ static struct platform_device pcm_reader_0 = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_pcm_reader_info) {
+-		.name = "PCM reader",
++		.name = "PCM Reader #0",
+ 		/* .ver = see snd_stm_stx7200_init() */
+ 		.card_device = 7,
+ 		.channels = 2,
+@@ -507,7 +507,7 @@ static struct platform_device pcm_reader_1 = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_pcm_reader_info) {
+-		.name = "PCM reader",
++		.name = "PCM Reader #1",
+ 		.ver = 5,
+ 		.card_device = 8,
+ 		.channels = 8,

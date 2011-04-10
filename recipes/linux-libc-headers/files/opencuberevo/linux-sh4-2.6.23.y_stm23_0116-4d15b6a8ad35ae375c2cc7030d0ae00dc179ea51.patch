@@ -1,0 +1,27 @@
+From 4d15b6a8ad35ae375c2cc7030d0ae00dc179ea51 Mon Sep 17 00:00:00 2001
+From: Angelo CASTELLO <angelo.castello@st.com>
+Date: Fri, 26 Sep 2008 15:50:39 +0200
+Subject: [PATCH] ssc_stm: Fixed undeclared ssc_pio variable.
+
+Signed-off-by: Angelo Castello <angelo.castello@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index c768ec0..2eaa4f1 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -305,6 +305,8 @@ void __init stx7100_configure_ssc(struct plat_ssc_data *data)
+ 	struct sysconf_field* ssc_sc;
+ 
+ 	for (i=0; i<ARRAY_SIZE(stssc_devices); i++, capability >>= SSC_BITS_SIZE) {
++		struct ssc_pio_t *ssc_pio = stssc_devices[i].dev.platform_data;
++
+ 		if(capability & SSC_UNCONFIGURED)
+ 			continue;
+ 		if(!i){
+-- 
+1.5.3.6
+

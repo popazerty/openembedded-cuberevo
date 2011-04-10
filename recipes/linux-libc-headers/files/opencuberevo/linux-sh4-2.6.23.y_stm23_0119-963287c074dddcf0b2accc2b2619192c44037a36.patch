@@ -1,0 +1,37 @@
+From 963287c074dddcf0b2accc2b2619192c44037a36 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 13 May 2009 11:41:31 +0100
+Subject: [PATCH] sh_stm: Fix preprocessor disjunction
+
+Fixes preprocessor disjunction
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/common/mb588.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/mb588.c b/arch/sh/boards/st/common/mb588.c
+index 96f24b4..da258b0 100644
+--- a/arch/sh/boards/st/common/mb588.c
++++ b/arch/sh/boards/st/common/mb588.c
+@@ -51,7 +51,7 @@ static struct plat_stmnand_data nand_config = {
+ 	.rbn_port		= -1,
+ 	.rbn_pin		= -1,
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STX7200 | CONFIG_CPU_SUBTYPE_STX7105)
++#if defined(CONFIG_CPU_SUBTYPE_STX7200) || defined(CONFIG_CPU_SUBTYPE_STX7105)
+ 	/* Timing data for SoCs using STM_NAND_EMI/FLEX/AFM drivers */
+ 	.timing_data = &(struct nand_timing_data) {
+ 		.sig_setup	= 50,		/* times in ns */
+@@ -81,7 +81,7 @@ static struct plat_stmnand_data nand_config = {
+ #endif
+ };
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STX7200 | CONFIG_CPU_SUBTYPE_STX7105)
++#if defined(CONFIG_CPU_SUBTYPE_STX7200) || defined(CONFIG_CPU_SUBTYPE_STX7105)
+ 
+ /* For SoCs migrated to STM_NAND_EMI/FLEX/AFM drivers, setup template platform
+  * device structure.  SoC setup will configure SoC specific data.  Use
+-- 
+1.6.0.6
+

@@ -1,0 +1,90 @@
+From d2d3accfad6a94736f8a820426b61069626200b4 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Thu, 27 Nov 2008 17:52:51 +0000
+Subject: [PATCH] sh_stm: Add support for STx7105 cut 2
+
+Three changes are required to support STx7105 cut 2:
+ - The device ID was fixed to what it should have been all along.
+ - Ethernet RMII configuration fixed - the old code implemented what the
+   cut 1 documentation described, but the Si didn't connect this
+   register, so now only implement the cut 2 semantics
+ - Ethernet PHY CLK pin direction changed - again the sysconf bit wasn't
+   connected in cut 1, and in cut 2 direction control has moved to the
+   PIO pin direction, so remove the sysconf configuration, and only
+   implement the cut 2 PIO style configuration.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Acked-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/probe.c         |    7 ++++++-
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |   19 +++++++++++++------
+ 2 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/probe.c b/arch/sh/kernel/cpu/sh4/probe.c
+index 3748434..6fdf259 100644
+--- a/arch/sh/kernel/cpu/sh4/probe.c
++++ b/arch/sh/kernel/cpu/sh4/probe.c
+@@ -159,7 +159,8 @@ int __init detect_cpu_and_cache_system(void)
+ 	case 0x9090 ... 0x9092:
+ 		/* ST40-300 core */
+ 		switch (prr_all) {
+-		case 0x10:
++		case 0x0010:
++			/* 7105 cut 1.0 */
+ 			cpu_data->type = CPU_STX7105;
+ 			break;
+ 		case 0x9f:
+@@ -175,6 +176,10 @@ int __init detect_cpu_and_cache_system(void)
+ 		case 0x9b00:
+ 			boot_cpu_data.type = CPU_STX7141;
+ 			break;
++		case 0x9e00 ... 0x9eff:
++			/* 7105 (cut 2.0 = 0x9e20) */
++			cpu_data->type = CPU_STX7105;
++			break;
+ 		default:
+ 			cpu_data->type = CPU_SH_NONE;
+ 			break;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 5137ff1..db61b6e 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -541,13 +541,17 @@ void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
+ 	sc = sysconf_claim(SYS_CFG, 7, 17, 17, "stmmac");
+ 	sysconf_write(sc, ext_mdio ? 1 : 0);
+ 
+-	/* RMII pin multiplexing: 0: RMII interface active, 1: MII interface */
++	/* RMII pin multiplexing: 0: MII interface active, 1: RMII interface */
++	/* cut 1: This register wasn't connected, so only MII available */
+ 	sc = sysconf_claim(SYS_CFG, 7, 18, 18, "stmmac");
+-	sysconf_write(sc, rmii_mode ? 0 : 1);
++	sysconf_write(sc, rmii_mode ? 1 : 0);
+ 
+-	/* PHY EXT CLOCK: 0: provided by STx7105; 1: external */
+-	sc = sysconf_claim(SYS_CFG, 7, 19, 19, "stmmac");
+-	sysconf_write(sc, ext_clk ? 1 : 0);
++	/*
++	 * PHY EXT CLOCK: 0: provided by STx7105; 1: external
++	 * cut 1: sysconf7[19], however this wasn't connected, so only
++	 * input supported.
++	 * cut 2: direction now based on PIO direction, so this code removed.
++	 */
+ 
+ 	/* MAC speed*/
+ 	mac_speed_sc = sysconf_claim(SYS_CFG, 7, 20, 20, "stmmac");
+@@ -631,8 +635,11 @@ void stx7105_configure_ethernet(int reverse_mii, int rmii_mode, int mode,
+ 	pin = stpio_request_pin(9, 4, "eth", STPIO_ALT_BIDIR);
+ 
+ 	/* MIIPHYCLK */
++	/* Not implemented in cut 1 (DDTS GNBvd69906) - clock never output */
++	/* In cut 2 PIO direction used to control input or output. */
+ 	stx7105_pio_sysconf(9, 5, 1, "eth");
+-	pin = stpio_request_pin(9, 5, "eth", STPIO_ALT_OUT);
++	pin = stpio_request_pin(9, 5, "eth",
++				ext_clk ? STPIO_IN : STPIO_ALT_OUT);
+ 
+ 	/* MIIMDINT */
+ 	stx7105_pio_sysconf(9, 6, 1, "eth");
+-- 
+1.5.3.6
+

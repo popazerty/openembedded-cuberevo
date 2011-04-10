@@ -1,0 +1,27 @@
+From f6329da30af904795cdcc2453b1c50cd4ca77930 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 23 Feb 2009 07:02:53 +0100
+Subject: [PATCH] stm: Fixed 5197 platform pm code
+
+Added missing include to avoid compilation error
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
+index b37e7b1..80d3c01 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx5197.c
+@@ -9,6 +9,7 @@
+  * for more details.
+  */
+ #include <linux/stm/pm.h>
++#include <linux/delay.h>
+ #ifdef CONFIG_PM
+ static int
+ usb_pwr_ack(struct platform_device *dev, int host_phy, int on)
+-- 
+1.6.0.6
+

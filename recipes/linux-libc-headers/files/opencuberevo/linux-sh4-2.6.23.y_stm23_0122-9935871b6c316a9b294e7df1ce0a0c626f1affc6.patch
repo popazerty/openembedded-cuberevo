@@ -1,0 +1,68 @@
+From 9935871b6c316a9b294e7df1ce0a0c626f1affc6 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 18 Nov 2009 15:24:39 +0000
+Subject: [PATCH] sh_stm: Set Ethernet PHY clock rate during 5206 setup
+
+As the 5206 targetpacks tend to configure clocks on all boards in the
+same way, we have to set the PHY clock rate on our own (when required),
+depending on the used MII mode.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx5206.c |   13 +++++++++++++
+ 1 files changed, 13 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5206.c b/arch/sh/kernel/cpu/sh4/setup-stx5206.c
+index 54712f9..6cca007 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5206.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5206.c
+@@ -18,6 +18,7 @@
+ #include <linux/phy.h>
+ #include <linux/serial.h>
+ #include <linux/mtd/partitions.h>
++#include <linux/stm/clk.h>
+ #include <linux/stm/emi.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/soc.h>
+@@ -308,19 +309,23 @@ void __init stx5206_configure_ethernet(enum stx5206_ethernet_mode mode,
+ {
+ 	struct sysconf_field *sc;
+ 	unsigned int phy_intf_sel, enmii;
++	unsigned long phy_clk_rate;
+ 
+ 	switch (mode) {
+ 	case stx5206_ethernet_mii:
+ 		phy_intf_sel = 0;
+ 		enmii = 1;
++		phy_clk_rate = 25000000;
+ 		break;
+ 	case stx5206_ethernet_rmii:
+ 		phy_intf_sel = 0x4;
+ 		enmii = 1;
++		phy_clk_rate = 50000000;
+ 		break;
+ 	case stx5206_ethernet_reverse_mii:
+ 		phy_intf_sel = 0;
+ 		enmii = 0;
++		phy_clk_rate = 25000000;
+ 		break;
+ 	default:
+ 		BUG();
+@@ -348,6 +353,14 @@ void __init stx5206_configure_ethernet(enum stx5206_ethernet_mode mode,
+ 	sc = sysconf_claim(SYS_CFG, 7, 27, 27, "stmmac");
+ 	sysconf_write(sc, enmii);
+ 
++	/* Set PHY clock frequency (if used) */
++	if (!ext_clk) {
++		struct clk *phy_clk = clk_get(NULL, "CLKA_ETH_PHY");
++
++		BUG_ON(!phy_clk);
++		clk_set_rate(phy_clk, phy_clk_rate);
++	}
++
+ 	stx5206_gmac_private_data.bus_id = phy_bus;
+ 
+ 	platform_device_register(&stx5206_gmac_device);
+-- 
+1.6.0.6
+

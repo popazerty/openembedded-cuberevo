@@ -1,0 +1,29 @@
+From 41356c142bc556b5a295bb7e6ed3c619cb8cfd1a Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Fri, 13 Mar 2009 15:03:21 +0100
+Subject: [PATCH] kconfig: improve help message for ELF HASH loader.
+
+Explicitely warn to rebuild all external modules when
+enabling ELF HASH module loader.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ init/Kconfig |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/init/Kconfig b/init/Kconfig
+index 15c0594..832eb46 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -692,6 +692,8 @@ config LKM_ELF_HASH
+ 	  ELF hash table for finding symbols. It also relies upon the support
+ 	  provided by the ksymhash tool to avoiding further computation at
+ 	  runtime of the hash values (of both exported and undefined symbols).
++	  If you enable this feature, all other external modules must be
++	  rebuilt accordingly.
+ 
+ config MODULES_BPA2
+ 	bool "Allocate memory for modules from BPA2"
+-- 
+1.6.0.6
+

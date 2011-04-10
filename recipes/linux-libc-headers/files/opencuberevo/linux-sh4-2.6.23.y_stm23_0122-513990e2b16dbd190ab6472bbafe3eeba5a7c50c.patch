@@ -1,0 +1,68 @@
+From 513990e2b16dbd190ab6472bbafe3eeba5a7c50c Mon Sep 17 00:00:00 2001
+From: Francesco Virlinzi <francesco.virlinzi@st.com>
+Date: Fri, 13 Nov 2009 10:22:03 +0100
+Subject: [PATCH] stm: pm: Fixed evt_to_irq functions
+
+This patch fixes the evt_to_irq in several SOCs to translate
+ the INTEVT code to the right irw number
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/suspend-stx7105.c |    5 +++--
+ arch/sh/kernel/cpu/sh4/suspend-stx7111.c |    2 +-
+ arch/sh/kernel/cpu/sh4/suspend-stx7141.c |    2 +-
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7105.c b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+index f0a8b33..89dad97 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+@@ -22,8 +22,9 @@
+ #include <asm/io.h>
+ #include <asm/pm.h>
+ #include <asm/irq.h>
++#include <asm/irq-ilc.h>
+ 
+-#include "./soc-stx7105.h"
++#include "soc-stx7105.h"
+ 
+ #define _SYS_STA4		(7)
+ #define _SYS_STA4_MASK		(8)
+@@ -162,7 +163,7 @@ static unsigned long stx7105_iomem[2] __cacheline_aligned = {
+ 
+ static int stx7105_evt_to_irq(unsigned long evt)
+ {
+-	return evt2irq(evt);
++	return ((evt < 0x400) ? ilc2irq(evt) : evt2irq(evt));
+ }
+ 
+ static struct sh4_suspend_t st40data __cacheline_aligned = {
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7111.c b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+index c8db72a..4a74476 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+@@ -166,7 +166,7 @@ static unsigned long stx7111_iomem[2] __cacheline_aligned = {
+ 
+ static int stx7111_evttoirq(unsigned long evt)
+ {
+-	return evt2irq(evt);
++	return ((evt < 0x400) ? ilc2irq(evt) : evt2irq(evt));
+ }
+ 
+ static struct sh4_suspend_t st40data __cacheline_aligned = {
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7141.c b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+index ac96048..3fb6444 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+@@ -165,7 +165,7 @@ static unsigned long stx7141_iomem[2] __cacheline_aligned = {
+ 
+ static int stx7141_evttoirq(unsigned long evt)
+ {
+-	return ((evt < 0x400) ? ilc2irq(evt) : evt2irq(evt));
++	return ((evt == 0xa00) ? ilc2irq(evt) : evt2irq(evt));
+ }
+ 
+ static struct sh4_suspend_t st40data __cacheline_aligned = {
+-- 
+1.6.0.6
+

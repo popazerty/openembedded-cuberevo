@@ -1,0 +1,33 @@
+From 7dfdb5b8b217384f3affd7b8121a2a121290a54b Mon Sep 17 00:00:00 2001
+From: Francesco Virlinzi <francesco.virlinzi@st.com>
+Date: Wed, 18 Nov 2009 13:51:52 +0100
+Subject: [PATCH] stm: pm: Fixed platform pm due to variable rename
+
+This patch fixes the platform pm on 7105 due to a change in the
+ variable name in the setup.c file
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c b/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
+index af1e6b9..9e5b127 100644
+--- a/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-stx7105.c
+@@ -71,9 +71,9 @@ usb_pwr_ack(struct platform_device *dev, int host_phy, int ack)
+ }
+ 
+ static struct platform_device_pm stx7105_pm_devices[] = {
+-pm_plat_dev(&emi, NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
+-pm_plat_dev(&usb_device[0], NULL, usb_pwr_req, usb_pwr_ack, NULL),
+-pm_plat_dev(&usb_device[1], NULL, usb_pwr_req, usb_pwr_ack, NULL),
++pm_plat_dev(&stx7105_emi, NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
++pm_plat_dev(&stx7105_usb_devices[0], NULL, usb_pwr_req, usb_pwr_ack, NULL),
++pm_plat_dev(&stx7105_usb_devices[1], NULL, usb_pwr_req, usb_pwr_ack, NULL),
+ /*
+  * There should be also the SATA entry... but:
+  * - on cut 1 they are broken ...
+-- 
+1.6.0.6
+

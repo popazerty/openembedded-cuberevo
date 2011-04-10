@@ -1,0 +1,56 @@
+From 710deed06914cfdca3592323ffc0095e015e940d Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:25 +0200
+Subject: [PATCH] stm: clk: Update the stx5197 to the new clk frmwk
+
+This patch updates the STX5197 clock implementation due to the new clock
+framework
+Morever it update some clock capability as requested by STAPI team
+
+Reference: [Bug 7114] [PM] clock LLA on 5197 (System lock up)
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx5197.c |   11 +++++++----
+ 1 files changed, 7 insertions(+), 4 deletions(-)
+ mode change 100755 => 100644 arch/sh/kernel/cpu/sh4/clock-stx5197.c
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx5197.c b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+old mode 100755
+new mode 100644
+index 08b4410..9605c95
+--- a/arch/sh/kernel/cpu/sh4/clock-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+@@ -21,7 +21,7 @@
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+ #include <linux/io.h>
+-#include <asm/clock.h>
++#include <linux/stm/clk.h>
+ #include "clock-stx5197.h"
+ #include "clock-regs-stx5197.h"
+ 
+@@ -171,14 +171,17 @@ REGISTER_CLK(PLLB,	&PLL, 800000000, CLK_RATE_PROPAGATES),
+ REGISTER_CLK(PLL_CPU,	&PLL, 800000000, 0),
+ REGISTER_CLK(PLL_LMI,	&PLL, 200000000, 0),
+ REGISTER_CLK(PLL_BIT,	&PLL, 200000000, 0),
+-REGISTER_CLK(PLL_SYS,	&PLL, 133000000, CLK_RATE_PROPAGATES),
++REGISTER_CLK(PLL_SYS,	&PLL, 133000000, CLK_RATE_PROPAGATES |
++					CLK_ALWAYS_ENABLED),
+ REGISTER_CLK(PLL_FDMA,	&PLL, 350000000, CLK_RATE_PROPAGATES),
+ REGISTER_CLK(PLL_DDR,	&PLL, 0, 0),
+ REGISTER_CLK(PLL_AV,	&PLL, 100000000, 0),
+ REGISTER_CLK(PLL_SPARE, &PLL, 50000000, 0),
+ REGISTER_CLK(PLL_ETH,	&PLL, 100000000, 0),
+-REGISTER_CLK(PLL_ST40_ICK, &PLL, 350000000, CLK_RATE_PROPAGATES),
+-REGISTER_CLK(PLL_ST40_PCK, &PLL, 133000000, CLK_RATE_PROPAGATES),
++REGISTER_CLK(PLL_ST40_ICK, &PLL, 350000000, CLK_RATE_PROPAGATES |
++					CLK_ALWAYS_ENABLED),
++REGISTER_CLK(PLL_ST40_PCK, &PLL, 133000000, CLK_RATE_PROPAGATES |
++					CLK_ALWAYS_ENABLED),
+ /* FS A */
+ REGISTER_CLK(FSA_SPARE,	&FS, 36000000, 0),
+ REGISTER_CLK(FSA_PCM,	&FS, 72000000, 0),
+-- 
+1.6.0.6
+

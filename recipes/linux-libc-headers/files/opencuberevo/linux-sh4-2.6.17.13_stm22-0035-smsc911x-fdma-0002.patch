@@ -1,0 +1,64 @@
+This patch updates the portion of the SMSC 911x driver which is used
+on an SH4 with the ST DMA driver. The previous version of the code made
+a copy of the DMA parameters every time it was used, this patch removes
+that copy. This also fixes a memory leak which occurred because the 
+FDMA nodes were not being reused. It also removes some double
+initialisation of the parameters which was unnecessary.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/drivers/net/smsc_911x/st40-shdma.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/st40-shdma.c
++++ linux/drivers/net/smsc_911x/st40-shdma.c
+@@ -78,7 +78,7 @@ BOOLEAN Platform_DmaStartXfer(
+ {
+ 	DWORD dwAlignMask;
+ 	DWORD dwLanPhysAddr, dwMemPhysAddr;
+-	stm_dma_params dmap;
++	stm_dma_params *dmap;
+ 	unsigned long src, dst;
+ 	unsigned long res=0;
+ 	// 1. validate the requested channel #
+@@ -115,34 +115,28 @@ BOOLEAN Platform_DmaStartXfer(
+ 	if (pDmaXfer->fMemWr) {
+ 		src = PHYSADDR(dwLanPhysAddr);
+ 		dst = PHYSADDR(dwMemPhysAddr);
++		dmap = &rx_transfer;
+ 	} else {
+ 
+ 		src = PHYSADDR(dwMemPhysAddr);
+ 		dst = PHYSADDR(dwLanPhysAddr);
++		dmap = &tx_transfer;
+ 	}
+-	dmap = (pDmaXfer->fMemWr) ?
+-			rx_transfer:
+-			tx_transfer;
+-
+-	pDmaXfer->fMemWr ?
+-		dma_parms_DIM_2_x_1(&dmap,0x20,0):
+-		dma_parms_DIM_1_x_2(&dmap,0x20,0);
+-
+-	BUG_ON(in_interrupt());
+-	dma_parms_comp_cb(&dmap, pCallback, pCallbackData, 0);
+-	dma_parms_addrs(&dmap,src,dst, pDmaXfer->dwDwCnt << 2);
+-	res=dma_compile_list(&dmap);
++
++	dma_parms_comp_cb(dmap, pCallback, pCallbackData, 0);
++	dma_parms_addrs(dmap,src,dst, pDmaXfer->dwDwCnt << 2);
++	res=dma_compile_list(dmap);
+ 	if(res != 0)
+ 		goto err_exit;
+ 	// 6. Start the transfer
+-	res=dma_xfer_list(pDmaXfer->dwDmaCh,&dmap);
++	res=dma_xfer_list(pDmaXfer->dwDmaCh,dmap);
+ 	if(res != 0)
+ 		goto err_exit;
+ 
+ 	// DMA Transfering....
+ 	return TRUE;
+ err_exit:
+-	SMSC_WARNING("%s cant initialise DMA engine err_code %d\n",__FUNCTION__,res);
++	SMSC_WARNING("%s cant initialise DMA engine err_code %ld\n",__FUNCTION__, res);
+ 	return FALSE;
+ }
+ 

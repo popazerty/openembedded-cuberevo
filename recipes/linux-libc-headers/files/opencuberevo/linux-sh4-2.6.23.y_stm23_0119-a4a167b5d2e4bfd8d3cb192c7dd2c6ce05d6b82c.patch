@@ -1,0 +1,90 @@
+From a4a167b5d2e4bfd8d3cb192c7dd2c6ce05d6b82c Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Wed, 13 May 2009 12:37:56 +0100
+Subject: [PATCH] sh: Remove implicit sign extension from assembler immediates
+
+The SH instruction set has several instructions which accept an 8 bit
+immediate operand. For logical instructions this operand is zero extended,
+for arithmetic instructions the operand is sign extended. After adding an
+option to the assembler to check this, it was found that several pieces
+of assembly code were assuming this behaviour, and in one case
+getting it wrong.
+
+So this patch explicitly sign extends any immediate operands, which makes
+it obvious what is happening, and fixes the one case which got it wrong.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boot/compressed/head.S |    2 +-
+ arch/sh/kernel/cpu/sh4/entry.S |    7 ++++---
+ arch/sh/mm/clear_page.S        |    2 +-
+ include/asm-sh/entry-macros.S  |    2 +-
+ 4 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/arch/sh/boot/compressed/head.S b/arch/sh/boot/compressed/head.S
+index a8399b0..824b258 100644
+--- a/arch/sh/boot/compressed/head.S
++++ b/arch/sh/boot/compressed/head.S
+@@ -23,7 +23,7 @@ startup:
+ 	bt	clear_bss
+ 	sub	r0, r2
+ 	mov.l	bss_start_addr, r0
+-	mov	#0xe0, r1
++	mov	#0xffffffe0, r1
+ 	and	r1, r0			! align cache line
+ 	mov.l	text_start_addr, r3
+ 	mov	r0, r1
+diff --git a/arch/sh/kernel/cpu/sh4/entry.S b/arch/sh/kernel/cpu/sh4/entry.S
+index 4f5d6a6..9b8cf92 100644
+--- a/arch/sh/kernel/cpu/sh4/entry.S
++++ b/arch/sh/kernel/cpu/sh4/entry.S
+@@ -676,8 +676,9 @@ need_resched:
+ 
+ 	mov	#OFF_SR, r0
+ 	mov.l	@(r0,r15), r0		! get status register
+-	and	#0xf0, r0		! interrupts off (exception path)?
+-	cmp/eq	#0xf0, r0
++	shlr	r0
++	and	#(0xf0>>1), r0
++	cmp/eq	#(0xf0>>1), r0		! interrupts off (exception path)?
+ 	bt	noresched
+ 	mov.l	3f, r0
+ 	jsr	@r0			! call preempt_schedule_irq
+@@ -742,7 +743,7 @@ restore_all:
+ 	!
+ 	! Calculate new SR value
+ 	mov	k3, k2			! original SR value
+-	mov	#0xf0, k1
++	mov	#0xfffffff0, k1
+ 	extu.b	k1, k1
+ 	not	k1, k1
+ 	and	k1, k2			! Mask orignal SR value
+diff --git a/arch/sh/mm/clear_page.S b/arch/sh/mm/clear_page.S
+index 842f28d..81352d3 100644
+--- a/arch/sh/mm/clear_page.S
++++ b/arch/sh/mm/clear_page.S
+@@ -104,7 +104,7 @@ ENTRY(__clear_page_wb)
+ ENTRY(__clear_user)
+ 	!
+ 	mov	#0, r0
+-	mov	#0xe0, r1	! 0xffffffe0
++	mov	#0xffffffe0, r1
+ 	!
+ 	! r4..(r4+31)&~32 	   -------- not aligned	[ Area 0 ]
+ 	! (r4+31)&~32..(r4+r5)&~32 -------- aligned	[ Area 1 ]
+diff --git a/include/asm-sh/entry-macros.S b/include/asm-sh/entry-macros.S
+index 4af03eb..6cccd50 100644
+--- a/include/asm-sh/entry-macros.S
++++ b/include/asm-sh/entry-macros.S
+@@ -7,7 +7,7 @@
+ 	.endm
+ 
+ 	.macro	sti
+-	mov	#0xf0, r11
++	mov	#0xfffffff0, r11
+ 	extu.b	r11, r11
+ 	not	r11, r11
+ 	stc	sr, r10
+-- 
+1.6.0.6
+

@@ -1,0 +1,27 @@
+From bcdcbeeb93ec963cb5e6b4125e97aaa655223008 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Mon, 9 Mar 2009 18:50:30 +0000
+Subject: [PATCH] sh_stm: Fix mb704 heartbeat
+
+mb704 heartbeat LED is active low.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/mb704/setup.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/boards/st/mb704/setup.c b/arch/sh/boards/st/mb704/setup.c
+index e1db97a..9c05941 100644
+--- a/arch/sh/boards/st/mb704/setup.c
++++ b/arch/sh/boards/st/mb704/setup.c
+@@ -74,6 +74,7 @@ static struct platform_device mb704_leds = {
+ 				.name = "HB",
+ 				.default_trigger = "heartbeat",
+ 				.gpio = stpio_to_gpio(3, 6),
++				.active_low = 1,
+ 			},
+ 		},
+ 	},
+-- 
+1.6.0.6
+

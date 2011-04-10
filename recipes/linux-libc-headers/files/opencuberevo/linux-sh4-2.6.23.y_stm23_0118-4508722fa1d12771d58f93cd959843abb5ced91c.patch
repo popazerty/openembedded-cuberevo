@@ -1,0 +1,27 @@
+From 4508722fa1d12771d58f93cd959843abb5ced91c Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Thu, 12 Feb 2009 15:01:00 +0100
+Subject: [PATCH] sh: Enable PM in the arch specific configuration
+
+Enable PM ability in the kernel sh arch Kconfig configuration
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/Kconfig |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 2e96087..d3a7252 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -57,6 +57,7 @@ config GENERIC_CLOCKEVENTS
+ 
+ config SYS_SUPPORTS_PM
+ 	bool
++	default y
+ 
+ config SYS_SUPPORTS_APM_EMULATION
+ 	bool
+-- 
+1.5.6.3
+

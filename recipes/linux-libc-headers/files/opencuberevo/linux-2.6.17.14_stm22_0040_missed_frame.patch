@@ -1,0 +1,109 @@
+This patch uses the DMA csr8 register for getting the number
+of both missed frames and rx overflows.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+==================================================================
+
+Index: linux-2.6.17/drivers/net/stmmac.c
+===================================================================
+--- linux-2.6.17.orig/drivers/net/stmmac.c	2008-03-05 10:36:48.000000000 +0000
++++ linux-2.6.17/drivers/net/stmmac.c	2008-03-14 12:26:06.000000000 +0000
+@@ -135,8 +135,10 @@
+ 	unsigned long tx_early_irq;
+ 	unsigned long fatal_bus_error_irq;
+ 	unsigned long rx_poll_n;
++	unsigned long rx_missed_cntr;
++	unsigned long rx_overflow_cntr;
+ };
+-#define EXTRA_STATS 36
++#define EXTRA_STATS 38
+ 
+ /* This structure is common for both receive and transmit DMA descriptors.
+  * A descriptor should not be used for storing more than one frame. */
+@@ -1188,6 +1190,43 @@
+ 	return ret;
+ }
+ 
++static void dma_missed_fr(struct net_device *dev)
++{
++	unsigned long ioaddr = dev->base_addr;
++	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned long csr8;
++
++	csr8 = readl(ioaddr + DMA_MISSED_FRAME_CTR);
++
++	if (unlikely(csr8)) {
++		DBG(probe, DEBUG, "DMA CSR8 = 0x%lx\n", csr8);
++
++		if (csr8 & DMA_MISSED_FRAME_OVE) {
++			DBG(probe, DEBUG, "\t2048+ overflow frame\n");
++			lp->stats.rx_over_errors += 0x800;
++			lp->xstats.rx_overflow_cntr += 0x800;
++		} else {
++			unsigned int ove_cntr;
++			ove_cntr = ((csr8 & DMA_MISSED_FRAME_OVE_CNTR) >> 17);
++			DBG(probe, DEBUG, "\t%d overflow frame\n", ove_cntr);
++			lp->stats.rx_over_errors += ove_cntr;
++			lp->xstats.rx_overflow_cntr += ove_cntr;
++		}
++
++		if (csr8 & DMA_MISSED_FRAME_OVE_M) {
++			DBG(probe, DEBUG,"\t65536+ missed frame\n");
++			lp->stats.rx_missed_errors += 0xffff;
++			lp->xstats.rx_missed_cntr += 0xffff;
++		} else {
++			unsigned int miss_f = (csr8 & DMA_MISSED_FRAME_M_CNTR);
++			DBG(probe, DEBUG, "\tmissed frame = %d\n", miss_f);
++			lp->stats.rx_missed_errors += miss_f;
++			lp->xstats.rx_missed_cntr += miss_f;
++		}
++	}
++	return;
++}
++
+ #ifdef STMMAC_DEBUG
+ /**
+  * show_tx_process_state
+@@ -1838,6 +1877,7 @@
+ 						       "packet dropped.\n",
+ 						       dev->name);
+ 					lp->stats.rx_dropped++;
++					lp->xstats.rx_dropped++;
+ 					break;
+ 				}
+ 
+@@ -1978,6 +2018,9 @@
+ struct net_device_stats *stmmac_stats(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
++
++	dma_missed_fr(dev);
++
+ 	return &lp->stats;
+ }
+ 
+@@ -2370,7 +2413,9 @@
+ 	"rx_watchdog_irq"}, {
+ 	"tx_early_irq"}, {
+ 	"fatal_bus_error_irq"}, {
+-"rx_poll_n"},};
++	"rx_poll_n"}, {
++	"rx_missed_cntr"}, {
++"rx_overflow_cntr"},};
+ 
+ static int stmmac_stats_count(struct net_device *dev)
+ {
+@@ -2381,8 +2426,12 @@
+ 				 struct ethtool_stats *dummy, u64 * buf)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
++	u32 *extra;
+ 	int i;
+-	u32 *extra = (u32 *) & lp->xstats;
++
++	dma_missed_fr(dev);
++
++	extra = (u32 *) & lp->xstats;
+ 	for (i = 0; i < EXTRA_STATS; i++)
+ 		buf[i] = extra[i];
+ 	return;

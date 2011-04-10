@@ -1,0 +1,3413 @@
+This patch:
+o fixes the pbl to 32 (within the board's setup files).
+o reviews both the xmit  function and the NAPI poll method 
+  (zero-copy is enabled by default).
+o improves the ethtool support.
+o adds the flow control.
+o fixes the VLAN support.
+o adds tx optimization by aggregation:
+    it can be enabled by using the following command:
+      echo 32 > /sys/module/stmmac/parameters/tx_aggregation
+o adds rx timer optimization to driver receive interrupt (SH4 RTC).
+  To enable it, configure the kernel with CONFIG_STM_RTC option.
+  Device Drivers->Character devices->
+	STMicroelectronics Real Time Clock support ).
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+
+--- linux.orig/arch/sh/boards/st/stb7100ref/setup.c	2008-01-08 17:11:24.000000000 +0000
++++ linux/arch/sh/boards/st/stb7100ref/setup.c	2008-02-22 07:50:03.269996000 +0000
+@@ -894,7 +894,12 @@ static int __init device_init(void)
+ 
+ 	/* Configure the ethernet MAC PBL depending on the cut of the chip */
+ 	if (chip_7109){
+-		eth7109_private_data.pbl = 1;
++		if (chip_revision == 1)
++			eth7109_private_data.pbl = 1;
++		else if (chip_revision == 2)
++			eth7109_private_data.pbl = 8;
++		else
++			eth7109_private_data.pbl = 32;
+ 	}
+ 	if(chip_7109){
+ 		switch (chip_revision) {
+--- linux.orig/arch/sh/boards/st/stb7109eref/setup.c	2008-01-08 17:11:24.000000000 +0000
++++ linux/arch/sh/boards/st/stb7109eref/setup.c	2008-02-22 07:51:30.499996000 +0000
+@@ -751,10 +751,16 @@ static int __init device_init(void)
+ 		/* 7109 cut 1.x */
+ 		sata_private_info.only_32bit = 1;
+ 		sata_private_info.pc_glue_logic_init = 0x1ff;
++		eth7109_private_data.pbl = 1;
+ 	} else {
+ 		/* 7109 cut >= 2.0 */
+ 		sata_private_info.only_32bit = 0;
+ 		sata_private_info.pc_glue_logic_init = 0x100ff;
++		if (chip_revision == 2){
++			eth7109_private_data.pbl = 8;
++		} else { /* 3.x */
++			eth7109_private_data.pbl = 32;
++		}
+ 	}
+ 	switch (chip_revision) {
+ 	case 1:
+--- linux.orig/drivers/net/Kconfig	2008-01-08 17:11:41.000000000 +0000
++++ linux/drivers/net/Kconfig	2008-02-19 12:46:56.749995000 +0000
+@@ -1903,34 +1903,36 @@ config STMMAC_ETH
+ 
+ config DMA_RX_SIZE
+         int "RX DMA list size"
+-        default "16"
++        default "128"
+ 	depends on STMMAC_ETH
+         help
+           it's the max number of descriptors in the RX list.
+ 
+ config DMA_TX_SIZE
+         int "TX DMA list size"
+-        default "16"
++        default "64"
+ 	depends on STMMAC_ETH
+         help
+           it's the max number of descriptors in the TX list.
+ 
+-config STMMAC_DEBUG
+-        boolean "Debug mode"
+-	depends on STMMAC_ETH
+-        help
+-          it enables the debug mode for the IRQ handle.
+-
+-config STMMAC_NAPI
+-        bool "Enable NAPI support (EXPERIMENTAL)"
+-        depends on STMMAC_ETH && EXPERIMENTAL
+-        help
+-          NAPI is a new driver API designed to reduce CPU and interrupt load
+-          when the driver is receiving lots of packets from the card.
+-	  It is still somewhat experimental and thus not yet enabled by default.
+-
+-          Please, for more information about the NAPI support see:
+-		<file:Documentation/networking/NAPI_HOWTO.txt>
++config STMMAC_TIMER
++        depends on STMMAC_ETH && STM_RTC && EXPERIMENTAL
++        bool "STMMAC Timer optimization"
++        default n
++        ---help---
++          The SH4 real time clock device is used for generating an
++	  interrupt at regular intervals in order to notify the 
++	  Ethernet driver about frame receptions. 
++
++	  Timer interrupt schedules the receive poll method.
++
++config STMMAC_TIMER_RTC_FREQ
++        int "Periodic rate"
++        depends on STMMAC_TIMER
++        range 0 256
++        default "256"
++        ---help---
++          Periodic rate (by default ~4ms).
+ 
+ choice
+ 	depends on STMMAC_ETH && PHYLIB
+--- linux.orig/drivers/net/stmmac.c	2008-01-08 17:11:42.000000000 +0000
++++ linux/drivers/net/stmmac.c	2008-02-22 07:46:44.279998000 +0000
+@@ -1,134 +1,18 @@
+ /* ============================================================================
+  *  #####  ####### #     #
+- * #     #    #    ##   ##  This is a driver for the STM on-chip
+- * #          #    # # # #  Ethernet controller currently present on STb7109.
++ * #          #    #    ##  This is a driver for the STM on-chip
++ * #	      #    # # # #  Ethernet controller currently present on STb7109.
+  *  #####     #    #  #  #
+- *       #    #    #     #  Copyright (C) 2006 by STMicroelectronics
++ *       #    #    #     #  Copyright (C) 2006-2008 by STMicroelectronics
+  * #     #    #    #     #  Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+  *  #####     #    #     #
+  * ----------------------------------------------------------------------------
+- * Driver internals:
+- *	The driver is initialized through the platform_device mechanism.
+- *	Structures which define the configuration needed by the board
+- *	are defined in a internal structure.
+- *
+- *	The STMMAC Ethernet Controller uses two ring of buffer
+- * 	descriptors for handling the transmission and the reception processes.
+- *
+- *	Receive process:
+- *  		When one or more packets are received, an interrupt happens.
+- *  		The interrupts are not queued so the driver must scan all the
+- *		descriptors in the ring before exiting to the interrupt handler.
+- *  		In NAPI, the interrupt handler will signal there is work to be
+- *		done, and exit. The poll method will be called at some future
+- *		point. Without NAPI, the packet(s) will be handled at once
+- *		(at interrupt time).
+- *  		The incoming packets are stored, by the DMA, in a list of
+- *  		pre-allocated socket buffers in order to avoid, for big packet,
+- *		the memcpy operation. The min_rx_pkt_size module parameter can
+- *		be used for tuning the size of the frame copied via memcpy.
+- *
+- *	Transmit process:
+- *		The xmit function is invoked when the kernel needs to transmit
+- *	        a packet.
+- *  		The transmit skb is copied in the socket buffer list.
+- *		Then the relative descriptor fields in the DMA tx ring is set.
+- *		Finally, the driver informs the DMA engine that there is
+- *		a packet ready to be transmitted.
+- *		Once the controller's finished transmitting the packet,
+- *		an interrupt is triggered. So the driver will be
+- *  		able to releases the socket buffers previously allocated.
+- *
+- *		Zero-Copy support:
+- *			When the driver sets the NETIF_F_SG bit in the features
+- *			field of the net_device structure it enables
+- *			the scatter/gather feature.
+- *			The kernel doesn't perform any scatter/gather I/O to
+- *			the driver if it doesn't provide some form of
+- *			checksumming as well. Unfortunately, our hardware
+- *			is not able to verify the csum.
+- *			The driver is able to verify the CS and handle the
+- *			scatter/gather by itself (zero-copy implementation).
+- *			NOTE: The scatter/gather can be enabled/disabled using:
+- *				ethtool -K <eth> sg on/off
+- *
+- * ----------------------------------------------------------------------------
+- * Kernel Command line arguments:
+- *	stmmaceth=msglvl:<debug_msg_level>,phyaddr:<phy_address>,
+- *		  watchdog:<watchdog_value>,rxsize:<min_rx_pkt_size>,
+- *		  bfsize:<dma_buffer_size>,txqueue:<tx_queue_size>
+- *	where:
+- *	  - <debug_msg_level>: message level (0: no output, 16:  all).
+- *	  - <phy_address>: physical Address number.
+- *	  - <watchdog>:  transmit timeout (in milliseconds).
+- *	  - <pause_time>: flow-control pause time (0-65535).
+- *	  - <min_rx_pkt_size>: copy only tiny-frames.
+- *	  - <dma_buffer_size>: DMA buffer size
+- *	  - <tx_queue_size>: transmit queue size.
+- * ----------------------------------------------------------------------------
+  * Changelog:
+- *   July 2007:
+- *   	-  Moved the DMA initialization from the probe to the open method.
+- *   	-  Reviewed the ioctl method.
+- *   May 2007:
+- *   	-  Fixed Tx timeout function and csum calculation in the xmit method
+- *	-  Added fixes for NAPI, RX tasklet and multicast
+- *		Giuseppe Cavallaro <peppe.cavallaro@st.com>
+- *	-  Updated phy id mask to use kernel 2.6.17 method
+- *		Carl Shaw <carl.shaw@st.com>
+- *   February 2007:
+- *	-  Reviewed the tasklet initialization and fixed a bug the close method.
+- *	-  Added a new module parameter in order to tune the DMA buffer size.
+- *   January 2007:
+- *	-  Reviewed the receive process:
+- *	   if the Rx buffer count is above a max threshold then we need to
+- *	   reallocate the buffers from the interrupt handler itself,
+- *	   else schedule a tasklet to reallocate the buffers.
+- *   November 2006:
+- *	- Reviewed the Multicast support.
+- *	- Fixed the rx csum.
+- *	- Reviewed the driver function comments.
+- *   September 2006:
+- *	- Reviewed the transmit function.
+- *      - Added the TCP Segmentation Offload (TSO) support.
+- *      - Rewritten the command line parser function.
+- *   August 2006:
+- *   	- Converted to new platform_driver device
+- *   		Carl Shaw <carl.shaw@st.com>
+- *   July 2006:
+- *	- Reviewed the receive process (zero-copy).
+- *	- First implementation of the scatter/gather for the transmit function.
+- *	- Fixed the PBL field in the DMA CSR0 register in according to the
+- *	  SYSCFG7 register configuration.
+- *	- Downstream/Upstream checksum offloading.
+- *	- Added the Ethtool Rx/Tx csum, SG get/set support.
+- *   June 2006:
+- *	- Reviewed and improved the transmit algorithm.
+- *	- Added the NAPI support (as experimental code).
+- * 	- Added a new debug option. Now during the kernel configuration phase
+- * 	  you can enable the complete debug level for the driver
+- *	  (including the debug messages for the critical functions i.e. the
+- *	  interrupt handler).
+- *   May 2006:
+- * 	- Separated out the PHY code.
+- *   April 2006:
+- *	- Partially removed the STe101p MII interface code.
+- *	- The DMA Rx/Tx functions has been re-written.
+- *	- Removed the PnSEGADDR and PHYSADDR SH4 macros and added the
+- *	  Dynamic DMA mapping support.
+- *	- Removed the DMA buffer size parameter. It has been fixed to the
+- *	  maximum value. Moreover, the driver will only use a single buffer
+- *	  in the DMA because an ethernet frame can be stored in it.
+- *	- Fixed some part in the ethtool support.
+- *	- Added the 802.1q VLAN support.
+- *   March 2006:
+- * 	- First release of the driver.
+- * ----------------------------------------------------------------------------
+- * Known bugs and limits:
+- *	- The two-level VLAN tag is not supported yet.
+- *	- The NETPOLL support is not fully tested.
+- * ---
+- *	https://bugzilla.stlinux.com
++ *   Feb 2008:
++ *	- Back-ported the main changes from the new MAC/GMAC driver
++ *	  also added the following two optimizations:
++ *	  - tx aggregation scheme.
++ *	  - rx timer (implememnted by using the SH4 RTC Timer).
+  * ===========================================================================*/
+ 
+ #include <linux/config.h>
+@@ -154,47 +38,105 @@
+ #include <linux/if_vlan.h>
+ #endif
+ #include <linux/dma-mapping.h>
++#ifdef CONFIG_STMMAC_TIMER
++#include <linux/rtc.h>
++#endif
+ 
+ #include "stmmac.h"
+ 
++/* HW setup defines */
++#ifdef CONFIG_CPU_SUBTYPE_STB7100
++#define SYSCONF_BASE 		0xb9001000
++#define SYSCONF_SYS_CFG(n)      (SYSCONF_BASE + 0x100 + ((n) * 4))
++#endif
++#define MAC_SPEED_SEL		0x00100000	/* MAC is running at 100 Mbps */
++
+ /* Generic defines */
+ #define RESOURCE_NAME	"stmmaceth"
+-#ifdef CONFIG_STMMAC_DEBUG
+-#define ETHPRINTK(nlevel, klevel, fmt, args...) \
++
++#undef STMMAC_DEBUG
++//#define STMMAC_DEBUG
++#ifdef STMMAC_DEBUG
++#define DBG(nlevel, klevel, fmt, args...) \
+ 		(void)(netif_msg_##nlevel(lp) && \
+ 		printk(KERN_##klevel fmt, ## args))
+ #else
+-#define ETHPRINTK(nlevel, klevel, fmt, args...)  do { } while(0)
+-#endif				/*CONFIG_STMMAC_DEBUG */
++#define DBG(nlevel, klevel, fmt, args...)  do { } while(0)
++#endif
+ 
+-/* It enables the more debug information in the transmit function */
+-#undef STMMAC_XMIT_DEBUG
+-#ifdef STMMAC_XMIT_DEBUG
+-#define XMITPRINTK(mss, klevel, fmt, args...) \
+-		if (mss!=0)	\
+-		printk(KERN_##klevel fmt, ## args)
++#undef STMMAC_RX_DEBUG
++//#define STMMAC_RX_DEBUG
++#ifdef STMMAC_RX_DEBUG
++#define RX_DBG(fmt,args...)  printk(fmt, ## args)
+ #else
+-#define XMITPRINTK(mss, klevel, fmt, args...)  do { } while(0)
++#define RX_DBG(fmt, args...)  do { } while(0)
+ #endif
+ 
+-#ifdef CONFIG_CPU_SUBTYPE_STB7100
+-#define SYSCONF_BASE 		0xb9001000
+-#define SYSCONF_DEVICEID        (SYSCONF_BASE + 0x000)
+-#define SYSCONF_SYS_CFG(n)      (SYSCONF_BASE + 0x100 + ((n) * 4))
+-#endif
+-#define MAC_SPEED_SEL		0x00100000	/* MAC is running at 100 Mbps */
++#undef STMMAC_XMIT_DEBUG
++//#define STMMAC_XMIT_DEBUG
++
++#define DMA_BUFFER_SIZE	2048
+ 
+-#define DMA_BUFFER_SIZE 0x7ff
+-#define TDES1_MAX_BUF1_SIZE ((DMA_BUFFER_SIZE << DES1_RBS1_SIZE_SHIFT) & \
+-			DES1_RBS1_SIZE_MASK);
+-#define TDES1_MAX_BUF2_SIZE ((DMA_BUFFER_SIZE << DES1_RBS2_SIZE_SHIFT) & \
+-			DES1_RBS2_SIZE_MASK);
+ #define MIN_MTU 46
+ #define MAX_MTU ETH_DATA_LEN
+ #define HASH_TABLE_SIZE 64
+ 
+-#undef STMMAC_TASKLET
+-#define RX_BUFF_THRESHOLD (CONFIG_DMA_RX_SIZE-4)
++#define STMMAC_ALIGN(x)	ALIGN((x), dma_get_cache_alignment())
++#define STMMAC_IP_ALIGN NET_IP_ALIGN
++
++#define TX_BUFFS_AVAIL(lp) \
++	(lp->dirty_tx + CONFIG_DMA_TX_SIZE - lp->cur_tx - 1)
++
++/* Flow Control defines */
++#define FLOW_OFF 0x0
++#define FLOW_RX	 0x1
++#define FLOW_TX	 0x2
++#define FLOW_AUTO       (FLOW_TX | FLOW_RX)
++
++#define PAUSE_TIME 0x200
++
++#define DRV_MODULE_VERSION  "Feb_08"
++
++#define REG_SPACE_SIZE	0x1054
++struct stmmac_extra_stats {
++	unsigned long tx_underflow;
++	unsigned long tx_carrier;
++	unsigned long tx_losscarrier;
++	unsigned long tx_heartbeat;
++	unsigned long tx_deferred;
++	unsigned long tx_vlan;
++	unsigned long tx_jabber;
++	unsigned long tx_frame_flushed;
++	unsigned long rx_desc;
++	unsigned long rx_partial;
++	unsigned long rx_runt;
++	unsigned long rx_toolong;
++	unsigned long rx_collision;
++	unsigned long rx_crc;
++	unsigned long rx_lenght;
++	unsigned long rx_mii;
++	unsigned long rx_multicast;
++	unsigned long rx_overflow;
++	unsigned long rx_watchdog;
++	unsigned long rx_filter;
++	unsigned long rx_dropped;
++	unsigned long rx_bytes;
++	unsigned long tx_bytes;
++	unsigned long tx_irq_n;
++	unsigned long rx_irq_n;
++	unsigned long tx_undeflow_irq;
++	unsigned long tx_threshold;
++	unsigned long tx_process_stopped_irq;
++	unsigned long tx_jabber_irq;
++	unsigned long rx_overflow_irq;
++	unsigned long rx_buf_unav_irq;
++	unsigned long rx_process_stopped_irq;
++	unsigned long rx_watchdog_irq;
++	unsigned long tx_early_irq;
++	unsigned long fatal_bus_error_irq;
++	unsigned long rx_poll_n;
++};
++#define EXTRA_STATS 36
+ 
+ /* This structure is common for both receive and transmit DMA descriptors.
+  * A descriptor should not be used for storing more than one frame. */
+@@ -222,6 +164,7 @@ struct eth_driver_local {
+ 	struct net_device_stats stats;
+ 	u32 msg_enable;
+ 	spinlock_t lock;
++	spinlock_t tx_lock;
+ 
+ 	dma_desc *dma_tx;	/* virtual DMA TX addr */
+ 	dma_addr_t dma_tx_phy;	/* bus DMA TX addr */
+@@ -230,7 +173,6 @@ struct eth_driver_local {
+ 
+ 	dma_desc *dma_rx;	/* virtual DMA RX addr */
+ 	dma_addr_t dma_rx_phy;	/* bus DMA RX addr */
+-	int dma_buf_sz;
+ 	unsigned int rx_buff;	/* it contains the last rx buf owned by
+ 				   the DMA */
+ 	int rx_csum;
+@@ -243,9 +185,12 @@ struct eth_driver_local {
+ 	struct vlan_group *vlgrp;
+ #endif
+ 	struct device *device;
+-	struct tasklet_struct tx_task;
+-	struct tasklet_struct rx_task;
+ 	unsigned int rx_count;
++	int tx_aggregation;
++	int max_refill_threshold;
++	unsigned int flow_ctrl;	/* FC [on/off] - [RX/TX/AUTO] */
++	unsigned int pause;
++	struct stmmac_extra_stats xstats;	/* Extra stats */
+ };
+ 
+ /* Module Arguments */
+@@ -255,65 +200,135 @@ module_param(watchdog, int, S_IRUGO | S_
+ MODULE_PARM_DESC(watchdog, "Transmit Timeout (in milliseconds)");
+ 
+ static int debug = -1;		/* -1: default, 0: no output, 16:  all */
+-module_param(debug, int, S_IRUGO);
++module_param(debug, int, S_IRUGO | S_IWUGO);
+ MODULE_PARM_DESC(debug, "Message Level (0: no output, 16: all)");
+ 
+-#define MAX_PAUSE_TIME (MAC_FLOW_CONTROL_PT_MASK>>MAC_FLOW_CONTROL_PT_SHIFT)
+-static int pause_time = MAX_PAUSE_TIME;
+-module_param(pause_time, int, S_IRUGO);
+-MODULE_PARM_DESC(pause_time, "Pause Time (0-65535)");
+-
+-static int min_rx_pkt_size = ETH_FRAME_LEN;     /* Use memcpy by default */;
+-module_param(min_rx_pkt_size, int, S_IRUGO | S_IWUGO);
+-MODULE_PARM_DESC(min_rx_pkt_size, "Copy only tiny-frames");
++static int rx_copybreak = 0;
++module_param(rx_copybreak, int, S_IRUGO | S_IWUGO);
++MODULE_PARM_DESC(rx_copybreak, "Copy only tiny-frames");
+ 
+ static int phy_n = -1;
+ module_param(phy_n, int, S_IRUGO);
+ MODULE_PARM_DESC(phy_n, "Physical device address");
+ 
+-static int dma_buffer_size = DMA_BUFFER_SIZE;
+-module_param(dma_buffer_size, int, S_IRUGO);
+-MODULE_PARM_DESC(dma_buffer_size, "DMA buffer size");
+-
+-static int tx_queue_size = 1;
+-module_param(tx_queue_size, int, S_IRUGO | S_IWUGO);
+-MODULE_PARM_DESC(tx_queue_size, "transmit queue size");
++static int tx_aggregation = -1;	/* No mitigtion by default */
++module_param(tx_aggregation, int, S_IRUGO | S_IWUSR);
++MODULE_PARM_DESC(tx_aggregation, "Tx aggregation threshold");
++
++static int pause = PAUSE_TIME;
++module_param(pause, int, S_IRUGO);
++MODULE_PARM_DESC(pause, "Flow Control Pause Time");
++
++static int flow_ctrl = FLOW_OFF;
++module_param(flow_ctrl, int, S_IRUGO);
++MODULE_PARM_DESC(flow_ctrl, "Flow control ability [on/off]");
++
++#define TTC_DEFAULT 0x40
++static int ttc = TTC_DEFAULT;
++module_param(ttc, int, S_IRUGO);
++MODULE_PARM_DESC(ttc, "tranfer threshold control");
+ 
+-static const char version[] = "stmmaceth - (C) 2006-2007 STMicroelectronics\n";
++#ifdef CONFIG_STMMAC_TIMER
++#define RX_IRQ_THRESHOLD 10
++#else
++#define RX_IRQ_THRESHOLD -1
++#endif
++static int rx_irq_mitigation = RX_IRQ_THRESHOLD;
++module_param(rx_irq_mitigation, int, S_IRUGO);
++MODULE_PARM_DESC(rx_irq_mitigation, "Rx irq mitigation threshold");
+ 
+ static const u32 default_msg_level = (NETIF_MSG_DRV | NETIF_MSG_PROBE |
+ 				      NETIF_MSG_LINK | NETIF_MSG_IFUP |
+ 				      NETIF_MSG_IFDOWN | NETIF_MSG_TIMER);
+ 
+-static irqreturn_t stmmaceth_interrupt(int irq, void *dev_id,
+-				       struct pt_regs *regs);
+-#ifndef CONFIG_STMMAC_NAPI
+-static __inline__ int stmmaceth_rx(struct net_device *dev);
+-#else
+-static int stmmaceth_poll(struct net_device *dev, int *budget);
++static irqreturn_t stmmac_interrupt(int irq, void *dev_id,
++				    struct pt_regs *regs);
++static void stmmac_flow_ctrl(unsigned long ioaddr, unsigned int duplex,
++			     unsigned int fc, unsigned int pause_time);
++
++static __inline__ void stmmac_dma_disable_irq_rx(unsigned long ioaddr);
++
++#ifdef CONFIG_STMMAC_TIMER
++rtc_task_t stmmac_task;
++
++int stmmac_rtc_timer_close(void)
++{
++	rtc_unregister(&stmmac_task);
++	return 0;
++}
++int stmmac_rtc_timer_start(void)
++{
++	rtc_control(&stmmac_task, RTC_PIE_ON, 0);
++	return 0;
++}
++
++int stmmac_rtc_timer_stop(void)
++{
++	rtc_control(&stmmac_task, RTC_PIE_OFF, 0);
++	return 0;
++}
++
++static void stmmac_rtc_handler(void *priv)
++{
++	struct net_device *dev = (struct net_device *)priv;
++	unsigned long ioaddr = dev->base_addr;
++
++	if (likely(netif_rx_schedule_prep(dev))) {
++		stmmac_rtc_timer_stop();
++		stmmac_dma_disable_irq_rx(ioaddr);
++		__netif_rx_schedule(dev);
++	}
++	return;
++}
++
++int stmmac_rtc_timer_open(struct net_device *dev)
++{
++	stmmac_task.private_data = dev;
++	stmmac_task.func = stmmac_rtc_handler;
++	rtc_register(&stmmac_task);
++	/* Set Freq. */
++	rtc_control(&stmmac_task, RTC_IRQP_SET, CONFIG_STMMAC_TIMER_RTC_FREQ);
++	return 0;
++}
+ #endif
+ 
+-static void stmmaceth_check_mod_params(struct net_device *dev)
++static __inline__ int validate_buffer_size(unsigned int size)
++{
++	unsigned int tbs = size;
++
++	/* According to the TBS1/2 RBS1/2 bits the maximum 
++	 * buffer size is 0x7ff */
++	if (unlikely(tbs >= DMA_BUFFER_SIZE))
++		tbs = 0x7ff;
++
++	return tbs;
++
++}
++
++static int tdes1_buf_size(unsigned int len)
+ {
+-	if (watchdog < 0) {
++	return ((validate_buffer_size(len) << DES1_RBS1_SIZE_SHIFT)
++		& DES1_RBS1_SIZE_MASK);
++}
++
++static __inline__ void stmmac_verify_args(void)
++{
++	/* Wrong parameters are replaced with the default values */
++	if (watchdog < 0)
+ 		watchdog = TX_TIMEO;
+-		printk(KERN_WARNING "\tWARNING: invalid tx timeout "
+-		       "(default is %d)\n", watchdog);
+-	}
+-	if (pause_time < 0) {
+-		pause_time = MAX_PAUSE_TIME;
+-		printk(KERN_WARNING "\tWARNING: invalid pause value"
+-		       "(default is %d)\n", pause_time);
+-	}
+-	if (dma_buffer_size > DMA_BUFFER_SIZE) {
+-		dma_buffer_size = DMA_BUFFER_SIZE;
+-		printk(KERN_WARNING "\tWARNING: invalid DMA buffer size "
+-		       "(default is %d)\n", dma_buffer_size);
+-	}
+-	if (min_rx_pkt_size < 0) {
+-		min_rx_pkt_size = 0;
+-		printk(KERN_WARNING "\tWARNING: invalid RX size (set to 0)\n");
++	if (rx_copybreak < 0)
++		rx_copybreak = ETH_FRAME_LEN;
++	if (rx_irq_mitigation > CONFIG_DMA_RX_SIZE)
++		rx_irq_mitigation = RX_IRQ_THRESHOLD;
++	if (tx_aggregation >= CONFIG_DMA_TX_SIZE)
++		tx_aggregation = -1;
++	if (flow_ctrl > 1) {
++		flow_ctrl = FLOW_AUTO;
++	} else if (flow_ctrl < 0) {
++		flow_ctrl = FLOW_OFF;
+ 	}
++	if ((pause < 0) || (pause > 0xffff))
++		pause = PAUSE_TIME;
+ 	return;
+ }
+ 
+@@ -326,7 +341,7 @@ static inline void print_mac_addr(u8 add
+ 	return;
+ }
+ 
+-#ifdef CONFIG_STMMAC_DEBUG
++#ifdef STMMAC_DEBUG
+ static void print_pkt(unsigned char *buf, int len)
+ {
+ 	int j;
+@@ -376,17 +391,16 @@ static void stmmac_adjust_link(struct ne
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 	struct phy_device *phydev = lp->phydev;
+ 	unsigned long ioaddr = dev->base_addr;
++	unsigned int fc = lp->flow_ctrl, pause_time = lp->pause;
+ 	unsigned long flags;
+ 	int new_state = 0;
+ 
+-	ETHPRINTK(probe, DEBUG,
+-		  "stmmac_adjust_link: called.  address %d link %d\n",
+-		  phydev->addr, phydev->link);
++	DBG(probe, DEBUG,
++	    "stmmac_adjust_link: called.  address %d link %d\n",
++	    phydev->addr, phydev->link);
+ 
+ 	spin_lock_irqsave(&lp->lock, flags);
+ 	if (phydev->link) {
+-		unsigned int flow =
+-		    (unsigned int)readl(ioaddr + MAC_FLOW_CONTROL);
+ 		unsigned int ctrl = (unsigned int)readl(ioaddr + MAC_CONTROL);
+ 
+ 		/* Now we make sure that we can be in full duplex mode.
+@@ -394,22 +408,18 @@ static void stmmac_adjust_link(struct ne
+ 		if (phydev->duplex != lp->oldduplex) {
+ 			new_state = 1;
+ 			if (!(phydev->duplex)) {
+-				flow &=
+-				    ~(MAC_FLOW_CONTROL_FCE |
+-				      MAC_FLOW_CONTROL_PT_MASK |
+-				      MAC_FLOW_CONTROL_PCF);
+ 				ctrl &= ~MAC_CONTROL_F;
+ 				ctrl |= MAC_CONTROL_DRO;
+ 			} else {
+-				flow |=
+-				    MAC_FLOW_CONTROL_FCE | MAC_FLOW_CONTROL_PCF
+-				    | (pause_time << MAC_FLOW_CONTROL_PT_SHIFT);
+ 				ctrl |= MAC_CONTROL_F;
+ 				ctrl &= ~MAC_CONTROL_DRO;
+ 			}
+ 
+ 			lp->oldduplex = phydev->duplex;
+ 		}
++		if (phydev->pause)
++			stmmac_flow_ctrl(ioaddr, phydev->duplex, fc,
++					 pause_time);
+ 
+ 		if (phydev->speed != lp->speed) {
+ 			new_state = 1;
+@@ -429,7 +439,6 @@ static void stmmac_adjust_link(struct ne
+ 			lp->speed = phydev->speed;
+ 		}
+ 
+-		writel(flow, ioaddr + MAC_FLOW_CONTROL);
+ 		writel(ctrl, ioaddr + MAC_CONTROL);
+ 
+ 		if (!lp->oldlink) {
+@@ -449,7 +458,7 @@ static void stmmac_adjust_link(struct ne
+ 
+ 	spin_unlock_irqrestore(&lp->lock, flags);
+ 
+-	ETHPRINTK(probe, DEBUG, "stmmac_adjust_link: exiting\n");
++	DBG(probe, DEBUG, "stmmac_adjust_link: exiting\n");
+ }
+ 
+ /**
+@@ -470,8 +479,7 @@ static int stmmac_init_phy(struct net_de
+ 	lp->oldduplex = -1;
+ 
+ 	snprintf(phy_id, BUS_ID_SIZE, PHY_ID_FMT, lp->bus_id, lp->phy_addr);
+-	ETHPRINTK(probe, DEBUG, "stmmac_init_phy:  trying to attach to %s\n",
+-		  phy_id);
++	DBG(probe, DEBUG, "stmmac_init_phy:  trying to attach to %s\n", phy_id);
+ 
+ 	phydev = phy_connect(dev, phy_id, &stmmac_adjust_link, 0);
+ 
+@@ -480,9 +488,9 @@ static int stmmac_init_phy(struct net_de
+ 		return PTR_ERR(phydev);
+ 	}
+ 
+-	ETHPRINTK(probe, DEBUG,
+-		  "stmmac_init_phy:  %s: attached to PHY. Link = %d\n",
+-		  dev->name, phydev->link);
++	DBG(probe, DEBUG,
++	    "stmmac_init_phy:  %s: attached to PHY. Link = %d\n",
++	    dev->name, phydev->link);
+ 
+ 	lp->phydev = phydev;
+ 
+@@ -606,7 +614,7 @@ int stmmac_mdio_register(struct eth_driv
+ 	lp->mii = new_bus;
+ 	return 0;
+ 
+-bus_register_fail:
++      bus_register_fail:
+ 	kfree(new_bus);
+ 	return err;
+ }
+@@ -649,8 +657,8 @@ static inline void dump_stm_mac_csr(unsi
+ 	       readl(ioaddr + MAC_HASH_HIGH));
+ 	printk("\tmulticast hash LO (offset 0x%x): 0x%lx\n", MAC_HASH_LOW,
+ 	       readl(ioaddr + MAC_HASH_LOW));
+-	printk("\tflow control (offset 0x%x): 0x%lx\n", MAC_FLOW_CONTROL,
+-	       readl(ioaddr + MAC_FLOW_CONTROL));
++	printk("\tflow control (offset 0x%x): 0x%lx\n", MAC_FLOW_CTRL,
++	       readl(ioaddr + MAC_FLOW_CTRL));
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+ 	printk("\tVLAN1 tag (offset 0x%x): 0x%lx\n", MAC_VLAN1,
+ 	       readl(ioaddr + MAC_VLAN1));
+@@ -721,11 +729,11 @@ static void get_mac_address(unsigned lon
+ }
+ 
+ /**
+- * stmmaceth_mac_enable_rx
++ * stmmac_mac_enable_rx
+  * @dev: net device structure
+  * Description: the function enables the RX MAC process
+  */
+-static void stmmaceth_mac_enable_rx(struct net_device *dev)
++static void stmmac_mac_enable_rx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+ 	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
+@@ -737,11 +745,11 @@ static void stmmaceth_mac_enable_rx(stru
+ }
+ 
+ /**
+- * stmmaceth_mac_enable_rx
++ * stmmac_mac_enable_rx
+  * @dev: net device structure
+  * Description: the function enables the TX MAC process
+  */
+-static void stmmaceth_mac_enable_tx(struct net_device *dev)
++static void stmmac_mac_enable_tx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+ 	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
+@@ -753,11 +761,11 @@ static void stmmaceth_mac_enable_tx(stru
+ }
+ 
+ /**
+- * stmmaceth_mac_disable_rx
++ * stmmac_mac_disable_rx
+  * @dev: net device structure
+  * Description: the function disables the RX MAC process
+  */
+-static void stmmaceth_mac_disable_rx(struct net_device *dev)
++static void stmmac_mac_disable_rx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+ 	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
+@@ -768,11 +776,11 @@ static void stmmaceth_mac_disable_rx(str
+ }
+ 
+ /**
+- * stmmaceth_mac_disable_tx
++ * stmmac_mac_disable_tx
+  * @dev: net device structure
+  * Description: the function disables the TX MAC process
+  */
+-static void stmmaceth_mac_disable_tx(struct net_device *dev)
++static void stmmac_mac_disable_tx(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+ 	unsigned int value = (unsigned int)readl(ioaddr + MAC_CONTROL);
+@@ -783,11 +791,11 @@ static void stmmaceth_mac_disable_tx(str
+ }
+ 
+ /**
+- * stmmaceth_mac_core_init
++ * stmmac_mac_core_init
+  * @dev: net device structure
+  * Description:  This function provides the initial setup of the MAC controller
+  */
+-static void stmmaceth_mac_core_init(struct net_device *dev)
++static void stmmac_mac_core_init(struct net_device *dev)
+ {
+ 	unsigned int value = 0;
+ 	unsigned long ioaddr = dev->base_addr;
+@@ -820,8 +828,6 @@ static void display_dma_desc_ring(dma_de
+ 		       "desc0=0x%x desc1=0x%x buffer1=0x%x", i,
+ 		       (unsigned int)virt_to_bus(&p[i].des0), p[i].des0,
+ 		       p[i].des1, (unsigned int)p[i].des2);
+-		if (p[i].des3 != 0)
+-			printk(" buffer2=0x%x", (unsigned int)p[i].des3);
+ 		printk("\n");
+ 	}
+ }
+@@ -844,12 +850,19 @@ static void clear_dma_descs(dma_desc * p
+ 		p->des0 = own_bit;
+ 		if (!(own_bit))
+ 			p->des1 = 0;
+-		else
+-			p->des1 = (dma_buffer_size << DES1_RBS1_SIZE_SHIFT);
++		else {
++			p->des1 = tdes1_buf_size(DMA_BUFFER_SIZE);
++#ifdef CONFIG_STMMAC_TIMER
++			/* Using timer implementation, it's worth having
++			   some interrupts on frame reception. It makes safe
++			   the network activity especially for TCP. */
++			if (i % RX_IRQ_THRESHOLD)
++				p->des1 |= RDES1_CONTROL_DIC;
++#endif
++		}
+ 		if (i == ring_size - 1) {
+ 			p->des1 |= DES1_CONTROL_TER;
+ 		}
+-		p->des3 = 0;
+ 		p++;
+ 	}
+ 	return;
+@@ -864,10 +877,9 @@ static void init_dma_desc_rings(struct n
+ {
+ 	int i;
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+-	lp->dma_buf_sz = dma_buffer_size;
+ 
+-	ETHPRINTK(probe, DEBUG, "%s: allocate and init the DMA RX/TX lists\n",
+-		  RESOURCE_NAME);
++	DBG(probe, INFO, "%s: allocate and init the DMA RX/TX lists\n",
++	    RESOURCE_NAME);
+ 
+ 	lp->dma_rx = (dma_desc *) dma_alloc_coherent(lp->device,
+ 						     CONFIG_DMA_RX_SIZE *
+@@ -885,29 +897,30 @@ static void init_dma_desc_rings(struct n
+ 		       __FUNCTION__);
+ 		return;
+ 	}
+-	ETHPRINTK(probe, DEBUG, "%s: DMA desc rings: virt addr (Rx 0x%08x, "
+-		  "Tx 0x%08x) DMA phy addr (Rx 0x%08x,Tx 0x%08x)\n",
+-		  dev->name, (unsigned int)lp->dma_rx, (unsigned int)lp->dma_tx,
+-		  (unsigned int)lp->dma_rx_phy, (unsigned int)lp->dma_tx_phy);
++
++	DBG(probe, INFO, "%s: DMA desc rings: virt addr (Rx 0x%08x, "
++	    "Tx 0x%08x) DMA phy addr (Rx 0x%08x,Tx 0x%08x)\n",
++	    dev->name, (unsigned int)lp->dma_rx, (unsigned int)lp->dma_tx,
++	    (unsigned int)lp->dma_rx_phy, (unsigned int)lp->dma_tx_phy);
+ 
+ 	/* ---- RX INITIALIZATION */
+-	ETHPRINTK(probe, DEBUG, "[RX skb data]   [DMA RX skb data] "
+-		  "(buff size: %d)\n", lp->dma_buf_sz);
++	DBG(probe, INFO, "[RX skb data]   [DMA RX skb data]\n");
++
+ 	for (i = 0; i < CONFIG_DMA_RX_SIZE; i++) {
+ 		dma_desc *p = lp->dma_rx + i;
+-		struct sk_buff *skb = dev_alloc_skb(lp->dma_buf_sz);
++		struct sk_buff *skb = dev_alloc_skb(DMA_BUFFER_SIZE);
+ 		skb->dev = dev;
+-		skb_reserve(skb, NET_IP_ALIGN);
++		skb_reserve(skb, STMMAC_IP_ALIGN);
+ 		lp->rx_skbuff[i] = skb;
+ 		if (unlikely(skb == NULL))
+ 			break;
+ 		lp->rx_skbuff_dma[i] = dma_map_single(lp->device, skb->data,
+-						      lp->dma_buf_sz,
++						      DMA_BUFFER_SIZE,
+ 						      DMA_FROM_DEVICE);
+ 		p->des2 = lp->rx_skbuff_dma[i];
+-		ETHPRINTK(probe, DEBUG, "[0x%08x]\t[0x%08x]\n",
+-			  (unsigned int)lp->rx_skbuff[i]->data,
+-			  (unsigned int)lp->rx_skbuff_dma[i]);
++		DBG(probe, INFO, "[0x%08x]\t[0x%08x]\n",
++		    (unsigned int)lp->rx_skbuff[i]->data,
++		    (unsigned int)lp->rx_skbuff_dma[i]);
+ 	}
+ 	lp->cur_rx = 0;
+ 	lp->rx_count = 0;
+@@ -917,7 +930,6 @@ static void init_dma_desc_rings(struct n
+ 	for (i = 0; i < CONFIG_DMA_TX_SIZE; i++) {
+ 		lp->tx_skbuff[i] = NULL;
+ 		lp->dma_tx[i].des2 = 0;
+-		lp->dma_tx[i].des3 = 0;
+ 	}
+ 	lp->dirty_tx = lp->cur_tx = 0;
+ 
+@@ -947,7 +959,7 @@ static void dma_free_rx_bufs(struct net_
+ 	for (i = 0; i < CONFIG_DMA_RX_SIZE; i++) {
+ 		if (lp->rx_skbuff[i]) {
+ 			dma_unmap_single(lp->device, lp->rx_skbuff_dma[i],
+-					 lp->dma_buf_sz, DMA_FROM_DEVICE);
++					 DMA_BUFFER_SIZE, DMA_FROM_DEVICE);
+ 			dev_kfree_skb(lp->rx_skbuff[i]);
+ 		}
+ 		lp->rx_skbuff[i] = NULL;
+@@ -969,16 +981,11 @@ static void dma_free_tx_bufs(struct net_
+ 		if (lp->tx_skbuff[i] != NULL) {
+ 			if ((lp->dma_tx + i)->des2) {
+ 				dma_unmap_single(lp->device, p->des2,
+-						 (p->des1 & DES1_RBS1_SIZE_MASK) >>
++						 (p->
++						  des1 & DES1_RBS1_SIZE_MASK) >>
+ 						 DES1_RBS1_SIZE_SHIFT,
+ 						 DMA_TO_DEVICE);
+ 			}
+-			if ((lp->dma_tx + i)->des3) {
+-				dma_unmap_single(lp->device, p->des3,
+-						 (p->des1 & DES1_RBS2_SIZE_MASK) >>
+-						 DES1_RBS2_SIZE_SHIFT,
+-						 DMA_TO_DEVICE);
+-			}
+ 			dev_kfree_skb_any(lp->tx_skbuff[i]);
+ 			lp->tx_skbuff[i] = NULL;
+ 		}
+@@ -1035,14 +1042,14 @@ static inline void dump_dma_csr(unsigned
+ }
+ 
+ /**
+- * stmmaceth_dma_reset - STMAC DMA SW reset
++ * stmmac_dma_reset - STMAC DMA SW reset
+  * @ioaddr: device I/O address
+  * Description:  this function performs the DMA SW reset.
+  *  NOTE1: the MII_TxClk and the MII_RxClk must be active before this
+  *	   SW reset otherwise the MAC core won't exit the reset state.
+  *  NOTE2: after a SW reset all interrupts are disabled 
+  */
+-static void stmmaceth_dma_reset(unsigned long ioaddr)
++static void stmmac_dma_reset(unsigned long ioaddr)
+ {
+ 	unsigned int value;
+ 
+@@ -1055,11 +1062,11 @@ static void stmmaceth_dma_reset(unsigned
+ }
+ 
+ /**
+- * stmmaceth_dma_start_tx
++ * stmmac_dma_start_tx
+  * @ioaddr: device I/O address
+  * Description:  this function starts the DMA tx process
+  */
+-static void stmmaceth_dma_start_tx(unsigned long ioaddr)
++static void stmmac_dma_start_tx(unsigned long ioaddr)
+ {
+ 	unsigned int value;
+ 	value = (unsigned int)readl(ioaddr + DMA_CONTROL);
+@@ -1068,7 +1075,7 @@ static void stmmaceth_dma_start_tx(unsig
+ 	return;
+ }
+ 
+-static void stmmaceth_dma_stop_tx(unsigned long ioaddr)
++static void stmmac_dma_stop_tx(unsigned long ioaddr)
+ {
+ 	unsigned int value;
+ 	value = (unsigned int)readl(ioaddr + DMA_CONTROL);
+@@ -1078,12 +1085,11 @@ static void stmmaceth_dma_stop_tx(unsign
+ }
+ 
+ /**
+- * stmmaceth_dma_start_rx
++ * stmmac_dma_start_rx
+  * @ioaddr: device I/O address
+  * Description:  this function starts the DMA rx process
+- * If the NAPI support is on this function also enables the RX IRQ.
+  */
+-static void stmmaceth_dma_start_rx(unsigned long ioaddr)
++static void stmmac_dma_start_rx(unsigned long ioaddr)
+ {
+ 	unsigned int value;
+ 	value = (unsigned int)readl(ioaddr + DMA_CONTROL);
+@@ -1093,7 +1099,7 @@ static void stmmaceth_dma_start_rx(unsig
+ 	return;
+ }
+ 
+-static void stmmaceth_dma_stop_rx(unsigned long ioaddr)
++static void stmmac_dma_stop_rx(unsigned long ioaddr)
+ {
+ 	unsigned int value;
+ 	value = (unsigned int)readl(ioaddr + DMA_CONTROL);
+@@ -1103,8 +1109,7 @@ static void stmmaceth_dma_stop_rx(unsign
+ 	return;
+ }
+ 
+-#ifdef CONFIG_STMMAC_NAPI
+-static __inline__ void stmmaceth_dma_enable_irq_rx(unsigned long ioaddr)
++static __inline__ void stmmac_dma_enable_irq_rx(unsigned long ioaddr)
+ {
+ 	unsigned int value;
+ 
+@@ -1113,7 +1118,7 @@ static __inline__ void stmmaceth_dma_ena
+ 	return;
+ }
+ 
+-static __inline__ void stmmaceth_dma_disable_irq_rx(unsigned long ioaddr)
++static __inline__ void stmmac_dma_disable_irq_rx(unsigned long ioaddr)
+ {
+ 	unsigned int value;
+ 
+@@ -1121,28 +1126,27 @@ static __inline__ void stmmaceth_dma_dis
+ 	writel((value & ~DMA_INTR_ENA_RIE), ioaddr + DMA_INTR_ENA);
+ 	return;
+ }
+-#endif
+ 
+ /**
+- * stmmaceth_dma_init - DMA init function
++ * stmmac_dma_init - DMA init function
+  * @dev: net device structure
+  * Description: the DMA init function performs:
+  * - the DMA RX/TX SW descriptors initialization
+  * - the DMA HW controller initialization
+  * NOTE: the DMA TX/RX processes will be started in the 'open' method. 
+  */
+-static int stmmaceth_dma_init(struct net_device *dev)
++static int stmmac_dma_init(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+-	ETHPRINTK(probe, DEBUG, "STMMAC: DMA Core setup\n");
++	DBG(probe, DEBUG, "STMMAC: DMA Core setup\n");
+ 
+ 	/* DMA SW reset */
+-	stmmaceth_dma_reset(ioaddr);
++	stmmac_dma_reset(ioaddr);
+ 
+ 	/* Enable Application Access by writing to DMA CSR0 */
+-	ETHPRINTK(probe, DEBUG, "\t(PBL: %d)\n", lp->pbl);
++	DBG(probe, DEBUG, "\t(PBL: %d)\n", lp->pbl);
+ 	writel(DMA_BUS_MODE_DEFAULT | ((lp->pbl) << DMA_BUS_MODE_PBL_SHIFT),
+ 	       ioaddr + DMA_BUS_MODE);
+ 
+@@ -1160,7 +1164,31 @@ static int stmmaceth_dma_init(struct net
+ 	return (0);
+ }
+ 
+-#ifdef CONFIG_STMMAC_DEBUG
++static int stmmac_dma_ttc(unsigned long ioaddr, int value)
++{
++	unsigned int csr6, ret;
++	csr6 = (unsigned int)readl(ioaddr + DMA_CONTROL);
++
++	/* Operating on second frame seems to improve a
++	 * little bit the performance.
++	 csr6 |= DMA_CONTROL_OSF; */
++
++	if (value <= 32) {
++		csr6 |= DMA_CONTROL_TTC_32;
++		ret = 32;
++	} else if (value <= 64) {
++		csr6 |= DMA_CONTROL_TTC_64;
++		ret = 64;
++	} else {
++		csr6 |= DMA_CONTROL_TTC_128;
++		ret = 128;
++	}
++	writel(csr6, ioaddr + DMA_CONTROL);
++
++	return ret;
++}
++
++#ifdef STMMAC_DEBUG
+ /**
+  * show_tx_process_state
+  * @status: tx descriptor status field
+@@ -1254,113 +1282,40 @@ static int check_tx_error_summary(struct
+ {
+ 	dma_desc *p = lp->dma_tx + entry;
+ 	int status = p->des0;
+-
+-	ETHPRINTK(intr, INFO, "%s: [0x%x] - status %s\n", __FUNCTION__,
+-		  (unsigned int)p, (!status) ? "done" : "with error");
++	int ret = 0;
+ 
+ 	if (unlikely(status & TDES0_STATUS_ES)) {
+-		ETHPRINTK(tx_err, ERR, "%s: DMA tx ERROR: ", RESOURCE_NAME);
+-
+-		if (status & TDES0_STATUS_UF) {
+-			ETHPRINTK(tx_err, ERR, "Underflow Error\n");
++		if (unlikely(status & TDES0_STATUS_UF)) {
++			lp->xstats.tx_underflow++;
+ 			lp->stats.tx_fifo_errors++;
+-			goto out_error;
+-		}
+-		if (status & TDES0_STATUS_EX_DEF) {
+-			ETHPRINTK(tx_err, ERR, "Ex Deferrals\n");
+-			goto set_collision;
+-		}
+-		if (status & TDES0_STATUS_EX_COL) {
+-			ETHPRINTK(tx_err, ERR, "Ex Collisions\n");
+-			goto set_collision;
+-		}
+-		if (status & TDES0_STATUS_LATE_COL) {
+-			ETHPRINTK(tx_err, ERR, "Late Collision\n");
+-			goto set_collision;
+ 		}
+-		if (status & TDES0_STATUS_NO_CARRIER) {
+-			ETHPRINTK(tx_err, ERR, "No Carrier detected\n");
++		if (unlikely(status & TDES0_STATUS_NO_CARRIER)) {
++			lp->xstats.tx_carrier++;
+ 			lp->stats.tx_carrier_errors++;
+-			goto out_error;
+ 		}
+-		if (status & TDES0_STATUS_LOSS_CARRIER) {
+-			ETHPRINTK(tx_err, ERR, "Loss of Carrier\n");
+-			goto out_error;
++		if (unlikely(status & TDES0_STATUS_LOSS_CARRIER)) {
++			lp->xstats.tx_losscarrier++;
++		}
++		if (unlikely((status & TDES0_STATUS_EX_DEF) ||
++			     (status & TDES0_STATUS_EX_COL) ||
++			     (status & TDES0_STATUS_LATE_COL))) {
++			lp->stats.collisions +=
++			    ((status & TDES0_STATUS_COLCNT_MASK) >>
++			     TDES0_STATUS_COLCNT_SHIFT);
+ 		}
++		ret = -1;
+ 	}
+-
+ 	if (unlikely(status & TDES0_STATUS_HRTBT_FAIL)) {
+-		ETHPRINTK(tx_err, ERR, "%s: DMA tx: Heartbeat Fail\n",
+-			RESOURCE_NAME);
++		lp->xstats.tx_heartbeat++;
+ 		lp->stats.tx_heartbeat_errors++;
+-		goto out_error;
++		ret = -1;
+ 	}
+ 	if (unlikely(status & TDES0_STATUS_DF)) {
+-		ETHPRINTK(tx_err, WARNING, "%s: transmission deferred\n",
+-			RESOURCE_NAME);
+-	}
+-	return (0);
+-
+-      set_collision:
+-	lp->stats.collisions += ((status & TDES0_STATUS_COLCNT_MASK) >>
+-				 TDES0_STATUS_COLCNT_SHIFT);
+-      out_error:
+-	lp->stats.tx_errors++;
+-
+-	return (-1);
+-}
+-
+-/**
+- * stmmaceth_clean_tx_irq
+- * @data:  address of the private member of the device structure
+- * Description: this is the tasklet or the bottom half of the IRQ handler.
+- * The tasklet is used for freeing the TX resources.  
+- */
+-static void stmmaceth_clean_tx_irq(unsigned long data)
+-{
+-	struct net_device *dev = (struct net_device *)data;
+-	struct eth_driver_local *lp = netdev_priv(dev);
+-	int entry = lp->dirty_tx % CONFIG_DMA_TX_SIZE;
+-
+-	while (lp->dirty_tx != lp->cur_tx) {
+-		dma_desc *p = lp->dma_tx + entry;
+-
+-		if (!(p->des0 & OWN_BIT)) {
+-			if (p->des1 & TDES1_CONTROL_LS)
+-				if (!check_tx_error_summary(lp, entry))
+-					lp->stats.tx_packets++;
+-
+-			ETHPRINTK(tx_done, INFO, "%s: (entry %d)\n",
+-				  __FUNCTION__, entry);
+-			if (p->des2) {
+-				dma_unmap_single(lp->device, p->des2,
+-						 (p->
+-						  des1 & DES1_RBS1_SIZE_MASK) >>
+-						 DES1_RBS1_SIZE_SHIFT,
+-						 DMA_TO_DEVICE);
+-				p->des2 = 0;
+-			}
+-
+-			if (p->des3) {
+-				dma_unmap_single(lp->device, p->des3,
+-						 (p->
+-						  des1 & DES1_RBS2_SIZE_MASK) >>
+-						 DES1_RBS2_SIZE_SHIFT,
+-						 DMA_TO_DEVICE);
+-				p->des3 = 0;
+-			}
+-
+-			if (lp->tx_skbuff[entry] != NULL) {
+-				dev_kfree_skb_irq(lp->tx_skbuff[entry]);
+-				lp->tx_skbuff[entry] = NULL;
+-			}
+-		}
+-		entry = (++lp->dirty_tx) % CONFIG_DMA_TX_SIZE;
++		lp->xstats.tx_deferred++;
++		ret = -1;
+ 	}
+-	if (netif_queue_stopped(dev))
+-		netif_wake_queue(dev);
+ 
+-	return;
++	return (ret);
+ }
+ 
+ /**
+@@ -1371,178 +1326,177 @@ static void stmmaceth_clean_tx_irq(unsig
+  * This function returns zero if no error is happened during the transmission.
+  */
+ static int check_rx_error_summary(struct eth_driver_local *lp,
+-	                          unsigned int status)
++				  unsigned int status)
+ {
+ 	int ret = 0;
+ 	if ((status & RDES0_STATUS_ERROR)) {
+-	        /* ES-Error Summary */
+-	        ETHPRINTK(rx_err, ERR, "stmmaceth RX:\n");
+-	        if (status & RDES0_STATUS_DE)
+-	                ETHPRINTK(rx_err, ERR, "\tdescriptor error\n");
+-	        if (status & RDES0_STATUS_PFE)
+-	                ETHPRINTK(rx_err, ERR, "\tpartial frame error\n");
+-	        if (status & RDES0_STATUS_RUNT_FRM)
+-	                ETHPRINTK(rx_err, ERR, "\trunt Frame\n");
+-	        if (status & RDES0_STATUS_TL)
+-	                ETHPRINTK(rx_err, ERR, "\tframe too long\n");
+-	        if (status & RDES0_STATUS_COL_SEEN) {
+-	                ETHPRINTK(rx_err, ERR, "\tcollision seen\n");
+-	                lp->stats.collisions++;
+-	       }
+-	        if (status & RDES0_STATUS_CE) {
+-	                ETHPRINTK(rx_err, ERR, "\tCRC Error\n");
+-	                lp->stats.rx_crc_errors++;
+-	        }
+-
+-	        if (status & RDES0_STATUS_LENGTH_ERROR)
+-	                ETHPRINTK(rx_err, ERR, "\tLenght error\n");
+-	        if (status & RDES0_STATUS_MII_ERR)
+-	                ETHPRINTK(rx_err, ERR, "\tMII error\n");
+-
+-	        lp->stats.rx_errors++;
+-	        ret = -1;
++		/* ES-Error Summary */
++		if (status & RDES0_STATUS_DE)
++			lp->xstats.rx_desc++;
++		if (status & RDES0_STATUS_PFE)
++			lp->xstats.rx_partial++;
++		if (status & RDES0_STATUS_RUNT_FRM)
++			lp->xstats.rx_runt++;
++		if (status & RDES0_STATUS_TL)
++			lp->xstats.rx_toolong++;
++		if (status & RDES0_STATUS_COL_SEEN) {
++			lp->xstats.rx_collision++;
++			lp->stats.collisions++;
++		}
++		if (status & RDES0_STATUS_CE) {
++			lp->xstats.rx_crc++;
++			lp->stats.rx_crc_errors++;
++		}
++		ret = -1;
++	}
++
++	if (status & RDES0_STATUS_LENGTH_ERROR) {
++		lp->xstats.rx_lenght++;
++		ret = -1;
++	}
++
++	if (status & RDES0_STATUS_MII_ERR) {
++		lp->xstats.rx_mii++;
++		ret = -1;
++	}
++
++	if (unlikely(status & RDES0_STATUS_MULTICST_FRM)) {
++		lp->xstats.rx_multicast++;
++		lp->stats.multicast++;
++		/* no error!*/
+ 	}
+ 	return (ret);
+ }
+ 
+-/**
+- * stmmaceth_refill_rx_buf - refill the Rx ring buffers (zero-copy)
+- * @dev: net device structure
+- * Description: the function allocates Rx side skbs and puts the physical
+- *  address of these buffers into the DMA buffer pointers.
+- */
+-static void stmmaceth_refill_rx_buf(struct net_device *dev)
++static __inline__ void stmmac_tx(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+-	int bsize = lp->dma_buf_sz;
++	int entry = lp->dirty_tx % CONFIG_DMA_TX_SIZE;
+ 
+-	for (; lp->cur_rx - lp->dirty_rx > 0; lp->dirty_rx++) {
+-		struct sk_buff *skb;
+-		int entry = lp->dirty_rx % CONFIG_DMA_RX_SIZE;
+-		if (lp->rx_skbuff[entry] == NULL) {
+-			skb = dev_alloc_skb(bsize);
+-			lp->rx_skbuff[entry] = skb;
+-			if (unlikely(skb == NULL))
+-				break;
+-			skb->dev = dev;
+-			lp->rx_skbuff_dma[entry] =
+-			    dma_map_single(lp->device, skb->data,
+-					   bsize, DMA_FROM_DEVICE);
+-			(lp->dma_rx + entry)->des2 = lp->rx_skbuff_dma[entry];
+-			ETHPRINTK(rx_status, INFO, ">>> refill entry #%d\n",
+-				  entry);
++	while (lp->dirty_tx != lp->cur_tx) {
++		dma_desc *p = lp->dma_tx + entry;
++		int txstatus = p->des0, last;
++
++		if (txstatus & OWN_BIT)
++			break;
++
++		last = (p->des1 & TDES1_CONTROL_LS);
++
++		if (likely(last)) {
++			int tx_error = check_tx_error_summary(lp, entry);
++			if (likely(tx_error == 0)) {
++				lp->stats.tx_packets++;
++			} else {
++				lp->stats.tx_errors++;
++				DBG(intr, ERR,
++				    "Tx Error (%d):des0 0x%x, des1 0x%x,"
++				    "[buf: 0x%08x]\n",
++				    entry, p->des0, p->des1, p->des2);
++			}
+ 		}
++		DBG(intr, DEBUG, "stmmac_tx: curr %d, dirty %d\n", lp->cur_tx,
++		    lp->dirty_tx);
++
++		/* clear descriptors */
++		p->des0 = 0;
++		p->des1 &= DES1_CONTROL_TER;
++		if (likely(p->des2)) {
++			dma_unmap_single(lp->device, p->des2,
++					 (p->des1 & DES1_RBS1_SIZE_MASK) >>
++					 DES1_RBS1_SIZE_SHIFT, DMA_TO_DEVICE);
++			p->des2 = 0;
++		}
++		if (likely(lp->tx_skbuff[entry] != NULL)) {
++			dev_kfree_skb_irq(lp->tx_skbuff[entry]);
++			lp->tx_skbuff[entry] = NULL;
++		}
++		entry = (++lp->dirty_tx) % CONFIG_DMA_TX_SIZE;
+ 	}
+-	lp->rx_count = 0;
+-}
++	spin_lock(&lp->tx_lock);
++	if (unlikely(netif_queue_stopped(dev) &&
++		     TX_BUFFS_AVAIL(lp) > (MAX_SKB_FRAGS + 1)))
++		netif_wake_queue(dev);
+ 
+-#ifdef STMMAC_TASKLET
+-/**
+- * stmmaceth_clean_rx_irq
+- * @data:  address of the private member of the device structure
+- * Description: it calls the stmmaceth_refill_rx_buf in order to
+- * refill the receive socket buffers.
+- */
+-static void stmmaceth_clean_rx_irq(unsigned long data)
+-{
+-	struct net_device *dev = (struct net_device *)data;
+-	stmmaceth_refill_rx_buf(dev);
++	spin_unlock(&lp->tx_lock);
++	return;
+ }
+-#endif
+ 
+ /**
+- * stmmaceth_dma_interrupt - Interrupt handler for the STMMAC DMA
++ * stmmac_dma_interrupt - Interrupt handler for the STMMAC DMA
+  * @dev: net device structure
+- * Description: It determines if we have to call either the Rx or the Tx 
++ * Description: it determines if we have to call either the Rx or the Tx
+  * interrupt handler.
+- * Numerous events can cause an interrupt: a new packet has arrived
+- * or transmission is completed or an error occurred).  */
+-static void stmmaceth_dma_interrupt(struct net_device *dev)
++ */
++static void stmmac_dma_interrupt(struct net_device *dev)
+ {
+-	unsigned int status;
++	unsigned int intr_status;
+ 	unsigned int ioaddr = dev->base_addr;
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+-	lp->rx_buff = readl(ioaddr + DMA_CUR_RX_BUF_ADDR);
+ 
+ 	/* read the status register (CSR5) */
+-	status = (unsigned int)readl(ioaddr + DMA_STATUS);
++	intr_status = (unsigned int)readl(ioaddr + DMA_STATUS);
++
++	DBG(intr, INFO, "%s: [CSR5: 0x%08x]\n", __FUNCTION__, intr_status);
+ 
+-	ETHPRINTK(intr, INFO, "%s: (%s) [CSR5: 0x%08x]\n", RESOURCE_NAME,
+-		  "DMA IRQ", status);
+-#ifdef CONFIG_STMMAC_DEBUG
++#ifdef STMMAC_DEBUG
+ 	/* It displays the DMA transmit process state (CSR5 register) */
+ 	if (netif_msg_tx_done(lp))
+-		show_tx_process_state(status);
++		show_tx_process_state(intr_status);
+ 	if (netif_msg_rx_status(lp))
+-		show_rx_process_state(status);
++		show_rx_process_state(intr_status);
+ #endif
+-	/* Process the NORMAL interrupts */
+-	if (status & DMA_STATUS_NIS) {
+-		ETHPRINTK(intr, INFO, " CSR5[16]: DMA NORMAL IRQ: ");
+-		if (likely(status & DMA_STATUS_RI)) {
+-			ETHPRINTK(intr, INFO, "Receive irq [buf: 0x%08x]\n",
+-				  lp->rx_buff);
+-#ifdef CONFIG_STMMAC_NAPI
+-			stmmaceth_dma_disable_irq_rx(ioaddr);
+-			if (netif_rx_schedule_prep(dev)) {
+-				__netif_rx_schedule(dev);
+-			} else {
+-				ETHPRINTK(intr, ERR, "%s: bug!!! "
+-					  "interrupt while in poll.\n",
+-					  __FUNCTION__);
+-			}
+-#else
+-			stmmaceth_rx(dev);
+-#endif
+-		}
+-		if (unlikely(status & DMA_STATUS_ERI)) {
+-			ETHPRINTK(intr, INFO, "Early Receive Interrupt\n");
+-		}
+-		if (likely(status & DMA_STATUS_TI)) {
+-			ETHPRINTK(intr, INFO, " Transmit irq [buf: 0x%lx]\n",
+-				  readl(ioaddr + DMA_CUR_TX_BUF_ADDR));
+-			tasklet_schedule(&lp->tx_task);
+-		}
+-		if (unlikely(status & DMA_STATUS_TU)) {
+-			ETHPRINTK(intr, INFO, "Transmit Buffer Unavailable\n");
+-		}
+-	}
++	/* Clear the interrupt by writing a logic 1 to the CSR5[15-0] */
++	writel((intr_status & 0x1ffff), ioaddr + DMA_STATUS);
+ 
+ 	/* ABNORMAL interrupts */
+-	if (unlikely(status & DMA_STATUS_AIS)) {
+-		ETHPRINTK(intr, INFO, "CSR5[15] DMA ABNORMAL IRQ: ");
+-		if (status & DMA_STATUS_TPS) {
+-			ETHPRINTK(intr, INFO, "Transmit Process Stopped \n");
+-		}
+-		if (status & DMA_STATUS_TJT) {
+-			ETHPRINTK(intr, INFO, "Transmit Jabber Timeout\n");
+-		}
+-		if (status & DMA_STATUS_OVF) {
+-			ETHPRINTK(intr, INFO, "Receive Overflow\n");
+-		}
+-		if (status & DMA_STATUS_UNF) {
+-			ETHPRINTK(intr, INFO, "Transmit Underflow\n");
+-		}
+-		if (status & DMA_STATUS_RU) {
+-			ETHPRINTK(intr, INFO, "Rx Buffer Unavailable\n");
++	if (unlikely(intr_status & DMA_STATUS_AIS)) {
++		DBG(intr, INFO, "CSR5[15] DMA ABNORMAL IRQ: ");
++		if (unlikely(intr_status & DMA_STATUS_UNF)) {
++			lp->xstats.tx_undeflow_irq++;
++		}
++		if (unlikely(intr_status & DMA_STATUS_TJT))
++			lp->xstats.tx_jabber_irq++;
++		if (unlikely(intr_status & DMA_STATUS_OVF))
++			lp->xstats.rx_overflow_irq++;
++		if (unlikely(intr_status & DMA_STATUS_RU))
++			lp->xstats.rx_buf_unav_irq++;
++		if (unlikely(intr_status & DMA_STATUS_RPS))
++			lp->xstats.rx_process_stopped_irq++;
++		if (unlikely(intr_status & DMA_STATUS_RWT))
++			lp->xstats.rx_watchdog_irq++;
++		if (unlikely(intr_status & DMA_STATUS_ETI)) {
++			lp->xstats.tx_early_irq++;
++		}
++		if (unlikely(intr_status & DMA_STATUS_TPS)) {
++			lp->xstats.tx_process_stopped_irq++;
++		}
++		if (unlikely(intr_status & DMA_STATUS_FBI)) {
++			lp->xstats.fatal_bus_error_irq++;
+ 		}
+-		if (status & DMA_STATUS_RPS) {
+-			ETHPRINTK(intr, INFO, "Receive Process Stopped\n");
+-		}
+-		if (status & DMA_STATUS_RWT) {
+-			ETHPRINTK(intr, INFO, "Rx Watchdog Timeout\n");
+-		}
+-		if (status & DMA_STATUS_ETI) {
+-			ETHPRINTK(intr, INFO, "Early Tx Interrupt\n");
++	}
++
++	/* NORMAL interrupts */
++	if (likely(intr_status & DMA_STATUS_NIS)) {
++		DBG(intr, INFO, " CSR5[16]: DMA NORMAL IRQ: ");
++		if (likely(intr_status & DMA_STATUS_RI)) {
++
++			RX_DBG("Receive irq [buf: 0x%lx]\n",
++			       readl(ioaddr + DMA_CUR_RX_BUF_ADDR));
++			lp->xstats.rx_irq_n++;
++			stmmac_dma_disable_irq_rx(ioaddr);
++			if (likely(netif_rx_schedule_prep(dev))) {
++				__netif_rx_schedule(dev);
++			}
+ 		}
+-		if (status & DMA_STATUS_FBI) {
+-			ETHPRINTK(intr, INFO, "Fatal Bus Error Interrupt\n");
++		if (likely(intr_status & (DMA_STATUS_TI))) {
++			DBG(intr, INFO, " Transmit irq [buf: 0x%lx]\n",
++			    readl(ioaddr + DMA_CUR_TX_BUF_ADDR));
++			lp->xstats.tx_irq_n++;
++			stmmac_tx(dev);
+ 		}
+ 	}
+-	ETHPRINTK(intr, INFO, "\n\n");
++	DBG(intr, INFO, "\n\n");
+ 
+-	/* Clear the interrupt by writing a logic 1 to the relative bits */
+-	writel(status, ioaddr + DMA_STATUS);
+ 	return;
+ }
+ 
+@@ -1550,7 +1504,7 @@ static void stmmaceth_dma_interrupt(stru
+ 			      DEVICE METHODS
+    ---------------------------------------------------------------------------*/
+ /**
+- *  stmmaceth_open - open entry point of the driver
++ *  stmmac_open - open entry point of the driver
+  *  @dev : pointer to the device structure.
+  *  Description:
+  *  This function is the open entry point of the driver.
+@@ -1558,17 +1512,18 @@ static void stmmaceth_dma_interrupt(stru
+  *  0 on success and an appropriate (-)ve integer as defined in errno.h
+  *  file on failure.
+  */
+-int stmmaceth_open(struct net_device *dev)
++int stmmac_open(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 	int ret;
+ 
+ 	/* Request the IRQ lines */
+ 
+-	ret = request_irq(dev->irq, &stmmaceth_interrupt,
++	ret = request_irq(dev->irq, &stmmac_interrupt,
+ 			  SA_SHIRQ, dev->name, dev);
+ 	if (ret < 0) {
+-		printk(KERN_ERR "%s: ERROR: allocating the IRQ %d (error: %d)\n",
++		printk(KERN_ERR
++		       "%s: ERROR: allocating the IRQ %d (error: %d)\n",
+ 		       __FUNCTION__, dev->irq, ret);
+ 		return (ret);
+ 	}
+@@ -1586,10 +1541,10 @@ int stmmaceth_open(struct net_device *de
+ 
+ 	/* Intialize the DMA controller and send the SW reset */
+ 	/* This must be after we have successfully initialised the PHY
+-	 * (see comment in stmmaceth_dma_reset). */
+-	if (stmmaceth_dma_init(dev) < 0) {
+-		ETHPRINTK(probe, ERR, "%s: DMA initialization failed\n",
+-			  __FUNCTION__);
++	 * (see comment in stmmac_dma_reset). */
++	if (stmmac_dma_init(dev) < 0) {
++		DBG(probe, ERR, "%s: DMA initialization failed\n",
++		    __FUNCTION__);
+ 		return (-1);
+ 	}
+ 
+@@ -1599,29 +1554,22 @@ int stmmaceth_open(struct net_device *de
+ 	 *      ifconfig eth0 hw ether xx:xx:xx:xx:xx:xx  */
+ 
+ 	if (!is_valid_ether_addr(dev->dev_addr)) {
+-		ETHPRINTK(probe, ERR, "%s: no valid eth hw addr\n",
+-			  __FUNCTION__);
++		DBG(probe, ERR, "%s: no valid eth hw addr\n", __FUNCTION__);
+ 		return (-EINVAL);
+ 	}
+ 
+-	printk(KERN_INFO "stmmaceth_open: MAC address ");
++	printk(KERN_INFO "stmmac_open: MAC address ");
+ 	print_mac_addr(dev->dev_addr);
+ 
+ 	/* Copy the MAC addr into the HW in case we have set it with nwhw */
+ 	set_mac_addr(dev->base_addr, dev->dev_addr);
+ 
+ 	/* Initialize the MAC110 Core */
+-	stmmaceth_mac_core_init(dev);
+-
+-	/* Tasklet initialisation */
+-	tasklet_init(&lp->tx_task, stmmaceth_clean_tx_irq, (unsigned long)dev);
+-#ifdef STMMAC_TASKLET
+-	tasklet_init(&lp->rx_task, stmmaceth_clean_rx_irq, (unsigned long)dev);
+-#endif
++	stmmac_mac_core_init(dev);
+ 
+ 	/* Enable the MAC/DMA */
+-	stmmaceth_mac_enable_rx(dev);
+-	stmmaceth_mac_enable_tx(dev);
++	stmmac_mac_enable_rx(dev);
++	stmmac_mac_enable_tx(dev);
+ 
+ 	if (netif_msg_hw(lp))
+ 		dump_stm_mac_csr((unsigned int)dev->base_addr);
+@@ -1629,18 +1577,27 @@ int stmmaceth_open(struct net_device *de
+ 	phy_start(lp->phydev);
+ 
+ 	/* Start the ball rolling... */
+-	ETHPRINTK(probe, DEBUG, "%s: DMA RX/TX processes started...\n",
+-		  RESOURCE_NAME);
++	DBG(probe, DEBUG, "%s: DMA RX/TX processes started...\n",
++	    RESOURCE_NAME);
+ 
+-	stmmaceth_dma_start_rx(dev->base_addr);
+-	stmmaceth_dma_start_tx(dev->base_addr);
++	memset(&lp->xstats, 0, sizeof(struct stmmac_extra_stats));
++	lp->xstats.tx_threshold = stmmac_dma_ttc(dev->base_addr, ttc);
++	lp->max_refill_threshold = 0;
++
++	stmmac_dma_start_rx(dev->base_addr);
++	stmmac_dma_start_tx(dev->base_addr);
++
++#ifdef CONFIG_STMMAC_TIMER
++	stmmac_rtc_timer_open(dev);
++	stmmac_rtc_timer_start();
++#endif
+ 
+ 	netif_start_queue(dev);
+ 	return (0);
+ }
+ 
+ /**
+- *  stmmaceth_release - close entry point of the driver
++ *  stmmac_release - close entry point of the driver
+  *  @dev : device pointer.
+  *  Description:
+  *  This is the stop entry point of the driver.
+@@ -1648,10 +1605,16 @@ int stmmaceth_open(struct net_device *de
+  *  0 on success and an appropriate (-)ve integer as defined in errno.h
+  *  file on failure.
+  */
+-int stmmaceth_release(struct net_device *dev)
++int stmmac_release(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
++#ifdef CONFIG_STMMAC_TIMER
++	stmmac_rtc_timer_stop();
++	stmmac_rtc_timer_close();
++#endif
++	netif_stop_queue(dev);
++
+ 	/* Stop the PHY */
+ 	phy_stop(lp->phydev);
+ 	phy_disconnect(lp->phydev);
+@@ -1661,20 +1624,14 @@ int stmmaceth_release(struct net_device 
+ 	free_irq(dev->irq, dev);
+ 
+ 	/* Stop TX/RX DMA and clear the descriptors */
+-	stmmaceth_dma_stop_tx(dev->base_addr);
+-	stmmaceth_dma_stop_rx(dev->base_addr);
++	stmmac_dma_stop_tx(dev->base_addr);
++	stmmac_dma_stop_rx(dev->base_addr);
+ 
+ 	free_dma_desc_resources(dev);
+ 
+ 	/* Disable the MAC core */
+-	stmmaceth_mac_disable_tx(dev);
+-	stmmaceth_mac_disable_rx(dev);
+-
+-	/* The tasklets won't be scheduled to run again */
+-	tasklet_kill(&lp->tx_task);
+-#ifdef STMMAC_TASKLET
+-	tasklet_kill(&lp->rx_task);
+-#endif
++	stmmac_mac_disable_tx(dev);
++	stmmac_mac_disable_rx(dev);
+ 
+ 	/* Change the link status */
+ 	netif_carrier_off(dev);
+@@ -1683,142 +1640,39 @@ int stmmaceth_release(struct net_device 
+ }
+ 
+ /**
+- *  stmmaceth_fill_tx_buffer
+- *  @data : data buffer
+- *  @size : fragment size
+- *  @mss : Maximum  Segment Size
+- *  @lp : driver local structure
+- *  @first : first element in the ring
+- *  Description: it is used for filling the DMA tx ring with the frame to be 
+- *  transmitted.
+- *  Note that the algorithm works both for the non-paged data and for the paged
+- *  fragment (SG).
+- *  It also supports the segmentation offloading for super-sized skb's
+- *  (skb_shinfo(skb)->tso_size != 0). 
+- *  Return value:
+- *    current entry point in the tx ring
+- */
+-static int stmmaceth_fill_tx_buffer(void *data, unsigned int size,
+-				    unsigned int mss,
+-				    struct eth_driver_local *lp, int first)
+-{
+-	int new_des = 0;
+-	void *addr = data;
+-	dma_desc *p = lp->dma_tx;
+-	unsigned int entry;
+-	int bsize = lp->dma_buf_sz;
+-
+-	XMITPRINTK(mss, INFO, "  %s (size=%d, addr=0x%x)\n", __FUNCTION__,
+-		 size, (unsigned int)addr);
+-	do {
+-		if (new_des) {
+-			lp->cur_tx++;
+-			new_des = 0;
+-		}
+-		entry = lp->cur_tx % CONFIG_DMA_TX_SIZE;
+-		/* Set the owner field */
+-		p[entry].des0 = OWN_BIT;
+-		/* Reset the descriptor number 1 */
+-		p[entry].des1 = (p[entry].des1 & DES1_CONTROL_TER);
+-		if (first)
+-			p[entry].des1 |= TDES1_CONTROL_FS;
+-		else
+-			lp->tx_skbuff[entry] = NULL;
+-
+-		XMITPRINTK(mss, INFO, "\t[entry =%d] buf1 len=%d\n",
+-			 entry, min((int)size, bsize));
+-		/* If the data size is too big we need to use the buffer 2
+-		 * (in the same descriptor) or, if necessary, another descriptor
+-		 * in the ring. */
+-		if (likely(size < bsize)) {
+-			p[entry].des1 |= ((size << DES1_RBS1_SIZE_SHIFT) &
+-					  DES1_RBS1_SIZE_MASK);
+-			p[entry].des2 = dma_map_single(lp->device, addr,
+-						       size, DMA_TO_DEVICE);
+-		} else {
+-			int b2_size = (size - bsize);
+-
+-			p[entry].des1 |= TDES1_MAX_BUF1_SIZE;
+-			p[entry].des2 = dma_map_single(lp->device, addr, bsize,
+-						       DMA_TO_DEVICE);
+-
+-			/* Check if we need to use the buffer 2 */
+-			if (b2_size > 0) {
+-				void *buffer2 = addr;
+-
+-				XMITPRINTK(mss, INFO,
+-					 "\t[entry=%d] buf2 len=%d\n", entry,
+-					 min(b2_size, bsize));
+-
+-				/* Check if we need another descriptor. */
+-				if (b2_size > bsize) {
+-					b2_size = bsize;
+-					size -= (2 * bsize);
+-					addr += ((2 * bsize) + 1);
+-					new_des = 1;
+-					XMITPRINTK(mss, INFO,
+-						 "\tnew descriptor - "
+-						 "%s (len = %d)\n",
+-						 (first) ? "skb->data" :
+-						 "Frag", size);
+-				}
+-				p[entry].des3 = dma_map_single(lp->device,
+-							       (buffer2 + bsize
+-								+ 1), b2_size,
+-							       DMA_TO_DEVICE);
+-				if (b2_size == bsize) {
+-					p[entry].des1 |= TDES1_MAX_BUF2_SIZE;
+-				} else {
+-					p[entry].des1 |=
+-					    ((b2_size << DES1_RBS2_SIZE_SHIFT)
+-					     & DES1_RBS2_SIZE_MASK);
+-				}
+-			}
+-		}
+-	} while (new_des);
+-	return (entry);
+-}
+-
+-/**
+- *  stmmaceth_xmit - Tx entry point of the driver
++ *  stmmac_xmit:
+  *  @skb : the socket buffer
+  *  @dev : device pointer
+- *  Description :
+- *  This function is the Tx entry point of the driver.
++ *  Description : Tx entry point of the driver.
+  */
+-int stmmaceth_xmit(struct sk_buff *skb, struct net_device *dev)
++static int stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
++	unsigned long flags;
++	int nfrags = skb_shinfo(skb)->nr_frags,
++	    entry = lp->cur_tx % CONFIG_DMA_TX_SIZE, i,
++	    nopaged_len, first = entry;
+ 	dma_desc *p = lp->dma_tx;
+-	unsigned int nfrags = skb_shinfo(skb)->nr_frags,
+-	    entry = lp->cur_tx % CONFIG_DMA_TX_SIZE, i, mss = 0, nopaged_len;
+ 
+-	if (skb->len < ETH_ZLEN) {
+-		skb = skb_padto(skb, ETH_ZLEN);
+-		skb->len = ETH_ZLEN;
++	/* This is a hard error log it. */
++	if (unlikely(TX_BUFFS_AVAIL(lp) < nfrags + 1)) {
++		netif_stop_queue(dev);
++		printk(KERN_ERR "%s: BUG! Tx Ring full when queue awake!\n",
++		       dev->name);
++		return NETDEV_TX_BUSY;
+ 	}
+ 
+-	/* Reporting an error if either the frame, to be transmitted, is too
+-	 * long or we haven't enough space in the DMA ring. If the following
+-	 * error is reported, probably, you ought to increase the ring size.*/
+-	if (unlikely(nfrags >= CONFIG_DMA_TX_SIZE)) {
+-		printk(KERN_ERR "%s: ERROR too many fragments (%d)...\n",
+-		       __FUNCTION__, nfrags);
+-		goto xmit_error;
+-	}
+-#ifdef NETIF_F_TSO
+-	if (dev->features & NETIF_F_TSO) {
+-		mss = skb_shinfo(skb)->tso_size;
++	spin_lock_irqsave(&lp->tx_lock, flags);
+ 
+-		if (unlikely
+-		    ((skb->len > ((2 * (lp->dma_buf_sz)) * CONFIG_DMA_TX_SIZE))
+-		     && (mss != 0))) {
+-			printk(KERN_ERR "%s: (TSO) frame too long (%d)...\n",
+-			       __FUNCTION__, skb->len);
+-			goto xmit_error;
+-		}
++	if (unlikely((lp->tx_skbuff[entry] != NULL))) {
++		/* This should never happen! */
++		printk(KERN_ERR "%s: BUG! Inconsistent Tx skb utilization!\n",
++		       dev->name);
++		dev_kfree_skb(skb);
++		return -1;
+ 	}
+-#endif
++	lp->tx_skbuff[entry] = skb;
++
+ 	/* Verify the csum via software... it's necessary because the
+ 	 * hardware doesn't support a complete csum calculation. */
+ 	if (likely(skb->ip_summed == CHECKSUM_HW)) {
+@@ -1829,242 +1683,306 @@ int stmmaceth_xmit(struct sk_buff *skb, 
+ 		offset = skb->tail - skb->h.raw;
+ 		*(u16 *) (skb->h.raw + skb->csum) = csum_fold(csum);
+ 	}
++
+ 	/* Get the amount of non-paged data (skb->data). */
+ 	nopaged_len = skb_headlen(skb);
+-	lp->tx_skbuff[entry] = skb;
+-	XMITPRINTK(mss, INFO, "\n%s:\n(skb->len=%d, nfrags=%d, "
+-		 "nopaged_len=%d, mss=%d)\n", __FUNCTION__, skb->len,
+-		 nfrags, nopaged_len, mss);
+-	/* Handle the non-paged data (skb->data) */
+-	stmmaceth_fill_tx_buffer(skb->data, nopaged_len, mss, lp, 1);
+ 
+-	/* Handle the paged fragments */
++	/* Handle non-paged data (skb->data) */
++	p[entry].des1 = (p[entry].des1 & DES1_CONTROL_TER);
++	p[entry].des1 |= (TDES1_CONTROL_FS | nopaged_len);
++	p[entry].des2 = dma_map_single(lp->device, skb->data,
++				       STMMAC_ALIGN(nopaged_len),
++				       DMA_TO_DEVICE);
++	/* Handle paged fragments */
+ 	for (i = 0; i < nfrags; i++) {
+ 		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+-		void *addr =
+-		    ((void *)page_address(frag->page) + frag->page_offset);
+ 		int len = frag->size;
+ 
+ 		lp->cur_tx++;
+-		entry = stmmaceth_fill_tx_buffer(addr, len, mss, lp, 0);
+-	}
+-	p[entry].des1 |= TDES1_CONTROL_LS | TDES1_CONTROL_IC;
+-	lp->cur_tx++;
++		entry = lp->cur_tx % CONFIG_DMA_TX_SIZE;
+ 
+-	if ((lp->cur_tx-lp->dirty_tx) >= tx_queue_size) {
+-		netif_stop_queue(dev);
++		p[entry].des0 = OWN_BIT;
++		p[entry].des1 = (p[entry].des1 & DES1_CONTROL_TER);
++		p[entry].des1 |= len;
++		p[entry].des2 = dma_map_page(lp->device, frag->page,
++					     frag->page_offset,
++					     DMA_BUFFER_SIZE, DMA_TO_DEVICE);
++
++		lp->tx_skbuff[entry] = NULL;
+ 	}
+ 
+-	lp->stats.tx_bytes += skb->len;
++	/* If there are more than one fragment, we set the interrupt
++	 * on completition field in the latest fragment (where we also set 
++	 * the LS bit. */
++	p[entry].des1 |= TDES1_CONTROL_LS | TDES1_CONTROL_IC;
++	p[first].des0 |= OWN_BIT;	/* to avoid race condition */
++	lp->cur_tx++;
+ 
+-#ifdef CONFIG_STMMAC_DEBUG
++#ifdef STMMAC_XMIT_DEBUG
+ 	if (netif_msg_pktdata(lp)) {
+-		printk(">>> (current=%d, dirty=%d; entry=%d)\n",
++		printk("stmmac xmit: current=%d, dirty=%d, entry=%d, "
++		       "first=%d, nfrags=%d\n",
+ 		       (lp->cur_tx % CONFIG_DMA_TX_SIZE),
+-		       (lp->dirty_tx % CONFIG_DMA_TX_SIZE), entry);
++		       (lp->dirty_tx % CONFIG_DMA_TX_SIZE), entry,
++		       first, nfrags);
+ 		display_dma_desc_ring(lp->dma_tx, CONFIG_DMA_TX_SIZE);
+ 		printk(">>> frame to be transmitted: ");
+ 		print_pkt(skb->data, skb->len);
+ 	}
+ #endif
++
++	if (TX_BUFFS_AVAIL(lp) <= (MAX_SKB_FRAGS + 1)) {
++		netif_stop_queue(dev);
++	} else {
++		/* Allow aggregation of Tx interrupts and clear 
++		   TDES1[31] */
++		if (lp->tx_aggregation <= tx_aggregation) {
++			lp->tx_aggregation++;
++			p[entry].des1 &= ~TDES1_CONTROL_IC;
++		} else {
++			lp->tx_aggregation = 0;
++		}
++	}
++
++	lp->stats.tx_bytes += skb->len;
++	lp->xstats.tx_bytes += skb->len;
++
+ 	/* CSR1 enables the transmit DMA to check for new descriptor */
+ 	writel(1, dev->base_addr + DMA_XMT_POLL_DEMAND);
+ 
+ 	dev->trans_start = jiffies;
++	spin_unlock_irqrestore(&lp->tx_lock, flags);
+ 
+-	return (0);
+-
+-      xmit_error:
+-	dev_kfree_skb(skb);
+-	lp->stats.tx_dropped++;
+-	return (0);
++	return NETDEV_TX_OK;
+ }
+ 
+-/*   If the NAPI support is enabled the stmmaceth_poll method will be
+- *   scheduled at interrupt time.
+- *   Otherwise, the stmmaceth_rx(...) is the receive function processed
+- *   by the regular interrupt handler.
+- */
+-#ifdef CONFIG_STMMAC_NAPI
+-static int stmmaceth_poll(struct net_device *dev, int *budget)
+-#else
+-static __inline__ int stmmaceth_rx(struct net_device *dev)
+-#endif
++static __inline__ void stmmac_rx_refill(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+-	int frame_len = 0, entry = lp->cur_rx % CONFIG_DMA_RX_SIZE;
+-	dma_desc *drx = lp->dma_rx + entry;
+-#ifdef CONFIG_STMMAC_NAPI
+-	int npackets = 0, quota = min(dev->quota, *budget);
+-#endif
+-	int nframe = 0;
++	int bfsize = DMA_BUFFER_SIZE;
++	dma_desc *drx = lp->dma_rx;
+ 
+-#ifdef CONFIG_STMMAC_DEBUG
+-	if (netif_msg_rx_status(lp)) {
+-		printk("%s: RX descriptor ring:\n", __FUNCTION__);
+-		display_dma_desc_ring(lp->dma_rx, CONFIG_DMA_RX_SIZE);
++	for (; lp->cur_rx - lp->dirty_rx > 0; lp->dirty_rx++) {
++		int entry = lp->dirty_rx % CONFIG_DMA_RX_SIZE;
++		if (lp->rx_skbuff[entry] == NULL) {
++			struct sk_buff *skb = dev_alloc_skb(bfsize);
++			if (unlikely(skb == NULL)) {
++				printk(KERN_ERR "%s: skb is NULL\n",
++				       __FUNCTION__);
++				break;
++			}
++			skb_reserve(skb, STMMAC_IP_ALIGN);
++			skb->dev = dev;
++			lp->rx_skbuff[entry] = skb;
++			lp->rx_skbuff_dma[entry] = dma_map_single(lp->device,
++								  skb->data,
++								  bfsize,
++								  DMA_FROM_DEVICE);
++			(drx + entry)->des2 = lp->rx_skbuff_dma[entry];
++			RX_DBG("\trefill entry #%d\n", entry);
++		}
++		(drx + entry)->des0 = OWN_BIT;
+ 	}
++	return;
++}
++
++static int stmmac_rx(struct net_device *dev, int limit)
++{
++	struct eth_driver_local *lp = netdev_priv(dev);
++	int entry = lp->cur_rx % CONFIG_DMA_RX_SIZE, count;
++
++#ifdef STMMAC_RX_DEBUG
++	printk(">>> stmmac_rx: descriptor ring:\n");
++	display_dma_desc_ring(lp->dma_rx, CONFIG_DMA_RX_SIZE);
+ #endif
+-	while (!(drx->des0 & OWN_BIT) && (nframe < CONFIG_DMA_RX_SIZE)) {
+-		struct sk_buff *skb;
++	lp->xstats.rx_poll_n++;
++
++	for (count = 0; count < limit; ++count) {
++		dma_desc *drx = lp->dma_rx + entry;
+ 		unsigned int status = drx->des0;
+-		nframe++;
+-#ifdef CONFIG_STMMAC_NAPI
+-		if (unlikely(npackets > quota)) {
+-			printk("%s: ERROR: out of quota (%d); npackets %d\n",
+-			       dev->name, quota, npackets);
+-			drx->des0 = OWN_BIT;
++
++		if (status & OWN_BIT)
+ 			break;
+-		}
+-#endif
+-		if (check_rx_error_summary(lp, status) < 0)
+-			goto next_frame;
+ 
+-		/* update multicast stats */
+-		if (status & RDES0_STATUS_MULTICST_FRM)
+-			lp->stats.multicast++;
+-		/* frame_len is the length in bytes (omitting the FCS) */
+-		frame_len = (((status & RDES0_STATUS_FL_MASK) >>
+-				RDES0_STATUS_FL_SHIFT) - 4);
+-		ETHPRINTK(rx_status, INFO,
+-			  ">>> desc addr: 0x%0x [entry: %d]\n"
+-			  "\tdesc0=0x%x desc1=0x%x buffer1=0x%x\n",
+-			  (unsigned int)drx, entry, drx->des0, drx->des1,
+-			  drx->des2);
+-		/* Check if the packet is long enough to accept without
+-		   copying to a minimally-sized skbuff. */
+-		if (frame_len < min_rx_pkt_size) {
+-			skb = dev_alloc_skb(frame_len + 2);
+-			if (unlikely(!skb)) {
+-				if (printk_ratelimit())
+-					printk(KERN_NOTICE "%s: low memory, "
+-					       "packet dropped.\n", dev->name);
+-				lp->stats.rx_dropped++;
+-				goto next_frame;
++		if (unlikely(((check_rx_error_summary(lp, status) < 0)) ||
++			     (!(status & RDES0_STATUS_LS)))) {
++
++			lp->stats.rx_errors++;
++
++			if (unlikely(!(status & RDES0_STATUS_LS))) {
++				printk(KERN_WARNING "%s: Oversized Ethernet "
++				       "frame spanned multiple buffers, entry "
++				       "%#x status %8.8x!\n", dev->name, entry,
++				       status);
++				lp->stats.rx_length_errors++;
+ 			}
+-			skb->dev = dev;
+-			skb_reserve(skb, NET_IP_ALIGN);
+-			dma_sync_single_for_cpu(lp->device,
+-						lp->rx_skbuff_dma[entry],
+-						lp->dma_buf_sz,
+-						DMA_FROM_DEVICE);
+-			eth_copy_and_sum(skb, lp->rx_skbuff[entry]->data,
+-					 frame_len, 0);
+-			skb_put(skb, frame_len);
+-			dma_sync_single_for_device(lp->device,
+-						   lp->rx_skbuff_dma[entry],
+-						   lp->dma_buf_sz,
+-						   DMA_FROM_DEVICE);
+-		} else {	/* zero-copy */
+-			skb = lp->rx_skbuff[entry];
+-			if (unlikely(!skb)) {
+-				printk(KERN_ERR "%s: Inconsistent Rx "
+-					"descriptor chain.\n", dev->name);
+-				lp->stats.rx_dropped++;
+-				goto next_frame;
++		} else {
++			struct sk_buff *skb;
++			/* Length should omit the CRC */
++			int frame_len = (((status & RDES0_STATUS_FL_MASK) >>
++					  RDES0_STATUS_FL_SHIFT) - 4);
++
++			RX_DBG
++			    ("\tdesc: 0x%0x [entry %d] buff=0x%x\n",
++			     (unsigned int)drx, entry, drx->des2);
++
++			/* Check if the packet is long enough to accept without
++			   copying to a minimally-sized skbuff. */
++			if (unlikely(frame_len < rx_copybreak)) {
++				skb =
++				    dev_alloc_skb(STMMAC_ALIGN(frame_len + 2));
++				if (unlikely(!skb)) {
++					if (printk_ratelimit())
++						printk(KERN_NOTICE
++						       "%s: low memory, "
++						       "packet dropped.\n",
++						       dev->name);
++					lp->stats.rx_dropped++;
++					break;
++				}
++
++				skb_reserve(skb, STMMAC_IP_ALIGN);
++				skb->dev = dev;
++				dma_sync_single_for_cpu(lp->device,
++							lp->
++							rx_skbuff_dma[entry],
++							frame_len,
++							DMA_FROM_DEVICE);
++				eth_copy_and_sum(skb,
++						 lp->rx_skbuff[entry]->data,
++						 frame_len, 0);
++
++				skb_put(skb, frame_len);
++				dma_sync_single_for_device(lp->device,
++							   lp->
++							   rx_skbuff_dma[entry],
++							   frame_len,
++							   DMA_FROM_DEVICE);
++			} else {	/* zero-copy */
++				skb = lp->rx_skbuff[entry];
++				if (unlikely(!skb)) {
++					printk(KERN_ERR "%s: Inconsistent Rx "
++					       "descriptor chain.\n",
++					       dev->name);
++					lp->stats.rx_dropped++;
++					lp->xstats.rx_dropped++;
++					break;
++				}
++				lp->rx_skbuff[entry] = NULL;
++				skb_put(skb, frame_len);
++				dma_unmap_single(lp->device,
++						 lp->rx_skbuff_dma[entry],
++						 DMA_BUFFER_SIZE,
++						 DMA_FROM_DEVICE);
++			}
++#ifdef STMMAC_RX_DEBUG
++			if (netif_msg_pktdata(lp)) {
++				printk(KERN_DEBUG " - frame received: ");
++				print_pkt(skb->data, frame_len);
+ 			}
+-			dma_unmap_single(lp->device, lp->rx_skbuff_dma[entry],
+-					 lp->dma_buf_sz, DMA_FROM_DEVICE);
+-			lp->rx_skbuff[entry] = NULL;
+-			skb_put(skb, frame_len);
+-			lp->rx_count++;
+-		}
+-#ifdef CONFIG_STMMAC_DEBUG
+-		if (netif_msg_pktdata(lp)) {
+-			printk(">>> frame received: ");
+-			print_pkt(skb->data, frame_len);
+-		}
+-#endif
+-		skb->protocol = eth_type_trans(skb, dev);
+-		skb->ip_summed = CHECKSUM_NONE;
+-
+-#ifdef CONFIG_STMMAC_NAPI
+-		npackets++;
+-		netif_receive_skb(skb);
+-#else
+-		netif_rx(skb);
+ #endif
+-		lp->stats.rx_packets++;
+-		lp->stats.rx_bytes += frame_len;
+-		dev->last_rx = jiffies;
+-
+-	      next_frame:
+-		drx->des0 = OWN_BIT;
++			skb->protocol = eth_type_trans(skb, dev);
++			skb->ip_summed = CHECKSUM_NONE;
++			netif_receive_skb(skb);
++
++			lp->stats.rx_packets++;
++			lp->stats.rx_bytes += frame_len;
++			lp->xstats.rx_bytes += frame_len;
++			dev->last_rx = jiffies;
++		}
+ 		entry = (++lp->cur_rx) % CONFIG_DMA_RX_SIZE;
+ 		drx = lp->dma_rx + entry;
+ 	}
+ 
+-#ifndef CONFIG_STMMAC_NAPI
+-#ifdef STMMAC_TASKLET
+-	if (lp->rx_count < RX_BUFF_THRESHOLD)
+-		tasklet_schedule(&lp->rx_task);
+-	else
+-#endif
+-#endif
+-		stmmaceth_refill_rx_buf(dev);
++	lp->max_refill_threshold += count;
++	if (lp->max_refill_threshold >= (CONFIG_DMA_RX_SIZE / 2)) {
++		RX_DBG("\t Rx Fill threshold: %d\n", lp->max_refill_threshold);
++		lp->max_refill_threshold = 0;
++		stmmac_rx_refill(dev);
++	}
+ 
+-#ifdef CONFIG_STMMAC_NAPI
+-	/* All the packets in the DMA have been processed so we can
+-	 * reenable the RX interrupt. */
+-	*budget -= npackets;
+-	dev->quota -= npackets;
+-	netif_rx_complete(dev);
+-	stmmaceth_dma_enable_irq_rx(dev->base_addr);
+-#else
+-	writel(1, dev->base_addr + DMA_RCV_POLL_DEMAND);
++	return count;
++}
++
++/**
++ *  stmmac_poll - stmmac poll method (NAPI)
++ *  @dev : pointer to the netdev structure.
++ *  @budget : maximum number of packets that the current CPU can receive from
++ *	      all interfaces.
++ *  Description :
++ *   This function implements the the reception process.
++ *   It is based on NAPI which provides a "inherent mitigation" in order
++ *   to improve network performance.
++ */
++static int stmmac_poll(struct net_device *dev, int *budget)
++{
++	int work_done;
++
++	work_done = stmmac_rx(dev, dev->quota);
++	dev->quota -= work_done;
++	*budget -= work_done;
++
++	if (work_done < *budget) {
++		RX_DBG(">>> rx work completed.\n");
++		__netif_rx_complete(dev);
++		stmmac_dma_enable_irq_rx(dev->base_addr);
++#ifdef CONFIG_STMMAC_TIMER
++		stmmac_rtc_timer_start();
+ #endif
+-	return 0;
++		return 0;
++	}
++	return 1;
+ }
+ 
+ /**
+- *  stmmaceth_tx_timeout
++ *  stmmac_tx_timeout
+  *  @dev : Pointer to net device structure
+  *  Description: this function is called when a packet transmission fails to 
+  *   complete within a reasonable period. The driver will mark the error in the
+  *   netdev structure and arrange for the device to be reset to a sane state
+  *   in order to transmit a new packet. 
+  */
+-void stmmaceth_tx_timeout(struct net_device *dev)
++void stmmac_tx_timeout(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	printk(KERN_WARNING "%s: Tx timeout at %ld, latency %ld\n",
+ 	       dev->name, jiffies, (jiffies - dev->trans_start));
+ 
+-#ifdef CONFIG_STMMAC_DEBUG
++#ifdef STMMAC_DEBUG
+ 	printk("(current=%d, dirty=%d)\n", (lp->cur_tx % CONFIG_DMA_TX_SIZE),
+ 	       (lp->dirty_tx % CONFIG_DMA_TX_SIZE));
+ 	printk("DMA tx ring status: \n");
+ 	display_dma_desc_ring(lp->dma_tx, CONFIG_DMA_TX_SIZE);
+ #endif
++	spin_lock(&lp->tx_lock);
+ 	netif_stop_queue(dev);
+-	stmmaceth_dma_stop_tx(dev->base_addr);
++	tx_aggregation = -1;
++	lp->tx_aggregation = 0;
++	stmmac_dma_stop_tx(dev->base_addr);
+ 	clear_dma_descs(lp->dma_tx, CONFIG_DMA_TX_SIZE, 0);
+-	tasklet_disable(&lp->tx_task);
+-
+-	tasklet_enable(&lp->tx_task);
+-	stmmaceth_dma_start_tx(dev->base_addr);
+-
+ 	lp->stats.tx_errors++;
++	stmmac_dma_start_tx(dev->base_addr);
+ 	dev->trans_start = jiffies;
+ 	netif_wake_queue(dev);
++	spin_unlock(&lp->tx_lock);
+ 
+ 	return;
+ }
+ 
+ /**
+- *  stmmaceth_stats
++ *  stmmac_stats
+  *  @dev : Pointer to net device structure
+  *  Description: this function returns statistics to the caller application 
+  */
+-struct net_device_stats *stmmaceth_stats(struct net_device *dev)
++struct net_device_stats *stmmac_stats(struct net_device *dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 	return &lp->stats;
+ }
+ 
+ /* Configuration changes (passed on by ifconfig) */
+-int stmmaceth_config(struct net_device *dev, struct ifmap *map)
++int stmmac_config(struct net_device *dev, struct ifmap *map)
+ {
+ 	if (dev->flags & IFF_UP)	/* can't act on a running interface */
+ 		return -EBUSY;
+@@ -2091,7 +2009,7 @@ int stmmaceth_config(struct net_device *
+ 			Address Filtering Method
+    ---------------------------------------------------------------------------*/
+ /**
+- *  stmmaceth_set_rx_mode - entry point for multicast addressing
++ *  stmmac_set_rx_mode - entry point for multicast addressing
+  *  @dev : pointer to the device structure
+  *  Description:
+  *  This function is a driver entry point which gets called by the kernel
+@@ -2099,7 +2017,7 @@ int stmmaceth_config(struct net_device *
+  *  Return value:
+  *  void.
+  */
+-static void stmmaceth_set_rx_mode(struct net_device *dev)
++static void stmmac_set_rx_mode(struct net_device *dev)
+ {
+ 	unsigned long ioaddr = dev->base_addr;
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+@@ -2129,7 +2047,7 @@ static void stmmaceth_set_rx_mode(struct
+ 		   filter for multicast */
+ 		value |= MAC_CONTROL_HP;
+ 		value &= ~(MAC_CONTROL_PM | MAC_CONTROL_PR | MAC_CONTROL_IF
+-				| MAC_CONTROL_HO);
++			   | MAC_CONTROL_HO);
+ 
+ 		memset(mc_filter, 0, sizeof(mc_filter));
+ 		for (i = 0, mclist = dev->mc_list;
+@@ -2159,7 +2077,7 @@ static void stmmaceth_set_rx_mode(struct
+ }
+ 
+ /**
+- *  stmmaceth_change_mtu - entry point to change MTU size for the device.
++ *  stmmac_change_mtu - entry point to change MTU size for the device.
+  *   @dev : device pointer.
+  *   @new_mtu : the new MTU size for the device.
+  *   Description: the Maximum Transfer Unit (MTU) is used by the network layer to
+@@ -2169,7 +2087,7 @@ static void stmmaceth_set_rx_mode(struct
+  *   0 on success and an appropriate (-)ve integer as defined in errno.h
+  *   file on failure.
+  */
+-static int stmmaceth_change_mtu(struct net_device *dev, int new_mtu)
++static int stmmac_change_mtu(struct net_device *dev, int new_mtu)
+ {
+ 	if (netif_running(dev)) {
+ 		printk(KERN_ERR "%s: must be stopped to change its MTU\n",
+@@ -2185,11 +2103,22 @@ static int stmmaceth_change_mtu(struct n
+ 	return (0);
+ }
+ 
++static void stmmac_flow_ctrl(unsigned long ioaddr, unsigned int duplex,
++			     unsigned int fc, unsigned int pause_time)
++{
++	unsigned int flow = MAC_FLOW_CTRL_ENABLE;
++
++	if (duplex)
++		flow |= (pause_time << MAC_FLOW_CTRL_PT_SHIFT);
++	writel(flow, ioaddr + MAC_FLOW_CTRL);
++
++	return;
++}
++
+ /* ---------------------------------------------------------------------------
+ 			REGULAR INTERRUPT FUNCTION
+    ---------------------------------------------------------------------------*/
+-static irqreturn_t stmmaceth_interrupt(int irq, void *dev_id,
+-				       struct pt_regs *regs)
++static irqreturn_t stmmac_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+ {
+ 	struct net_device *dev = (struct net_device *)dev_id;
+ 
+@@ -2198,7 +2127,7 @@ static irqreturn_t stmmaceth_interrupt(i
+ 		return IRQ_NONE;
+ 	}
+ 
+-	stmmaceth_dma_interrupt(dev);
++	stmmac_dma_interrupt(dev);
+ 
+ 	return IRQ_HANDLED;
+ }
+@@ -2209,10 +2138,10 @@ static irqreturn_t stmmaceth_interrupt(i
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ /* Polling receive - used by NETCONSOLE and other diagnostic tools
+  * to allow network I/O with interrupts disabled. */
+-static void stmmaceth_poll_controller(struct net_device *dev)
++static void stmmac_poll_controller(struct net_device *dev)
+ {
+ 	disable_irq(dev->irq);
+-	stmmaceth_interrupt(dev->irq, dev, NULL);
++	stmmac_interrupt(dev->irq, dev, NULL);
+ 	enable_irq(dev->irq);
+ }
+ #endif
+@@ -2220,26 +2149,24 @@ static void stmmaceth_poll_controller(st
+ /* ----------------------------------------------------------------------------
+ 		  		ETHTOOL SUPPORT
+    ---------------------------------------------------------------------------*/
+-static void stmmaceth_ethtool_getdrvinfo(struct net_device *dev,
+-					 struct ethtool_drvinfo *info)
++
++void stmmac_ethtool_getdrvinfo(struct net_device *dev,
++			       struct ethtool_drvinfo *info)
+ {
+ 	strcpy(info->driver, RESOURCE_NAME);
+-	strncpy(info->version, version, sizeof(version));
+-	strcpy(info->bus_info, "STBUS");
++	strcpy(info->version, DRV_MODULE_VERSION);
+ 	info->fw_version[0] = '\0';
+ 	return;
+ }
+ 
+-static int stmmaceth_ethtool_getsettings(struct net_device *dev,
+-					 struct ethtool_cmd *cmd)
++int stmmac_ethtool_getsettings(struct net_device *dev, struct ethtool_cmd *cmd)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 	struct phy_device *phy = lp->phydev;
+-
++	int rc;
+ 	if (phy == NULL) {
+-		printk(KERN_ERR
+-		       "%s: ethtool_getsettings PHY is not registered\n",
+-		       dev->name);
++		printk(KERN_ERR "%s: %s: PHY is not registered\n",
++		       __FUNCTION__, dev->name);
+ 		return -ENODEV;
+ 	}
+ 
+@@ -2250,73 +2177,73 @@ static int stmmaceth_ethtool_getsettings
+ 	}
+ 
+ 	cmd->transceiver = XCVR_INTERNAL;
+-	return phy_ethtool_gset(phy, cmd);
++	spin_lock_irq(&lp->lock);
++	rc = phy_ethtool_gset(phy, cmd);
++	spin_unlock_irq(&lp->lock);
++	return rc;
+ }
+ 
+-static int stmmaceth_ethtool_setsettings(struct net_device *dev,
+-					 struct ethtool_cmd *cmd)
++int stmmac_ethtool_setsettings(struct net_device *dev, struct ethtool_cmd *cmd)
+ {
+ 	struct eth_driver_local *lp = dev->priv;
+ 	struct phy_device *phy = lp->phydev;
++	int rc;
++
++	spin_lock(&lp->lock);
++	rc = phy_ethtool_sset(phy, cmd);
++	spin_unlock(&lp->lock);
+ 
+-	return phy_ethtool_sset(phy, cmd);
++	return rc;
+ }
+ 
+-static u32 stmmaceth_ethtool_getmsglevel(struct net_device *dev)
++u32 stmmac_ethtool_getmsglevel(struct net_device * dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 	return lp->msg_enable;
+ }
+ 
+-static void stmmaceth_ethtool_setmsglevel(struct net_device *dev, u32 level)
++void stmmac_ethtool_setmsglevel(struct net_device *dev, u32 level)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 	lp->msg_enable = level;
+ 
+ }
+ 
+-static int stmmaceth_check_if_running(struct net_device *dev)
++int stmmac_check_if_running(struct net_device *dev)
+ {
+ 	if (!netif_running(dev))
+ 		return -EBUSY;
+ 	return (0);
+ }
+ 
+-#define REGDUMP_LEN         (32 * 1024)
+-int stmmaceth_ethtool_get_regs_len(struct net_device *dev)
++int stmmac_ethtool_get_regs_len(struct net_device *dev)
+ {
+-	return (REGDUMP_LEN);
++	return REG_SPACE_SIZE;
+ }
+ 
+-static void stmmaceth_ethtool_gregs(struct net_device *dev,
+-				    struct ethtool_regs *regs, void *space)
++void stmmac_ethtool_gregs(struct net_device *dev,
++			  struct ethtool_regs *regs, void *space)
+ {
+ 	int i;
+-	u32 reg;
+ 	u32 *reg_space = (u32 *) space;
+ 
+-	memset(reg_space, 0x0, REGDUMP_LEN);
+-
++	memset(reg_space, 0x0, REG_SPACE_SIZE);
+ 	/* MAC registers */
+-	for (i = 0; i < 11; i++) {
+-		reg = readl(dev->base_addr + i * 4);
+-		memcpy((reg_space + i * 4), &reg, sizeof(u32));
++	for (i = 0; i < 12; i++) {
++		reg_space[i] = readl(dev->base_addr + (i * 4));
+ 	}
+-
+ 	/* DMA registers */
+ 	for (i = 0; i < 9; i++) {
+-		reg = readl(dev->base_addr + (DMA_BUS_MODE + i * 4));
+-		memcpy((reg_space + (DMA_BUS_MODE + i * 4)), &reg, sizeof(u32));
++		reg_space[i + 12] =
++		    readl(dev->base_addr + (DMA_BUS_MODE + (i * 4)));
+ 	}
+-	reg = readl(dev->base_addr + DMA_CUR_TX_BUF_ADDR);
+-	memcpy((reg_space + DMA_CUR_TX_BUF_ADDR), &reg, sizeof(u32));
+-	reg = readl(dev->base_addr + DMA_CUR_RX_BUF_ADDR);
+-	memcpy((reg_space + DMA_CUR_RX_BUF_ADDR), &reg, sizeof(u32));
++	reg_space[22] = readl(dev->base_addr + DMA_CUR_TX_BUF_ADDR);
++	reg_space[23] = readl(dev->base_addr + DMA_CUR_RX_BUF_ADDR);
+ 
+ 	return;
+ }
+ 
+-int stmmaceth_ethtool_set_tx_csum(struct net_device *dev, u32 data)
++int stmmac_ethtool_set_tx_csum(struct net_device *dev, u32 data)
+ {
+ 	if (data)
+ 		dev->features |= NETIF_F_HW_CSUM;
+@@ -2326,14 +2253,14 @@ int stmmaceth_ethtool_set_tx_csum(struct
+ 	return 0;
+ }
+ 
+-u32 stmmaceth_ethtool_get_rx_csum(struct net_device * dev)
++u32 stmmac_ethtool_get_rx_csum(struct net_device * dev)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	return (lp->rx_csum);
+ }
+ 
+-int stmmaceth_ethtool_set_rx_csum(struct net_device *dev, u32 data)
++int stmmac_ethtool_set_rx_csum(struct net_device *dev, u32 data)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+@@ -2345,20 +2272,149 @@ int stmmaceth_ethtool_set_rx_csum(struct
+ 	return 0;
+ }
+ 
+-static struct ethtool_ops stmmaceth_ethtool_ops = {
+-	.begin = stmmaceth_check_if_running,
+-	.get_drvinfo = stmmaceth_ethtool_getdrvinfo,
+-	.get_settings = stmmaceth_ethtool_getsettings,
+-	.set_settings = stmmaceth_ethtool_setsettings,
+-	.get_msglevel = stmmaceth_ethtool_getmsglevel,
+-	.set_msglevel = stmmaceth_ethtool_setmsglevel,
+-	.get_regs = stmmaceth_ethtool_gregs,
+-	.get_regs_len = stmmaceth_ethtool_get_regs_len,
++static void
++stmmac_get_pauseparam(struct net_device *netdev,
++		      struct ethtool_pauseparam *pause)
++{
++	struct eth_driver_local *lp = netdev_priv(netdev);
++
++	spin_lock(&lp->lock);
++
++	pause->rx_pause = pause->tx_pause = 0;
++	pause->autoneg = lp->phydev->autoneg;
++
++	if (lp->flow_ctrl & FLOW_RX)
++		pause->rx_pause = 1;
++	if (lp->flow_ctrl & FLOW_TX)
++		pause->tx_pause = 1;
++
++	spin_unlock(&lp->lock);
++	return;
++}
++
++static int
++stmmac_set_pauseparam(struct net_device *netdev,
++		      struct ethtool_pauseparam *pause)
++{
++	struct eth_driver_local *lp = netdev_priv(netdev);
++	struct phy_device *phy = lp->phydev;
++	int new_pause = FLOW_OFF;
++	int ret = 0;
++
++	spin_lock(&lp->lock);
++
++	if (pause->rx_pause)
++		new_pause |= FLOW_RX;
++	if (pause->tx_pause)
++		new_pause |= FLOW_TX;
++
++	lp->flow_ctrl = new_pause;
++
++	if (phy->autoneg) {
++		if (netif_running(netdev)) {
++			struct ethtool_cmd cmd;
++			/* auto-negotiation automatically restarted */
++			cmd.cmd = ETHTOOL_NWAY_RST;
++			cmd.supported = phy->supported;
++			cmd.advertising = phy->advertising;
++			cmd.autoneg = phy->autoneg;
++			cmd.speed = phy->speed;
++			cmd.duplex = phy->duplex;
++			cmd.phy_address = phy->addr;
++			ret = phy_ethtool_sset(phy, &cmd);
++		}
++	} else {
++		unsigned long ioaddr = netdev->base_addr;
++		stmmac_flow_ctrl(ioaddr, phy->duplex, lp->flow_ctrl, lp->pause);
++	}
++	spin_unlock(&lp->lock);
++	return ret;
++}
++
++static struct {
++	const char str[ETH_GSTRING_LEN];
++} ethtool_stats_keys[] = {
++	{
++	"tx_underflow"}, {
++	"tx_carrier"}, {
++	"tx_losscarrier"}, {
++	"tx_heartbeat"}, {
++	"tx_deferred"}, {
++	"tx_vlan"}, {
++	"tx_jabber"}, {
++	"tx_frame_flushed"}, {
++	"rx_desc"}, {
++	"rx_partial"}, {
++	"rx_runt"}, {
++	"rx_toolong"}, {
++	"rx_collision"}, {
++	"rx_crc"}, {
++	"rx_lenght"}, {
++	"rx_mii"}, {
++	"rx_multicast"}, {
++	"rx_overflow"}, {
++	"rx_watchdog"}, {
++	"rx_filter"}, {
++	"rx_dropped"}, {
++	"rx_bytes"}, {
++	"tx_bytes"}, {
++	"tx_irq_n"}, {
++	"rx_irq_n"}, {
++	"tx_undeflow_irq"}, {
++	"tx_threshold"}, {
++	"tx_process_stopped_irq"}, {
++	"tx_jabber_irq"}, {
++	"rx_overflow_irq"}, {
++	"rx_buf_unav_irq"}, {
++	"rx_process_stopped_irq"}, {
++	"rx_watchdog_irq"}, {
++	"tx_early_irq"}, {
++	"fatal_bus_error_irq"}, {
++"rx_poll_n"},};
++
++static int stmmac_stats_count(struct net_device *dev)
++{
++	return EXTRA_STATS;
++}
++
++static void stmmac_ethtool_stats(struct net_device *dev,
++				 struct ethtool_stats *dummy, u64 * buf)
++{
++	struct eth_driver_local *lp = netdev_priv(dev);
++	int i;
++	u32 *extra = (u32 *) & lp->xstats;
++	for (i = 0; i < EXTRA_STATS; i++)
++		buf[i] = extra[i];
++	return;
++}
++
++static void stmmac_get_strings(struct net_device *dev, u32 stringset, u8 * buf)
++{
++	switch (stringset) {
++	case ETH_SS_STATS:
++		memcpy(buf, &ethtool_stats_keys, sizeof(ethtool_stats_keys));
++		break;
++	default:
++		WARN_ON(1);
++		break;
++	}
++	return;
++}
++
++struct ethtool_ops stmmac_ethtool_ops = {
++	.begin = stmmac_check_if_running,
++	.get_drvinfo = stmmac_ethtool_getdrvinfo,
++	.get_settings = stmmac_ethtool_getsettings,
++	.set_settings = stmmac_ethtool_setsettings,
++	.get_msglevel = stmmac_ethtool_getmsglevel,
++	.set_msglevel = stmmac_ethtool_setmsglevel,
++	.get_regs = stmmac_ethtool_gregs,
++	.get_regs_len = stmmac_ethtool_get_regs_len,
+ 	.get_link = ethtool_op_get_link,
+-	.get_rx_csum = stmmaceth_ethtool_get_rx_csum,
+-	.set_rx_csum = stmmaceth_ethtool_set_rx_csum,
++	.get_rx_csum = stmmac_ethtool_get_rx_csum,
++	.set_rx_csum = stmmac_ethtool_set_rx_csum,
+ 	.get_tx_csum = ethtool_op_get_tx_csum,
+-	.set_tx_csum = stmmaceth_ethtool_set_tx_csum,
++	.set_tx_csum = stmmac_ethtool_set_tx_csum,
+ 	.get_sg = ethtool_op_get_sg,
+ 	.set_sg = ethtool_op_set_sg,
+ #ifdef NETIF_F_TSO
+@@ -2367,14 +2423,18 @@ static struct ethtool_ops stmmaceth_etht
+ #endif
+ 	.get_ufo = ethtool_op_get_ufo,
+ 	.set_ufo = ethtool_op_set_ufo,
+-
++	.get_pauseparam = stmmac_get_pauseparam,
++	.set_pauseparam = stmmac_set_pauseparam,
++	.get_ethtool_stats = stmmac_ethtool_stats,
++	.get_stats_count = stmmac_stats_count,
++	.get_strings = stmmac_get_strings,
+ };
+ 
+ /* ----------------------------------------------------------------------------
+ 		    		IOCTL SUPPORT
+    ---------------------------------------------------------------------------*/
+ /**
+- *  stmmaceth_ioctl - Entry point for the Ioctl
++ *  stmmac_ioctl - Entry point for the Ioctl
+  *  @dev :  Device pointer.
+  *  @rq :  An IOCTL specefic structure, that can contain a pointer to
+  *  a proprietary structure used to pass information to the driver.
+@@ -2383,17 +2443,17 @@ static struct ethtool_ops stmmaceth_etht
+  *  Currently there are no special functionality supported in IOCTL, just the 
+  *  phy_mii_ioctl (it changes the PHY reg. without regard to current state).
+  */
+-static int stmmaceth_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
++static int stmmac_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	if (!netif_running(dev))
+ 		return -EINVAL;
+ 
+-	switch(cmd) {
+-        case SIOCGMIIPHY:
+-        case SIOCGMIIREG:
+-        case SIOCSMIIREG:
++	switch (cmd) {
++	case SIOCGMIIPHY:
++	case SIOCGMIIREG:
++	case SIOCSMIIREG:
+ 		if (!lp->phydev)
+ 			return -EINVAL;
+ 
+@@ -2401,44 +2461,34 @@ static int stmmaceth_ioctl(struct net_de
+ 	default:
+ 		/* do nothing */
+ 		break;
+-        }
+-        return -EOPNOTSUPP;
++	}
++	return -EOPNOTSUPP;
+ }
+ 
+ /* ----------------------------------------------------------------------------
+ 		    		VLAN SUPPORT
+    ---------------------------------------------------------------------------*/
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-static void stmmaceth_vlan_rx_register(struct net_device *dev,
+-				       struct vlan_group *grp)
++static void stmmac_vlan_rx_register(struct net_device *dev,
++				    struct vlan_group *grp)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	spin_lock(&lp->lock);
++	/* VLAN Tag identifier register already contains the VLAN tag ID. 
++	   (see hw mac initialization). */
+ 	lp->vlgrp = grp;
+-	stmmaceth_set_rx_mode(dev);
+ 	spin_unlock(&lp->lock);
+ }
+ 
+-static void stmmaceth_vlan_rx_add_vid(struct net_device *dev,
+-				      unsigned short vid)
+-{
+-	struct eth_driver_local *lp = netdev_priv(dev);
+-
+-	spin_lock(&lp->lock);
+-	stmmaceth_set_rx_mode(dev);
+-	spin_unlock(&lp->lock);
+-}
+-
+-static void stmmaceth_vlan_rx_kill_vid(struct net_device *dev,
+-				       unsigned short vid)
++static void stmmac_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
+ {
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	spin_lock(&lp->lock);
+ 	if (lp->vlgrp)
+ 		lp->vlgrp->vlan_devices[vid] = NULL;
+-	stmmaceth_set_rx_mode(dev);
++
+ 	spin_unlock(&lp->lock);
+ }
+ #endif
+@@ -2447,63 +2497,63 @@ static void stmmaceth_vlan_rx_kill_vid(s
+ 		   DEVICE REGISTRATION, INITIALIZATION AND UNLOADING
+    ---------------------------------------------------------------------------*/
+ /**
+- *  stmmaceth_probe - Initialization of the adapter .
++ *  stmmac_probe - Initialization of the adapter .
+  *  @dev : device pointer
+  *  @ioaddr: device I/O address
+  *  Description: The function initializes the network device structure for
+- *	         the STMMAC driver. It also calls the low level routines 
++ *		 the STMMAC driver. It also calls the low level routines 
+  *		 in order to init the HW (i.e. the DMA engine)
+  */
+-static int stmmaceth_probe(struct net_device *dev, unsigned long ioaddr)
++static int stmmac_probe(struct net_device *dev, unsigned long ioaddr)
+ {
+ 	int ret = 0;
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+ 	ether_setup(dev);
+ 
+-	dev->open = stmmaceth_open;
+-	dev->stop = stmmaceth_release;
+-	dev->set_config = stmmaceth_config;
++	dev->open = stmmac_open;
++	dev->stop = stmmac_release;
++	dev->set_config = stmmac_config;
+ 
+-	dev->hard_start_xmit = stmmaceth_xmit;
++	dev->hard_start_xmit = stmmac_xmit;
+ 	dev->features |= (NETIF_F_SG | NETIF_F_HW_CSUM | NETIF_F_HIGHDMA);
+ 
+-	dev->get_stats = stmmaceth_stats;
+-	dev->tx_timeout = stmmaceth_tx_timeout;
++	dev->get_stats = stmmac_stats;
++	dev->tx_timeout = stmmac_tx_timeout;
+ 	dev->watchdog_timeo = msecs_to_jiffies(watchdog);
+-	dev->set_multicast_list = stmmaceth_set_rx_mode;
+-	dev->change_mtu = stmmaceth_change_mtu;
+-	dev->ethtool_ops = &stmmaceth_ethtool_ops;
+-	dev->do_ioctl = &stmmaceth_ioctl;
++	dev->set_multicast_list = stmmac_set_rx_mode;
++	dev->change_mtu = stmmac_change_mtu;
++	dev->ethtool_ops = &stmmac_ethtool_ops;
++	dev->do_ioctl = &stmmac_ioctl;
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+-	dev->poll_controller = stmmaceth_poll_controller;
++	dev->poll_controller = stmmac_poll_controller;
+ #endif
+-#ifdef CONFIG_STMMAC_NAPI
+-	dev->poll = stmmaceth_poll;
++	dev->poll = stmmac_poll;
+ 	dev->weight = CONFIG_DMA_RX_SIZE;
+-#endif
+ 
++	lp->ip_header_len = ETH_HLEN;
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	dev->features |= NETIF_F_HW_VLAN_RX | NETIF_F_HW_VLAN_FILTER;
+-	dev->vlan_rx_register = stmmaceth_vlan_rx_register;
+-	dev->vlan_rx_add_vid = stmmaceth_vlan_rx_add_vid;
+-	dev->vlan_rx_kill_vid = stmmaceth_vlan_rx_kill_vid;
++	dev->features |= NETIF_F_HW_VLAN_RX;
++	dev->vlan_rx_register = stmmac_vlan_rx_register;
++	dev->vlan_rx_kill_vid = stmmac_vlan_rx_kill_vid;
++	lp->ip_header_len = VLAN_ETH_HLEN;
+ #endif
+ 
+ 	lp->msg_enable = netif_msg_init(debug, default_msg_level);
+-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+-	lp->ip_header_len = VLAN_ETH_HLEN;
+-#else
+-	lp->ip_header_len = ETH_HLEN;
+-#endif
++
+ 	lp->rx_csum = 0;
+ 
+ 	/* Check the module arguments */
+-	stmmaceth_check_mod_params(dev);
++	stmmac_verify_args();
+ 
+ 	/* Set the I/O base addr */
+ 	dev->base_addr = ioaddr;
+ 
++	if (flow_ctrl)
++		lp->flow_ctrl = FLOW_AUTO;	/* RX/TX pause on */
++
++	lp->pause = pause;
++
+ 	/* Get the MAC address */
+ 	get_mac_address(ioaddr, dev->dev_addr);
+ 
+@@ -2519,18 +2569,19 @@ static int stmmaceth_probe(struct net_de
+ 	}
+ 
+ 	spin_lock_init(&lp->lock);
++	spin_lock_init(&lp->tx_lock);
+ 
+ 	return (ret);
+ }
+ 
+ /**
+- * stmmaceth_dvr_probe
++ * stmmac_dvr_probe
+  * @pdev: platform device pointer
+  * Description: The driver is initialized through platform_device.  
+  * 		Structures which define the configuration needed by the board 
+  *		are defined in a board structure in arch/sh/boards/st/ .
+  */
+-static int stmmaceth_dvr_probe(struct platform_device *pdev)
++static int stmmac_dvr_probe(struct platform_device *pdev)
+ {
+ 	int ret = 0;
+ 	struct resource *res;
+@@ -2589,7 +2640,7 @@ static int stmmaceth_dvr_probe(struct pl
+ 	platform_set_drvdata(pdev, ndev);
+ 
+ 	/* Network Device Registration */
+-	ret = stmmaceth_probe(ndev, (unsigned long)addr);
++	ret = stmmac_probe(ndev, (unsigned long)addr);
+ 	if (ret < 0) {
+ 		goto out;
+ 	}
+@@ -2617,7 +2668,7 @@ static int stmmaceth_dvr_probe(struct pl
+ }
+ 
+ /**
+- * stmmaceth_dvr_remove
++ * stmmac_dvr_remove
+  * @pdev: platform device pointer
+  * Description: This function performs the following:
+  *   		- Reset the TX/RX processes
+@@ -2627,7 +2678,7 @@ static int stmmaceth_dvr_probe(struct pl
+  *   		- Unregister the MDIO bus
+  *   		- unmap the memory resources
+  */
+-static int stmmaceth_dvr_remove(struct platform_device *pdev)
++static int stmmac_dvr_remove(struct platform_device *pdev)
+ {
+ 	struct net_device *ndev = platform_get_drvdata(pdev);
+ 	struct eth_driver_local *lp = netdev_priv(ndev);
+@@ -2635,11 +2686,11 @@ static int stmmaceth_dvr_remove(struct p
+ 
+ 	printk(KERN_INFO "%s:\n\tremoving driver", __FUNCTION__);
+ 
+-	stmmaceth_dma_stop_rx(ndev->base_addr);
+-	stmmaceth_dma_stop_tx(ndev->base_addr);
++	stmmac_dma_stop_rx(ndev->base_addr);
++	stmmac_dma_stop_tx(ndev->base_addr);
+ 
+-	stmmaceth_mac_disable_rx(ndev);
+-	stmmaceth_mac_disable_tx(ndev);
++	stmmac_mac_disable_rx(ndev);
++	stmmac_mac_disable_tx(ndev);
+ 
+ 	netif_carrier_off(ndev);
+ 
+@@ -2657,36 +2708,36 @@ static int stmmaceth_dvr_remove(struct p
+ 	return (0);
+ }
+ 
+-static struct platform_driver stmmaceth_driver = {
++static struct platform_driver stmmac_driver = {
+ 	.driver = {
+ 		   .name = RESOURCE_NAME,
+ 		   },
+-	.probe = stmmaceth_dvr_probe,
+-	.remove = stmmaceth_dvr_remove,
++	.probe = stmmac_dvr_probe,
++	.remove = stmmac_dvr_remove,
+ };
+ 
+ /**
+- * stmmaceth_init_module - Entry point for the driver
++ * stmmac_init_module - Entry point for the driver
+  * Description: This function is the entry point for the driver.
+  */
+-static int __init stmmaceth_init_module(void)
++static int __init stmmac_init_module(void)
+ {
+-	return platform_driver_register(&stmmaceth_driver);
++	return platform_driver_register(&stmmac_driver);
+ }
+ 
+ /**
+- * stmmaceth_cleanup_module - Cleanup routine for the driver
++ * stmmac_cleanup_module - Cleanup routine for the driver
+  * Description: This function is the cleanup routine for the driver.
+  */
+-static void __exit stmmaceth_cleanup_module(void)
++static void __exit stmmac_cleanup_module(void)
+ {
+-	platform_driver_unregister(&stmmaceth_driver);
++	platform_driver_unregister(&stmmac_driver);
+ }
+ 
+ /* --------------------------------------------------------------------------
+  * 		Parse the optional command line arguments
+  * --------------------------------------------------------------------------*/
+-static int __init stmmaceth_cmdline_opt(char *str)
++static int __init stmmac_cmdline_opt(char *str)
+ {
+ 	char *opt;
+ 
+@@ -2700,24 +2751,28 @@ static int __init stmmaceth_cmdline_opt(
+ 			phy_n = simple_strtoul(opt + 8, NULL, 0);
+ 		} else if (!strncmp(opt, "watchdog:", 9)) {
+ 			watchdog = simple_strtoul(opt + 9, NULL, 0);
++		} else if (!strncmp(opt, "flow_ctrl:", 10)) {
++			flow_ctrl = simple_strtoul(opt + 10, NULL, 0);
+ 		} else if (!strncmp(opt, "pause:", 6)) {
+-			pause_time = simple_strtoul(opt + 6, NULL, 0);
+-		} else if (!strncmp(opt, "rxsize:", 7)) {
+-			min_rx_pkt_size = simple_strtoul(opt + 7, NULL, 0);
+-		} else if (!strncmp(opt, "bfsize:", 7)) {
+-			dma_buffer_size = simple_strtoul(opt + 7, NULL, 0);
+-		} else if (!strncmp(opt, "txqueue:", 8)) {
+-			tx_queue_size = simple_strtoul(opt + 8, NULL, 0);
++			pause = simple_strtoul(opt + 6, NULL, 0);
++		} else if (!strncmp(opt, "minrx:", 8)) {
++			rx_copybreak = simple_strtoul(opt + 8, NULL, 0);
++		} else if (!strncmp(opt, "txmit:", 6)) {
++			tx_aggregation = simple_strtoul(opt + 6, NULL, 0);
++		} else if (!strncmp(opt, "rxmit:", 6)) {
++			rx_irq_mitigation = simple_strtoul(opt + 6, NULL, 0);
++		} else if (!strncmp(opt, "ttc:", 4)) {
++			ttc = simple_strtoul(opt + 4, NULL, 0);
+ 		}
+ 	}
+ 	return (0);
+ }
+ 
+-__setup("stmmaceth=", stmmaceth_cmdline_opt);
++__setup("stmmaceth=", stmmac_cmdline_opt);
+ 
+-module_init(stmmaceth_init_module);
+-module_exit(stmmaceth_cleanup_module);
++module_init(stmmac_init_module);
++module_exit(stmmac_cleanup_module);
+ 
+-MODULE_DESCRIPTION("STM MAC Ethernet driver");
+-MODULE_AUTHOR("Giuseppe Cavallaro");
++MODULE_DESCRIPTION("STMMAC 10/100 Ethernet driver");
++MODULE_AUTHOR("Giuseppe Cavallaro <peppe.cavallaro@st.com>");
+ MODULE_LICENSE("GPL");
+--- linux.orig/drivers/net/stmmac.h	2008-01-08 17:11:42.000000000 +0000
++++ linux/drivers/net/stmmac.h	2008-02-15 06:58:20.629995000 +0000
+@@ -3,65 +3,65 @@
+  *	 			MAC BLOCK defines
+  *---------------------------------------------------------------------------*/
+ /* MAC CSR offset */
+-#define MAC_CONTROL               0x00000000  /* MAC Control */
+-#define MAC_ADDR_HIGH             0x00000004  /* MAC Address High */
+-#define MAC_ADDR_LOW              0x00000008  /* MAC Address Low */
+-#define MAC_HASH_HIGH             0x0000000c  /* Multicast Hash Table High */
+-#define MAC_HASH_LOW              0x00000010  /* Multicast Hash Table Low */
+-#define MAC_MII_ADDR              0x00000014  /* MII Address */
+-#define MAC_MII_DATA              0x00000018  /* MII Data */
+-#define MAC_FLOW_CONTROL          0x0000001c  /* Flow Control */
+-#define MAC_VLAN1                 0x00000020  /* VLAN1 Tag */
+-#define MAC_VLAN2                 0x00000024  /* VLAN2 Tag */
+-#define MAC_WAKEUP_FILTER         0x00000028  /* Wake-up Frame Filter */
+-#define MAC_WAKEUP_CONTROL_STATUS 0x0000002c  /* Wake-up Control And Status */
++#define MAC_CONTROL               0x00000000	/* MAC Control */
++#define MAC_ADDR_HIGH             0x00000004	/* MAC Address High */
++#define MAC_ADDR_LOW              0x00000008	/* MAC Address Low */
++#define MAC_HASH_HIGH             0x0000000c	/* Multicast Hash Table High */
++#define MAC_HASH_LOW              0x00000010	/* Multicast Hash Table Low */
++#define MAC_MII_ADDR              0x00000014	/* MII Address */
++#define MAC_MII_DATA              0x00000018	/* MII Data */
++#define MAC_FLOW_CTRL   	  0x0000001c	/* Flow Control */
++#define MAC_VLAN1                 0x00000020	/* VLAN1 Tag */
++#define MAC_VLAN2                 0x00000024	/* VLAN2 Tag */
++#define MAC_WAKEUP_FILTER         0x00000028	/* Wake-up Frame Filter */
++#define MAC_WAKEUP_CONTROL_STATUS 0x0000002c	/* Wake-up Control And Status */
+ 
+ /* MAC CTRL defines */
+-#define MAC_CONTROL_RA            0x80000000  /* Receive All Mode */
+-#define MAC_CONTROL_BLE           0x40000000  /* Endian Mode */
+-#define MAC_CONTROL_HBD           0x10000000  /* Heartbeat Disable */
+-#define MAC_CONTROL_PS            0x08000000  /* Port Select */
+-#define MAC_CONTROL_DRO           0x00800000  /* Disable Receive Own */
+-#define MAC_CONTROL_EXT_LOOPBACK  0x00400000  /* Reserved (ext loopback?) */
+-#define MAC_CONTROL_OM            0x00200000  /* Loopback Operating Mode */
+-#define MAC_CONTROL_F             0x00100000  /* Full Duplex Mode */
+-#define MAC_CONTROL_PM            0x00080000  /* Pass All Multicast */
+-#define MAC_CONTROL_PR            0x00040000  /* Promiscuous Mode */
+-#define MAC_CONTROL_IF            0x00020000  /* Inverse Filtering */
+-#define MAC_CONTROL_PB            0x00010000  /* Pass Bad Frames */
+-#define MAC_CONTROL_HO            0x00008000  /* Hash Only Filtering Mode */
+-#define MAC_CONTROL_HP            0x00002000  /* Hash/Perfect Filtering Mode */
+-#define MAC_CONTROL_LCC           0x00001000  /* Late Collision Control */
+-#define MAC_CONTROL_DBF           0x00000800  /* Disable Broadcast Frames */
+-#define MAC_CONTROL_DRTY          0x00000400  /* Disable Retry */
+-#define MAC_CONTROL_ASTP          0x00000100  /* Automatic Pad Stripping */
+-#define MAC_CONTROL_BOLMT_10      0x00000000  /* Back Off Limit 10 */
+-#define MAC_CONTROL_BOLMT_8       0x00000040  /* Back Off Limit 8 */
+-#define MAC_CONTROL_BOLMT_4       0x00000080  /* Back Off Limit 4 */
+-#define MAC_CONTROL_BOLMT_1       0x000000c0  /* Back Off Limit 1 */
+-#define MAC_CONTROL_DC            0x00000020  /* Deferral Check */
+-#define MAC_CONTROL_TE            0x00000008  /* Transmitter Enable */
+-#define MAC_CONTROL_RE            0x00000004  /* Receiver Enable */
++#define MAC_CONTROL_RA            0x80000000	/* Receive All Mode */
++#define MAC_CONTROL_BLE           0x40000000	/* Endian Mode */
++#define MAC_CONTROL_HBD           0x10000000	/* Heartbeat Disable */
++#define MAC_CONTROL_PS            0x08000000	/* Port Select */
++#define MAC_CONTROL_DRO           0x00800000	/* Disable Receive Own */
++#define MAC_CONTROL_EXT_LOOPBACK  0x00400000	/* Reserved (ext loopback?) */
++#define MAC_CONTROL_OM            0x00200000	/* Loopback Operating Mode */
++#define MAC_CONTROL_F             0x00100000	/* Full Duplex Mode */
++#define MAC_CONTROL_PM            0x00080000	/* Pass All Multicast */
++#define MAC_CONTROL_PR            0x00040000	/* Promiscuous Mode */
++#define MAC_CONTROL_IF            0x00020000	/* Inverse Filtering */
++#define MAC_CONTROL_PB            0x00010000	/* Pass Bad Frames */
++#define MAC_CONTROL_HO            0x00008000	/* Hash Only Filtering Mode */
++#define MAC_CONTROL_HP            0x00002000	/* Hash/Perfect Filtering Mode */
++#define MAC_CONTROL_LCC           0x00001000	/* Late Collision Control */
++#define MAC_CONTROL_DBF           0x00000800	/* Disable Broadcast Frames */
++#define MAC_CONTROL_DRTY          0x00000400	/* Disable Retry */
++#define MAC_CONTROL_ASTP          0x00000100	/* Automatic Pad Stripping */
++#define MAC_CONTROL_BOLMT_10      0x00000000	/* Back Off Limit 10 */
++#define MAC_CONTROL_BOLMT_8       0x00000040	/* Back Off Limit 8 */
++#define MAC_CONTROL_BOLMT_4       0x00000080	/* Back Off Limit 4 */
++#define MAC_CONTROL_BOLMT_1       0x000000c0	/* Back Off Limit 1 */
++#define MAC_CONTROL_DC            0x00000020	/* Deferral Check */
++#define MAC_CONTROL_TE            0x00000008	/* Transmitter Enable */
++#define MAC_CONTROL_RE            0x00000004	/* Receiver Enable */
+ 
+ /* MAC FLOW CTRL defines */
+-#define MAC_FLOW_CONTROL_PT_MASK  0xffff0000  /* Pause Time Mask */
+-#define MAC_FLOW_CONTROL_PT_SHIFT 16
+-#define MAC_FLOW_CONTROL_PCF      0x00000004  /* Pass Control Frames */
+-#define MAC_FLOW_CONTROL_FCE      0x00000002  /* Flow Control Enable */
+-#define MAC_FLOW_CONTROL_PAUSE    0x00000001  /* Flow Control Busy ... */
++#define MAC_FLOW_CTRL_PT_MASK   0xffff0000	/* Pause Time Mask */
++#define MAC_FLOW_CTRL_PT_SHIFT  16
++#define MAC_FLOW_CTRL_PASS      0x00000004	/* Pass Control Frames */
++#define MAC_FLOW_CTRL_ENABLE    0x00000002	/* Flow Control Enable */
++#define MAC_FLOW_CTRL_PAUSE     0x00000001	/* Flow Control Busy ... */
+ 
+ /* MII ADDR  defines */
+-#define MAC_MII_ADDR_WRITE        0x00000002  /* MII Write */
+-#define MAC_MII_ADDR_BUSY         0x00000001  /* MII Busy */
++#define MAC_MII_ADDR_WRITE        0x00000002	/* MII Write */
++#define MAC_MII_ADDR_BUSY         0x00000001	/* MII Busy */
+ 
+ /* MAC Management Counters register */
+-#define MMC_CONTROL               0x00000100  /* MMC Control */
+-#define MMC_HIGH_INTR             0x00000104  /* MMC High Interrupt */
+-#define MMC_LOW_INTR              0x00000108  /* MMC Low Interrupt */
+-#define MMC_HIGH_INTR_MASK        0x0000010c  /* MMC High Interrupt Mask */
+-#define MMC_LOW_INTR_MASK         0x00000110  /* MMC Low Interrupt Mask */
++#define MMC_CONTROL               0x00000100	/* MMC Control */
++#define MMC_HIGH_INTR             0x00000104	/* MMC High Interrupt */
++#define MMC_LOW_INTR              0x00000108	/* MMC Low Interrupt */
++#define MMC_HIGH_INTR_MASK        0x0000010c	/* MMC High Interrupt Mask */
++#define MMC_LOW_INTR_MASK         0x00000110	/* MMC Low Interrupt Mask */
+ 
+-#define MMC_CONTROL_MAX_FRM_MASK  0x0003ff8   /* Maximum Frame Size */
++#define MMC_CONTROL_MAX_FRM_MASK  0x0003ff8	/* Maximum Frame Size */
+ #define MMC_CONTROL_MAX_FRM_SHIFT 3
+ #define MMC_CONTROL_MAX_FRAME 	  0x7FF
+ 
+@@ -69,145 +69,145 @@
+  * 				DMA BLOCK defines
+  *---------------------------------------------------------------------------*/
+ /* DMA CRS Control and Status Register Mapping */
+-#define DMA_BUS_MODE              0x00001000  /* Bus Mode */
+-#define DMA_XMT_POLL_DEMAND       0x00001004  /* Transmit Poll Demand */
+-#define DMA_RCV_POLL_DEMAND       0x00001008  /* Received Poll Demand */
+-#define DMA_RCV_BASE_ADDR         0x0000100c  /* Receive List Base */
+-#define DMA_TX_BASE_ADDR          0x00001010  /* Transmit List Base */
+-#define DMA_STATUS                0x00001014  /* Status Register */
+-#define DMA_CONTROL               0x00001018  /* Control (Operational Mode) */
+-#define DMA_INTR_ENA              0x0000101c  /* Interrupt Enable */
+-#define DMA_MISSED_FRAME_CTR      0x00001020  /* Missed Frame Counter */
+-#define DMA_CUR_TX_BUF_ADDR       0x00001050  /* Current Host Transmit Buffer */
+-#define DMA_CUR_RX_BUF_ADDR       0x00001054  /* Current Host Receive Buffer */
++#define DMA_BUS_MODE              0x00001000	/* Bus Mode */
++#define DMA_XMT_POLL_DEMAND       0x00001004	/* Transmit Poll Demand */
++#define DMA_RCV_POLL_DEMAND       0x00001008	/* Received Poll Demand */
++#define DMA_RCV_BASE_ADDR         0x0000100c	/* Receive List Base */
++#define DMA_TX_BASE_ADDR          0x00001010	/* Transmit List Base */
++#define DMA_STATUS                0x00001014	/* Status Register */
++#define DMA_CONTROL               0x00001018	/* Control (Operational Mode) */
++#define DMA_INTR_ENA              0x0000101c	/* Interrupt Enable */
++#define DMA_MISSED_FRAME_CTR      0x00001020	/* Missed Frame Counter */
++#define DMA_CUR_TX_BUF_ADDR       0x00001050	/* Current Host Transmit Buffer */
++#define DMA_CUR_RX_BUF_ADDR       0x00001054	/* Current Host Receive Buffer */
+ 
+ /*  DMA Bus Mode register defines */
+-#define DMA_BUS_MODE_DBO          0x00100000  /* Descriptor Byte Ordering */
+-#define DMA_BUS_MODE_PBL_MASK     0x00003f00  /* Programmable Burst Length */
++#define DMA_BUS_MODE_DBO          0x00100000	/* Descriptor Byte Ordering */
++#define DMA_BUS_MODE_PBL_MASK     0x00003f00	/* Programmable Burst Length */
+ #define DMA_BUS_MODE_PBL_SHIFT    8
+-#define DMA_BUS_MODE_BLE          0x00000080  /* Big Endian/Little Endian */
+-#define DMA_BUS_MODE_DSL_MASK     0x0000007c  /* Descriptor Skip Length */
+-#define DMA_BUS_MODE_DSL_SHIFT    2           /*       (in DWORDS)      */
+-#define DMA_BUS_MODE_BAR_BUS      0x00000002  /* Bar-Bus Arbitration */
+-#define DMA_BUS_MODE_SFT_RESET    0x00000001  /* Software Reset */
++#define DMA_BUS_MODE_BLE          0x00000080	/* Big Endian/Little Endian */
++#define DMA_BUS_MODE_DSL_MASK     0x0000007c	/* Descriptor Skip Length */
++#define DMA_BUS_MODE_DSL_SHIFT    2	/*       (in DWORDS)      */
++#define DMA_BUS_MODE_BAR_BUS      0x00000002	/* Bar-Bus Arbitration */
++#define DMA_BUS_MODE_SFT_RESET    0x00000001	/* Software Reset */
+ #define DMA_BUS_MODE_DEFAULT      0x00000000
+ 
+ /* DMA Status register defines */
+-#define DMA_STATUS_EB_MASK        0x00380000  /* Error Bits Mask */
+-#define DMA_STATUS_EB_TX_ABORT    0x00080000  /* Error Bits - TX Abort */
+-#define DMA_STATUS_EB_RX_ABORT    0x00100000  /* Error Bits - RX Abort */
+-#define DMA_STATUS_TS_MASK        0x00700000  /* Transmit Process State */
++#define DMA_STATUS_EB_MASK        0x00380000	/* Error Bits Mask */
++#define DMA_STATUS_EB_TX_ABORT    0x00080000	/* Error Bits - TX Abort */
++#define DMA_STATUS_EB_RX_ABORT    0x00100000	/* Error Bits - RX Abort */
++#define DMA_STATUS_TS_MASK        0x00700000	/* Transmit Process State */
+ #define DMA_STATUS_TS_SHIFT       20
+-#define DMA_STATUS_RS_MASK        0x000e0000  /* Receive Process State */
++#define DMA_STATUS_RS_MASK        0x000e0000	/* Receive Process State */
+ #define DMA_STATUS_RS_SHIFT       17
+-#define DMA_STATUS_NIS            0x00010000  /* Normal Interrupt Summary */
+-#define DMA_STATUS_AIS            0x00008000  /* Abnormal Interrupt Summary */
+-#define DMA_STATUS_ERI            0x00004000  /* Early Receive Interrupt */
+-#define DMA_STATUS_FBI            0x00002000  /* Fatal Bus Error Interrupt */
+-#define DMA_STATUS_ETI            0x00000400  /* Early Transmit Interrupt */
+-#define DMA_STATUS_RWT            0x00000200  /* Receive Watchdog Timeout */
+-#define DMA_STATUS_RPS            0x00000100  /* Receive Process Stopped */
+-#define DMA_STATUS_RU             0x00000080  /* Receive Buffer Unavailable */
+-#define DMA_STATUS_RI             0x00000040  /* Receive Interrupt */
+-#define DMA_STATUS_UNF            0x00000020  /* Transmit Underflow */
+-#define DMA_STATUS_OVF            0x00000010  /* Receive Overflow */
+-#define DMA_STATUS_TJT            0x00000008  /* Transmit Jabber Timeout */
+-#define DMA_STATUS_TU             0x00000004  /* Transmit Buffer Unavailable */
+-#define DMA_STATUS_TPS            0x00000002  /* Transmit Process Stopped */
+-#define DMA_STATUS_TI             0x00000001  /* Transmit Interrupt */
++#define DMA_STATUS_NIS            0x00010000	/* Normal Interrupt Summary */
++#define DMA_STATUS_AIS            0x00008000	/* Abnormal Interrupt Summary */
++#define DMA_STATUS_ERI            0x00004000	/* Early Receive Interrupt */
++#define DMA_STATUS_FBI            0x00002000	/* Fatal Bus Error Interrupt */
++#define DMA_STATUS_ETI            0x00000400	/* Early Transmit Interrupt */
++#define DMA_STATUS_RWT            0x00000200	/* Receive Watchdog Timeout */
++#define DMA_STATUS_RPS            0x00000100	/* Receive Process Stopped */
++#define DMA_STATUS_RU             0x00000080	/* Receive Buffer Unavailable */
++#define DMA_STATUS_RI             0x00000040	/* Receive Interrupt */
++#define DMA_STATUS_UNF            0x00000020	/* Transmit Underflow */
++#define DMA_STATUS_OVF            0x00000010	/* Receive Overflow */
++#define DMA_STATUS_TJT            0x00000008	/* Transmit Jabber Timeout */
++#define DMA_STATUS_TU             0x00000004	/* Transmit Buffer Unavailable */
++#define DMA_STATUS_TPS            0x00000002	/* Transmit Process Stopped */
++#define DMA_STATUS_TI             0x00000001	/* Transmit Interrupt */
+ 
+ /* DMA Control register defines */
+-#define DMA_CONTROL_SF            0x00200000  /* Store And Forward */
+-#define DMA_CONTROL_TTC_MASK      0x0001c000  /* Transmit Threshold Control */
+-#define DMA_CONTROL_TTC_32        0x00000000  /* Threshold is 32 DWORDS */
+-#define DMA_CONTROL_TTC_64        0x00004000  /* Threshold is 64 DWORDS */
+-#define DMA_CONTROL_TTC_128       0x00008000  /* Threshold is 128 DWORDS */
+-#define DMA_CONTROL_TTC_256       0x0000c000  /* Threshold is 256 DWORDS */
+-#define DMA_CONTROL_TTC_18        0x00010000  /* Threshold is 18 DWORDS */
+-#define DMA_CONTROL_TTC_24        0x00014000  /* Threshold is 24 DWORDS */
+-#define DMA_CONTROL_TTC__32_      0x00018000  /* Threshold is 32 DWORDS */
+-#define DMA_CONTROL_TTC_40        0x0001c000  /* Threshold is 40 DWORDS */
+-#define DMA_CONTROL_ST            0x00002000  /* Start/Stop Transmission */
+-#define DMA_CONTROL_SE            0x00000008  /* Stop On Empty */
+-#define DMA_CONTROL_OSF           0x00000004  /* Operate On 2nd Frame */
+-#define DMA_CONTROL_SR            0x00000002  /* Start/Stop Receive */
++#define DMA_CONTROL_SF            0x00200000	/* Store And Forward */
++#define DMA_CONTROL_TTC_MASK      0x0001c000	/* Transmit Threshold Control */
++#define DMA_CONTROL_TTC_32        0x00000000	/* Threshold is 32 DWORDS */
++#define DMA_CONTROL_TTC_64        0x00004000	/* Threshold is 64 DWORDS */
++#define DMA_CONTROL_TTC_128       0x00008000	/* Threshold is 128 DWORDS */
++#define DMA_CONTROL_TTC_256       0x0000c000	/* Threshold is 256 DWORDS */
++#define DMA_CONTROL_TTC_18        0x00010000	/* Threshold is 18 DWORDS */
++#define DMA_CONTROL_TTC_24        0x00014000	/* Threshold is 24 DWORDS */
++#define DMA_CONTROL_TTC__32_      0x00018000	/* Threshold is 32 DWORDS */
++#define DMA_CONTROL_TTC_40        0x0001c000	/* Threshold is 40 DWORDS */
++#define DMA_CONTROL_ST            0x00002000	/* Start/Stop Transmission */
++#define DMA_CONTROL_SE            0x00000008	/* Stop On Empty */
++#define DMA_CONTROL_OSF           0x00000004	/* Operate On 2nd Frame */
++#define DMA_CONTROL_SR            0x00000002	/* Start/Stop Receive */
+ 
+ /* DMA Interrupt Enable register defines */
+-#define DMA_INTR_ENA_NIE          0x00010000  /* Normal Interrupt Summary */
+-#define DMA_INTR_ENA_AIE          0x00008000  /* Abnormal Interrupt Summary */
+-#define DMA_INTR_ENA_ERE          0x00004000  /* Early Receive */
+-#define DMA_INTR_ENA_FBE          0x00002000  /* Fatal Bus Error */
+-#define DMA_INTR_ENA_ETE          0x00000400  /* Early Transmit */
+-#define DMA_INTR_ENA_RWE          0x00000200  /* Receive Watchdog */
+-#define DMA_INTR_ENA_RSE          0x00000100  /* Receive Stopped */
+-#define DMA_INTR_ENA_RUE          0x00000080  /* Receive Buffer Unavailable */
+-#define DMA_INTR_ENA_RIE          0x00000040  /* Receive Interrupt */
+-#define DMA_INTR_ENA_UNE          0x00000020  /* Underflow */
+-#define DMA_INTR_ENA_OVE          0x00000010  /* Receive Overflow */
+-#define DMA_INTR_ENA_TJE          0x00000008  /* Transmit Jabber */
+-#define DMA_INTR_ENA_TUE          0x00000004  /* Transmit Buffer Unavailable */
+-#define DMA_INTR_ENA_TSE          0x00000002  /* Transmit Stopped */
+-#define DMA_INTR_ENA_TIE          0x00000001  /* Transmit Interrupt */
++#define DMA_INTR_ENA_NIE          0x00010000	/* Normal Interrupt Summary */
++#define DMA_INTR_ENA_AIE          0x00008000	/* Abnormal Interrupt Summary */
++#define DMA_INTR_ENA_ERE          0x00004000	/* Early Receive */
++#define DMA_INTR_ENA_FBE          0x00002000	/* Fatal Bus Error */
++#define DMA_INTR_ENA_ETE          0x00000400	/* Early Transmit */
++#define DMA_INTR_ENA_RWE          0x00000200	/* Receive Watchdog */
++#define DMA_INTR_ENA_RSE          0x00000100	/* Receive Stopped */
++#define DMA_INTR_ENA_RUE          0x00000080	/* Receive Buffer Unavailable */
++#define DMA_INTR_ENA_RIE          0x00000040	/* Receive Interrupt */
++#define DMA_INTR_ENA_UNE          0x00000020	/* Underflow */
++#define DMA_INTR_ENA_OVE          0x00000010	/* Receive Overflow */
++#define DMA_INTR_ENA_TJE          0x00000008	/* Transmit Jabber */
++#define DMA_INTR_ENA_TUE          0x00000004	/* Transmit Buffer Unavailable */
++#define DMA_INTR_ENA_TSE          0x00000002	/* Transmit Stopped */
++#define DMA_INTR_ENA_TIE          0x00000001	/* Transmit Interrupt */
+ /* DMA default interrupt mask */
+ #define DMA_INTR_DEFAULT_MASK 	(DMA_INTR_ENA_NIE | DMA_INTR_ENA_RIE | \
+-				DMA_INTR_ENA_TIE)
++				DMA_INTR_ENA_TIE | DMA_INTR_ENA_AIE)
+ /* STMAC110 DMA Missed Frame Counter register defines */
+-#define DMA_MISSED_FRAME_OVE      0x10000000  /* FIFO Overflow Overflow */
+-#define DMA_MISSED_FRAME_OVE_CNTR 0x0ffe0000  /* Overflow Frame Counter */
+-#define DMA_MISSED_FRAME_OVE_M    0x00010000  /* Missed Frame Overflow */
+-#define DMA_MISSED_FRAME_M_CNTR   0x0000ffff  /* Missed Frame Couinter */
++#define DMA_MISSED_FRAME_OVE      0x10000000	/* FIFO Overflow Overflow */
++#define DMA_MISSED_FRAME_OVE_CNTR 0x0ffe0000	/* Overflow Frame Counter */
++#define DMA_MISSED_FRAME_OVE_M    0x00010000	/* Missed Frame Overflow */
++#define DMA_MISSED_FRAME_M_CNTR   0x0000ffff	/* Missed Frame Couinter */
+ 
+ /*----------------------------------------------------------------------------
+  * 		    	    Descriptor defines
+  *---------------------------------------------------------------------------*/
+ /* Common fields */
+-#define OWN_BIT			0x80000000  /* Own Bit (owned by hardware) */
+-#define DES1_CONTROL_CH		0x01000000  /* Second Address Chained */
+-#define DES1_CONTROL_TER	0x02000000  /* End of Ring */
+-#define DES1_RBS2_SIZE_MASK	0x003ff800  /* Buffer 2 Size Mask */
+-#define DES1_RBS2_SIZE_SHIFT	11          /* Buffer 2 Size Shift */
+-#define DES1_RBS1_SIZE_MASK	0x000007ff  /* Buffer 1 Size Mask */
+-#define DES1_RBS1_SIZE_SHIFT	0           /* Buffer 1 Size Shift */
++#define OWN_BIT			0x80000000	/* Own Bit (owned by hardware) */
++#define DES1_CONTROL_CH		0x01000000	/* Second Address Chained */
++#define DES1_CONTROL_TER	0x02000000	/* End of Ring */
++#define DES1_RBS2_SIZE_MASK	0x003ff800	/* Buffer 2 Size Mask */
++#define DES1_RBS2_SIZE_SHIFT	11	/* Buffer 2 Size Shift */
++#define DES1_RBS1_SIZE_MASK	0x000007ff	/* Buffer 1 Size Mask */
++#define DES1_RBS1_SIZE_SHIFT	0	/* Buffer 1 Size Shift */
+ 
+ /* Receive Descriptor */
+-#define RDES0_STATUS_FILTER_FAIL  0x40000000  /* Filtering Fail */
+-#define RDES0_STATUS_FL_MASK      0x3fff0000  /* Frame Length Mask */
+-#define RDES0_STATUS_FL_SHIFT     16          /* Frame Length Shift */
+-#define RDES0_STATUS_ES           0x00008000  /* Error Summary */
+-#define RDES0_STATUS_DE           0x00004000  /* Descriptor Error */
+-#define RDES0_STATUS_PFE          0x00002000  /* Partial Frame Error */
+-#define RDES0_STATUS_LENGTH_ERROR 0x00001000  /* Length Error */
+-#define RDES0_STATUS_RUNT_FRM     0x00000800  /* Runt Frame */
+-#define RDES0_STATUS_MULTICST_FRM 0x00000400  /* Multicast Frame */
+-#define RDES0_STATUS_FS           0x00000200  /* First Descriptor */
+-#define RDES0_STATUS_LS           0x00000100  /* Last Descriptor */
+-#define RDES0_STATUS_TL           0x00000080  /* Frame Too Long */
+-#define RDES0_STATUS_COL_SEEN     0x00000040  /* Collision Seen */
+-#define RDES0_STATUS_FRM_TYPE     0x00000020  /* Frame Type */
+-#define RDES0_STATUS_RX_WATCHDOG  0x00000010  /* Receive Watchdog */
+-#define RDES0_STATUS_MII_ERR      0x00000008  /* Report on MII Error */
+-#define RDES0_STATUS_DRIBBLE      0x00000004  /* Dribbling Bit */
+-#define RDES0_STATUS_CE           0x00000002  /* CRC Error */
+-#define RDES0_STATUS_0            0x00000000  /* Always tied to zero */
++#define RDES0_STATUS_FILTER_FAIL  0x40000000	/* Filtering Fail */
++#define RDES0_STATUS_FL_MASK      0x3fff0000	/* Frame Length Mask */
++#define RDES0_STATUS_FL_SHIFT     16	/* Frame Length Shift */
++#define RDES0_STATUS_ES           0x00008000	/* Error Summary */
++#define RDES0_STATUS_DE           0x00004000	/* Descriptor Error */
++#define RDES0_STATUS_PFE          0x00002000	/* Partial Frame Error */
++#define RDES0_STATUS_LENGTH_ERROR 0x00001000	/* Length Error */
++#define RDES0_STATUS_RUNT_FRM     0x00000800	/* Runt Frame */
++#define RDES0_STATUS_MULTICST_FRM 0x00000400	/* Multicast Frame */
++#define RDES0_STATUS_FS           0x00000200	/* First Descriptor */
++#define RDES0_STATUS_LS           0x00000100	/* Last Descriptor */
++#define RDES0_STATUS_TL           0x00000080	/* Frame Too Long */
++#define RDES0_STATUS_COL_SEEN     0x00000040	/* Collision Seen */
++#define RDES0_STATUS_FRM_TYPE     0x00000020	/* Frame Type */
++#define RDES0_STATUS_RX_WATCHDOG  0x00000010	/* Receive Watchdog */
++#define RDES0_STATUS_MII_ERR      0x00000008	/* Report on MII Error */
++#define RDES0_STATUS_DRIBBLE      0x00000004	/* Dribbling Bit */
++#define RDES0_STATUS_CE           0x00000002	/* CRC Error */
++#define RDES0_STATUS_0            0x00000000	/* Always tied to zero */
+ 
+-#define RDES1_CONTROL_DIOC        0x80000000  /* Disable Intr On Completion */
+-#define RDES0_STATUS_ERROR  (RDES0_STATUS_ES|RDES0_STATUS_LENGTH_ERROR|RDES0_STATUS_MII_ERR)
++#define RDES1_CONTROL_DIC        0x80000000	/* Disable Intr On Completion */
++#define RDES0_STATUS_ERROR	  0x00008000
+ 
+ /* Transmit Descriptor */
+-#define TDES0_STATUS_ES		  0x00008000  /* Error Summary */
+-#define TDES0_STATUS_LOSS_CARRIER 0x00000800  /* Loss of Carrier */
+-#define TDES0_STATUS_NO_CARRIER   0x00000400  /* No Carrier */
+-#define TDES0_STATUS_LATE_COL     0x00000200  /* Late Collision */
+-#define TDES0_STATUS_EX_COL       0x00000100  /* Excessive Collisions */
+-#define TDES0_STATUS_HRTBT_FAIL   0x00000080  /* Heartbeat Fail */
+-#define TDES0_STATUS_COLCNT_MASK  0x00000078  /* Collision Count Mask */
+-#define TDES0_STATUS_COLCNT_SHIFT 3           /* Collision Count Shift */
+-#define TDES0_STATUS_EX_DEF       0x00000004  /* Excessive Deferrals */
+-#define TDES0_STATUS_UF           0x00000002  /* Underflow Error */
+-#define TDES0_STATUS_DF           0x00000001  /* Deferred */
+-
+-#define TDES1_CONTROL_IC          0x80000000  /* Interrupt on Completion */
+-#define TDES1_CONTROL_LS          0x40000000  /* Last Segment */
+-#define TDES1_CONTROL_FS          0x20000000  /* First Segment */
+-#define TDES1_CONTROL_AC          0x04000000  /* Add CRC Disable */
+-#define TDES1_CONTROL_DPD         0x00800000  /* Disable Padding */
++#define TDES0_STATUS_ES		  0x00008000	/* Error Summary */
++#define TDES0_STATUS_LOSS_CARRIER 0x00000800	/* Loss of Carrier */
++#define TDES0_STATUS_NO_CARRIER   0x00000400	/* No Carrier */
++#define TDES0_STATUS_LATE_COL     0x00000200	/* Late Collision */
++#define TDES0_STATUS_EX_COL       0x00000100	/* Excessive Collisions */
++#define TDES0_STATUS_HRTBT_FAIL   0x00000080	/* Heartbeat Fail */
++#define TDES0_STATUS_COLCNT_MASK  0x00000078	/* Collision Count Mask */
++#define TDES0_STATUS_COLCNT_SHIFT 3	/* Collision Count Shift */
++#define TDES0_STATUS_EX_DEF       0x00000004	/* Excessive Deferrals */
++#define TDES0_STATUS_UF           0x00000002	/* Underflow Error */
++#define TDES0_STATUS_DF           0x00000001	/* Deferred */
++
++#define TDES1_CONTROL_IC          0x80000000	/* Interrupt on Completion */
++#define TDES1_CONTROL_LS          0x40000000	/* Last Segment */
++#define TDES1_CONTROL_FS          0x20000000	/* First Segment */
++#define TDES1_CONTROL_AC          0x04000000	/* Add CRC Disable */
++#define TDES1_CONTROL_DPD         0x00800000	/* Disable Padding */

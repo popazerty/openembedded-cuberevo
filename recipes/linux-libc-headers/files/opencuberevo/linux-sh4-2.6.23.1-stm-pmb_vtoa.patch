@@ -1,0 +1,71 @@
+Index: linux-2.6.23.1-stm/arch/sh/mm/pmb.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/mm/pmb.c
++++ linux-2.6.23.1-stm/arch/sh/mm/pmb.c
+@@ -371,10 +371,9 @@ long pmb_remap(unsigned long phys,
+ 	return mapping->virt + offset;
+ }
+ 
+-int pmb_unmap(unsigned long addr)
++static struct pmb_mapping *pmb_find(unsigned long addr)
+ {
+ 	struct pmb_mapping *mapping;
+-	struct pmb_entry *entry;
+ 
+ 	for (mapping = pmb_mappings; mapping; mapping=mapping->next) {
+ 		if ((addr >= mapping->virt) &&
+@@ -382,6 +381,16 @@ int pmb_unmap(unsigned long addr)
+ 			break;
+ 	}
+ 
++	return mapping;
++}
++
++int pmb_unmap(unsigned long addr)
++{
++	struct pmb_mapping *mapping;
++	struct pmb_entry *entry;
++
++	mapping = pmb_find(addr);
++
+ 	if (unlikely(!mapping))
+ 		return 0;
+ 
+@@ -471,6 +480,25 @@ void __init pmb_init(void)
+ 	apply_boot_mappings(uc_mapping, ram_mapping);
+ }
+ 
++int pmb_virt_to_phys(void *addr, unsigned long *phys, unsigned long *flags)
++{
++	struct pmb_mapping *mapping;
++	unsigned long vaddr = (unsigned long __force)addr;
++
++	mapping = pmb_find(vaddr);
++
++	if (!mapping)
++		return EFAULT;
++
++	if (phys)
++		*phys = mapping->phys + (vaddr - mapping->virt);
++	if (flags)
++		*flags = mapping->flags;
++
++	return 0;
++}
++EXPORT_SYMBOL(pmb_virt_to_phys);
++
+ static int pmb_seq_show(struct seq_file *file, void *iter)
+ {
+ 	int i;
+Index: linux-2.6.23.1-stm/include/asm-sh/mmu.h
+===================================================================
+--- linux-2.6.23.1-stm.orig/include/asm-sh/mmu.h
++++ linux-2.6.23.1-stm/include/asm-sh/mmu.h
+@@ -43,6 +43,7 @@ typedef struct {
+ long pmb_remap(unsigned long phys, unsigned long size, unsigned long flags);
+ int  pmb_unmap(unsigned long addr);
+ void pmb_init(void);
++int pmb_virt_to_phys(void *addr, unsigned long *phys, unsigned long *flags);
+ 
+ #endif /* __MMU_H */
+ 

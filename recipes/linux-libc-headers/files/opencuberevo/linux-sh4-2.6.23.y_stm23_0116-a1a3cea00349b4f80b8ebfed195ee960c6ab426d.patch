@@ -1,0 +1,35 @@
+From a1a3cea00349b4f80b8ebfed195ee960c6ab426d Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Fri, 19 Sep 2008 17:18:57 +0100
+Subject: [PATCH] gpio_stm: Export gpio_to_irq() and irq_to_gpio()
+
+Symbols gpio_to_irq() and irq_to_gpio() are unavailable for modules
+due to lack of EXPORT_SYMBOL - fixed.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/stm/pio.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index eb9226a..86bf74c 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -308,11 +308,13 @@ int gpio_to_irq(unsigned gpio)
+ {
+ 	return gpio + stpio_irq_base;
+ }
++EXPORT_SYMBOL(gpio_to_irq);
+ 
+ int irq_to_gpio(unsigned irq)
+ {
+ 	return irq - stpio_irq_base;
+ }
++EXPORT_SYMBOL(irq_to_gpio);
+ 
+ static inline int pin_to_irq(struct stpio_pin *pin)
+ {
+-- 
+1.5.3.6
+

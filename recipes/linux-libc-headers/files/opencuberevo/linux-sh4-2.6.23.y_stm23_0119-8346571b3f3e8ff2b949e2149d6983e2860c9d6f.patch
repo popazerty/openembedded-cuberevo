@@ -1,0 +1,62 @@
+From 8346571b3f3e8ff2b949e2149d6983e2860c9d6f Mon Sep 17 00:00:00 2001
+From: Yan Zheng <yanzheng@21cn.com>
+Date: Wed, 6 Feb 2008 09:36:09 -0800
+Subject: [PATCH] A potential bug in inotify_user.c
+
+X-Git-Tag: v2.6.25-rc1~775
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Ftorvalds%2Flinux-2.6.git;a=commitdiff_plain;h=1c17d18e3775485bf1e0ce79575eb637a94494a2;hp=19c561a60ffe52df88dd63de0bff480ca094efe4
+
+A potential bug in inotify_user.c
+
+Following comment is at fs/inotify_user.c:287
+/* coalescing: drop this event if it is a dupe of the previous */
+
+I think the previous event in the comment should be the last event in the
+link list.  But inotify_dev_get_event return the first event in the list.
+In addition, it doesn't check whether the list is empty
+
+Signed-off-by: Yan Zheng<yanzheng@21cn.com>
+Acked-by: Robert Love <rlove@rlove.org>
+Cc: John McCutchan <ttb@tentacle.dhs.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ fs/inotify_user.c |   15 ++++++++++++++-
+ 1 files changed, 14 insertions(+), 1 deletions(-)
+
+diff --git a/fs/inotify_user.c b/fs/inotify_user.c
+index 9bf2f6c..93e0c8b 100644
+--- a/fs/inotify_user.c
++++ b/fs/inotify_user.c
+@@ -247,6 +247,19 @@ inotify_dev_get_event(struct inotify_device *dev)
+ }
+ 
+ /*
++ * inotify_dev_get_last_event - return the last event in the given dev's queue
++ *
++ * Caller must hold dev->ev_mutex.
++ */
++static inline struct inotify_kernel_event *
++inotify_dev_get_last_event(struct inotify_device *dev)
++{
++	if (list_empty(&dev->events))
++		return NULL;
++	return list_entry(dev->events.prev, struct inotify_kernel_event, list);
++}
++
++/*
+  * inotify_dev_queue_event - event handler registered with core inotify, adds
+  * a new event to the given device
+  *
+@@ -272,7 +285,7 @@ static void inotify_dev_queue_event(struct inotify_watch *w, u32 wd, u32 mask,
+ 		put_inotify_watch(w); /* final put */
+ 
+ 	/* coalescing: drop this event if it is a dupe of the previous */
+-	last = inotify_dev_get_event(dev);
++	last = inotify_dev_get_last_event(dev);
+ 	if (last && last->event.mask == mask && last->event.wd == wd &&
+ 			last->event.cookie == cookie) {
+ 		const char *lastname = last->name;
+-- 
+1.6.0.6
+

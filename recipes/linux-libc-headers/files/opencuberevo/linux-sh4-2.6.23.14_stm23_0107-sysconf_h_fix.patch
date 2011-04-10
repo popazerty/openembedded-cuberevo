@@ -1,0 +1,85 @@
+commit e661bbb9a7b027598d4bcaf59732dc0d8bc48fbb
+Author: Pawel MOLL <pawel.moll@st.com>
+Date:   Tue Mar 11 17:08:53 2008 +0000
+
+    Small fixes in linux/stm/... headers.
+    
+    - added missing include guards and include in sysconf.h
+    - unified include guards in some other headers.
+
+    Signed-off-by: Pawel MOLL <pawel.moll@st.com>
+
+diff --git a/include/linux/stm/pio.h b/include/linux/stm/pio.h
+index 0912acd..b64d3e7 100644
+--- a/include/linux/stm/pio.h
++++ b/include/linux/stm/pio.h
+@@ -1,5 +1,5 @@
+ /*
+- * include/linux/st_pio.h
++ * include/linux/stm/pio.h
+  *
+  * Copyright (c) 2004 STMicroelectronics Limited
+  * Author: Stuart Menefy <stuart.menefy@st.com>
+@@ -11,8 +11,8 @@
+  * routine for when input pins change state.
+  */
+ 
+-#ifndef _LINUX_ST_PIO_H_
+-#define _LINUX_ST_PIO_H_ 1
++#ifndef __LINUX_STM_PIO_H
++#define __LINUX_STM_PIO_H
+ 
+ /*
+  * The ST40GX1 has two blocks of PIO registers:
+@@ -61,4 +61,4 @@ void stpio_free_irq(struct stpio_pin* pin);
+ void stpio_enable_irq(struct stpio_pin* pin, int mode);
+ void stpio_disable_irq(struct stpio_pin* pin);
+ 
+-#endif /* _LINUX_ST_PIO_H_ */
++#endif /* __LINUX_STM_PIO_H */
+diff --git a/include/linux/stm/registers.h b/include/linux/stm/registers.h
+index e036900..fd752de 100644
+--- a/include/linux/stm/registers.h
++++ b/include/linux/stm/registers.h
+@@ -1,5 +1,5 @@
+-#ifndef __STM_REGISTERS_H
+-#define __STM_REGISTERS_H
++#ifndef __LINUX_STM_REGISTERS_H
++#define __LINUX_STM_REGISTERS_H
+ 
+ #include <asm/io.h>
+ 
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index b74c5cd..8b1ea4d 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -1,5 +1,5 @@
+-#ifndef __LINUX_ST_SOC_H
+-#define __LINUX_ST_SOC_H
++#ifndef __LINUX_STM_SOC_H
++#define __LINUX_STM_SOC_H
+ 
+ /* This is the private platform data for the ssc driver */
+ struct ssc_pio_t {
+diff --git a/include/linux/stm/sysconf.h b/include/linux/stm/sysconf.h
+index 8741790..a9fc7d5 100644
+--- a/include/linux/stm/sysconf.h
++++ b/include/linux/stm/sysconf.h
+@@ -6,6 +6,11 @@
+  * License.  See linux/COPYING for more information.
+  */
+ 
++#ifndef __LINUX_STM_SYSCONF_H
++#define __LINUX_STM_SYSCONF_H
++
++#include <linux/types.h>
++
+ struct sysconf_field;
+ 
+ /**
+@@ -49,3 +54,5 @@ u64 sysconf_read(struct sysconf_field *field);
+ #define SYS_DEV 0
+ #define SYS_STA 1
+ #define SYS_CFG 2
++
++#endif

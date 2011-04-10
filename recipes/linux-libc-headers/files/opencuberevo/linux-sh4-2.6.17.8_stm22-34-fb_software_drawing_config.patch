@@ -1,0 +1,29 @@
+This patch adds a configuration option to the graphics drivers section,
+to enable the building of the framebuffer software drawing helpers
+(cfb.*). This allows externally built framebuffer drivers (such as stgfb) to
+use these routines without them having to copy and build bits of the kernel.
+
+Signed-off-by: Stephen Gallimore <Stephen.Gallimore@st.com>
+
+Index: linux-2.6.17/drivers/video/Kconfig
+===================================================================
+--- linux-2.6.17.orig/drivers/video/Kconfig
++++ linux-2.6.17/drivers/video/Kconfig
+@@ -65,6 +65,17 @@ config FB_CFB_IMAGEBLIT
+ 	  blitting. This is used by drivers that don't provide their own
+ 	  (accelerated) version.
+ 
++config FB_SOFTWARE_DRAWING_HELPERS
++	tristate "Enable Software Drawing Helpers"
++	depends on FB
++	select FB_CFB_FILLRECT
++	select FB_CFB_COPYAREA
++	select FB_CFB_IMAGEBLIT
++	default n
++	---help---
++	  This enables the software (CFB) framebuffer drawing helpers
++	  for use by external framebuffer drivers.
++
+ config FB_MACMODES
+        tristate
+        depends on FB

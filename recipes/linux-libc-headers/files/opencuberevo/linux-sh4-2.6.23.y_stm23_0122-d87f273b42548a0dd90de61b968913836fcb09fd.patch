@@ -1,0 +1,1912 @@
+From d87f273b42548a0dd90de61b968913836fcb09fd Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Thu, 29 Oct 2009 17:31:41 +0100
+Subject: [PATCH] LKM: Fast loader rework and refactoring
+
+Huge code cleanup and refactoring. This is the reference code
+for the rework to be done for 2.6.30 kernel in preparation of
+pushing to kernel mainline.
+No functional changes at all.
+
+It consists of:
+ - Move ksymhash and elflib into scripts/mod directory
+   to reuse common functions
+ - Move ELF related functions out of modpost.c into elflib.c
+ - Merge parse_elf implementation from modpost and ksymhash
+   and moved into elflib
+ - Code tidy-up of ksymhash.c and ktablehash.c
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ Makefile                        |    2 +-
+ scripts/Makefile                |    1 -
+ scripts/Makefile.ksymhash       |   18 +++
+ scripts/Makefile.modpost        |    2 +-
+ scripts/ksymhash/Makefile       |   38 ------
+ scripts/ksymhash/elflib.c       |  180 -----------------------------
+ scripts/ksymhash/elflib.h       |  142 -----------------------
+ scripts/ksymhash/empty.c        |    1 -
+ scripts/ksymhash/ksymhash.c     |  134 ----------------------
+ scripts/ksymhash/mk_elfconfig.c |   66 -----------
+ scripts/mod/.gitignore          |    2 +-
+ scripts/mod/Makefile            |    6 +-
+ scripts/mod/elflib.c            |  240 +++++++++++++++++++++++++++++++++++++++
+ scripts/mod/elflib.h            |  179 +++++++++++++++++++++++++++++
+ scripts/mod/ksymhash.c          |   80 +++++++++++++
+ scripts/mod/ksymtable.h         |   66 -----------
+ scripts/mod/ktablehash.c        |  137 ++++++++++-------------
+ scripts/mod/modpost.c           |  168 +--------------------------
+ scripts/mod/modpost.h           |   98 +----------------
+ 19 files changed, 590 insertions(+), 970 deletions(-)
+ create mode 100644 scripts/Makefile.ksymhash
+ delete mode 100644 scripts/ksymhash/Makefile
+ delete mode 100644 scripts/ksymhash/elflib.c
+ delete mode 100644 scripts/ksymhash/elflib.h
+ delete mode 100644 scripts/ksymhash/empty.c
+ delete mode 100644 scripts/ksymhash/ksymhash.c
+ delete mode 100644 scripts/ksymhash/mk_elfconfig.c
+ create mode 100644 scripts/mod/elflib.c
+ create mode 100644 scripts/mod/elflib.h
+ create mode 100644 scripts/mod/ksymhash.c
+ delete mode 100644 scripts/mod/ksymtable.h
+
+diff --git a/Makefile b/Makefile
+index 19fbd5d..708993f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -774,7 +774,7 @@ define rule_vmlinux-modpost
+ 	$(Q)echo 'cmd_$@ := $(cmd_vmlinux-modpost)' > $(dot-target).cmd
+ endef
+ 
+-include $(srctree)/scripts/ksymhash/Makefile
++include $(srctree)/scripts/Makefile.ksymhash
+ 
+ # vmlinux image - including updated kernel symbols
+ vmlinux: $(vmlinux-lds) $(vmlinux-init) $(vmlinux-main) $(kallsyms.o) vmlinux.o \
+diff --git a/scripts/Makefile b/scripts/Makefile
+index 99afa51..1c73c5a 100644
+--- a/scripts/Makefile
++++ b/scripts/Makefile
+@@ -20,7 +20,6 @@ hostprogs-y += unifdef
+ 
+ subdir-$(CONFIG_MODVERSIONS) += genksyms
+ subdir-y                     += mod
+-subdir-$(CONFIG_LKM_ELF_HASH)    += ksymhash
+ 
+ # Let clean descend into subdirs
+ subdir-	+= basic kconfig package
+diff --git a/scripts/Makefile.ksymhash b/scripts/Makefile.ksymhash
+new file mode 100644
+index 0000000..c38d5e9
+--- /dev/null
++++ b/scripts/Makefile.ksymhash
+@@ -0,0 +1,18 @@
++# Post-process vmlinux and modules to support Fast LKM loader
++# a. vmlinux/modules: compute hash values of exported symbols and fill ksymtabs
++# b. modules: compute hash values of undefined symbols and fill .undef.hash
++
++quiet_cmd_ksymhash = SYMHASH
++      cmd_ksymhash = scripts/mod/ksymhash
++
++ifdef CONFIG_LKM_ELF_HASH
++define rule_ksymhash
++	$(Q)$(if $($(quiet)cmd_ksymhash),		\
++		echo '  $($(quiet)cmd_ksymhash) $@' &&)	\
++	$(cmd_ksymhash) $@
++endef
++else
++define rule_ksymhash
++endef
++endif
++
+diff --git a/scripts/Makefile.modpost b/scripts/Makefile.modpost
+index 1746c94..9a9c2b0 100644
+--- a/scripts/Makefile.modpost
++++ b/scripts/Makefile.modpost
+@@ -114,7 +114,7 @@ quiet_cmd_ld_ko_o = LD [M]  $@
+       cmd_ld_ko_o = $(LD) -r $(LDFLAGS) $(LDFLAGS_MODULE) -o $@		\
+ 			  $(filter-out FORCE,$^)
+ 
+-include $(srctree)/scripts/ksymhash/Makefile
++include $(srctree)/scripts/Makefile.ksymhash
+ 
+ $(modules): %.ko :%.o %.mod.o FORCE
+ 	$(call if_changed,ld_ko_o)
+diff --git a/scripts/ksymhash/Makefile b/scripts/ksymhash/Makefile
+deleted file mode 100644
+index f4ac5a1..0000000
+--- a/scripts/ksymhash/Makefile
++++ /dev/null
+@@ -1,38 +0,0 @@
+-# Shared between Makefile and Makefile.modpost
+-
+-hostprogs-y		+= ksymhash mk_elfconfig
+-always			:= $(hostprogs-y) empty.o
+-
+-ksymhash-objs	:= ksymhash.o elflib.o
+-
+-# dependencies on generated files need to be listed explicitly
+-
+-$(obj)/ksymhash.o : $(obj)/elflib.o
+-$(obj)/elflib.o   : $(obj)/elfconfig.h
+-
+-HOSTCFLAGS_ksymhash.o += -g3 -O0
+-HOSTCFLAGS_elflib.o += -g3 -O0
+-
+-quiet_cmd_elfconfig = MKELF   $@
+-      cmd_elfconfig = $(obj)/mk_elfconfig $(ARCH) < $< > $@
+-
+-$(obj)/elfconfig.h: $(obj)/empty.o $(obj)/mk_elfconfig FORCE
+-	$(call if_changed,elfconfig)
+-
+-targets += elfconfig.h
+-
+-# Post-process vmlinux image to populate ksymtabs with GNU hash values
+-
+-quiet_cmd_ksymhash = SYMHASH
+-      cmd_ksymhash = scripts/ksymhash/ksymhash
+-
+-ifdef CONFIG_LKM_ELF_HASH
+-define rule_ksymhash
+-	$(Q)$(if $($(quiet)cmd_ksymhash),								\
+-		echo '  $($(quiet)cmd_ksymhash) $@' &&)						\
+-	$(cmd_ksymhash) $@
+-endef
+-else
+-define rule_ksymhash
+-endef
+-endif
+diff --git a/scripts/ksymhash/elflib.c b/scripts/ksymhash/elflib.c
+deleted file mode 100644
+index fd77041..0000000
+--- a/scripts/ksymhash/elflib.c
++++ /dev/null
+@@ -1,180 +0,0 @@
+-#include "elflib.h"
+-
+-void fatal(const char *fmt, ...)
+-{
+-	va_list arglist;
+-
+-	fprintf(stderr, "FATAL: ");
+-
+-	va_start(arglist, fmt);
+-	vfprintf(stderr, fmt, arglist);
+-	va_end(arglist);
+-
+-	exit(1);
+-}
+-
+-void *grab_file(const char *filename, unsigned long *size)
+-{
+-	struct stat st;
+-	void *map;
+-	int fd;
+-
+-	fd = open(filename, O_RDWR);
+-	if (fd < 0 || fstat(fd, &st) != 0)
+-		return NULL;
+-
+-	*size = st.st_size;
+-	map = mmap(NULL, *size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+-	close(fd);
+-
+-	if (map == MAP_FAILED)
+-		return NULL;
+-	return map;
+-}
+-
+-void release_file(void *file, unsigned long size)
+-{
+-	munmap(file, size);
+-}
+-
+-static inline
+-void set_ksymtable(struct elf_info *info, enum ksymtab_type type,
+-			Elf_Ehdr *hdr, Elf_Shdr *sechdrs, unsigned int secidx,
+-			const char *secname)
+-{
+-
+-	info->ksym_tables[type].start = (struct kernel_symbol *) \
+-			((void *) hdr + sechdrs[secidx].sh_offset);
+-	info->ksym_tables[type].stop = (struct kernel_symbol *) \
+-	((void *) hdr + sechdrs[secidx].sh_offset + sechdrs[secidx].sh_size);
+-	info->ksym_tables[type].name = strdup(secname);
+-	info->ksym_tables[type].entries = \
+-		sechdrs[secidx].sh_size / sizeof(struct kernel_symbol);
+-}
+-
+-int parse_elf(struct elf_info *info, const char *filename)
+-{
+-	unsigned int i;
+-	Elf_Ehdr *hdr;
+-	Elf_Shdr *sechdrs;
+-	Elf_Sym  *sym;
+-	char *lkm_suffix;
+-
+-	hdr = grab_file(filename, &info->size);
+-	if (!hdr) {
+-		perror(filename);
+-		exit(1);
+-	}
+-	info->hdr = hdr;
+-	if (info->size < sizeof(*hdr)) {
+-		/* file too small, assume this is an empty .o file */
+-		return 0;
+-	}
+-	/* Is this a valid ELF file? */
+-	if ((hdr->e_ident[EI_MAG0] != ELFMAG0) ||
+-	    (hdr->e_ident[EI_MAG1] != ELFMAG1) ||
+-	    (hdr->e_ident[EI_MAG2] != ELFMAG2) ||
+-	    (hdr->e_ident[EI_MAG3] != ELFMAG3)) {
+-	/* Not an ELF file - silently ignore it */
+-		return 0;
+-	}
+-
+-	/* Check if it is the vmlinux or lkm */
+-	lkm_suffix = strstr(filename, ".ko");
+-	if (lkm_suffix && (strlen(lkm_suffix) == 3))
+-		/* Likely this is a lkm */
+-		info->is_lkm = 1;
+-	else {
+-		info->is_lkm = 0;
+-		/* Don't care */
+-		info->base_addr = 0;
+-	}
+-
+-	/* Fix endianness in ELF header */
+-	hdr->e_shoff    = TO_NATIVE(hdr->e_shoff);
+-	hdr->e_shstrndx = TO_NATIVE(hdr->e_shstrndx);
+-	hdr->e_shnum    = TO_NATIVE(hdr->e_shnum);
+-	hdr->e_machine  = TO_NATIVE(hdr->e_machine);
+-	hdr->e_type     = TO_NATIVE(hdr->e_type);
+-	sechdrs = (void *)hdr + hdr->e_shoff;
+-	info->sechdrs = sechdrs;
+-
+-	/* Fix endianness in section headers */
+-	for (i = 0; i < hdr->e_shnum; i++) {
+-		sechdrs[i].sh_type   = TO_NATIVE(sechdrs[i].sh_type);
+-		sechdrs[i].sh_offset = TO_NATIVE(sechdrs[i].sh_offset);
+-		sechdrs[i].sh_size   = TO_NATIVE(sechdrs[i].sh_size);
+-		sechdrs[i].sh_link   = TO_NATIVE(sechdrs[i].sh_link);
+-		sechdrs[i].sh_name   = TO_NATIVE(sechdrs[i].sh_name);
+-		sechdrs[i].sh_info   = TO_NATIVE(sechdrs[i].sh_info);
+-		sechdrs[i].sh_addr   = TO_NATIVE(sechdrs[i].sh_addr);
+-	}
+-	/* Find symbol tables and text section. */
+-	for (i = 1; i < hdr->e_shnum; i++) {
+-		const char *secstrings
+-			= (void *)hdr + sechdrs[hdr->e_shstrndx].sh_offset;
+-		const char *secname;
+-
+-		if (sechdrs[i].sh_offset > info->size) {
+-			fatal("%s is truncated. sechdrs[i].sh_offset=%u > \
+-			sizeof(*hrd) = %ul\n", filename,
+-			(unsigned int)sechdrs[i].sh_offset, sizeof(*hdr));
+-			return 0;
+-		}
+-		secname = secstrings + sechdrs[i].sh_name;
+-
+-		if (strcmp(secname, ".text") == 0)
+-		info->base_addr = sechdrs[i].sh_addr - sechdrs[i].sh_offset;
+-
+-		if (strcmp(secname, "__ksymtab") == 0)
+-			set_ksymtable(info, KSYMTAB, hdr, sechdrs, i, secname);
+-		else if (strcmp(secname, "__ksymtab_unused") == 0)
+-			set_ksymtable(info, KSYMTAB_UNUSED, hdr, sechdrs, i,
+-					secname);
+-		else if (strcmp(secname, "__ksymtab_gpl") == 0)
+-			set_ksymtable(info, KSYMTAB_GPL, hdr, sechdrs, i,
+-					secname);
+-		else if (strcmp(secname, "__ksymtab_unused_gpl") == 0)
+-			set_ksymtable(info, KSYMTAB_UNUSED_GPL, hdr, sechdrs, i,
+-					secname);
+-		else if (strcmp(secname, "__ksymtab_gpl_future") == 0)
+-			set_ksymtable(info, KSYMTAB_GPL_FUTURE, hdr, sechdrs, i,
+-					secname);
+-		else if (strcmp(secname, "__ksymtab_strings") == 0)
+-			info->kstrings = (void *)hdr + sechdrs[i].sh_offset;
+-		else if (strcmp(secname, ".undef.hash") == 0) {
+-			info->symtab_hash.start = (void *)\
+-				hdr + sechdrs[i].sh_offset;
+-			info->symtab_hash.stop  = (void *)\
+-				hdr + sechdrs[i].sh_offset + sechdrs[i].sh_size;
+-		}
+-
+-
+-		if (sechdrs[i].sh_type != SHT_SYMTAB)
+-			continue;
+-
+-		info->symtab.start = (void *)hdr + sechdrs[i].sh_offset;
+-		info->symtab.stop  = (void *)hdr + \
+-				sechdrs[i].sh_offset + sechdrs[i].sh_size;
+-		info->strtab       = (void *)hdr + \
+-				sechdrs[sechdrs[i].sh_link].sh_offset;
+-	}
+-	if (!info->symtab.start)
+-		fatal("%s has no symtab?\n", filename);
+-
+-	/* Fix endianness in symbols */
+-	for (sym = info->symtab.start; sym < info->symtab.stop; sym++) {
+-		sym->st_shndx = TO_NATIVE(sym->st_shndx);
+-		sym->st_name  = TO_NATIVE(sym->st_name);
+-		sym->st_value = TO_NATIVE(sym->st_value);
+-		sym->st_size  = TO_NATIVE(sym->st_size);
+-	}
+-	return 1;
+-}
+-
+-void parse_elf_finish(struct elf_info *info)
+-{
+-	release_file(info->hdr, info->size);
+-}
+-
+-
+diff --git a/scripts/ksymhash/elflib.h b/scripts/ksymhash/elflib.h
+deleted file mode 100644
+index 6d69b7b..0000000
+--- a/scripts/ksymhash/elflib.h
++++ /dev/null
+@@ -1,142 +0,0 @@
+-#include <sys/stat.h>
+-#include <elf.h>
+-#include <stdlib.h>
+-#include <sys/mman.h>
+-#include <fcntl.h>
+-#include <unistd.h>
+-#include <stdio.h>
+-#include <stdarg.h>
+-#include <string.h>
+-
+-
+-
+-#include "elfconfig.h"
+-
+-#if KERNEL_ELFCLASS == ELFCLASS32
+-
+-#define Elf_Ehdr    Elf32_Ehdr
+-#define Elf_Shdr    Elf32_Shdr
+-#define Elf_Sym     Elf32_Sym
+-#define Elf_Addr    Elf32_Addr
+-#define Elf_Section Elf32_Section
+-#define ELF_ST_BIND ELF32_ST_BIND
+-#define ELF_ST_TYPE ELF32_ST_TYPE
+-
+-#define Elf_Rel     Elf32_Rel
+-#define Elf_Rela    Elf32_Rela
+-#define ELF_R_SYM   ELF32_R_SYM
+-#define ELF_R_TYPE  ELF32_R_TYPE
+-
+-/* It needs to match sizeof within kernel
+- * as defined in include/linux/module.h
+- */
+-#define ksym_t      uint32_t
+-#define kstr_t      uint32_t
+-#define ksym_hash_t uint32_t
+-#else
+-
+-#define Elf_Ehdr    Elf64_Ehdr
+-#define Elf_Shdr    Elf64_Shdr
+-#define Elf_Sym     Elf64_Sym
+-#define Elf_Addr    Elf64_Addr
+-#define Elf_Section Elf64_Section
+-#define ELF_ST_BIND ELF64_ST_BIND
+-#define ELF_ST_TYPE ELF64_ST_TYPE
+-
+-#define Elf_Rel     Elf64_Rel
+-#define Elf_Rela    Elf64_Rela
+-#define ELF_R_SYM   ELF64_R_SYM
+-#define ELF_R_TYPE  ELF64_R_TYPE
+-
+-/* It needs to match sizeof within kernel
+- * as defined in include/linux/module.h
+- */
+-#define ksym_t      uint64_t
+-#define kstr_t      uint64_t
+-#define ksym_hash_t uint64_t
+-#endif
+-
+-#if KERNEL_ELFDATA != HOST_ELFDATA
+-
+-static inline void __endian(const void *src, void *dest, unsigned int size)
+-{
+-	unsigned int i;
+-	for (i = 0; i < size; i++)
+-		((unsigned char *)dest)[i] = ((unsigned char *)src)[size - i-1];
+-}
+-
+-#define TO_NATIVE(x)						\
+-({								\
+-	typeof(x) __x;						\
+-	__endian(&(x), &(__x), sizeof(__x));			\
+-	__x;							\
+-})
+-
+-#else /* endianness matches */
+-
+-#define TO_NATIVE(x) (x)
+-
+-#endif
+-
+-/* We have no more than 6 kernel symbol tables
+-	__ksymtab
+-	__ksymtab_gpl
+-	__ksymtab_unused
+-	__ksymtab_unused_gpl
+-	__ksymtab_gpl_future
+-			and
+-	 __ksymtab_strings
+-*/
+-
+-enum ksymtab_type {
+-	KSYMTAB = 0,
+-	KSYMTAB_GPL,
+-	KSYMTAB_UNUSED,
+-	KSYMTAB_UNUSED_GPL,
+-	KSYMTAB_GPL_FUTURE,
+-	KSYMTAB_ALL,
+-};
+-
+-struct kernel_symbol {
+-	ksym_t value;
+-	kstr_t name;
+-	ksym_hash_t hash_value;
+-};
+-
+-struct kernel_symtab {
+-	const char *name;
+-	struct kernel_symbol *start;
+-	struct kernel_symbol *stop;
+-	unsigned int entries;
+-};
+-
+-struct elf_info {
+-	unsigned long size;
+-	Elf_Ehdr     *hdr;
+-	Elf_Shdr     *sechdrs;
+-
+-	unsigned char is_lkm;
+-	unsigned long base_addr;
+-	unsigned int unresolved;
+-	struct {
+-		Elf_Sym *start;
+-		Elf_Sym *stop;
+-	} symtab;
+-
+-	struct {
+-		ksym_hash_t *start;
+-		ksym_hash_t *stop;
+-	} symtab_hash;
+-
+-	struct kernel_symtab ksym_tables[KSYMTAB_ALL];
+-	const char   *strtab;
+-	const char   *kstrings;
+-};
+-
+-void fatal(const char *fmt, ...);
+-void *grab_file(const char *filename, unsigned long *size);
+-void release_file(void *file, unsigned long size);
+-int parse_elf(struct elf_info *info, const char *filename);
+-void parse_elf_finish(struct elf_info *info);
+-
+-
+diff --git a/scripts/ksymhash/empty.c b/scripts/ksymhash/empty.c
+deleted file mode 100644
+index 49839cc..0000000
+--- a/scripts/ksymhash/empty.c
++++ /dev/null
+@@ -1 +0,0 @@
+-/* empty file to figure out endianness / word size */
+diff --git a/scripts/ksymhash/ksymhash.c b/scripts/ksymhash/ksymhash.c
+deleted file mode 100644
+index 6caf57d..0000000
+--- a/scripts/ksymhash/ksymhash.c
++++ /dev/null
+@@ -1,134 +0,0 @@
+-/*
+- * Copyright STMicroelectronics Ltd (2008)
+- *
+- * Author: Carmelo Amoroso <carmelo.amoroso@st.com>
+- *
+- *
+- */
+-
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <unistd.h>
+-#include <fcntl.h>
+-#include <sys/mman.h>
+-#include <string.h>
+-#include <sys/stat.h>
+-#include "elflib.h"
+-
+-#define GET_KSTRING(__ksym, __offset) (unsigned char *)(__ksym->name + __offset)
+-
+-#undef DEBUG
+-#ifdef DEBUG
+-#define debug(__msg...) fprintf(stdout, __msg)
+-#else
+-#define debug(__msg...) /* nothing */
+-#endif
+-
+-#define dump_undef(__undef, __hash) \
+-	debug("\tUnresolved: %s\thash = 0x%x\n", __undef, __hash)
+-#define dump_ksym(__ksym, __kstr) \
+-	debug("\tExported: %s\thash = 0x%x\n", __kstr, __ksym->hash_value)
+-
+-static ksym_hash_t gnu_hash(const unsigned char *name)
+-{
+-	ksym_hash_t h = 5381;
+-	unsigned char c;
+-	for (c = *name; c != '\0'; c = *++name)
+-		h = h * 33 + c;
+-	return h & 0xffffffff;
+-}
+-
+-
+-static inline
+-void compute_exported_hash(const struct elf_info *elf, enum ksymtab_type tp)
+-{
+-
+-	struct kernel_symbol *sym;
+-	long s_offset;
+-	struct kernel_symbol *start = elf->ksym_tables[tp].start;
+-	struct kernel_symbol *stop = elf->ksym_tables[tp].stop;
+-
+-	if (elf->is_lkm) {
+-		/*
+-		 * ksym->name is an offset with respect to the start of the
+-		 *  __ksymtab_strings
+-		 */
+-		s_offset = (long) elf->kstrings;
+-	} else {
+-		/*
+-		 * In this case, ksym->name is the absolute value of the string
+-		 * into the __ksymtab_strings
+-		 */
+-		 s_offset = (long)elf->hdr - (long)elf->base_addr;
+-	}
+-
+-	for (sym = start; sym < stop; sym++) {
+-		sym->hash_value = gnu_hash(GET_KSTRING(sym, s_offset));
+-		dump_ksym(sym, GET_KSTRING(sym, s_offset));
+-	}
+-}
+-
+-static inline void compute_unresolved_hash(struct elf_info *elf)
+-{
+-
+-	Elf_Sym *sym;
+-	unsigned int undef = 0;
+-	ksym_hash_t *hash_values = elf->symtab_hash.start;
+-
+-	if (!elf->is_lkm) {
+-		elf->unresolved = undef;
+-		return;
+-	}
+-
+-	for (sym = elf->symtab.start; sym < elf->symtab.stop; sym++) {
+-		if (sym->st_shndx == SHN_UNDEF) {
+-			/* undefined symbol */
+-			if (ELF_ST_BIND(sym->st_info) != STB_GLOBAL &&
+-				ELF_ST_BIND(sym->st_info) != STB_WEAK)
+-				continue;
+-			else {
+-				/* GLOBAL or WEAK undefined symbols */
+-				*hash_values = gnu_hash((unsigned char *)
+-						(elf->strtab + sym->st_name));
+-				dump_undef(elf->strtab + sym->st_name, *hash_values);
+-				/*
+-				 * The hash_values array stored into the
+-				 * .undef.hash section is ordered as the
+-				 * undefined symbols of the .symtab
+-				 */
+-				hash_values++;
+-				undef++;
+-			}
+-		}
+-	}
+-	elf->unresolved = undef;
+-}
+-
+-int main(int argc, char **argv)
+-{
+-
+-	enum ksymtab_type k;
+-	struct elf_info info = { };
+-
+-	if (!parse_elf(&info, argv[1]))
+-		exit(1);
+-
+-	/* Skip __ksymtab_strings */
+-	for (k = KSYMTAB; k < KSYMTAB_ALL; k++) {
+-
+-		if (info.ksym_tables[k].name) {
+-
+-			/* Compute hash value for exported symbols */
+-			compute_exported_hash(&info, k);
+-
+-			debug("ktable: %s [exported: %u]\n",
+-			info.ksym_tables[k].name, info.ksym_tables[k].entries);
+-		}
+-	}
+-
+-	compute_unresolved_hash(&info);
+-	debug("\nModule: %s [unresolved: %u]\n", argv[1], info.unresolved);
+-
+-	parse_elf_finish(&info);
+-	return 0;
+-}
+diff --git a/scripts/ksymhash/mk_elfconfig.c b/scripts/ksymhash/mk_elfconfig.c
+deleted file mode 100644
+index 9d20528..0000000
+--- a/scripts/ksymhash/mk_elfconfig.c
++++ /dev/null
+@@ -1,66 +0,0 @@
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <string.h>
+-#include <elf.h>
+-
+-int
+-main(int argc, char **argv)
+-{
+-	unsigned char ei[EI_NIDENT];
+-	union { short s; char c[2]; } endian_test;
+-
+-	if (argc != 2)
+-		fprintf(stderr, "Error: no arch\n");
+-
+-	if (fread(ei, 1, EI_NIDENT, stdin) != EI_NIDENT) {
+-		fprintf(stderr, "Error: input truncated\n");
+-		return 1;
+-	}
+-	if (memcmp(ei, ELFMAG, SELFMAG) != 0) {
+-		fprintf(stderr, "Error: not ELF\n");
+-		return 1;
+-	}
+-	switch (ei[EI_CLASS]) {
+-	case ELFCLASS32:
+-		printf("#define KERNEL_ELFCLASS ELFCLASS32\n");
+-		break;
+-	case ELFCLASS64:
+-		printf("#define KERNEL_ELFCLASS ELFCLASS64\n");
+-		break;
+-	default:
+-		exit(1);
+-	}
+-	switch (ei[EI_DATA]) {
+-	case ELFDATA2LSB:
+-		printf("#define KERNEL_ELFDATA ELFDATA2LSB\n");
+-		break;
+-	case ELFDATA2MSB:
+-		printf("#define KERNEL_ELFDATA ELFDATA2MSB\n");
+-		break;
+-	default:
+-		exit(1);
+-	}
+-
+-	if (sizeof(unsigned long) == 4) {
+-		printf("#define HOST_ELFCLASS ELFCLASS32\n");
+-	} else if (sizeof(unsigned long) == 8) {
+-		printf("#define HOST_ELFCLASS ELFCLASS64\n");
+-	}
+-
+-	endian_test.s = 0x0102;
+-	if (memcmp(endian_test.c, "\x01\x02", 2) == 0)
+-		printf("#define HOST_ELFDATA ELFDATA2MSB\n");
+-	else if (memcmp(endian_test.c, "\x02\x01", 2) == 0)
+-		printf("#define HOST_ELFDATA ELFDATA2LSB\n");
+-	else
+-		exit(1);
+-
+-	if ((strcmp(argv[1], "v850") == 0) || (strcmp(argv[1], "h8300") == 0)
+-	    || (strcmp(argv[1], "blackfin") == 0))
+-		printf("#define MODULE_SYMBOL_PREFIX \"_\"\n");
+-	else
+-		printf("#define MODULE_SYMBOL_PREFIX \"\"\n");
+-
+-	return 0;
+-}
+-
+diff --git a/scripts/mod/.gitignore b/scripts/mod/.gitignore
+index e9b7abe..b410dff 100644
+--- a/scripts/mod/.gitignore
++++ b/scripts/mod/.gitignore
+@@ -1,4 +1,4 @@
+ elfconfig.h
+ mk_elfconfig
+ modpost
+-
++ksymhash
+diff --git a/scripts/mod/Makefile b/scripts/mod/Makefile
+index 125655f..ba917d2 100644
+--- a/scripts/mod/Makefile
++++ b/scripts/mod/Makefile
+@@ -1,17 +1,19 @@
+ hostprogs-y	:= modpost mk_elfconfig
++hostprogs-$(CONFIG_LKM_ELF_HASH) += ksymhash
+ always		:= $(hostprogs-y) empty.o
+ 
+-modpost-objs	:= modpost.o file2alias.o sumversion.o
++modpost-objs	:= modpost.o file2alias.o sumversion.o elflib.o
++ksymhash-objs	:= ksymhash.o elflib.o
+ 
+ ifdef CONFIG_LKM_ELF_HASH
+ modpost-objs += ktablehash.o
+ HOSTCFLAGS_modpost.o += -DCONFIG_LKM_ELF_HASH
+-$(obj)/ktablehash.o: $(obj)/elfconfig.h
+ endif
+ 
+ # dependencies on generated files need to be listed explicitly
+ 
+ $(obj)/modpost.o $(obj)/file2alias.o $(obj)/sumversion.o: $(obj)/elfconfig.h
++$(obj)/ksymhash.o $(obj)/ktablehash.o $(obj)/elflib.o: $(obj)/elfconfig.h
+ 
+ quiet_cmd_elfconfig = MKELF   $@
+       cmd_elfconfig = $(obj)/mk_elfconfig $(ARCH) < $< > $@
+diff --git a/scripts/mod/elflib.c b/scripts/mod/elflib.c
+new file mode 100644
+index 0000000..8189e80
+--- /dev/null
++++ b/scripts/mod/elflib.c
+@@ -0,0 +1,240 @@
++#include "elflib.h"
++
++void fatal(const char *fmt, ...)
++{
++	va_list arglist;
++
++	fprintf(stderr, "FATAL: ");
++
++	va_start(arglist, fmt);
++	vfprintf(stderr, fmt, arglist);
++	va_end(arglist);
++
++	exit(1);
++}
++
++void warn(const char *fmt, ...)
++{
++	va_list arglist;
++
++	fprintf(stderr, "WARNING: ");
++
++	va_start(arglist, fmt);
++	vfprintf(stderr, fmt, arglist);
++	va_end(arglist);
++}
++
++void merror(const char *fmt, ...)
++{
++	va_list arglist;
++
++	fprintf(stderr, "ERROR: ");
++
++	va_start(arglist, fmt);
++	vfprintf(stderr, fmt, arglist);
++	va_end(arglist);
++}
++
++static void *grab_file_rw(const char *filename, unsigned long *size,
++			  unsigned char write)
++{
++	struct stat st;
++	void *map;
++	int fd, open_flag, map_flag;
++
++	if (write) {
++		open_flag = O_RDWR;
++		map_flag = MAP_SHARED;
++	} else {
++		open_flag = O_RDONLY;
++		map_flag = MAP_PRIVATE;
++	}
++
++	fd = open(filename, open_flag);
++	if (fd < 0 || fstat(fd, &st) != 0)
++		return NULL;
++
++	*size = st.st_size;
++	map = mmap(NULL, *size, PROT_READ|PROT_WRITE, map_flag, fd, 0);
++	close(fd);
++
++	if (map == MAP_FAILED)
++		return NULL;
++	return map;
++}
++
++static void set_ksymtable(struct elf_info *info, enum ksymtab_type type,
++			  Elf_Ehdr *hdr, Elf_Shdr *sechdrs, unsigned int secidx,
++			  const char *secname)
++{
++
++	info->ksym_tables[type].start = (struct kernel_symbol *) \
++			((void *) hdr + sechdrs[secidx].sh_offset);
++	info->ksym_tables[type].stop = (struct kernel_symbol *) \
++	((void *) hdr + sechdrs[secidx].sh_offset + sechdrs[secidx].sh_size);
++	info->ksym_tables[type].name = strdup(secname);
++	info->ksym_tables[type].sec = secidx;
++}
++
++static int parse_elf_rw(struct elf_info *info, const char *filename,
++			unsigned char write)
++{
++	unsigned int i;
++	Elf_Ehdr *hdr;
++	Elf_Shdr *sechdrs;
++	Elf_Sym  *sym;
++	char *lkm_suffix;
++
++	hdr = grab_file_rw(filename, &info->size, write);
++	if (!hdr) {
++		perror(filename);
++		exit(1);
++	}
++	info->hdr = hdr;
++	if (info->size < sizeof(*hdr)) {
++		/* file too small, assume this is an empty .o file */
++		return 0;
++	}
++	/* Is this a valid ELF file? */
++	if ((hdr->e_ident[EI_MAG0] != ELFMAG0) ||
++	    (hdr->e_ident[EI_MAG1] != ELFMAG1) ||
++	    (hdr->e_ident[EI_MAG2] != ELFMAG2) ||
++	    (hdr->e_ident[EI_MAG3] != ELFMAG3)) {
++		/* Not an ELF file - silently ignore it */
++		return 0;
++	}
++
++	/* Fix endianness in ELF header */
++	hdr->e_shoff    = TO_NATIVE(hdr->e_shoff);
++	hdr->e_shstrndx = TO_NATIVE(hdr->e_shstrndx);
++	hdr->e_shnum    = TO_NATIVE(hdr->e_shnum);
++	hdr->e_machine  = TO_NATIVE(hdr->e_machine);
++	hdr->e_type     = TO_NATIVE(hdr->e_type);
++	sechdrs = (void *)hdr + hdr->e_shoff;
++	info->sechdrs = sechdrs;
++
++	/* Fix endianness in section headers */
++	for (i = 0; i < hdr->e_shnum; i++) {
++		sechdrs[i].sh_type   = TO_NATIVE(sechdrs[i].sh_type);
++		sechdrs[i].sh_offset = TO_NATIVE(sechdrs[i].sh_offset);
++		sechdrs[i].sh_size   = TO_NATIVE(sechdrs[i].sh_size);
++		sechdrs[i].sh_link   = TO_NATIVE(sechdrs[i].sh_link);
++		sechdrs[i].sh_name   = TO_NATIVE(sechdrs[i].sh_name);
++		sechdrs[i].sh_info   = TO_NATIVE(sechdrs[i].sh_info);
++		sechdrs[i].sh_addr   = TO_NATIVE(sechdrs[i].sh_addr);
++	}
++	/* Find symbol tables and text section. */
++	for (i = 1; i < hdr->e_shnum; i++) {
++		const char *secstrings
++			= (void *)hdr + sechdrs[hdr->e_shstrndx].sh_offset;
++		const char *secname;
++
++		if (sechdrs[i].sh_offset > info->size) {
++			fatal("%s is truncated. sechdrs[i].sh_offset=%u > \
++			sizeof(*hrd) = %ul\n", filename,
++			(unsigned int)sechdrs[i].sh_offset, sizeof(*hdr));
++			return 0;
++		}
++		secname = secstrings + sechdrs[i].sh_name;
++
++		if (strcmp(secname, ".text") == 0)
++			info->base_addr = sechdrs[i].sh_addr -
++					  sechdrs[i].sh_offset;
++		else if (strcmp(secname, ".modinfo") == 0) {
++			info->modinfo = (void *)hdr + sechdrs[i].sh_offset;
++			info->modinfo_len = sechdrs[i].sh_size;
++		} else if (strcmp(secname, "__ksymtab") == 0)
++			set_ksymtable(info, KSYMTAB, hdr, sechdrs, i, secname);
++		else if (strcmp(secname, "__ksymtab_unused") == 0)
++			set_ksymtable(info, KSYMTAB_UNUSED, hdr, sechdrs, i,
++				      secname);
++		else if (strcmp(secname, "__ksymtab_gpl") == 0)
++			set_ksymtable(info, KSYMTAB_GPL, hdr, sechdrs, i,
++				      secname);
++		else if (strcmp(secname, "__ksymtab_unused_gpl") == 0)
++			set_ksymtable(info, KSYMTAB_UNUSED_GPL, hdr, sechdrs, i,
++				      secname);
++		else if (strcmp(secname, "__ksymtab_gpl_future") == 0)
++			set_ksymtable(info, KSYMTAB_GPL_FUTURE, hdr, sechdrs, i,
++				      secname);
++		else if (strcmp(secname, "__ksymtab_strings") == 0)
++			info->kstrings = (void *)hdr + sechdrs[i].sh_offset;
++		else if (strcmp(secname, ".undef.hash") == 0) {
++			info->undef_hash.start = (void *)
++			    hdr + sechdrs[i].sh_offset;
++			info->undef_hash.stop = (void *)
++			    hdr + sechdrs[i].sh_offset + sechdrs[i].sh_size;
++		}
++
++		if (sechdrs[i].sh_type != SHT_SYMTAB)
++			continue;
++
++		info->symtab_start = (void *)hdr + sechdrs[i].sh_offset;
++		info->symtab_stop  = (void *)hdr + sechdrs[i].sh_offset
++					+ sechdrs[i].sh_size;
++		info->strtab       = (void *)hdr +
++					sechdrs[sechdrs[i].sh_link].sh_offset;
++	}
++	if (!info->symtab_start)
++		fatal("%s has no symtab?\n", filename);
++
++	/* Check if it is the vmlinux or lkm */
++	lkm_suffix = strstr(filename, ".ko");
++	if (lkm_suffix && (strlen(lkm_suffix) == 3))
++		/* Likely this is a lkm */
++		/*
++		 * ksym->name is an offset with respect to the start of the
++		 *  __ksymtab_strings
++		 */
++		info->kstr_offset = (long) info->kstrings;
++	else
++		/*
++		 * In this case, ksym->name is the absolute value of the string
++		 * into the __ksymtab_strings
++		 */
++		 info->kstr_offset = (long)info->hdr - (long)info->base_addr;
++
++	/* Fix endianness in symbols */
++	for (sym = info->symtab_start; sym < info->symtab_stop; sym++) {
++		sym->st_shndx = TO_NATIVE(sym->st_shndx);
++		sym->st_name  = TO_NATIVE(sym->st_name);
++		sym->st_value = TO_NATIVE(sym->st_value);
++		sym->st_size  = TO_NATIVE(sym->st_size);
++	}
++	return 1;
++}
++
++ksym_hash_t gnu_hash(const unsigned char *name)
++{
++	ksym_hash_t h = 5381;
++	unsigned char c;
++	for (c = *name; c != '\0'; c = *++name)
++		h = h * 33 + c;
++	return h & 0xffffffff;
++}
++void *grab_file(const char *filename, unsigned long *size)
++{
++	/* Read-only */
++	return grab_file_rw(filename, size, 0);
++}
++
++void release_file(void *file, unsigned long size)
++{
++	munmap(file, size);
++}
++
++int parse_elf(struct elf_info *info, const char *filename)
++{
++	/* Read-only */
++	return parse_elf_rw(info, filename, 0);
++}
++
++int parse_writable_elf(struct elf_info *info, const char *filename)
++{
++	return parse_elf_rw(info, filename, 1);
++}
++
++void parse_elf_finish(struct elf_info *info)
++{
++	release_file(info->hdr, info->size);
++}
+diff --git a/scripts/mod/elflib.h b/scripts/mod/elflib.h
+new file mode 100644
+index 0000000..e072921
+--- /dev/null
++++ b/scripts/mod/elflib.h
+@@ -0,0 +1,179 @@
++#include <sys/stat.h>
++#include <elf.h>
++#include <stdlib.h>
++#include <sys/mman.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <stdio.h>
++#include <stdarg.h>
++#include <string.h>
++
++#include "elfconfig.h"
++
++#if KERNEL_ELFCLASS == ELFCLASS32
++
++#define Elf_Ehdr    Elf32_Ehdr
++#define Elf_Shdr    Elf32_Shdr
++#define Elf_Sym     Elf32_Sym
++#define Elf_Addr    Elf32_Addr
++#define Elf_Section Elf32_Section
++#define ELF_ST_BIND ELF32_ST_BIND
++#define ELF_ST_TYPE ELF32_ST_TYPE
++
++#define Elf_Rel     Elf32_Rel
++#define Elf_Rela    Elf32_Rela
++#define ELF_R_SYM   ELF32_R_SYM
++#define ELF_R_TYPE  ELF32_R_TYPE
++
++/* It needs to match sizeof within kernel
++ * as defined in include/linux/module.h
++ */
++#define ksym_t      uint32_t
++#define kstr_t      uint32_t
++#define ksym_hash_t uint32_t
++#else
++
++#define Elf_Ehdr    Elf64_Ehdr
++#define Elf_Shdr    Elf64_Shdr
++#define Elf_Sym     Elf64_Sym
++#define Elf_Addr    Elf64_Addr
++#define Elf_Section Elf64_Section
++#define ELF_ST_BIND ELF64_ST_BIND
++#define ELF_ST_TYPE ELF64_ST_TYPE
++
++#define Elf_Rel     Elf64_Rel
++#define Elf_Rela    Elf64_Rela
++#define ELF_R_SYM   ELF64_R_SYM
++#define ELF_R_TYPE  ELF64_R_TYPE
++
++/* It needs to match sizeof within kernel
++ * as defined in include/linux/module.h
++ */
++#define ksym_t      uint64_t
++#define kstr_t      uint64_t
++#define ksym_hash_t uint64_t
++#endif
++
++/* The 64-bit MIPS ELF ABI uses an unusual reloc format. */
++typedef struct
++{
++	Elf32_Word    r_sym;	/* Symbol index */
++	unsigned char r_ssym;	/* Special symbol for 2nd relocation */
++	unsigned char r_type3;	/* 3rd relocation type */
++	unsigned char r_type2;	/* 2nd relocation type */
++	unsigned char r_type1;	/* 1st relocation type */
++} _Elf64_Mips_R_Info;
++
++typedef union
++{
++	Elf64_Xword		r_info_number;
++	_Elf64_Mips_R_Info	r_info_fields;
++} _Elf64_Mips_R_Info_union;
++
++#define ELF64_MIPS_R_SYM(i) \
++  ((__extension__ (_Elf64_Mips_R_Info_union)(i)).r_info_fields.r_sym)
++
++#define ELF64_MIPS_R_TYPE(i) \
++  ((__extension__ (_Elf64_Mips_R_Info_union)(i)).r_info_fields.r_type1)
++
++#if KERNEL_ELFDATA != HOST_ELFDATA
++
++static inline void __endian(const void *src, void *dest, unsigned int size)
++{
++	unsigned int i;
++	for (i = 0; i < size; i++)
++		((unsigned char *)dest)[i] =
++		    ((unsigned char *)src)[size - i - 1];
++}
++
++#define TO_NATIVE(x)						\
++({								\
++	typeof(x) __x;						\
++	__endian(&(x), &(__x), sizeof(__x));			\
++	__x;							\
++})
++
++#else /* endianness matches */
++
++#define TO_NATIVE(x) (x)
++
++#endif
++
++#define GET_KSTRING(__ksym, __offset) (unsigned char *)(__ksym->name + __offset)
++
++/* We have no more than 5 kernel symbol tables
++	__ksymtab
++	__ksymtab_gpl
++	__ksymtab_unused
++	__ksymtab_unused_gpl
++	__ksymtab_gpl_future
++*/
++
++enum ksymtab_type {
++	KSYMTAB = 0,
++	KSYMTAB_GPL,
++	KSYMTAB_UNUSED,
++	KSYMTAB_UNUSED_GPL,
++	KSYMTAB_GPL_FUTURE,
++	KSYMTAB_ALL,
++};
++
++/*
++ * This maps the ELF hash table
++ * The entries in the .hash table always have a size of 32 bits.
++ */
++struct elf_htable {
++	uint32_t nbucket;
++	uint32_t nchain;
++	uint32_t *elf_buckets;
++	uint32_t *chains;
++};
++
++/* as defined in include/linux/module.h */
++struct kernel_symbol {
++	ksym_t value;
++	kstr_t name;
++	ksym_hash_t hash_value;
++};
++
++struct kernel_symtab {
++	const char *name;
++	struct kernel_symbol *start;
++	struct kernel_symbol *stop;
++	Elf_Section sec;
++};
++
++struct elf_info {
++	unsigned long size;
++	Elf_Ehdr     *hdr;
++	Elf_Shdr     *sechdrs;
++	Elf_Sym *symtab_start;
++	Elf_Sym *symtab_stop;
++	long kstr_offset;
++	unsigned long base_addr;
++
++	struct {
++		ksym_hash_t *start;
++		ksym_hash_t *stop;
++	} undef_hash;
++
++	struct kernel_symtab ksym_tables[KSYMTAB_ALL];
++	const char   *strtab;
++	const char   *kstrings;
++	char	     *modinfo;
++	unsigned int modinfo_len;
++};
++
++/* from elflib.c */
++void fatal(const char *fmt, ...);
++void warn(const char *fmt, ...);
++void merror(const char *fmt, ...);
++
++ksym_hash_t gnu_hash(const unsigned char *name);
++void *grab_file(const char *filename, unsigned long *size);
++void release_file(void *file, unsigned long size);
++int parse_elf(struct elf_info *info, const char *filename);
++int parse_writable_elf(struct elf_info *info, const char *filename);
++void parse_elf_finish(struct elf_info *info);
++
++
+diff --git a/scripts/mod/ksymhash.c b/scripts/mod/ksymhash.c
+new file mode 100644
+index 0000000..ac8bb48
+--- /dev/null
++++ b/scripts/mod/ksymhash.c
+@@ -0,0 +1,80 @@
++/*
++ * Copyright STMicroelectronics Ltd (2008)
++ *
++ * Author: Carmelo Amoroso <carmelo.amoroso@st.com>
++ *
++ */
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <string.h>
++#include <sys/stat.h>
++#include "elflib.h"
++
++static inline
++void compute_exported_hash(const struct elf_info *elf, enum ksymtab_type tp)
++{
++
++	struct kernel_symbol *sym;
++	struct kernel_symbol *start = elf->ksym_tables[tp].start;
++	struct kernel_symbol *stop = elf->ksym_tables[tp].stop;
++
++	for (sym = start; sym < stop; sym++)
++		sym->hash_value = gnu_hash(GET_KSTRING(sym, elf->kstr_offset));
++}
++
++static void compute_unresolved_hash(struct elf_info *elf)
++{
++
++	Elf_Sym *sym;
++	ksym_hash_t *hash_values = elf->undef_hash.start;
++
++	if (!hash_values)
++		/* .undef.hash section is not present */
++		return;
++
++	for (sym = elf->symtab_start; sym < elf->symtab_stop; sym++) {
++		if (sym->st_shndx == SHN_UNDEF) {
++			/* undefined symbol */
++			if (ELF_ST_BIND(sym->st_info) != STB_GLOBAL &&
++			    ELF_ST_BIND(sym->st_info) != STB_WEAK)
++				continue;
++			else {
++				/* GLOBAL or WEAK undefined symbols */
++				*hash_values = gnu_hash((unsigned char *)
++						(elf->strtab + sym->st_name));
++				/*
++				 * The hash_values array stored into the
++				 * .undef.hash section that is ordered as the
++				 * undefined symbols of the .symtab
++				 */
++				hash_values++;
++			}
++		}
++	}
++}
++
++int main(int argc, char **argv)
++{
++
++	enum ksymtab_type k;
++	struct elf_info info = { };
++
++	if (!parse_writable_elf(&info, argv[1]))
++		exit(1);
++
++	/* Skip __ksymtab_strings */
++	for (k = KSYMTAB; k < KSYMTAB_ALL; k++) {
++		if (info.ksym_tables[k].name)
++			/* Compute hash value for exported symbols */
++			compute_exported_hash(&info, k);
++
++	}
++	compute_unresolved_hash(&info);
++
++	parse_elf_finish(&info);
++	return 0;
++}
+diff --git a/scripts/mod/ksymtable.h b/scripts/mod/ksymtable.h
+deleted file mode 100644
+index efe3606..0000000
+--- a/scripts/mod/ksymtable.h
++++ /dev/null
+@@ -1,66 +0,0 @@
+-/*
+- * Copyright STMicroelectronics Ltd (2008)
+- *
+- * Author: Carmelo Amoroso <carmelo.amoroso@st.com>
+- *
+- *
+- */
+-
+-#include "modpost.h"
+-
+-#undef DEBUG
+-#ifdef DEBUG
+-#define debugp(__msg...) fprintf(stdout, __msg)
+-#else
+-#define debugp(__msg...) /* nothing */
+-#endif
+-
+-#if KERNEL_ELFCLASS == ELFCLASS32
+-/* It needs to match sizeof within kernel
+- * as defined in include/linux/module.h
+- */
+-#define ksym_t      uint32_t
+-#define kstr_t      uint32_t
+-#define ksym_hash_t uint32_t
+-#else
+-#define ksym_t      uint64_t
+-#define kstr_t      uint64_t
+-#define ksym_hash_t uint64_t
+-#endif
+-
+-/*
+- * It matches with struct kernel_symbol defined
+- * in include/linux/module.h when CONFIG_LKM_ELF_HASH
+- * is configured
+- */
+-
+-struct kernel_symbol {
+-	ksym_t value;
+-	kstr_t name;
+-	ksym_hash_t hash_value;
+-};
+-
+-#define KSTART(_elf, _idx) \
+-(struct kernel_symbol *) ((void *) _elf->hdr + _elf->sechdrs[_idx].sh_offset)
+-
+-#define KSTOP(_elf, _idx) \
+-(struct kernel_symbol *) ((void *) _elf->hdr + _elf->sechdrs[_idx].sh_offset \
+-+ _elf->sechdrs[_idx].sh_size)
+-
+-#define EMPTY_SLOT -1
+-
+-/*
+- * This maps the ELF hash table
+- * The entries in the .hash table always have a size of 32 bits.
+- */
+-struct elf_htable {
+-	uint32_t nbucket;
+-	uint32_t nchain;
+-	uint32_t *elf_buckets;
+-	uint32_t *chains;
+-};
+-
+-struct export_sect {
+-	const char *name;
+-	Elf_Section sec;
+-};
+diff --git a/scripts/mod/ktablehash.c b/scripts/mod/ktablehash.c
+index 410b10a..6079406 100644
+--- a/scripts/mod/ktablehash.c
++++ b/scripts/mod/ktablehash.c
+@@ -3,10 +3,10 @@
+  *
+  * Author: Carmelo Amoroso <carmelo.amoroso@st.com>
+  *
+- *
+  */
+ 
+-#include "ksymtable.h"
++#define EMPTY_SLOT -1
++#include "modpost.h"
+ 
+ /**
+  * Record hash_values for unresolved symbols
+@@ -15,20 +15,23 @@
+ void add_undef_hash(struct buffer *b, struct module *mod)
+ {
+ 	struct symbol *s;
++	unsigned int i;
+ 
+ 	buf_printf(b, "#ifdef CONFIG_LKM_ELF_HASH\n");
+ 	buf_printf(b, "static unsigned long __symtab_hash[]\n");
+ 	buf_printf(b, "__attribute_used__\n");
+-	buf_printf(b, "__attribute__((section(\".undef.hash\"))) = {\n");
++	buf_printf(b, "__attribute__((section(\".undef.hash\"))) = {\n\t");
+ 
+-	for (s = mod->unres; s; s = s->next) {
+-	/*
+-	 * Fill with zero, the order of unresolved symbol is not yet correct
+-	 * This will create a placeholder for the hash values.
+-	 */
+-		buf_printf(b, "\t%#8lx,\n", 0L);
++	for (s = mod->unres, i = 0; s; s = s->next) {
++		/*
++		 * Fill with zero, the order of unresolved symbol is not yet
++		 * correct. This will create a placeholder for the hash values.
++		 */
++		buf_printf(b, "%lx, ", 0L);
++		if (!(++i % 24))
++			buf_printf(b, "\n\t");
+ 	}
+-	buf_printf(b, "};\n");
++	buf_printf(b, "\n};\n");
+ 	buf_printf(b, "#endif\n");
+ }
+ 
+@@ -38,10 +41,9 @@ void add_undef_hash(struct buffer *b, struct module *mod)
+    fewer than 37 we use 17 buckets, and so forth.  We never use more
+    than 32771 buckets.  */
+ 
+-static const size_t elf_buckets[] =
+-{
+-  1, 3, 17, 37, 67, 97, 131, 197, 263, 521, 1031, 2053, 4099, 8209,
+-  16411, 32771, 0
++static const size_t elf_buckets[] = {
++	1, 3, 17, 37, 67, 97, 131, 197, 263, 521, 1031, 2053, 4099, 8209,
++	16411, 32771, 0
+ };
+ 
+ /* FIXME: must implement the optimized algorithm for best size choosing */
+@@ -65,19 +67,10 @@ compute_bucket_count(unsigned long int nsyms, int gnu_hash)
+ 	return best_size;
+ }
+ 
+-static ksym_hash_t gnu_hash(const unsigned char *name)
+-{
+-	ksym_hash_t h = 5381;
+-	unsigned char c;
+-	for (c = *name; c != '\0'; c = *++name)
+-		h = h * 33 + c;
+-	return h & 0xffffffff;
+-}
+-
+ /* Handle collisions: return the max of the used slot of the chain
+   -1 in case of error */
+ int handle_collision(struct elf_htable *htable, unsigned long idx,
+-			unsigned long value)
++		     unsigned long value)
+ {
+ 	uint32_t *slot;
+ 
+@@ -99,12 +92,11 @@ int handle_collision(struct elf_htable *htable, unsigned long idx,
+ 	 */
+ 	return handle_collision(htable, *slot, value);
+ }
+-#define GET_KSTRING(__ksym, __offset) (unsigned char *)(__ksym->name + __offset)
+ 
+ static int fill_hashtable(struct elf_htable *htable,
+-			struct kernel_symbol *start,
+-			struct kernel_symbol *stop,
+-			long s_offset)
++			  struct kernel_symbol *start,
++			  struct kernel_symbol *stop,
++			  long kstrings_base)
+ {
+ 	struct kernel_symbol *ksym;
+ 	uint32_t nb;
+@@ -114,13 +106,14 @@ static int fill_hashtable(struct elf_htable *htable,
+ 	/* sanity check */
+ 	if ((htable->elf_buckets == NULL) || (htable->chains == NULL))
+ 		return -1;
+-	/* Initialize buckets and chains with -1 that means empty */
+-	memset(htable->elf_buckets, -1, htable->nbucket * sizeof(uint32_t));
+-	memset(htable->chains, -1, htable->nchain * sizeof(uint32_t));
++	/* Initialize buckets and chains with EMPTY_SLOT */
++	memset(htable->elf_buckets, EMPTY_SLOT,
++	       htable->nbucket * sizeof(uint32_t));
++	memset(htable->chains, EMPTY_SLOT, htable->nchain * sizeof(uint32_t));
+ 
+ 	nb = htable->nbucket;
+ 	for (ksym = start, hvalue = 0; ksym < stop; ksym++, hvalue++) {
+-		const unsigned char *name = GET_KSTRING(ksym, s_offset);
++		const unsigned char *name = GET_KSTRING(ksym, kstrings_base);
+ 		unsigned long h = gnu_hash(name);
+ 		unsigned long idx = h % nb;
+ 		uint32_t *slot = &htable->elf_buckets[idx];
+@@ -132,11 +125,11 @@ static int fill_hashtable(struct elf_htable *htable,
+ 		 * If the slot is alredy used ( != -1) then we have a collision
+ 		 * it needs to create an entry in the chain
+ 		 */
+-		 if (*slot == EMPTY_SLOT)
++		if (*slot == EMPTY_SLOT)
+ 			*slot = hvalue;
+ 		else {
+ 			if (handle_collision(htable, *slot, hvalue) < 0)
+-			/* Something wrong happened */
++				/* Something wrong happened */
+ 				return -1;
+ 		}
+ 	}
+@@ -148,17 +141,21 @@ static int fill_hashtable(struct elf_htable *htable,
+ 	 */
+ 	/* Look for upper chains empty slot */
+ 	for (last_chain_slot = htable->nchain; --last_chain_slot >= 0 &&
+-		htable->chains[last_chain_slot] == EMPTY_SLOT;);
++	     htable->chains[last_chain_slot] == EMPTY_SLOT;)
++		;
+ 
+ 	htable->nchain = last_chain_slot + 1;
+-	debugp("\t> Shortest chain lenght = %d\n", htable->nchain);
+ 	return 0;
+ }
+ 
+-static void add_elf_hashtable(struct buffer *b, const char *table,
+-		struct kernel_symbol *kstart, struct kernel_symbol *kstop,
+-		long off)
++static void add_elf_hashtable(struct buffer *b, const struct elf_info *elf,
++			      enum ksymtab_type type)
++
+ {
++	const char *table = elf->ksym_tables[type].name;
++	struct kernel_symbol *kstart = elf->ksym_tables[type].start;
++	struct kernel_symbol *kstop = elf->ksym_tables[type].stop;
++
+ 	struct elf_htable htable = {
+ 					.nbucket = 0,
+ 					.nchain = 0,
+@@ -182,9 +179,12 @@ static void add_elf_hashtable(struct buffer *b, const char *table,
+ 	if (!htable.chains)
+ 		return;
+ 
+-	debugp("\t> # buckets for %lu syms = %u\n", nsyms, htable.nbucket);
+-
+-	if (fill_hashtable(&htable, kstart, kstop, off) < 0)
++	/*
++	 * When handling relocatable objects as at this stage, ksym->name
++	 * is always an offset with respect to the __ksymtab_strings, so we must
++	 * use elf->kstrings for both vmlinux.o and <module>.o
++	 */
++	if (fill_hashtable(&htable, kstart, kstop, (long) elf->kstrings) < 0)
+ 		return;
+ 	buf_printf(b, "#ifdef CONFIG_LKM_ELF_HASH\n\n");
+ 	buf_printf(b, "#include <linux/types.h>\n");
+@@ -198,50 +198,33 @@ static void add_elf_hashtable(struct buffer *b, const char *table,
+ 	/* 2nd entry is nchain */
+ 	buf_printf(b, "\t%u, /* chain lenght */\n", htable.nchain);
+ 	buf_printf(b, "\t/* the buckets */\n\t");
+-	for (i = 0; i < htable.nbucket; i++)
+-		buf_printf(b, "%d, ", htable.elf_buckets[i]);
+-
++	for (i = 0; i < htable.nbucket; i++) {
++		buf_printf(b, "%4d, ", htable.elf_buckets[i]);
++		if (!((i+1) % 12))
++			buf_printf(b, "\n\t");
++	}
+ 	buf_printf(b, "\n\t/* the chains */\n\t");
+-	for (i = 0; i < htable.nchain; i++)
+-		buf_printf(b, "%d, ", htable.chains[i]);
+-
++	for (i = 0; i < htable.nchain; i++) {
++		buf_printf(b, "%4d, ", htable.chains[i]);
++		if (!((i+1) % 12))
++			buf_printf(b, "\n\t");
++	}
+ 	buf_printf(b, "\n};\n");
+ 	buf_printf(b, "#endif\n");
+ 	free(htable.elf_buckets);
+ 	free(htable.chains);
+ }
+ 
+-/**
++/*
+  * Add hash table (old style) for exported symbols
+- **/
+-/* FIXME: check on 64 bits host machine */
+-#define KSYMTABS (sizeof ksects / sizeof(ksects[0]))
++ */
+ void add_ksymtable_hash(struct buffer *b, struct module *mod)
+ {
+ 
+-	struct kernel_symbol *kstart, *kstop;
+-	unsigned int s;
+-
+-	struct export_sect ksects[] = {
+-		{ .name = "__ksymtab", .sec = mod->info->export_sec },
+-		{ .name = "__ksymtab_unused", .sec = mod->info->export_unused_sec },
+-		{ .name = "__ksymtab_gpl", .sec = mod->info->export_gpl_sec },
+-		{ .name = "__ksymtab_unused_gpl", .sec = mod->info->export_unused_gpl_sec },
+-		{ .name = "__ksymtab_gpl_future", .sec = mod->info->export_gpl_future_sec },
+-	};
+-	debugp(">>> %s : processing module %s\n", __FUNCTION__, mod->name);
+-
+-	for (s = 0; s < KSYMTABS; s++) {
+-		if (!ksects[s].sec)
+-			continue;
+-		debugp("\t>> export table: %s\n", ksects[s].name);
+-		/* Get first and last kernel symbol from the related ksymtab */
+-		kstart = KSTART(mod->info, ksects[s].sec);
+-		kstop = KSTOP(mod->info, ksects[s].sec);
+-		/* FIXME: add proper error handling */
+-
+-		add_elf_hashtable(b, ksects[s].name, kstart, kstop,
+-				(long) mod->info->kstrings);
+-	}
+-}
++	enum ksymtab_type k;
+ 
++	/* Skip __ksymtab_strings */
++	for (k = KSYMTAB; k < KSYMTAB_ALL; k++)
++		if (mod->info->ksym_tables[k].name)
++			add_elf_hashtable(b, mod->info, k);
++}
+diff --git a/scripts/mod/modpost.c b/scripts/mod/modpost.c
+index 938d2b5..a31611b 100644
+--- a/scripts/mod/modpost.c
++++ b/scripts/mod/modpost.c
+@@ -32,41 +32,6 @@ static int warn_unresolved = 0;
+ static int vmlinux_hash;
+ #endif
+ 
+-void fatal(const char *fmt, ...)
+-{
+-	va_list arglist;
+-
+-	fprintf(stderr, "FATAL: ");
+-
+-	va_start(arglist, fmt);
+-	vfprintf(stderr, fmt, arglist);
+-	va_end(arglist);
+-
+-	exit(1);
+-}
+-
+-void warn(const char *fmt, ...)
+-{
+-	va_list arglist;
+-
+-	fprintf(stderr, "WARNING: ");
+-
+-	va_start(arglist, fmt);
+-	vfprintf(stderr, fmt, arglist);
+-	va_end(arglist);
+-}
+-
+-void merror(const char *fmt, ...)
+-{
+-	va_list arglist;
+-
+-	fprintf(stderr, "ERROR: ");
+-
+-	va_start(arglist, fmt);
+-	vfprintf(stderr, fmt, arglist);
+-	va_end(arglist);
+-}
+-
+ static int is_vmlinux(const char *modname)
+ {
+ 	const char *myname;
+@@ -218,15 +183,15 @@ static enum export export_no(const char * s)
+ 
+ static enum export export_from_sec(struct elf_info *elf, Elf_Section sec)
+ {
+-	if (sec == elf->export_sec)
++	if (sec == elf->ksym_tables[KSYMTAB].sec)
+ 		return export_plain;
+-	else if (sec == elf->export_unused_sec)
++	else if (sec == elf->ksym_tables[KSYMTAB_UNUSED].sec)
+ 		return export_unused;
+-	else if (sec == elf->export_gpl_sec)
++	else if (sec == elf->ksym_tables[KSYMTAB_GPL].sec)
+ 		return export_gpl;
+-	else if (sec == elf->export_unused_gpl_sec)
++	else if (sec == elf->ksym_tables[KSYMTAB_UNUSED_GPL].sec)
+ 		return export_unused_gpl;
+-	else if (sec == elf->export_gpl_future_sec)
++	else if (sec == elf->ksym_tables[KSYMTAB_GPL_FUTURE].sec)
+ 		return export_gpl_future;
+ 	else
+ 		return export_unknown;
+@@ -269,25 +234,6 @@ static void sym_update_crc(const char *name, struct module *mod,
+ 	s->crc_valid = 1;
+ }
+ 
+-void *grab_file(const char *filename, unsigned long *size)
+-{
+-	struct stat st;
+-	void *map;
+-	int fd;
+-
+-	fd = open(filename, O_RDONLY);
+-	if (fd < 0 || fstat(fd, &st) != 0)
+-		return NULL;
+-
+-	*size = st.st_size;
+-	map = mmap(NULL, *size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
+-	close(fd);
+-
+-	if (map == MAP_FAILED)
+-		return NULL;
+-	return map;
+-}
+-
+ /**
+   * Return a copy of the next line in a mmap'ed file.
+   * spaces in the beginning of the line is trimmed away.
+@@ -323,110 +269,6 @@ char* get_next_line(unsigned long *pos, void *file, unsigned long size)
+ 	return NULL;
+ }
+ 
+-void release_file(void *file, unsigned long size)
+-{
+-	munmap(file, size);
+-}
+-
+-static int parse_elf(struct elf_info *info, const char *filename)
+-{
+-	unsigned int i;
+-	Elf_Ehdr *hdr;
+-	Elf_Shdr *sechdrs;
+-	Elf_Sym  *sym;
+-
+-	hdr = grab_file(filename, &info->size);
+-	if (!hdr) {
+-		perror(filename);
+-		exit(1);
+-	}
+-	info->hdr = hdr;
+-	if (info->size < sizeof(*hdr)) {
+-		/* file too small, assume this is an empty .o file */
+-		return 0;
+-	}
+-	/* Is this a valid ELF file? */
+-	if ((hdr->e_ident[EI_MAG0] != ELFMAG0) ||
+-	    (hdr->e_ident[EI_MAG1] != ELFMAG1) ||
+-	    (hdr->e_ident[EI_MAG2] != ELFMAG2) ||
+-	    (hdr->e_ident[EI_MAG3] != ELFMAG3)) {
+-		/* Not an ELF file - silently ignore it */
+-		return 0;
+-	}
+-	/* Fix endianness in ELF header */
+-	hdr->e_shoff    = TO_NATIVE(hdr->e_shoff);
+-	hdr->e_shstrndx = TO_NATIVE(hdr->e_shstrndx);
+-	hdr->e_shnum    = TO_NATIVE(hdr->e_shnum);
+-	hdr->e_machine  = TO_NATIVE(hdr->e_machine);
+-	hdr->e_type     = TO_NATIVE(hdr->e_type);
+-	sechdrs = (void *)hdr + hdr->e_shoff;
+-	info->sechdrs = sechdrs;
+-
+-	/* Fix endianness in section headers */
+-	for (i = 0; i < hdr->e_shnum; i++) {
+-		sechdrs[i].sh_type   = TO_NATIVE(sechdrs[i].sh_type);
+-		sechdrs[i].sh_offset = TO_NATIVE(sechdrs[i].sh_offset);
+-		sechdrs[i].sh_size   = TO_NATIVE(sechdrs[i].sh_size);
+-		sechdrs[i].sh_link   = TO_NATIVE(sechdrs[i].sh_link);
+-		sechdrs[i].sh_name   = TO_NATIVE(sechdrs[i].sh_name);
+-		sechdrs[i].sh_info   = TO_NATIVE(sechdrs[i].sh_info);
+-		sechdrs[i].sh_addr   = TO_NATIVE(sechdrs[i].sh_addr);
+-	}
+-	/* Find symbol table. */
+-	for (i = 1; i < hdr->e_shnum; i++) {
+-		const char *secstrings
+-			= (void *)hdr + sechdrs[hdr->e_shstrndx].sh_offset;
+-		const char *secname;
+-
+-		if (sechdrs[i].sh_offset > info->size) {
+-			fatal("%s is truncated. sechdrs[i].sh_offset=%u > sizeof(*hrd)=%ul\n", filename, (unsigned int)sechdrs[i].sh_offset, sizeof(*hdr));
+-			return 0;
+-		}
+-		secname = secstrings + sechdrs[i].sh_name;
+-		if (strcmp(secname, ".modinfo") == 0) {
+-			info->modinfo = (void *)hdr + sechdrs[i].sh_offset;
+-			info->modinfo_len = sechdrs[i].sh_size;
+-		} else if (strcmp(secname, "__ksymtab") == 0)
+-			info->export_sec = i;
+-		else if (strcmp(secname, "__ksymtab_unused") == 0)
+-			info->export_unused_sec = i;
+-		else if (strcmp(secname, "__ksymtab_gpl") == 0)
+-			info->export_gpl_sec = i;
+-		else if (strcmp(secname, "__ksymtab_unused_gpl") == 0)
+-			info->export_unused_gpl_sec = i;
+-		else if (strcmp(secname, "__ksymtab_gpl_future") == 0)
+-			info->export_gpl_future_sec = i;
+-#ifdef CONFIG_LKM_ELF_HASH
+-		else if (strcmp(secname, "__ksymtab_strings") == 0)
+-			info->kstrings = (void *)hdr + sechdrs[i].sh_offset;
+-#endif
+-		if (sechdrs[i].sh_type != SHT_SYMTAB)
+-			continue;
+-
+-		info->symtab_start = (void *)hdr + sechdrs[i].sh_offset;
+-		info->symtab_stop  = (void *)hdr + sechdrs[i].sh_offset
+-			                         + sechdrs[i].sh_size;
+-		info->strtab       = (void *)hdr +
+-			             sechdrs[sechdrs[i].sh_link].sh_offset;
+-	}
+-	if (!info->symtab_start) {
+-		fatal("%s has no symtab?\n", filename);
+-	}
+-	/* Fix endianness in symbols */
+-	for (sym = info->symtab_start; sym < info->symtab_stop; sym++) {
+-		sym->st_shndx = TO_NATIVE(sym->st_shndx);
+-		sym->st_name  = TO_NATIVE(sym->st_name);
+-		sym->st_value = TO_NATIVE(sym->st_value);
+-		sym->st_size  = TO_NATIVE(sym->st_size);
+-	}
+-	return 1;
+-}
+-
+-static void parse_elf_finish(struct elf_info *info)
+-{
+-	release_file(info->hdr, info->size);
+-}
+-
+ #define CRC_PFX     MODULE_SYMBOL_PREFIX "__crc_"
+ #define KSYMTAB_PFX MODULE_SYMBOL_PREFIX "__ksymtab_"
+ 
+diff --git a/scripts/mod/modpost.h b/scripts/mod/modpost.h
+index be8ea2d..96f7c11 100644
+--- a/scripts/mod/modpost.h
++++ b/scripts/mod/modpost.h
+@@ -9,81 +9,7 @@
+ #include <unistd.h>
+ #include <elf.h>
+ 
+-#include "elfconfig.h"
+-
+-#if KERNEL_ELFCLASS == ELFCLASS32
+-
+-#define Elf_Ehdr    Elf32_Ehdr
+-#define Elf_Shdr    Elf32_Shdr
+-#define Elf_Sym     Elf32_Sym
+-#define Elf_Addr    Elf32_Addr
+-#define Elf_Section Elf32_Section
+-#define ELF_ST_BIND ELF32_ST_BIND
+-#define ELF_ST_TYPE ELF32_ST_TYPE
+-
+-#define Elf_Rel     Elf32_Rel
+-#define Elf_Rela    Elf32_Rela
+-#define ELF_R_SYM   ELF32_R_SYM
+-#define ELF_R_TYPE  ELF32_R_TYPE
+-#else
+-
+-#define Elf_Ehdr    Elf64_Ehdr
+-#define Elf_Shdr    Elf64_Shdr
+-#define Elf_Sym     Elf64_Sym
+-#define Elf_Addr    Elf64_Addr
+-#define Elf_Section Elf64_Section
+-#define ELF_ST_BIND ELF64_ST_BIND
+-#define ELF_ST_TYPE ELF64_ST_TYPE
+-
+-#define Elf_Rel     Elf64_Rel
+-#define Elf_Rela    Elf64_Rela
+-#define ELF_R_SYM   ELF64_R_SYM
+-#define ELF_R_TYPE  ELF64_R_TYPE
+-#endif
+-
+-/* The 64-bit MIPS ELF ABI uses an unusual reloc format. */
+-typedef struct
+-{
+-	Elf32_Word    r_sym;	/* Symbol index */
+-	unsigned char r_ssym;	/* Special symbol for 2nd relocation */
+-	unsigned char r_type3;	/* 3rd relocation type */
+-	unsigned char r_type2;	/* 2nd relocation type */
+-	unsigned char r_type1;	/* 1st relocation type */
+-} _Elf64_Mips_R_Info;
+-
+-typedef union
+-{
+-	Elf64_Xword		r_info_number;
+-	_Elf64_Mips_R_Info	r_info_fields;
+-} _Elf64_Mips_R_Info_union;
+-
+-#define ELF64_MIPS_R_SYM(i) \
+-  ((__extension__ (_Elf64_Mips_R_Info_union)(i)).r_info_fields.r_sym)
+-
+-#define ELF64_MIPS_R_TYPE(i) \
+-  ((__extension__ (_Elf64_Mips_R_Info_union)(i)).r_info_fields.r_type1)
+-
+-#if KERNEL_ELFDATA != HOST_ELFDATA
+-
+-static inline void __endian(const void *src, void *dest, unsigned int size)
+-{
+-	unsigned int i;
+-	for (i = 0; i < size; i++)
+-		((unsigned char*)dest)[i] = ((unsigned char*)src)[size - i-1];
+-}
+-
+-#define TO_NATIVE(x)						\
+-({								\
+-	typeof(x) __x;						\
+-	__endian(&(x), &(__x), sizeof(__x));			\
+-	__x;							\
+-})
+-
+-#else /* endianness matches */
+-
+-#define TO_NATIVE(x) (x)
+-
+-#endif
++#include "elflib.h"
+ 
+ #define NOFAIL(ptr)   do_nofail((ptr), #ptr)
+ void *do_nofail(void *ptr, const char *expr);
+@@ -120,22 +46,6 @@ enum export {
+ 	export_unused_gpl, export_gpl_future, export_unknown
+ };
+ 
+-struct elf_info {
+-	unsigned long size;
+-	Elf_Ehdr     *hdr;
+-	Elf_Shdr     *sechdrs;
+-	Elf_Sym      *symtab_start;
+-	Elf_Sym      *symtab_stop;
+-	Elf_Section  export_sec;
+-	Elf_Section  export_unused_sec;
+-	Elf_Section  export_gpl_sec;
+-	Elf_Section  export_unused_gpl_sec;
+-	Elf_Section  export_gpl_future_sec;
+-	const char   *strtab;
+-	const char   *kstrings;
+-	char	     *modinfo;
+-	unsigned int modinfo_len;
+-};
+ 
+ /* A hash of all exported symbols,
+  * struct symbol is also used for lists of unresolved symbols */
+@@ -169,13 +79,7 @@ void maybe_frob_rcs_version(const char *modfilename,
+ void get_src_version(const char *modname, char sum[], unsigned sumlen);
+ 
+ /* from modpost.c */
+-void *grab_file(const char *filename, unsigned long *size);
+ char* get_next_line(unsigned long *pos, void *file, unsigned long size);
+-void release_file(void *file, unsigned long size);
+-
+-void fatal(const char *fmt, ...);
+-void warn(const char *fmt, ...);
+-void merror(const char *fmt, ...);
+ 
+ /* from ktablehash.c */
+ #ifdef CONFIG_LKM_ELF_HASH
+-- 
+1.6.0.6
+

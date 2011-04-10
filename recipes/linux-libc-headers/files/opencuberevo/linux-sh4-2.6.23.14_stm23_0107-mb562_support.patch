@@ -1,0 +1,549 @@
+commit 8055e60a97049bbc3e584b917e0b40d4d40c5333
+Author: Pawel MOLL <pawel.moll@st.com>
+Date:   Tue Mar 11 17:07:59 2008 +0000
+
+    Support for MB562 peripheral board initialization added.
+    
+    - arch/sh/boards/st/harp-common directory changed to .../common
+    - added arch_init routine for MB562
+    - added Kconfig entry for MB562 depending on MB519
+    
+    Signed-off-by: Pawel MOLL <pawel.moll@st.com>
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 1521c28..ef5c3ba 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -371,6 +371,13 @@ config SH_ST_MB519
+ 	  ST board ID: mb519). More information at:
+ 	  <http://www.stlinux.com/boards/mb519/>
+ 
++config SH_ST_MB562
++	bool "mb562: BD-DVD peripherals board"
++	depends on SH_ST_MB519
++	help
++	  Select SH_ST_MB562 if your processor board is connected
++	  with this multi-audio-outputs board.
++
+ config SH_HP6XX
+ 	bool "HP6XX"
+ 	select SYS_SUPPORTS_APM_EMULATION
+diff --git a/arch/sh/boards/st/common/Makefile b/arch/sh/boards/st/common/Makefile
+new file mode 100644
+index 0000000..0dba17b
+--- /dev/null
++++ b/arch/sh/boards/st/common/Makefile
+@@ -0,0 +1,5 @@
++#
++# Makefile for STMicroelectronics boards which look like the ST40STB1 HARP.
++#
++
++obj-y := irq.o
+diff --git a/arch/sh/boards/st/common/epld.c b/arch/sh/boards/st/common/epld.c
+new file mode 100644
+index 0000000..d061e6e
+--- /dev/null
++++ b/arch/sh/boards/st/common/epld.c
+@@ -0,0 +1,76 @@
++/*
++ * Copyright (C) 2007 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ */
++
++#include <linux/kernel.h>
++#include <linux/platform_device.h>
++#include <linux/io.h>
++#include "epld.h"
++
++#define DRIVER_NAME "harp-epld"
++
++static void __iomem *epld_base;
++static int epld_opsize;
++
++void epld_write(unsigned long value, unsigned long offset)
++{
++	if (epld_opsize == 16)
++		writew(value, epld_base + offset);
++	else
++		writeb(value, epld_base + offset);
++}
++
++unsigned long epld_read(unsigned long offset)
++{
++	if (epld_opsize == 16)
++		return readw(epld_base + offset);
++	else
++		return readb(epld_base + offset);
++}
++
++void __init epld_early_init(struct platform_device *pdev)
++{
++	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
++	struct plat_epld_data *data = pdev->dev.platform_data;
++
++	epld_base = ioremap(pdev->resource[0].start, size);
++	if (!epld_base)
++		panic("Unable to ioremap EPLD");
++
++	if (data)
++		epld_opsize = data->opsize;
++}
++
++static int __init epld_probe(struct platform_device *pdev)
++{
++	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
++
++	if (!request_mem_region(pdev->resource[0].start, size, pdev->name))
++		return -EBUSY;
++
++	if (epld_base)
++		return 0;
++
++	epld_early_init(pdev);
++
++	return 0;
++}
++
++static struct platform_driver epld_driver = {
++	.probe		= epld_probe,
++	.driver	= {
++		.name	= DRIVER_NAME,
++		.owner	= THIS_MODULE,
++	},
++};
++
++static int __init epld_init(void)
++{
++	return platform_driver_register(&epld_driver);
++}
++
++arch_initcall(epld_init);
+diff --git a/arch/sh/boards/st/common/epld.h b/arch/sh/boards/st/common/epld.h
+new file mode 100644
+index 0000000..a8faf45
+--- /dev/null
++++ b/arch/sh/boards/st/common/epld.h
+@@ -0,0 +1,9 @@
++void epld_write(unsigned long value, unsigned long offset);
++unsigned long epld_read(unsigned long offset);
++void epld_early_init(struct platform_device *device);
++
++void harp_init_irq(void);
++
++struct plat_epld_data {
++	int opsize;
++};
+diff --git a/arch/sh/boards/st/common/irq.c b/arch/sh/boards/st/common/irq.c
+new file mode 100644
+index 0000000..50a9945
+--- /dev/null
++++ b/arch/sh/boards/st/common/irq.c
+@@ -0,0 +1,98 @@
++/*
++ * Copyright (C) 2000 STMicroelectronics Limited
++ * Author: David J. Mckay (david.mckay@st.com)
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Looks after interrupts on the HARP board.
++ *
++ * Bases on the IPR irq system
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/irq.h>
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <asm/system.h>
++#include <asm/mach/harp.h>
++#include "epld.h"
++
++#define NUM_EXTERNAL_IRQS 16
++
++static void disable_harp_irq(unsigned int irq)
++{
++	unsigned maskReg;
++	unsigned mask;
++	int pri;
++
++	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
++		return;
++
++	pri = 15 - irq;
++
++	if (pri < 8) {
++		maskReg = EPLD_INTMASK0CLR;
++	} else {
++		maskReg = EPLD_INTMASK1CLR;
++		pri -= 8;
++	}
++	mask = 1 << pri;
++
++	epld_write(mask, maskReg);
++
++	/* Read back the value we just wrote to flush any write posting */
++	epld_read(maskReg);
++}
++
++static void enable_harp_irq(unsigned int irq)
++{
++	unsigned maskReg;
++	unsigned mask;
++	int pri;
++
++	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
++		return;
++
++	pri = 15 - irq;
++
++	if (pri < 8) {
++		maskReg = EPLD_INTMASK0SET;
++	} else {
++		maskReg = EPLD_INTMASK1SET;
++		pri -= 8;
++	}
++	mask = 1 << pri;
++
++	epld_write(mask, maskReg);
++}
++
++static void __init disable_all_interrupts(void)
++{
++	epld_write(0x00, EPLD_INTMASK0);
++	epld_write(0x00, EPLD_INTMASK1);
++}
++
++static struct irq_chip harp_chips[NUM_EXTERNAL_IRQS] = {
++	[0 ... NUM_EXTERNAL_IRQS-1] = {
++		.mask = disable_harp_irq,
++		.unmask = enable_harp_irq,
++		.mask_ack = disable_harp_irq,
++		.name = "harp",
++	}
++};
++
++void __init harp_init_irq(void)
++{
++	int irq;
++
++	disable_all_interrupts();
++
++	for (irq = 0; irq < NUM_EXTERNAL_IRQS; irq++) {
++		disable_irq_nosync(irq);
++		set_irq_chip_and_handler_name(irq, &harp_chips[irq],
++			handle_level_irq, "level");
++		disable_harp_irq(irq);
++	}
++}
+diff --git a/arch/sh/boards/st/common/mb562.c b/arch/sh/boards/st/common/mb562.c
+new file mode 100644
+index 0000000..2a04898
+--- /dev/null
++++ b/arch/sh/boards/st/common/mb562.c
+@@ -0,0 +1,40 @@
++/*
++ * arch/sh/boards/st/common/mb562.c
++ *
++ * Copyright (C) 2007 STMicroelectronics Limited
++ * Author: Pawel MOLL <pawel.moll@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * STMicroelectronics BD-DVD peripherals board support.
++ */
++
++#include <linux/init.h>
++#include <linux/stm/sysconf.h>
++
++static int __init device_init(void)
++{
++	struct sysconf_field *sc;
++
++	/* Set up "scenario 1" of audio outputs */
++
++	/* CONF_PAD_AUD[0] = 1
++	 * AUDDIG* are connected PCMOUT3_* - 10-channels PCM player #3 */
++	sc = sysconf_claim(SYS_CFG, 20, 0, 0, "pcm_player.3");
++	sysconf_write(sc, 1);
++
++	/* CONF_PAD_ETH[4] = 1
++	 * MII1RXD[3], MII1TXCLK, MII1COL, MII1CRS, MII1DINT & MII1PHYCL
++	 * connected to 6-channels PCM player #1 */
++	sc = sysconf_claim(SYS_CFG, 41, 20, 20, "pcm_player.1");
++	sysconf_write(sc, 1);
++
++	/* CONF_PAD_ETH[5] = 0
++	 * MII1CRS is output */
++	sc = sysconf_claim(SYS_CFG, 41, 21, 21, "pcm_player.1");
++	sysconf_write(sc, 0);
++
++	return 0;
++}
++arch_initcall(device_init);
+diff --git a/arch/sh/boards/st/harp-common/Makefile b/arch/sh/boards/st/harp-common/Makefile
+deleted file mode 100644
+index 0dba17b..0000000
+--- a/arch/sh/boards/st/harp-common/Makefile
++++ /dev/null
+@@ -1,5 +0,0 @@
+-#
+-# Makefile for STMicroelectronics boards which look like the ST40STB1 HARP.
+-#
+-
+-obj-y := irq.o
+diff --git a/arch/sh/boards/st/harp-common/epld.c b/arch/sh/boards/st/harp-common/epld.c
+deleted file mode 100644
+index d061e6e..0000000
+--- a/arch/sh/boards/st/harp-common/epld.c
++++ /dev/null
+@@ -1,77 +0,0 @@
+-/*
+- * Copyright (C) 2007 STMicroelectronics Limited
+- * Author: Stuart Menefy <stuart.menefy@st.com>
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- */
+-
+-#include <linux/kernel.h>
+-#include <linux/platform_device.h>
+-#include <asm/io.h>
+-#include "epld.h"
+-
+-#define DRIVER_NAME "harp-epld"
+-
+-static void __iomem *epld_base;
+-static int epld_opsize;
+-
+-void epld_write(unsigned long value, unsigned long offset)
+-{
+-	if (epld_opsize == 16)
+-		writew(value, epld_base + offset);
+-	else
+-		writeb(value, epld_base + offset);
+-}
+-
+-unsigned long epld_read(unsigned long offset)
+-{
+-	if (epld_opsize == 16)
+-		return readw(epld_base + offset);
+-	else
+-		return readb(epld_base + offset);
+-}
+-
+-void __init epld_early_init(struct platform_device *pdev)
+-{
+-	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
+-	struct plat_epld_data *data = pdev->dev.platform_data;
+-
+-	epld_base = ioremap(pdev->resource[0].start, size);
+-	if (!epld_base)
+-		panic("Unable to ioremap EPLD");
+-
+-	if (data) {
+-		epld_opsize = data->opsize;
+-	}
+-}
+-
+-static int __init epld_probe(struct platform_device *pdev)
+-{
+-	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
+-
+-	if (!request_mem_region(pdev->resource[0].start, size, pdev->name))
+-		return -EBUSY;
+-
+-	if (epld_base)
+-		return 0;
+-
+-	epld_early_init(pdev);
+-
+-	return 0;
+-}
+-
+-static struct platform_driver epld_driver = {
+-	.probe		= epld_probe,
+-	.driver	= {
+-		.name	= DRIVER_NAME,
+-		.owner	= THIS_MODULE,
+-	},
+-};
+-
+-static int __init epld_init(void)
+-{
+-	return platform_driver_register(&epld_driver);
+-}
+-
+-arch_initcall(epld_init);
+diff --git a/arch/sh/boards/st/harp-common/epld.h b/arch/sh/boards/st/harp-common/epld.h
+deleted file mode 100644
+index a8faf45..0000000
+--- a/arch/sh/boards/st/harp-common/epld.h
++++ /dev/null
+@@ -1,9 +0,0 @@
+-void epld_write(unsigned long value, unsigned long offset);
+-unsigned long epld_read(unsigned long offset);
+-void epld_early_init(struct platform_device *device);
+-
+-void harp_init_irq(void);
+-
+-struct plat_epld_data {
+-	int opsize;
+-};
+diff --git a/arch/sh/boards/st/harp-common/irq.c b/arch/sh/boards/st/harp-common/irq.c
+deleted file mode 100644
+index 50a9945..0000000
+--- a/arch/sh/boards/st/harp-common/irq.c
++++ /dev/null
+@@ -1,98 +0,0 @@
+-/*
+- * Copyright (C) 2000 STMicroelectronics Limited
+- * Author: David J. Mckay (david.mckay@st.com)
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- *
+- * Looks after interrupts on the HARP board.
+- *
+- * Bases on the IPR irq system
+- */
+-
+-#include <linux/init.h>
+-#include <linux/platform_device.h>
+-#include <linux/irq.h>
+-#include <linux/interrupt.h>
+-#include <asm/system.h>
+-#include <asm/io.h>
+-#include <asm/mach/harp.h>
+-#include "epld.h"
+-
+-#define NUM_EXTERNAL_IRQS 16
+-
+-static void disable_harp_irq(unsigned int irq)
+-{
+-	unsigned maskReg;
+-	unsigned mask;
+-	int pri;
+-
+-	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
+-		return;
+-
+-	pri = 15 - irq;
+-
+-	if (pri < 8) {
+-		maskReg = EPLD_INTMASK0CLR;
+-	} else {
+-		maskReg = EPLD_INTMASK1CLR;
+-		pri -= 8;
+-	}
+-	mask=1<<pri;
+-
+-	epld_write(mask, maskReg);
+-
+-	/* Read back the value we just wrote to flush any write posting */
+-	epld_read(maskReg);
+-}
+-
+-static void enable_harp_irq(unsigned int irq)
+-{
+-	unsigned maskReg;
+-	unsigned mask;
+-	int pri;
+-
+-	if (irq < 0 || irq >= NUM_EXTERNAL_IRQS)
+-		return;
+-
+-	pri = 15 - irq;
+-
+-	if (pri < 8) {
+-		maskReg = EPLD_INTMASK0SET;
+-	} else {
+-		maskReg = EPLD_INTMASK1SET;
+-		pri -= 8;
+-	}
+-	mask=1<<pri;
+-
+-	epld_write(mask, maskReg);
+-}
+-
+-static void __init disable_all_interrupts(void)
+-{
+-	epld_write(0x00, EPLD_INTMASK0);
+-	epld_write(0x00, EPLD_INTMASK1);
+-}
+-
+-static struct irq_chip harp_chips[NUM_EXTERNAL_IRQS] = {
+-	[0 ... NUM_EXTERNAL_IRQS-1 ] = {
+-		.mask = disable_harp_irq,
+-		.unmask = enable_harp_irq,
+-		.mask_ack = disable_harp_irq,
+-		.name = "harp",
+-	}
+-};
+-
+-void __init harp_init_irq(void)
+-{
+-	int irq;
+-
+-	disable_all_interrupts();
+-
+-	for (irq = 0; irq < NUM_EXTERNAL_IRQS; irq++) {
+-		disable_irq_nosync(irq);
+-		set_irq_chip_and_handler_name(irq, &harp_chips[irq],
+-			handle_level_irq, "level");
+-		disable_harp_irq(irq);
+-	}
+-}
+diff --git a/arch/sh/boards/st/mb411/Makefile b/arch/sh/boards/st/mb411/Makefile
+index fbd51d6..ff73abc 100644
+--- a/arch/sh/boards/st/mb411/Makefile
++++ b/arch/sh/boards/st/mb411/Makefile
+@@ -3,4 +3,4 @@
+ #
+ 
+ obj-y := setup.o epld.o
+-epld-y := ../harp-common/epld.o
++epld-y := ../common/epld.o
+diff --git a/arch/sh/boards/st/mb411/setup.c b/arch/sh/boards/st/mb411/setup.c
+index 880ce0d..abac329 100644
+--- a/arch/sh/boards/st/mb411/setup.c
++++ b/arch/sh/boards/st/mb411/setup.c
+@@ -22,7 +22,7 @@
+ #include <asm/io.h>
+ #include <asm/mach/harp.h>
+ #include <asm/irq-stb7100.h>
+-#include "../harp-common/epld.h"
++#include "../common/epld.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+diff --git a/arch/sh/boards/st/mb519/Makefile b/arch/sh/boards/st/mb519/Makefile
+index 39808f2..f75c823 100644
+--- a/arch/sh/boards/st/mb519/Makefile
++++ b/arch/sh/boards/st/mb519/Makefile
+@@ -3,4 +3,6 @@
+ #
+ 
+ obj-y := setup.o epld.o
+-epld-y := ../harp-common/epld.o
++obj-$(CONFIG_SH_ST_MB562) += mb562.o
++epld-y := ../common/epld.o
++mb562-y := ../common/mb562.o
+diff --git a/arch/sh/boards/st/mb519/setup.c b/arch/sh/boards/st/mb519/setup.c
+index cc5d2fe..61f49d7 100644
+--- a/arch/sh/boards/st/mb519/setup.c
++++ b/arch/sh/boards/st/mb519/setup.c
+@@ -22,7 +22,7 @@
+ #include <asm/irq-ilc.h>
+ #include <asm/io.h>
+ #include <asm/mach/harp.h>
+-#include "../harp-common/epld.h"
++#include "../common/epld.h"
+ 
+ static int ascs[2] __initdata = { 2, 3 };
+ 

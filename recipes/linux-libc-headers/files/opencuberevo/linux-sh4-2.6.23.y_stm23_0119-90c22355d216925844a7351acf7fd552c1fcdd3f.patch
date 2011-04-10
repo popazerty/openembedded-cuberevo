@@ -1,0 +1,31 @@
+From 90c22355d216925844a7351acf7fd552c1fcdd3f Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 6 May 2009 12:20:22 +0200
+Subject: [PATCH] stm: pm: Fixed TMU2 during resume from hibernation
+
+This patch fixes the TMU2 during a resume from hibenration erroneously
+enabled also when there is no registered-user.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/timers/timer-tmu.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/sh/kernel/timers/timer-tmu.c b/arch/sh/kernel/timers/timer-tmu.c
+index a7ca5ce..559a5a2 100644
+--- a/arch/sh/kernel/timers/timer-tmu.c
++++ b/arch/sh/kernel/timers/timer-tmu.c
+@@ -297,8 +297,8 @@ static int tmu2_set_rate(struct clk *clk, unsigned long freq, int algo_id)
+ {
+ 	unsigned long interval;
+ 
+-	if (freq == 0)
+-		return -1;
++	if (!freq || !tmu2_interrupt_fnt)
++		return -EINVAL;
+ 
+ 	interval = clk->rate / freq;
+ 	tmu_timer_set_interval(TMU2, interval, 1);
+-- 
+1.6.0.6
+

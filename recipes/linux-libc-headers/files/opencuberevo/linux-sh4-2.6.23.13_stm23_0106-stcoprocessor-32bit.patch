@@ -1,0 +1,17 @@
+The patch linux-sh4-2.6.23.1_stm23_0104-7200_copro.patch erronously
+made ST coprocessor support dependant on not being in 32 bit mode. Remove
+this condition.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/drivers/stm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Kconfig
++++ linux-2.6.23-stm/drivers/stm/Kconfig
+@@ -99,7 +99,6 @@ config STM_COPROCESSOR_SUPPORT
+ 	bool "STMicroelectronics coprocessor support"
+ 	default y
+ 	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200
+-	depends on !32BIT
+ 	---help---
+         Many of the ST system-on-chip devices have multiple CPUs, where a
+         master CPU running Linux has control over a number of slave CPUs,

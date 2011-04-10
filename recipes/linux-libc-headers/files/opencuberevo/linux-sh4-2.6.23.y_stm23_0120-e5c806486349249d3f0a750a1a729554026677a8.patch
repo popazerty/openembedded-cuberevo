@@ -1,0 +1,128 @@
+From e5c806486349249d3f0a750a1a729554026677a8 Mon Sep 17 00:00:00 2001
+From: David MCKAY <david.mckay@st.com>
+Date: Tue, 9 Jun 2009 13:15:15 +0100
+Subject: [PATCH] sh_stm: STMicro Cut3 7105 REQ/GNT PCI changes
+
+Cut3 of the the 7105 and cut2 of the 7141 introduced a change as
+workaround for a problem sharing the PCI and NAND. The workaround is to
+internally connect what was REQ/GNT0 to REQ/GNT3. This drops the number
+of external masters to 3 instead of 4, but this is not expected to be a
+problem for the vast majority of potential applications. This change is
+internal to the chip, the pinout is the same.
+
+This code sets up the EMI arbiter correctly in the case of cut3. This is
+done by probing the chip type and no changes to the BSP are needed. This
+means that PCI cards that use bus mastering (virtually everything)
+should now work correctly on cut3, whereas before they would never have
+been granted accesss to the bus.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/drivers/pci/pci-synopsys.c     |   25 +++++++++++++++++++------
+ arch/sh/drivers/pci/pci-synopsys.h     |   11 ++++++++---
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    3 +++
+ include/linux/stm/soc.h                |    6 ++++++
+ 4 files changed, 36 insertions(+), 9 deletions(-)
+
+diff --git a/arch/sh/drivers/pci/pci-synopsys.c b/arch/sh/drivers/pci/pci-synopsys.c
+index 54725ff..6cea908 100644
+--- a/arch/sh/drivers/pci/pci-synopsys.c
++++ b/arch/sh/drivers/pci/pci-synopsys.c
+@@ -454,7 +454,7 @@ static void __devinit pci_stm_setup(struct pci_config_data *pci_config,
+ 	int fn;
+ 	unsigned v;
+ 	unsigned long req_gnt_mask = 0;
+-	int i;
++	int i, req;
+ 
+ 	/* You HAVE to have either wrap or ping-pong enabled, even though they
+ 	 * are different bits. Very strange
+@@ -467,14 +467,27 @@ static void __devinit pci_stm_setup(struct pci_config_data *pci_config,
+ 		| EMISS_CONFIG_CLOCK_SELECT_PCI | EMISS_CONFIG_PCI_HOST_NOT_DEVICE, emiss + EMISS_CONFIG);
+ 
+ 	/* Figure out what req/gnt lines we are using */
+-	for(i = 0 ; i < 4; i++) {
++	for (i = 0; i < 4; i++) {
+ 		if(pci_config->req_gnt[i] != PCI_PIN_UNUSED) {
+-			req_gnt_mask |= EMISS_ARBITER_CONFIG_MASK_BUS_REQ(i);
++			req = ((i == 0) && pci_config->req0_to_req3) ? 3 : i;
++			req_gnt_mask |= EMISS_ARBITER_CONFIG_MASK_BUS_REQ(req);
+ 		}
+ 	}
+-	/* Configure the arbiter. More work needed to understand what all these fields do */
+-	v =  readl(emiss + EMISS_ARBITER_CONFIG);
+-	writel((v & ~req_gnt_mask) | EMISS_ARBITER_CONFIG_PCI_NOT_EMI, emiss + EMISS_ARBITER_CONFIG);
++
++	/* Pass through grant retraction feature for now */
++	v = readl(emiss + EMISS_ARBITER_CONFIG);
++	/* Clear these bits, note the req gnt is a set to 0 to enable */
++	v &=  ~(EMISS_ARBITER_CONFIG_BYPASS_ARBITER |
++		EMISS_ARBITER_CONFIG_STATIC_NOT_DYNAMIC	|
++		EMISS_ARBITER_CONFIG_PCI_NOT_EMI |
++		EMISS_ARBITER_CONFIG_BUS_FREE |
++		req_gnt_mask);
++
++	if (!pci_config->req0_to_req3 &&
++	    (pci_config->req_gnt[0] != PCI_PIN_UNUSED))
++		v |= EMISS_ARBITER_CONFIG_PCI_NOT_EMI;
++
++	writel(v, emiss + EMISS_ARBITER_CONFIG);
+ 
+ 	/* This field will need to be parameterised by the soc layer for sure, all silicon will likely be different */
+ 	writel( PCI_AD_CONFIG_READ_AHEAD(pci_config->ad_read_ahead) | PCI_AD_CONFIG_CHUNKS_IN_MSG(pci_config->ad_chunks_in_msg) |
+diff --git a/arch/sh/drivers/pci/pci-synopsys.h b/arch/sh/drivers/pci/pci-synopsys.h
+index 1331b10..d6206cc 100644
+--- a/arch/sh/drivers/pci/pci-synopsys.h
++++ b/arch/sh/drivers/pci/pci-synopsys.h
+@@ -29,9 +29,14 @@
+ 
+ 
+ #define EMISS_ARBITER_CONFIG			0x1004
+-#define EMISS_ARBITER_CONFIG_PCI_NOT_EMI	(1<< 8)
+-#define EMISS_ARBITER_CONFIG_MASK_BUS_REQ0 	(1<< 4)
+-#define EMISS_ARBITER_CONFIG_MASK_BUS_REQ(n)	( 1 << (4 + n)) // OK for REQ0
++#define EMISS_ARBITER_CONFIG_BYPASS_ARBITER 	(1 << 2)
++#define EMISS_ARBITER_CONFIG_MASK_BUS_REQ0 	(1 << 4)
++/* Can use req0 with following macro */
++#define EMISS_ARBITER_CONFIG_MASK_BUS_REQ(n)	(1 << (4 + (n)))
++#define EMISS_ARBITER_CONFIG_PCI_NOT_EMI	(1 << 8)
++#define EMISS_ARBITER_CONFIG_BUS_FREE		(1 << 9)
++#define EMISS_ARBITER_CONFIG_STATIC_NOT_DYNAMIC	(1 << 12)
++
+ #define EMISS_FRAME_LENGTH(n)			(0x1010 + ((n)*0x10))
+ #define EMISS_HOLDOFF				(0x1014 + ((n)*0x10))
+ #define EMISS_PRIORITY				(0x1018 + ((n)*4))
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index f6cbac9..3ebb81b 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -1025,6 +1025,9 @@ void __init stx7105_configure_pci(struct pci_config_data *pci_conf)
+ 	int use_alt_for_int0;
+ 	int sys5_int_enables = 0;
+ 
++	/* Cut 3 has req0 wired to req3 to work around NAND problems */
++	pci_conf->req0_to_req3 = (cpu_data->cut_major >= 3);
++
+ 	/* Fill in the default values for the 7105 */
+ 	if(!pci_conf->ad_override_default) {
+ 		pci_conf->ad_threshold = 5;pci_conf->ad_read_ahead = 1;
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index d5fdcc6..19193a6 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -148,6 +148,12 @@ struct pci_config_data {
+ 	unsigned ad_read_ahead:1;
+ 
+ 	unsigned ad_override_default:1; /* Set to override default values for your board */
++
++	/* Cut3 7105/ cut 2 7141 connected req0 pin to req3 to work around some
++	 * problems with nand. This bit will be auto-probed by the chip layer,
++	 * the board layer should NOT have to set this
++	 */
++	unsigned req0_to_req3:1;
+ };
+ 
+ u8 pci_synopsys_inb(unsigned long port);
+-- 
+1.6.0.6
+

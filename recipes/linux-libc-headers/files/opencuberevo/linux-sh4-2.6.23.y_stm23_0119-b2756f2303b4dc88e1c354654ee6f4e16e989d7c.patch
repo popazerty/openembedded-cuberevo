@@ -1,0 +1,34 @@
+From b2756f2303b4dc88e1c354654ee6f4e16e989d7c Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Thu, 9 Apr 2009 10:30:21 +0200
+Subject: [PATCH] LKM: Rename hash table array removing the __ksymtab_ prefix
+
+Hash table array used in ELF HASH based module loader must be renamed
+avoding to use __ksymtab_ prefix, otherwise these will be recognized
+by the modpost as exported symbols and will be listed in Module.symvers
+as (unknown), producing a warnign message when building external modules
+due to twice exported symbol.
+So the new name will be htable__ksymtab{gpl,gpl_future,unused,unused_gpl}.
+ELF section name are kept unchanged.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ scripts/mod/ktablehash.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/scripts/mod/ktablehash.c b/scripts/mod/ktablehash.c
+index b890373..410b10a 100644
+--- a/scripts/mod/ktablehash.c
++++ b/scripts/mod/ktablehash.c
+@@ -189,7 +189,7 @@ static void add_elf_hashtable(struct buffer *b, const char *table,
+ 	buf_printf(b, "#ifdef CONFIG_LKM_ELF_HASH\n\n");
+ 	buf_printf(b, "#include <linux/types.h>\n");
+ 
+-	buf_printf(b, "static uint32_t %s_htable[]\n", table);
++	buf_printf(b, "static uint32_t htable%s[]\n", table);
+ 	buf_printf(b, "__attribute_used__\n");
+ 	buf_printf(b, "__attribute__((section(\"%s.htable\"))) = {\n", table);
+ 
+-- 
+1.6.0.6
+

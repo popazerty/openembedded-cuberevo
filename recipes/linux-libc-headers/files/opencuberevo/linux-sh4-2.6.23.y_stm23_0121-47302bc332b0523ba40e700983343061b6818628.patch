@@ -1,0 +1,60 @@
+From 47302bc332b0523ba40e700983343061b6818628 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Tue, 23 Jun 2009 15:46:21 +0200
+Subject: [PATCH] stm: pm: Fixed kernel crash when PM enabled
+
+This patch fixes the random kernel crash when CONFIG_PM is enabled.
+pm_idle action will be installed from SOC specific suspend code
+if required.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/suspend.c |   13 +------------
+ 1 files changed, 1 insertions(+), 12 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/suspend.c b/arch/sh/kernel/cpu/sh4/suspend.c
+index d9bd7b9..0d90e85 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend.c
++++ b/arch/sh/kernel/cpu/sh4/suspend.c
+@@ -22,12 +22,11 @@
+ #include <linux/hardirq.h>
+ #include <linux/jiffies.h>
+ #include <asm/system.h>
++#include <asm/cpu/cacheflush.h>
+ #include <asm/io.h>
+ #include <asm-generic/bug.h>
+ #include <asm/pm.h>
+ 
+-#include <linux/stm/pm.h>
+-
+ #undef  dbg_print
+ 
+ #ifdef CONFIG_PM_DEBUG
+@@ -93,11 +92,6 @@ static int sh4_suspend_enter(suspend_state_t state)
+ 	return 0;
+ }
+ 
+-static void sleep_on_idle(void)
+-{
+-	asm volatile ("sleep	\n":::"memory");
+-}
+-
+ static ssize_t power_wokenupby_show(struct kset *subsys, char *buf)
+ {
+ 	return sprintf(buf, "%d\n", wokenup_by);
+@@ -117,11 +111,6 @@ int __init sh4_suspend_register(struct sh4_suspend_t *pdata)
+ 
+ 	if (!pdata)
+ 		return -EINVAL;
+-/*	the idle loop calls the sleep instruction
+- *	but platform specific code (in the suspend_platform_setup
+- *	implementation) could set a different 'on idle' action
+- */
+-	pm_idle = sleep_on_idle;
+ 	data = pdata;
+ 	data->ops.enter = sh4_suspend_enter;
+ 	if (data->stby_tbl && data->stby_size)
+-- 
+1.6.0.6
+

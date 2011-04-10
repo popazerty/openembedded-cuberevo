@@ -1,0 +1,1152 @@
+This patch updates the STM ALSA driver to the new stm_dma api.
+
+Signed-off-by: Mark Glaisher <mark.glaisher@st.com>
+
+Index: linux-2.6.17/sound/stm/Kconfig
+===================================================================
+--- linux-2.6.17.orig/sound/stm/Kconfig
++++ linux-2.6.17/sound/stm/Kconfig
+@@ -13,20 +13,20 @@ config SND_STM8000
+ 	  To compile this driver as a module, choose M here: the module
+ 	  will be called snd-stm8000.
+ 
+-config SND_STB7100
+-	tristate "STB7100 ALSA driver"
+-	depends on CPU_SUBTYPE_STB7100
++config SND_STB710X
++	tristate "STB710x ALSA driver"
++	depends on CPU_SUBTYPE_STB7100 && STM_DMA
+ 	select SND_PCM
+ 	help
+-	  Say Y here for ALSA support on the STb7100.
++	  Say Y here for ALSA support on the STb710x.
+ 
+ 	  To compile this driver as a module, choose M here: the module
+-	  will be called snd-stb7100.
++	  will be called snd-stb710x.
+ 
+ config STB7100_IEC_DEBUG
+-	tristate "STB7100 ALSA driver IEC debug"
+-	depends on CPU_SUBTYPE_STB7100
++	tristate "STB710x ALSA driver IEC debug"
++	depends on CPU_SUBTYPE_STB7100 && STM_DMA
+ 	select SND_PCM
+ 	help
+-	  Say Y here for ALSA-IEC debugging on the STb7100.
++	  Say Y here for ALSA-IEC debugging on the STb710x.
+ endmenu
+Index: linux-2.6.17/sound/stm/Makefile
+===================================================================
+--- linux-2.6.17.orig/sound/stm/Makefile
++++ linux-2.6.17/sound/stm/Makefile
+@@ -1,10 +1,10 @@
+ 
+ snd-stm8000-objs := st_pcm_core.o
+-snd-stb7100-objs := st_pcm_core.o
+-snd-spdif-stb7100-objs :=st_pcm_core.o
++snd-stb710x-objs := st_pcm_core.o
++snd-spdif-stb710x-objs :=st_pcm_core.o
+ 
+ obj-$(CONFIG_SND_STM8000) += snd-stm8000.o
+-obj-$(CONFIG_SND_STB7100) += snd-stb7100.o
++obj-$(CONFIG_SND_STB710X) += snd-stb710x.o
+ 
+ 
+ 
+Index: linux-2.6.17/sound/stm/stb7100_i2s_spdif.c
+===================================================================
+--- linux-2.6.17.orig/sound/stm/stb7100_i2s_spdif.c
++++ linux-2.6.17/sound/stm/stb7100_i2s_spdif.c
+@@ -46,6 +46,9 @@ static snd_pcm_hardware_t stb7100_conver
+ 	.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
+ 	.period_bytes_min = FRAMES_TO_BYTES(1,10),
+ 	.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
++	/*The above 5 parms will be overidden in stb7100_pcm_open once
++	 * we have loaded the channel configs for this cpu - we still need
++	 * to provide defaults however*/
+ 	.periods_min	  = 1,
+ 	.periods_max	  = PCM_MAX_FRAMES
+ };
+@@ -132,8 +135,8 @@ static irqreturn_t stb7100_converter_int
+ {
+ 	unsigned long val;
+ 	unsigned long handled= IRQ_NONE;
++	unsigned long reg;
+ 	pcm_hw_t *chip = dev_id;
+-
+         /* Read and clear interrupt status */
+ 	spin_lock(&chip->lock);
+ 	val = readl(chip->pcm_converter + AUD_SPDIF_PR_INT_STA);
+@@ -147,14 +150,11 @@ static irqreturn_t stb7100_converter_int
+ 	}
+ 
+ 	if(val & PR_I2S_FIFO_OVERRUN_INT){
+-		int reg;
+-
+ 		reg = readl(chip->pcm_converter+AUD_SPDIF_PR_CFG);
+ 		writel((reg & ~PR_CFG_FIFO_ENABLE),chip->pcm_converter+AUD_SPDIF_PR_CFG);
+ 		writel(reg,chip->pcm_converter+AUD_SPDIF_PR_CFG);
+ 		handled = IRQ_HANDLED;
+ 	}
+-
+ 	if(val & PR_AUDIO_SAMPLES_FULLY_READ_INT){
+             /* Inform higher layer that we have completed a period */
+ 		snd_pcm_period_elapsed(chip->current_substream);
+@@ -186,8 +186,8 @@ static void stb7100_converter_stop_playb
+ 	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+ 
+ 	spin_unlock(&chip->lock);
+-
+ 	dma_stop_channel(chip->fdma_channel);
++	dma_free_descriptor(&chip->dmap);
+ }
+ 
+ 
+@@ -196,7 +196,9 @@ static void stb7100_converter_start_play
+ 	pcm_hw_t     *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg=0;
+ 
+-	dma_xfer(chip->fdma_channel);
++	int res = dma_xfer_list(chip->fdma_channel,&chip->dmap);
++	if(res !=0)
++		printk("%s FDMA_CH %d failed to start %d\n",__FUNCTION__,chip->fdma_channel,res);
+ 
+ 	reg = readl(chip->pcm_converter +AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
+ 	writel(reg | PR_CTRL_AUDIO_DATA_MODE,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
+@@ -341,7 +343,8 @@ static int stb7100_converter_free(pcm_hw
+ 	writel(0, card->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
+ 	writel(PCMP_OFF, card->pcm_player + STM_PCMP_CONTROL);
+ 
+-	free_dma(card->fdma_channel);
++	if(card->fdma_channel)
++		free_dma(card->fdma_channel);
+ 
+ 	iounmap(card->pcm_clock_reg);
+ 	iounmap(card->out_pipe);
+@@ -352,7 +355,6 @@ static int stb7100_converter_free(pcm_hw
+ 		free_irq(card->irq,(void *)card);
+ 
+ 	kfree(card);
+-
+ 	return 0;
+ }
+ 
+@@ -369,14 +371,14 @@ static stm_playback_ops_t stb7100_conver
+ };
+ 
+ 
+-static int stb7100_create_converter_device(pcm_hw_t *chip,snd_card_t  *this_card)
++static int stb7100_create_converter_device(pcm_hw_t *chip,snd_card_t  **this_card)
+ {
+ 	int err = 0;
+ 	int irq = linux_pcm_irq[chip->card_data->major];
+ 
+-	strcpy(this_card->shortname, "STb7100_CNV");
+-	strcpy(this_card->longname,  "STb7100_CNV");
+-	sprintf(this_card->driver,   "%d",chip->card_data->major);
++	strcpy((*this_card)->shortname, "STb7100_CNV");
++	strcpy((*this_card)->longname,  "STb7100_CNV");
++	sprintf((*this_card)->driver,   "%d",chip->card_data->major);
+         /*
+          * In this case we need the base address of pcm0 for the player +
+          * the base address of the IEC60958 device for the conversion block
+@@ -406,7 +408,7 @@ static int stb7100_create_converter_devi
+ 
+ 	stb7100_reset_pcm_player(chip);
+ 
+-	if((err = snd_card_pcm_allocate(chip,chip->card_data->minor,this_card->longname)) < 0) {
++	if((err = snd_card_pcm_allocate(chip,chip->card_data->minor,(*this_card)->longname)) < 0) {
+         	printk(" >>> Failed to create PCM-SPDIF converter Stream\n");
+         	stb7100_converter_free(chip);
+     	}
+@@ -420,13 +422,13 @@ static int stb7100_create_converter_devi
+ 		return err;
+ 	}
+ 
+-	if((err = snd_device_new(this_card, SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0){
++	if((err = snd_device_new((*this_card), SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0){
+         	printk(">>> creating sound device :%d,%d failed\n",chip->card_data->major,chip->card_data->minor);
+         	stb7100_converter_free(chip);
+ 		return err;
+     	}
+ 
+-	if((err = snd_card_register(this_card)) < 0){
++	if((err = snd_card_register((*this_card))) < 0){
+         	stb7100_converter_free(chip);
+ 		return err;
+     	}
+Index: linux-2.6.17/sound/stm/stb7100_snd.h
+===================================================================
+--- linux-2.6.17.orig/sound/stm/stb7100_snd.h
++++ linux-2.6.17/sound/stm/stb7100_snd.h
+@@ -140,6 +140,44 @@
+ #define  IEC61937_DTS_TYPE_3	 13
+ #define  IEC61937_AC3_STREAM     0x1
+ 
++#define DUMP_CONVERTER_STATE(chip) (\
++	printk("%s\n\
++	AUD_SPDIF_PR_CFG %x\n\
++	AUD_SPDIF_PR_STAT %x\n\
++	AUD_SPDIF_PR_INT_EN %x\n\
++	AUD_SPDIF_PR_INT_STA %x\n\
++	AUD_SPDIF_PR_INT_CLR %x\n\
++	AUD_SPDIF_PR_VALIDITY %x\n\
++	AUD_SPDIF_PR_USER_DATA %x\n\
++	AUD_SPDIF_PR_CHANNEL_STA_BASE %x\n\
++	AUD_SPDIF_PR_SPDIF_CTRL	%x\n\
++	AUD_SPDIF_PR_SPDIF_STA	%x\n\
++	AUD_SPDIF_PR_SPDIF_PAUSE %x\n\
++	AUD_SPDIF_PR_SPDIF_DATA_BURST %x\n\
++	AUD_SPDIF_PR_SPDIF_PA_PB %x\n\
++	AUD_SPDIF_PR_SPDIF_PC_PD %x\n\
++	AUD_SPDIF_PR_SPDIF_CL1	%x\n\
++	AUD_SPDIF_PR_SPDIF_CR1	%x\n\
++	AUD_SPDIF_PR_SPDIF_SUV	%x\n",\
++	__FUNCTION__,\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_CFG),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_STAT ),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_INT_EN),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_INT_STA),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_INT_CLR),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_VALIDITY ),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_USER_DATA),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_STA),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PAUSE),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_DATA_BURST),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PA_PB),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PC_PD),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CL1),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CR1	),\
++	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_SUV)));
++
+ #define DUMP_SPDIF_STATE()(\
+ 	printk("%s\n\
+ 	AUD_SPDIF_RST  %x\n\
+@@ -176,7 +214,29 @@
+ 		(int)readl(chip->pcm_player+AUD_SPDIF_FRA_LEN_BST),\
+ 		(int)readl(chip->pcm_player+AUD_SPDIF_PAU_LAT)))
+ 
+-
++#define DUMP_PCM_STATE(chip)(\
++	printk("%s\n\
++	STM_PCMP_RST %x\n\
++	STM_PCMP_DATA_FIFO %x\n\
++	STM_PCMP_IRQ_STATUS %x\n\
++	STM_PCMP_IRQ_ENABLE %x\n\
++	STM_PCMP_ITS_CLR  %x\n\
++	STM_PCMP_IRQ_EN_SET %x\n\
++	STM_PCMP_IRQ_EN_CLR %x\n\
++	STM_PCMP_CONTROL %x\n\
++	STM_PCMP_STATUS  %x\n\
++	STM_PCMP_FORMAT %x\n",\
++	__FUNCTION__,\
++	(int)readl(chip->pcm_player+0x00),\
++	(int)readl(chip->pcm_player+STM_PCMP_DATA_FIFO),\
++	(int)readl(chip->pcm_player+STM_PCMP_IRQ_STATUS),\
++	(int)readl(chip->pcm_player+STM_PCMP_IRQ_ENABLE),\
++	(int)readl(chip->pcm_player+STM_PCMP_ITS_CLR ),\
++	(int)readl(chip->pcm_player+STM_PCMP_IRQ_EN_SET),\
++	(int)readl(chip->pcm_player+STM_PCMP_IRQ_EN_CLR),\
++	(int)readl(chip->pcm_player+STM_PCMP_CONTROL),\
++	(int)readl(chip->pcm_player+STM_PCMP_STATUS ),\
++	(int)readl(chip->pcm_player+STM_PCMP_FORMAT )));
+ /*
+  * I2S to SPDIF Protocol converter defines
+  */
+@@ -238,7 +298,7 @@
+ 
+ #endif /*STB7100_SND_H_*/
+ 
+-static int stb7100_spdif_card_probe(stm_snd_output_device_t *dev);
+-static int stb7100_create_converter_device(pcm_hw_t *chip,snd_card_t *this_card);
++static int stb7100_create_spdif_device(pcm_hw_t * chip,snd_card_t **card);
++static int stb7100_create_converter_device(pcm_hw_t *chip,snd_card_t **this_card);
+ static int stb7100_converter_program_player(snd_pcm_substream_t *substream);
+ static void stb7100_reset_pcm_player(pcm_hw_t *chip);
+Index: linux-2.6.17/sound/stm/stb7100_spdif.c
+===================================================================
+--- linux-2.6.17.orig/sound/stm/stb7100_spdif.c
++++ linux-2.6.17/sound/stm/stb7100_spdif.c
+@@ -1,5 +1,5 @@
+ /*
+- *  STb7100 SPDIF player setup
++ *  STb710x SPDIF player setup
+  *  Copyright (c) 2005 STMicroelectronics Limited
+  *
+  *  *  Authors:  Mark Glaisher <Mark.Glaisher@st.com>
+@@ -21,8 +21,7 @@
+  */
+ 
+ #include <asm/dma.h>
+-#include <asm/cacheflush.h>
+-
++#include <linux/stm/stm-dma.h>
+ #if (STM_USE_BIGPHYS_AREA == 0)
+ #define SPDIF_MAX_FRAMES	((128*1024)/8)  /* <128k, max slab allocation */
+ #else
+@@ -147,11 +146,9 @@ static inline void stb7100_spdif_unpause
+ 			chip->iec61937.unpause_flag=1;
+ 			return;
+ 		}
+-
+ 	}
+ 
+ 	spin_lock(&chip->lock);
+-
+ 	writel((chip->pcmplayer_control|chip->spdif_player_mode),
+ 		chip->pcm_player+STM_PCMP_CONTROL);
+ 	spin_unlock(&chip->lock);
+@@ -161,25 +158,24 @@ static inline void stb7100_spdif_unpause
+ static inline void stb7100_spdif_start_playback(snd_pcm_substream_t *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	chip->hwbuf_current_addr = 0;
+-	dma_xfer(chip->fdma_channel);
+ 
++	dma_xfer_list(chip->fdma_channel,&chip->dmap);
+ 	spin_lock(&chip->lock);
+ 	reset_spdif_off(chip);
+ 	writel((chip->pcmplayer_control|chip->spdif_player_mode),chip->pcm_player + STM_PCMP_CONTROL);
+ 	spin_unlock(&chip->lock);
+-
+ }
+ 
+ 
+ static inline void stb7100_spdif_stop_playback(snd_pcm_substream_t *substream)
+ {
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
++	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	spin_lock(&chip->lock);
+ 	writel(0,chip->pcm_player+STM_PCMP_CONTROL);
+ 	reset_spdif_on(chip);
+ 	spin_unlock(&chip->lock);
+ 	dma_stop_channel(chip->fdma_channel);
++	dma_free_descriptor(&chip->dmap);
+ }
+ 
+ 
+@@ -285,7 +281,6 @@ static int stb7100_program_spdifplayer(s
+ 	u32 irq_enable = ENABLE_INT_NSAMPLE;
+ 
+ 	reg =(runtime->period_size * runtime->channels) << SPDIF_SAMPLES_SHIFT;
+-
+ 	reg |= SPDIF_SW_STUFFING | SPDIF_BIT16_DATA_NOROUND;
+ 
+ 	spin_lock_irqsave(&chip->lock,flags);
+@@ -403,13 +398,27 @@ static int stb7100_spdif_open(snd_pcm_su
+ {
+ 	snd_pcm_runtime_t *runtime = substream->runtime;
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
++	int err=0;
++	const char * dmac_id =STM_DMAC_ID;
++	const char * lb_cap_channel = STM_DMA_CAP_LOW_BW;
++	const char * hb_cap_channel = STM_DMA_CAP_HIGH_BW;
+ 
+-	if(chip->iec60958_rawmode)
+-	{
++	if(chip->iec60958_rawmode){
+ 		runtime->hw.info   |= SNDRV_PCM_INFO_MMAP;
+ 		runtime->hw.formats = SNDRV_PCM_FMTBIT_S32_LE; /* Only 32bit in RAW mode */
+ 	}
+ 
++	if(chip->fdma_channel <0){
++		err=request_dma_bycap(&dmac_id,&hb_cap_channel,"STB710x_SPDIF_DMA");
++		if(err <0){
++			err=request_dma_bycap(&dmac_id,&lb_cap_channel,	"STB710x_SPDIF_DMA");
++			if(err <0){
++				printk(" %s error in DMA request %d\n",__FUNCTION__,err);
++				return err;
++			}
++		}
++		chip->fdma_channel= err;
++	}
+ 	return 0;
+ }
+ 
+@@ -425,29 +434,24 @@ static stm_playback_ops_t stb7100_spdif_
+ 	.unpause_playback = stb7100_spdif_unpause_playback
+ };
+ 
+-
+-static int stb7100_spdif_create(snd_card_t *card,stm_snd_output_device_t *dev_data)
++int  stb7100_create_spdif_device(pcm_hw_t * chip,snd_card_t **card)
+ {
+ 	int err=0;
+ 	unsigned long reg=0;
+-	pcm_hw_t *chip=0;
+ 
+ 	static snd_device_ops_t ops = {
+ 		.dev_free = snd_pcm_dev_free,
+ 	};
+ 
+-	if((chip = kcalloc(1,sizeof(pcm_hw_t), GFP_KERNEL)) == NULL)
+-		return -ENOMEM;
+ 
+-	if(!card)
+-		return -EINVAL;
++	sprintf((*card)->driver,   "%d",chip->card_data->major);
++	strcpy((*card)->shortname, "STb7100_SPDIF");
++	/*-2 on dev num as we are assuming 2 pcm outputs initialised before the spdif*/
++	sprintf((*card)->longname, "STb7100_SPDIF%d",chip->card_data->major -2);
+ 
+ 	spin_lock_init(&chip->lock);
+-
+-	chip->fdma_channel = request_dma(5,"STB7100_SPDIF_DMA");
+-	chip->card         = card;
++	chip->card         = *card;
+ 	chip->irq          = -1;
+-	chip->card_data    = dev_data;
+ 	chip->hw           = stb7100_spdif_hw;
+ 	chip->oversampling_frequency = 128; /* This is for HDMI compatibility */
+ 
+@@ -456,7 +460,7 @@ static int stb7100_spdif_create(snd_card
+ 	chip->pcm_player    = ioremap(SPDIF_BASE,0);
+ 
+ 	chip->playback_ops  = &stb7100_spdif_ops;
+-
++	chip->fdma_channel = -1;
+ 	iec60958_default_channel_status(chip);
+ 	chip->iec_encoding_mode = ENCODING_IEC60958;
+ 
+@@ -475,61 +479,40 @@ static int stb7100_spdif_create(snd_card
+                        stb7100_spdif_interrupt, SA_INTERRUPT,
+                        "STB7100 SPDIF Player",(void*)chip))
+ 	{
+-		DEBUG_PRINT((">>> failed to get IRQ\n"));
++		printk((">>> failed to get IRQ\n"));
+ 		stb7100_pcm_free(chip);
+ 		return -EBUSY;
+ 	}
+ 	else
+ 		chip->irq = LINUX_SPDIFPLAYER_ALLREAD_IRQ;
+ 
+-	if ((err = snd_card_pcm_allocate(chip, chip->card_data->minor, card->longname)) < 0){
++	if ((err = snd_card_pcm_allocate(chip, chip->card_data->minor, (*card)->longname)) < 0){
+ 		printk(">>> failed to create PCM stream\n");
+ 		stb7100_pcm_free(chip);
+ 		return err;
+ 	}
+ 
+ 	if ((err = snd_iec60958_create_controls(chip)) < 0){
++		printk(">>> failed to create SPDIF ctls\n");
+ 		stb7100_pcm_free(chip);
+ 		return err;
+ 	}
+ 	if((err = snd_generic_create_controls(chip)) < 0){
++		printk(">>> failed to create generic ctls\n");
+ 		stb7100_pcm_free(chip);
+ 		return err;
+ 	}
+ 
+-	if ((err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0){
++	if ((err = snd_device_new((*card), SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0){
+ 		printk(">>> creating sound device failed\n");
+ 		stb7100_pcm_free(chip);
+ 		return err;
+ 	}
+ 
+-	return 0;
+-}
+-
+-
+-static int __init stb7100_spdif_card_probe(stm_snd_output_device_t *dev_data)
+-{
+-	snd_card_t *card;
+-	int err;
+-
+-	card = snd_card_new(index[dev_data->major],id[dev_data->major], THIS_MODULE, 0);
+-	if (card == NULL)
+-		return -ENOMEM;
+-
+-	sprintf(card->driver,   "%d",dev_data->major);
+-	strcpy(card->shortname, "STb7100_SPDIF");
+-	/*-2 on dev num as we are assuming 2 pcm outputs initialised before the spdif*/
+-	sprintf(card->longname, "STb7100_SPDIF%d",dev_data->major -2);
+-
+-	if ((err = stb7100_spdif_create(card, dev_data)) < 0){
+-		snd_card_free(card);
++	if ((err = snd_card_register((*card))) < 0) {
++		printk(">>> cant register card\n");
++		snd_card_free(*card);
+ 		return err;
+ 	}
+-
+-	if ((err = snd_card_register(card)) < 0) {
+-		snd_card_free(card);
+-		return err;
+-	}
+-
+ 	return 0;
+ }
+Index: linux-2.6.17/sound/stm/stm7100_pcm.c
+===================================================================
+--- linux-2.6.17.orig/sound/stm/stm7100_pcm.c
++++ linux-2.6.17/sound/stm/stm7100_pcm.c
+@@ -1,5 +1,5 @@
+ /*
+- *  STb7100 PCM Player Sound Driver
++ *  STb710x PCM Player Sound Driver
+  *  Copyright (c)   (c) 2005 STMicroelectronics Limited
+  *
+  *  *  Authors:  Mark Glaisher <Mark.Glaisher@st.com>
+@@ -21,8 +21,8 @@
+  */
+ 
+ #include <linux/delay.h>
+-
+-#define STb7100_SYSCFG_BASE         0x19001000
++#include <linux/device.h>
++#include <linux/platform_device.h>
+ 
+ static unsigned long pcm_base_addr[SND_DRV_CARDS] =
+ {
+@@ -36,18 +36,9 @@ static unsigned long linux_pcm_irq[SND_D
+ {
+ 	LINUX_PCMPLAYER0_ALLREAD_IRQ,
+ 	LINUX_PCMPLAYER1_ALLREAD_IRQ,
+-        LINUX_SPDIFPLAYER_ALLREAD_IRQ,
+-        LINUX_SPDIFCONVERTER_ALLREAD_IRQ,
+-};
+-/*here we specify the paced channel id's for the pcm players*/
+-static unsigned long fdma_bus_req_id[SND_DRV_CARDS] =
+-{
+-	26,/* PCM0 */
+-	27, /* PCM1 */
+-	29, /* SPDIF*/
+-        26    /*PROTOCOL CONVERTER PIGGY_BACKS on PCM0*/
++    	LINUX_SPDIFPLAYER_ALLREAD_IRQ,
++    	LINUX_SPDIFCONVERTER_ALLREAD_IRQ,
+ };
+-
+ /*
+  * Extra PCM Player format regsiter define for 7100 Cut2/3
+  */
+@@ -170,8 +161,8 @@ static snd_pcm_hardware_t stb7100_pcm_hw
+ 
+ 	.rate_min	  = 32000,
+ 	.rate_max	  = 192000,
+-	.channels_min	  = 10,
+-	.channels_max	  = 10,
++	.channels_min	  = 10,/*vals now taken from setup.c for platform*/
++	.channels_max	  = 10,/*specific channel availability -but we must still provide a default*/
+ 	.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
+ 	.period_bytes_min = FRAMES_TO_BYTES(1,10),
+ 	.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
+@@ -359,6 +350,7 @@ static void stb7100_pcm_stop_playback(sn
+ 
+ 	spin_unlock(&chip->lock);
+ 	dma_stop_channel(chip->fdma_channel);
++	dma_free_descriptor(&chip->dmap);
+ }
+ 
+ 
+@@ -366,8 +358,9 @@ static void stb7100_pcm_start_playback(s
+ {
+ 	pcm_hw_t     *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg=0;
+-
+-	dma_xfer(chip->fdma_channel);
++	int res = dma_xfer_list(chip->fdma_channel,&chip->dmap);
++	if(res !=0)
++		printk("%s FDMA_CH %d failed to start %d\n",__FUNCTION__,chip->fdma_channel,res);
+ 
+ 	spin_lock(&chip->lock);
+ 
+@@ -439,6 +432,7 @@ static irqreturn_t stb7100_pcm_interrupt
+ {
+ 	unsigned long val;
+ 	pcm_hw_t *stb7100 = dev_id;
++	irqreturn_t res =IRQ_NONE;
+ 
+ 	/* Read and clear interrupt status */
+ 	spin_lock(&stb7100->lock);
+@@ -446,53 +440,45 @@ static irqreturn_t stb7100_pcm_interrupt
+ 	writel(val,stb7100->pcm_player + STM_PCMP_ITS_CLR);
+ 	spin_unlock(&stb7100->lock);
+ 
+-	if((val & PCMP_INT_STATUS_ALLREAD) == PCMP_INT_STATUS_ALLREAD){
+-		/* Inform higher layer that we have completed a period */
++	if(val & PCMP_INT_STATUS_ALLREAD){
++		/*Inform higher layer that we have completed a period */
+ 		snd_pcm_period_elapsed(stb7100->current_substream);
+-
+-		return IRQ_HANDLED;
++		res=  IRQ_HANDLED;
+ 	}
+-	return IRQ_NONE;
++	return  res;
+ }
+ 
+-
+ static int stb7100_program_fdma(snd_pcm_substream_t *substream)
+ {
+ 	pcm_hw_t          *chip    = snd_pcm_substream_chip(substream);
+ 	snd_pcm_runtime_t *runtime = substream->runtime;
+-	struct dma_channel* pcm_channel;
+-	int bus_req_id = fdma_bus_req_id[chip->card_data->major];
+-	unsigned long flags=0;
++	unsigned long irqflags=0;
+ 	int err=0;
+-
++	struct stm_dma_params dmap;
+ 	if(!chip->out_pipe || ! chip->pcm_player)
+ 		return -EINVAL;
++	spin_lock_irqsave(&chip->lock,irqflags);
+ 
+-	spin_lock_irqsave(&chip->lock,flags);
++	declare_dma_parms(	&dmap,
++				MODE_PACED,
++				STM_DMA_LIST_CIRC,
++				STM_DMA_SETUP_CONTEXT_TASK,
++				STM_DMA_NOBLOCK_MODE,
++			       	(char*)STM_DMAC_ID);
+ 
+ 	chip->buffer_start_addr = (unsigned long)runtime->dma_addr;
+ 
+-	pcm_channel = get_dma_channel(chip->fdma_channel);
+-	if(!pcm_channel){
+-		err =  -EIO;
+-		goto exit;
+-	}
+-
+-	pcm_channel->comp_callback = 0;
+-	pcm_channel->err_callback  = 0;
+-	pcm_channel->mode          = MODE_PACED;
+-	pcm_channel->count         = snd_pcm_lib_buffer_bytes(substream);
+-	pcm_channel->sar           = runtime->dma_addr;
+-	pcm_channel->dar           = virt_to_phys(chip->pcm_player+STM_PCMP_DATA_FIFO);
+-
+-	pcm_channel->list_len      = 1;
+-	pcm_channel->flags         = bus_req_id
+-				   | DIM_1_x_0
+-                                   | LIST_TYPE_LINKED
+-                                   | CALLBACK_CONTEXT_INTERRUPT;
+-	err = dma_configure_channel(pcm_channel);
+-exit:
+-	spin_unlock_irqrestore(&chip->lock,flags);
++	dma_parms_paced(&dmap,
++			snd_pcm_lib_buffer_bytes(substream),
++			chip->fdma_req);
++
++	dma_parms_addrs(&dmap,runtime->dma_addr,
++			virt_to_phys(chip->pcm_player+STM_PCMP_DATA_FIFO),
++			snd_pcm_lib_buffer_bytes(substream));
++
++	dma_compile_list(&dmap);
++	chip->dmap = dmap;
++	spin_unlock_irqrestore(&chip->lock,irqflags);
+ 	return err;
+ }
+ 
+@@ -567,15 +553,14 @@ static int stb7100_program_pcmplayer(snd
+ 	unsigned long ctrlreg, fmtreg;
+ 	snd_pcm_runtime_t *runtime = substream->runtime;
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
++	unsigned long irqmask = MEM_FULL_READIRQ;
+ 	unsigned long flags=0;
+ 
+-
+ 	fmtreg = PCMP_FORMAT_32  | PCMP_ALIGN_START       | PCMP_MSB_FIRST  |
+ 		 PCMP_CLK_RISING | PCMP_LRLEVEL_LEFT_HIGH | PCMP_PADDING_ON;
+ 
+ 	ctrlreg = (runtime->period_size * runtime->channels) << PCMP_SAMPLES_SHIFT;
+ 
+-
+ 	/*
+ 	 * The PCM data format is set to be I2S.
+ 	 * External DACs must be configured to expect this format and
+@@ -629,14 +614,13 @@ static int stb7100_program_pcmplayer(snd
+ 	else
+ 		ctrlreg |= PCMP_IGNORE_SPDIF_LATENCY;
+ 
+-
+ 	chip->pcmplayer_control = ctrlreg;
+-
+-
+         /*
+-         * The 7100 cut2/3 can use 1-5 stereo channels, cut1.3 is like the
+-         * stm8000 and is fixed to 5 stereo channels.
++         * The 7100 cut >=3 can use 2-10 channels, cut < 3 is like the
++         * stm8000 and is fixed to 5 stereo channels. 7109 is always dynamic
++         * channel programmable.
+          */
++
+ 	fmtreg |= (runtime->channels/2) << PCMP_CHANNELS_SHIFT;
+ 	fmtreg |= PCMP_DREQ_TRIGGER << PCMP_DREQ_TRIGGER_SHIFT;
+ 	writel(fmtreg, chip->pcm_player + STM_PCMP_FORMAT);
+@@ -644,7 +628,7 @@ static int stb7100_program_pcmplayer(snd
+ 	/*enable the allread irq - but only for the pcm players, the pcm
+ 	 * converter takes this interrupt during I2s->IEC60958 mode*/
+ 	if(PROTOCOL_CONVERTER_DEVICE != chip->card_data->major){
+-		writel(MEM_FULL_READIRQ,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
++		writel(irqmask,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
+ 	}
+ 	spin_unlock_irqrestore(&chip->lock,flags);
+ 	return 0;
+@@ -670,9 +654,6 @@ static int stb7100_pcm_program_hw(snd_pc
+ static int stb7100_pcm_free(pcm_hw_t *card)
+ {
+ 	writel(PCMP_OFF, card->pcm_player + STM_PCMP_CONTROL);
+-
+-	free_dma(card->fdma_channel);
+-
+ 	iounmap(card->pcm_clock_reg);
+ 	iounmap(card->out_pipe);
+ 	iounmap(card->pcm_player);
+@@ -680,6 +661,9 @@ static int stb7100_pcm_free(pcm_hw_t *ca
+ 	if(card->irq > 0)
+ 		free_irq(card->irq,(void *)card);
+ 
++	if(card->fdma_channel>=0)
++		free_dma(card->fdma_channel);
++
+ 	kfree(card);
+ 
+ 	return 0;
+@@ -775,31 +759,43 @@ static snd_pcm_hw_constraint_list_t stb7
+ 		.mask = 0
+ };
+ 
+-
+ static int stb7100_pcm_open(snd_pcm_substream_t *substream)
+ {
+ 	snd_pcm_runtime_t *runtime = substream->runtime;
+-	void              *syscfg;
+-        unsigned long      chiprev;
+-        int                err;
+-
+-	syscfg = ioremap(STb7100_SYSCFG_BASE,sizeof(unsigned long));
+-	if(!syscfg)
+-		return -EIO;
+-
+-        chiprev = (readl(syscfg)>>28)+1;
+-
+-	iounmap(syscfg);
+-
+-	if(chiprev < 3)
+-		return 0;
+-
+-	runtime->hw.channels_min = 2;
++    	int                err=0;
++	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
++	const char * dmac_id =STM_DMAC_ID;
++	const char * lb_cap_channel = STM_DMA_CAP_LOW_BW;
++	const char * hb_cap_channel = STM_DMA_CAP_HIGH_BW;
++	printk("%s in\n",__FUNCTION__);
++	if(chip->fdma_channel <0){
++		if((err=request_dma_bycap(
++					&dmac_id,
++					&hb_cap_channel,
++					"STB7100_PCM_DMA"))<0){
++			if((err=request_dma_bycap(
++						&dmac_id,
++						&lb_cap_channel,
++						"STB7100_PCM_DMA"))<0){
++				return -ENODEV;
++			}
++		}
++		chip->fdma_channel= err;
++	}
++	BUG_ON(chip->fdma_channel <0);
++	/*PCMP IP's prior to 7100C3 are fixed to 10 channels, later
++	 * revisions and 7109's can program for 2-10 channels - here we
++	 * expose the number of programmable channels*/
++
++	runtime->hw.channels_min = chip->min_ch;
++	runtime->hw.channels_max = chip->max_ch;
++	runtime->hw.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,chip->max_ch),
++	runtime->hw.period_bytes_min = FRAMES_TO_BYTES(1,chip->min_ch),
++	runtime->hw.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,chip->max_ch),
+ 
+ 	err = snd_pcm_hw_constraint_list(substream->runtime, 0,
+ 					 SNDRV_PCM_HW_PARAM_CHANNELS,
+ 					 &stb7100_constraints_channels);
+-
+ 	return err;
+ }
+ 
+@@ -828,8 +824,6 @@ static int main_device_allocate(snd_card
+ 	stb7100->card_data     = dev_data;
+ 	stb7100->pcm_clock_reg = ioremap(AUD_CFG_BASE, 0);
+ 	stb7100->out_pipe      = ioremap(FDMA2_BASE_ADDRESS,0);
+-        stb7100->fdma_channel  = request_dma((stb7100->card_data->major+3),"STB7100_PCM_DMA");
+-
+ 	return 0;
+ }
+ 
+@@ -838,7 +832,7 @@ static snd_device_ops_t ops = {
+ };
+ 
+ 
+-static int stb7100_create_lpcm_device(pcm_hw_t *chip,snd_card_t *this_card)
++static int stb7100_create_lpcm_device(pcm_hw_t *chip,snd_card_t **this_card)
+ {
+ 	int err = 0;
+ 	int irq = linux_pcm_irq[chip->card_data->major];
+@@ -851,9 +845,9 @@ static int stb7100_create_lpcm_device(pc
+ 	chip->playback_ops  = &stb7100_pcm_ops;
+ 
+ 
+-	sprintf(this_card->shortname, "STb7100_PCM%d",chip->card_data->major);
+-	sprintf(this_card->longname,  "STb7100_PCM%d",chip->card_data->major );
+-	sprintf(this_card->driver,    "%d",chip->card_data->major);
++	sprintf((*this_card)->shortname, "STb7100_PCM%d",chip->card_data->major);
++	sprintf((*this_card)->longname,  "STb7100_PCM%d",chip->card_data->major );
++	sprintf((*this_card)->driver,    "%d",chip->card_data->major);
+ 
+ 
+ 	if(request_irq(irq, stb7100_pcm_interrupt, SA_INTERRUPT, "STB7100_PCM", (void*)chip)){
+@@ -874,10 +868,9 @@ static int stb7100_create_lpcm_device(pc
+     	}
+ 
+ 	set_default_device_clock(chip);
+-
+ 	stb7100_reset_pcm_player(chip);
+ 
+-	if((err = snd_card_pcm_allocate(chip,chip->card_data->minor,this_card->longname)) < 0){
++	if((err = snd_card_pcm_allocate(chip,chip->card_data->minor,(*this_card)->longname)) < 0){
+         	printk(">>> Failed to create PCM stream \n");
+ 	        stb7100_pcm_free(chip);
+     	}
+@@ -886,58 +879,222 @@ static int stb7100_create_lpcm_device(pc
+ 		return err;
+ 	}
+ 
+-	if((err = snd_device_new(this_card, SNDRV_DEV_LOWLEVEL,chip, &ops)) < 0){
++	if((err = snd_device_new((*this_card), SNDRV_DEV_LOWLEVEL,chip, &ops)) < 0){
+ 		printk(">>> creating sound device :%d,%d failed\n",chip->card_data->major,chip->card_data->minor);
+ 		stb7100_pcm_free(chip);
+ 		return err;
+ 	}
+-	if ((err = snd_card_register(this_card)) < 0) {
++
++	if ((err = snd_card_register((*this_card))) < 0) {
++		printk("registration failed !\n");
+ 		stb7100_pcm_free(chip);
+ 		return err;
+ 	}
++	return 0;
++}
++static struct platform_device *pcm0_platform_device;
++static struct platform_device *pcm1_platform_device;
++static struct platform_device *spdif_platform_device;
++static struct platform_device *cnv_platform_device;
++
++static int stb710x_platform_alsa_probe(struct device *dev);
++
++static struct device_driver alsa_cnv_driver = {
++	.name  = "710x_ALSA_CNV",
++	.owner = THIS_MODULE,
++	.bus   = &platform_bus_type,
++	.probe = stb710x_platform_alsa_probe,
++};
++
++static struct device_driver alsa_pcm0_driver = {
++	.name  = "710x_ALSA_PCM0",
++	.owner = THIS_MODULE,
++	.bus   = &platform_bus_type,
++	.probe = stb710x_platform_alsa_probe,
++};
++
++static struct device_driver alsa_pcm1_driver = {
++	.name  = "710x_ALSA_PCM1",
++	.owner = THIS_MODULE,
++	.bus   = &platform_bus_type,
++	.probe = stb710x_platform_alsa_probe,
++};
++static struct device_driver alsa_spdif_driver = {
++	.name  = "710x_ALSA_SPD",
++	.owner = THIS_MODULE,
++	.bus   = &platform_bus_type,
++	.probe = stb710x_platform_alsa_probe,
++};
++
++
++static struct device alsa_pcm1_device = {
++	.bus_id="alsa_710x_pcm1",
++	.driver = &alsa_pcm1_driver,
++	.parent   = &platform_bus ,
++	.bus      = &platform_bus_type,
++};
++
++static struct device alsa_pcm0_device = {
++	.bus_id="alsa_710x_pcm0",
++	.driver = &alsa_pcm0_driver,
++	.parent   = &platform_bus ,
++	.bus      = &platform_bus_type,
++};
++static struct device alsa_spdif_device = {
++	.bus_id="alsa_710x_spdif",
++	.driver = &alsa_spdif_driver,
++	.parent   = &platform_bus ,
++	.bus      = &platform_bus_type,
++};
++static struct device alsa_cnv_device = {
++	.bus_id="alsa_710x_cnv",
++	.driver = &alsa_cnv_driver,
++	.parent   = &platform_bus ,
++	.bus      = &platform_bus_type,
++};
++
++
++
++
++static int __init stb710x_platform_alsa_probe(struct device *dev)
++{
++
++	if(strcmp(dev->bus_id,alsa_pcm0_driver.name)==0)
++	        pcm0_platform_device = to_platform_device(dev);
++
++	else if(strcmp(dev->bus_id,alsa_pcm1_driver.name)==0)
++	        pcm1_platform_device = to_platform_device(dev);
++
++	else if(strcmp(dev->bus_id,alsa_spdif_driver.name)==0)
++	        spdif_platform_device = to_platform_device(dev);
++
++	else if(strcmp(dev->bus_id,alsa_cnv_driver.name)==0)
++	        cnv_platform_device = to_platform_device(dev);
++
++	else return -EINVAL;
++
++        return 0;
++}
++
++
++static int register_platform_driver(struct platform_device *platform_dev,pcm_hw_t *chip)
++{
++	static struct resource *res;
++	if (!platform_dev){
++       		printk("%s Failed. Check your kernel SoC config\n",__FUNCTION__);
++         	return -EINVAL;
++       	}
++
++	res = platform_get_resource(platform_dev, IORESOURCE_IRQ,0);    /*resource 0 */
++	if(res!=NULL){
++		chip->min_ch = res->start;
++		chip->max_ch = res->end;
++	}
++	else return -ENOSYS;
+ 
++	res = platform_get_resource(platform_dev, IORESOURCE_IRQ,1);
++	if(res!=NULL)
++		chip->fdma_req = res->start;
++	else return -ENOSYS;
+ 	return 0;
+ }
+ 
+ 
+-static int __init snd_pcm_card_probe(int dev)
++
++static int snd_pcm_card_generic_probe(snd_card_t ** card, pcm_hw_t * chip, int dev)
+ {
+-	snd_card_t *card={0};
++	int err=0;
++	struct device_driver *  dev_driver;
++	struct device * device;
++	switch(dev){
++		case PCM0_DEVICE:
++			dev_driver= 	&alsa_pcm0_driver;
++			device =  	&alsa_pcm0_device;
++			break;
++		case PCM1_DEVICE:
++			dev_driver= 	&alsa_pcm1_driver;
++			device =  	&alsa_pcm1_device;
++			break;
++		case SPDIF_DEVICE:
++			dev_driver= 	&alsa_spdif_driver;
++			device =  	&alsa_spdif_device;
++			break;
++		case PROTOCOL_CONVERTER_DEVICE:
++			dev_driver= 	&alsa_cnv_driver;
++			device =  	&alsa_cnv_device;
++			break;
++		default:
++			return -EINVAL;
++	}
++	if(driver_register(dev_driver)==0){
++		if(device_register(device)!=0)
++			return -ENOSYS;
++	}
++	else return -ENOSYS;
+ 
+-	int err;
+-        pcm_hw_t *chip;
++	chip->fdma_channel =-1;
++	chip->card_data = &card_list[dev];
+ 
+-        switch(card_list[dev].major){
+-            case SPDIF_DEVICE:
+-		return stb7100_spdif_card_probe(&card_list[dev]);
+-            case PCM0_DEVICE:
+-            case PCM1_DEVICE:
+-            case PROTOCOL_CONVERTER_DEVICE:
+-                if((chip = kcalloc(1,sizeof(pcm_hw_t), GFP_KERNEL)) == NULL)
+-                    return -ENOMEM;
+-
+-                    card = snd_card_new(index[card_list[dev].major],id[card_list[dev].major], THIS_MODULE, 0);
+-
+-                    if (card == NULL)
+-                        return -ENOMEM;
+-
+-                    if ((err = main_device_allocate(card,&card_list[dev],chip)) < 0){
+-                        printk(" snd card free on main alloc device\n");
+-                        snd_card_free(card);
+-                        return err;
+-                    }
+-
+-                    if(PROTOCOL_CONVERTER_DEVICE==card_list[dev].major){
+-                        if((err=  stb7100_create_converter_device(chip,card))<0)
+-                            snd_card_free(card);
+-                    }
+-                    else{
+-                        if((err = stb7100_create_lpcm_device(chip,card)) <0)
+-                            snd_card_free(card);
+-                   }
+-                    return err;
+-             default:
+-                 return -ENODEV;
++	*card = snd_card_new(index[card_list[dev].major],id[card_list[dev].major], THIS_MODULE, 0);
++        if (card == NULL){
++      		printk(" cant allocate new card of %d\n",card_list[dev].major);
++      		return -ENOMEM;
+         }
++      	if((err = main_device_allocate(*card,&card_list[dev],chip)) < 0){
++              	printk(" snd card free on main alloc device\n");
++               	snd_card_free(*card);
++       		return err;
++       }
++
++}
+ 
++static int __init snd_pcm_card_probe(int dev)
++{
++	snd_card_t *card;
++	pcm_hw_t *chip={0};
++	int err=0;
++
++	if((chip = kcalloc(1,sizeof(pcm_hw_t), GFP_KERNEL)) == NULL)
++        	return -ENOMEM;
++
++	snd_pcm_card_generic_probe(&card,chip,dev);
++
++	switch(card_list[dev].major){
++        	case SPDIF_DEVICE:
++			if(register_platform_driver(spdif_platform_device,chip)!=0)
++				goto err_exit;
++
++			if((err = stb7100_create_spdif_device(chip,&card))<0)
++				snd_card_free(card);
++			return err;
++
++            	case PROTOCOL_CONVERTER_DEVICE:
++			if(register_platform_driver(cnv_platform_device,chip)!=0)
++				goto err_exit;
++
++            		if((err=  stb7100_create_converter_device(chip,&card))<0)
++             		         	snd_card_free(card);
++  			return err;
++
++            	case PCM0_DEVICE:
++			if(register_platform_driver(pcm0_platform_device,chip)!=0)
++				goto err_exit;
++
++               		if((err = stb7100_create_lpcm_device(chip,&card)) <0)
++                        		snd_card_free(card);
++                	return err;
++
++            	case PCM1_DEVICE:
++			if(register_platform_driver(pcm1_platform_device,chip)!=0)
++				goto err_exit;
++
++               		if((err = stb7100_create_lpcm_device(chip,&card)) <0)
++                        		snd_card_free(card);
++                	return err;
++             	default:
++                	return -ENODEV;
++        }
++err_exit:
++	printk(" Error getting Platform resources for dev %d\n",card_list[dev].major);
++	return -ENODEV;
+ }
+Index: linux-2.6.17/sound/stm/st_pcm_core.c
+===================================================================
+--- linux-2.6.17.orig/sound/stm/st_pcm_core.c
++++ linux-2.6.17/sound/stm/st_pcm_core.c
+@@ -21,6 +21,8 @@
+  */
+ 
+ #include <sound/driver.h>
++#include <asm/cpu/cacheflush.h>
++#include <asm/cacheflush.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
+ 
+@@ -293,7 +295,6 @@ static int snd_pcm_playback_hwparams(snd
+ 		}
+ 		else{
+ 			dma_cache_wback(&addr, size);
+-
+ 			runtime->dma_area    = addr;
+ 			runtime->dma_addr    = virt_to_phys(addr);
+ 			runtime->dma_bytes   = size;
+@@ -497,7 +498,6 @@ static int snd_pcm_copy(snd_pcm_substrea
+ 
+ 	if(copy_from_user(hwbuf, buf, totalbytes))
+ 		return -EFAULT;
+-
+ 	dma_cache_wback(hwbuf, totalbytes);
+ 
+ 	return 0;
+@@ -1246,7 +1246,6 @@ static int __devinit snd_card_pcm_alloca
+ static int __init alsa_card_init(void)
+ {
+ 	int i=0;
+-
+ 	for(i=0;i<SND_DRV_CARDS;i++){
+ 		if (snd_pcm_card_probe(i) < 0){
+ 			DEBUG_PRINT(("STm PCM Player not found or device busy\n"));
+@@ -1256,7 +1255,6 @@ static int __init alsa_card_init(void)
+ 	return 0;
+ }
+ 
+-
+ static void __exit alsa_card_exit(void)
+ {
+ 	int i=0;
+Index: linux-2.6.17/sound/stm/st_pcm.h
+===================================================================
+--- linux-2.6.17.orig/sound/stm/st_pcm.h
++++ linux-2.6.17/sound/stm/st_pcm.h
+@@ -24,6 +24,7 @@
+ #define _PCM_PLAYER_HW_H
+ 
+ #include <sound/asound.h>
++#include <linux/stm/stm-dma.h>
+ 
+ #ifdef __cplusplus
+ extern "C" {
+@@ -45,7 +46,6 @@ extern "C" {
+ 
+ struct pcm_hw_t;
+ 
+-
+ typedef enum {
+ 	STM_DATA_TYPE_LPCM,
+ 	STM_DATA_TYPE_IEC60958
+@@ -251,9 +251,12 @@ typedef struct pcm_hw_t {
+ 	char 			iec_encoding_mode;
+ 
+ 	IEC61937_t 		iec61937;
+-
++	int  			min_ch;
++	int 			max_ch;
++	int 			fdma_req;
++	struct 	stm_dma_params  dmap;
+ #if defined(CONFIG_CPU_SUBTYPE_STB7100)
+-        int 			spdif_player_mode;
++	int 			spdif_player_mode;
+ 	int			fdma_channel;
+ #endif
+ } pcm_hw_t;

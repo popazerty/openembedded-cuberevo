@@ -1,0 +1,301 @@
+From c45b9bd5b046e7682f71a219b3b0839b0b16e470 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 31 Aug 2009 11:51:49 +0200
+Subject: [PATCH] stm: pm: Updated pm standby support to be always compiled
+
+This patch changes the standby support to be always usable as
+requested by STAPI teams [BUG: 6663]
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/suspend-stb7100.c |    7 +++----
+ arch/sh/kernel/cpu/sh4/suspend-stx5197.c |    6 ++----
+ arch/sh/kernel/cpu/sh4/suspend-stx7105.c |   12 ++++--------
+ arch/sh/kernel/cpu/sh4/suspend-stx7111.c |   11 +++--------
+ arch/sh/kernel/cpu/sh4/suspend-stx7141.c |   11 +++--------
+ arch/sh/kernel/cpu/sh4/suspend-stx7200.c |   11 +++--------
+ 6 files changed, 18 insertions(+), 40 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stb7100.c b/arch/sh/kernel/cpu/sh4/suspend-stb7100.c
+index 79eab1f..3965422 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stb7100.c
+@@ -38,7 +38,6 @@ extern void __iomem *clkgena_base;
+  * STANDBY INSTRUCTION TABLE
+  * *************************
+  */
+-#ifdef CONFIG_PM_DEBUG
+ static unsigned long stb7100_standby_table[] __cacheline_aligned = {
+ /* 1. PLL0 at the minimum frequency */
+ 	/* Unlock the clocks */
+@@ -92,7 +91,7 @@ CLK_POKE(CLKA_LOCK, 0x0),
+ /* END. */
+ _END()
+ };
+-#endif
++
+ /* *********************
+  * MEM INSTRUCTION TABLE
+  * *********************
+@@ -214,11 +213,11 @@ static struct sh4_suspend_t st40data __cacheline_aligned = {
+ 	.iobase = stb7100_iomem,
+ 	.ops.prepare = stb7100_suspend_prepare,
+ 	.evt_to_irq = stb7100_evttoirq,
+-#ifdef CONFIG_PM_DEBUG
++
+ 	.stby_tbl = (unsigned long)stb7100_standby_table,
+ 	.stby_size = DIV_ROUND_UP(ARRAY_SIZE(stb7100_standby_table) *
+ 			sizeof(long), L1_CACHE_BYTES),
+-#endif
++
+ 	.mem_tbl = (unsigned long)stb7100_mem_table,
+ 	.mem_size = DIV_ROUND_UP(ARRAY_SIZE(stb7100_mem_table) * sizeof(long),
+ 			L1_CACHE_BYTES),
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx5197.c b/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
+index 4c19238..f195c1d 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx5197.c
+@@ -49,7 +49,6 @@
+  * STANDBY INSTRUCTION TABLE
+  * *************************
+  */
+-#ifdef CONFIG_PM_DEBUG
+ static unsigned long stx5197_standby_table[] __cacheline_aligned = {
+ CLK_POKE(CLK_LOCK_CFG, 0xf0),
+ CLK_POKE(CLK_LOCK_CFG, 0x0f), /* UnLock the clocks */
+@@ -77,7 +76,6 @@ _DELAY(),
+ _DELAY(),
+ _END()
+ };
+-#endif
+ 
+ /* *********************
+  * MEM INSTRUCTION TABLE
+@@ -139,11 +137,11 @@ static struct sh4_suspend_t st40data __cacheline_aligned = {
+ 	.iobase = stx5197_iomem,
+ 	.ops.prepare = stx5197_suspend_prepare,
+ 	.evt_to_irq = stx5197_evt_to_irq,
+-#ifdef CONFIG_PM_DEBUG
++
+ 	.stby_tbl = (unsigned long)stx5197_standby_table,
+ 	.stby_size = DIV_ROUND_UP(ARRAY_SIZE(stx5197_standby_table) *
+ 			sizeof(long), L1_CACHE_BYTES),
+-#endif
++
+ 	.mem_tbl = (unsigned long)stx5197_mem_table,
+ 	.mem_size = DIV_ROUND_UP(ARRAY_SIZE(stx5197_mem_table) * sizeof(long),
+ 			L1_CACHE_BYTES),
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7105.c b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+index e5e0329..f0a8b33 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7105.c
+@@ -39,7 +39,6 @@
+  * STANDBY INSTRUCTION TABLE
+  * *************************
+  */
+-#ifdef CONFIG_PM_DEBUG
+ static unsigned long stx7105_standby_table[] __cacheline_aligned = {
+ /* 1. Move all the clock on OSC */
+ CLK_POKE(CKGA_CLKOPSRC_SWITCH_CFG(0x0), 0x0),
+@@ -62,7 +61,7 @@ CLK_STORE(CKGA_OSC_DIV_CFG(5)),
+ /* END. */
+ _END()
+ };
+-#endif
++
+ /* *********************
+  * MEM INSTRUCTION TABLE
+  * *********************
+@@ -135,7 +134,6 @@ static unsigned long stx7105_wrt_table[16] __cacheline_aligned;
+ 
+ static int stx7105_suspend_prepare(suspend_state_t state)
+ {
+-#ifdef CONFIG_PM_DEBUG
+ 	if (state == PM_SUSPEND_STANDBY) {
+ 		stx7105_wrt_table[0] = /* swith config */
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
+@@ -143,9 +141,7 @@ static int stx7105_suspend_prepare(suspend_state_t state)
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
+ 		stx7105_wrt_table[2] = /* clk_ic_if_100 */
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(5));
+-	} else
+-#endif
+-	{
++	} else {
+ 		stx7105_wrt_table[0] = /* swith config */
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
+ 		stx7105_wrt_table[1] = /* swith config 1 */
+@@ -173,11 +169,11 @@ static struct sh4_suspend_t st40data __cacheline_aligned = {
+ 	.iobase = stx7105_iomem,
+ 	.ops.prepare = stx7105_suspend_prepare,
+ 	.evt_to_irq = stx7105_evt_to_irq,
+-#ifdef CONFIG_PM_DEBUG
++
+ 	.stby_tbl = (unsigned long)stx7105_standby_table,
+ 	.stby_size = DIV_ROUND_UP(ARRAY_SIZE(stx7105_standby_table) *
+ 			sizeof(long), L1_CACHE_BYTES),
+-#endif
++
+ 	.mem_tbl = (unsigned long)stx7105_mem_table,
+ 	.mem_size = DIV_ROUND_UP(ARRAY_SIZE(stx7105_mem_table) * sizeof(long),
+ 			L1_CACHE_BYTES),
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7111.c b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+index 8203184..c8db72a 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7111.c
+@@ -41,7 +41,6 @@
+  * STANDBY INSTRUCTION TABLE
+  * *************************
+  */
+-#ifdef CONFIG_PM_DEBUG
+ static unsigned long stx7111_standby_table[] __cacheline_aligned = {
+ /* 1. Move all the clock on OSC */
+ CLK_POKE(CKGA_CLKOPSRC_SWITCH_CFG(0x0), 0x0),
+@@ -68,7 +67,6 @@ CLK_STORE(CKGA_OSC_DIV_CFG(5)),
+  /* END. */
+ _END()
+ };
+-#endif
+ 
+ /* *********************
+  * MEM INSTRUCTION TABLE
+@@ -140,7 +138,6 @@ static unsigned long stx7111_wrt_table[16] __cacheline_aligned;
+ 
+ static int stx7111_suspend_prepare(suspend_state_t state)
+ {
+-#ifdef CONFIG_PM_DEBUG
+ 	if (state == PM_SUSPEND_STANDBY) {
+ 		stx7111_wrt_table[0] = /* swith config */
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
+@@ -148,9 +145,7 @@ static int stx7111_suspend_prepare(suspend_state_t state)
+ 		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
+ 		stx7111_wrt_table[2] = /* clk_ic_if_100 */
+ 		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(5));
+-	} else
+-#endif
+-	{
++	} else {
+ 		stx7111_wrt_table[0] = /* swith config */
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
+ 		stx7111_wrt_table[1] = /* swith config 1 */
+@@ -178,11 +173,11 @@ static struct sh4_suspend_t st40data __cacheline_aligned = {
+ 	.iobase = stx7111_iomem,
+ 	.ops.prepare = stx7111_suspend_prepare,
+ 	.evt_to_irq = stx7111_evttoirq,
+-#ifdef CONFIG_PM_DEBUG
++
+ 	.stby_tbl = (unsigned long)stx7111_standby_table,
+ 	.stby_size = DIV_ROUND_UP(ARRAY_SIZE(stx7111_standby_table) *
+ 			sizeof(long), L1_CACHE_BYTES),
+-#endif
++
+ 	.mem_tbl = (unsigned long)stx7111_mem_table,
+ 	.mem_size = DIV_ROUND_UP(ARRAY_SIZE(stx7111_mem_table) * sizeof(long),
+ 			L1_CACHE_BYTES),
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7141.c b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+index 3c5898a..ac96048 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7141.c
+@@ -44,7 +44,6 @@
+  * STANDBY INSTRUCTION TABLE
+  * *************************
+  */
+-#ifdef CONFIG_PM_DEBUG
+ static unsigned long stx7141_standby_table[] __cacheline_aligned = {
+ IMMEDIATE_DEST(0x1f),
+ /* reduces the st40 frequency */
+@@ -68,7 +67,6 @@ CLK_STORE(CKGA_OSC_DIV_CFG(10)),
+  /* END. */
+ _END()
+ };
+-#endif
+ 
+ /* *********************
+  * MEM INSTRUCTION TABLE
+@@ -139,7 +137,6 @@ static unsigned long stx7141_wrt_table[16] __cacheline_aligned;
+ 
+ static int stx7141_suspend_prepare(suspend_state_t state)
+ {
+-#ifdef CONFIG_PM_DEBUG
+ 	if (state == PM_SUSPEND_STANDBY) {
+ 		stx7141_wrt_table[0] = /* swith config */
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
+@@ -147,9 +144,7 @@ static int stx7141_suspend_prepare(suspend_state_t state)
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(0));
+ 		stx7141_wrt_table[2] = /* clk_ic_if_100 */
+ 		    ioread32(CLOCKGENA_BASE_ADDR + CKGA_OSC_DIV_CFG(10));
+-	} else
+-#endif
+-	{
++	} else {
+ 		stx7141_wrt_table[0] = /* swith config */
+ 		   ioread32(CLOCKGENA_BASE_ADDR + CKGA_CLKOPSRC_SWITCH_CFG(0));
+ 		stx7141_wrt_table[1] = /* swith config */
+@@ -177,11 +172,11 @@ static struct sh4_suspend_t st40data __cacheline_aligned = {
+ 	.iobase = stx7141_iomem,
+ 	.ops.prepare = stx7141_suspend_prepare,
+ 	.evt_to_irq = stx7141_evttoirq,
+-#ifdef CONFIG_PM_DEBUG
++
+ 	.stby_tbl = (unsigned long)stx7141_standby_table,
+ 	.stby_size = DIV_ROUND_UP(ARRAY_SIZE(stx7141_standby_table) *
+ 			sizeof(long), L1_CACHE_BYTES),
+-#endif
++
+ 	.mem_tbl = (unsigned long)stx7141_mem_table,
+ 	.mem_size = DIV_ROUND_UP(ARRAY_SIZE(stx7141_mem_table) * sizeof(long),
+ 			L1_CACHE_BYTES),
+diff --git a/arch/sh/kernel/cpu/sh4/suspend-stx7200.c b/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
+index 23201b1..f6f6ec8 100644
+--- a/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/suspend-stx7200.c
+@@ -40,7 +40,6 @@
+  * STANDBY INSTRUCTION TABLE
+  * *************************
+  */
+-#ifdef CONFIG_PM_DEBUG
+ static unsigned long stx7200_standby_table[] __cacheline_aligned = {
+ /* Down scale the GenA.Pll0 and GenA.Pll2*/
+ CLK_OR_LONG(CLKA_PLL0, CLKA_PLL0_BYPASS),
+@@ -89,7 +88,6 @@ _DELAY(),
+ /* END. */
+ _END()
+ };
+-#endif
+ 
+ /* *********************
+  * MEM INSTRUCTION TABLE
+@@ -184,15 +182,12 @@ static unsigned long stx7200_wrt_table[16] __cacheline_aligned;
+ 
+ static int stx7200_suspend_prepare(suspend_state_t state)
+ {
+-#ifdef CONFIG_PM_DEBUG
+ 	if (state == PM_SUSPEND_STANDBY) {
+ 		stx7200_wrt_table[0] =
+ 			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL0) & 0x7ffff;
+ 		stx7200_wrt_table[1] =
+ 			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL2) & 0x7ffff;
+-	} else
+-#endif
+-	{
++	} else {
+ 		stx7200_wrt_table[0] =
+ 			readl(CLOCKGEN_BASE_ADDR + CLKA_PLL0) & 0x7ffff;
+ 		stx7200_wrt_table[1] =
+@@ -217,11 +212,11 @@ static struct sh4_suspend_t st40data __cacheline_aligned = {
+ 	.iobase = stx7200_iomem,
+ 	.ops.prepare = stx7200_suspend_prepare,
+ 	.evt_to_irq = stx7200_evttoirq,
+-#ifdef CONFIG_PM_DEBUG
++
+ 	.stby_tbl = (unsigned long)stx7200_standby_table,
+ 	.stby_size = DIV_ROUND_UP(ARRAY_SIZE(stx7200_standby_table) *
+ 			sizeof(long), L1_CACHE_BYTES),
+-#endif
++
+ 	.mem_tbl = (unsigned long)stx7200_mem_table,
+ 	.mem_size = DIV_ROUND_UP(ARRAY_SIZE(stx7200_mem_table) * sizeof(long),
+ 			L1_CACHE_BYTES),
+-- 
+1.6.0.6
+

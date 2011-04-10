@@ -1,0 +1,77 @@
+From e5cce8d4dad6f2314fc6fe0020a5641ea29e81da Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 17 Sep 2008 14:38:57 +0200
+Subject: [PATCH] stmmac uses the skb_checksum_help
+
+On egress packets, use the skb_checksum_help function to
+compute the csum calculation.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac.h      |    2 +-
+ drivers/net/stmmac/stmmac_main.c |   15 +++++----------
+ 2 files changed, 6 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac.h b/drivers/net/stmmac/stmmac.h
+index 95f4e3c..1ed4ae8 100644
+--- a/drivers/net/stmmac/stmmac.h
++++ b/drivers/net/stmmac/stmmac.h
+@@ -1,6 +1,6 @@
+ #define ETH_RESOURCE_NAME	"stmmaceth"
+ #define PHY_RESOURCE_NAME	"stmmacphy"
+-#define DRV_MODULE_VERSION	"July_08"
++#define DRV_MODULE_VERSION	"Aug_08"
+ 
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+ #define STMMAC_VLAN_TAG_USED
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 31d7fb8..bf5f019 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -11,6 +11,9 @@
+  * ----------------------------------------------------------------------------
+  *
+  * Changelog:
++ * August 2008:
++ *	- On egress packets use the skb_checksum_help function to compute
++ *	  the csum calculation.
+  * July 2008:
+  *	- Removed timer optimization through kernel timers.
+  *	  RTC and TMU2 timers are also used for mitigating the transmission IRQs.
+@@ -143,7 +146,7 @@ MODULE_PARM_DESC(threshold_ctrl, "tranfer threshold control");
+ 
+ #if defined (CONFIG_STMMAC_TIMER)
+ #define RX_IRQ_THRESHOLD	16	/* mitigate rx irq */
+-#define TX_AGGREGATION		16	/* mitigate tx irq too */
++#define TX_AGGREGATION		32	/* mitigate tx irq too */
+ #else
+ #define RX_IRQ_THRESHOLD 1	/* always Interrupt on completion */
+ #define TX_AGGREGATION	-1	/* no mitigation by default */
+@@ -1143,14 +1146,6 @@ static int stmmac_open(struct net_device *dev)
+ 	return 0;
+ }
+ 
+-static void stmmac_tx_checksum(struct sk_buff *skb)
+-{
+-	const int offset = skb_transport_offset(skb);
+-	unsigned int csum = skb_checksum(skb, offset, skb->len - offset, 0);
+-	*(u16 *) (skb->data + offset + skb->csum_offset) = csum_fold(csum);
+-	return;
+-}
+-
+ /**
+  *  stmmac_release - close entry point of the driver
+  *  @dev : device pointer.
+@@ -1231,7 +1226,7 @@ static int stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	hwcsum = 0;
+ 	if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
+ 		if (lp->mac_type->hw.csum == NO_HW_CSUM)
+-			stmmac_tx_checksum(skb);
++			skb_checksum_help(skb);
+ 		else
+ 			hwcsum = 1;
+ 	}
+-- 
+1.5.3.6
+

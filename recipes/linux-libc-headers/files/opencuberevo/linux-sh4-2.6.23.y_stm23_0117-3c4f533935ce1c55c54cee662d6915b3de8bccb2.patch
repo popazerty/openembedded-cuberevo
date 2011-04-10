@@ -1,0 +1,89 @@
+From 3c4f533935ce1c55c54cee662d6915b3de8bccb2 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Wed, 29 Oct 2008 18:51:55 +0000
+Subject: [PATCH] arch_sh: Allow Kconfig-given kernel arguments be concatenated with bootloader's ones
+
+So far kernel command line arguments could be passed in by a bootloader
+or defined as CONFIG_CMDLINE, which completely overwriting the first one.
+
+This change allows a developer to declare selected kernel parameters in
+a kernel configuration (eg. project-specific defconfig), retaining
+possibility of passing others by a bootloader.
+
+The obvious examples of the first type are MTD partition or
+bigphysarea-like region definitions, while "debug" option or network
+configuration should be given by a bootloader or a JTAG boot script.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/Kconfig        |   29 ++++++++++++++++++++++-------
+ arch/sh/kernel/setup.c |    6 +++++-
+ 2 files changed, 27 insertions(+), 8 deletions(-)
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index db1e89b..57a8507 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -948,16 +948,31 @@ config UBC_WAKEUP
+ 
+ 	  If unsure, say N.
+ 
+-config CMDLINE_BOOL
+-	bool "Default bootloader kernel arguments"
++choice
++	prompt "Kernel command line"
++	optional
++	default CMDLINE_OVERWRITE
++	help
++	  Setting this option allows the kernel command line arguments
++	  to be set.
++
++config CMDLINE_OVERWRITE
++	bool "Overwrite bootloader kernel arguments"
+ 	help
+-	  Setting this option allows the kernel command line arguments to
+-	  be set. These will overwrite any arguments passed in by a
+-	  bootloader.
++	  Given string will overwrite any arguments passed in by
++	  a bootloader.
++
++config CMDLINE_EXTEND
++	bool "Extend bootloader kernel arguments"
++	help
++	  Given string will be concatenated with arguments passed in
++	  by a bootloader.
++
++endchoice
+ 
+ config CMDLINE
+-	string "Initial kernel command string"
+-	depends on CMDLINE_BOOL
++	string "Kernel command line arguments string"
++	depends on CMDLINE_OVERWRITE || CMDLINE_EXTEND
+ 	default "console=ttySC1,115200"
+ 
+ endmenu
+diff --git a/arch/sh/kernel/setup.c b/arch/sh/kernel/setup.c
+index 4d497f9..891182c 100644
+--- a/arch/sh/kernel/setup.c
++++ b/arch/sh/kernel/setup.c
+@@ -267,10 +267,14 @@ void __init setup_arch(char **cmdline_p)
+ #endif
+ 	memory_end = memory_start + __MEMORY_SIZE;
+ 
+-#ifdef CONFIG_CMDLINE_BOOL
++#ifdef CONFIG_CMDLINE_OVERWRITE
+ 	strlcpy(command_line, CONFIG_CMDLINE, sizeof(command_line));
+ #else
+ 	strlcpy(command_line, COMMAND_LINE, sizeof(command_line));
++#ifdef CONFIG_CMDLINE_EXTEND
++	strlcat(command_line, " ", sizeof(command_line));
++	strlcat(command_line, CONFIG_CMDLINE, sizeof(command_line));
++#endif
+ #endif
+ 
+ 	/* Save unparsed command line copy for /proc/cmdline */
+-- 
+1.5.3.6
+

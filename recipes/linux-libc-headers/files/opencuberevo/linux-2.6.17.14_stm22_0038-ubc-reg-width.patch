@@ -1,0 +1,23 @@
+On at least some parts (including 7750, 7751 and ST40-20x) the UBC.BAMRA
+register needs to be addressed as an 8 bit register.
+
+Its not clear why this hasn't been a problem until now, but in a very
+limited set of parts it appears the value in the register ends up corrupt,
+causing strange breakpoint behaviour which usually results in a chip
+lock up.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/arch/sh/kernel/process.c
+===================================================================
+--- linux.orig/arch/sh/kernel/process.c
++++ linux/arch/sh/kernel/process.c
+@@ -305,7 +305,7 @@ ubc_set_tracing(int asid, unsigned long 
+ 	if (cpu_data->type != CPU_SH7604)
+ 		ctrl_outb(asid, UBC_BASRA);
+ 
+-	ctrl_outl(0, UBC_BAMRA);
++	ctrl_outb(0, UBC_BAMRA);
+ 
+ 	if (cpu_data->type == CPU_SH7729) {
+ 		ctrl_outw(BBR_INST | BBR_READ | BBR_CPU, UBC_BBRA);

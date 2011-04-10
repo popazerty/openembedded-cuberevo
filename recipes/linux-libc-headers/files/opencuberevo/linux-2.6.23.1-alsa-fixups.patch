@@ -1,0 +1,1195 @@
+Index: linux/sound/stm/st_pcm.h
+===================================================================
+--- linux.orig/sound/stm/st_pcm.h	2007-11-01 17:08:24.845222000 +0000
++++ linux/sound/stm/st_pcm.h	2007-11-01 17:17:31.806860000 +0000
+@@ -59,7 +59,7 @@
+         int                  minor;
+         stm_snd_data_type_t  input_type;
+         stm_snd_data_type_t  output_type;
+-        snd_card_t          *device;
++        struct snd_card      *device;
+         int                  in_use;
+ } stm_snd_output_device_t;
+ 
+@@ -189,7 +189,7 @@
+ 
+ typedef struct IEC60958 {
+ 	/* Channel status bits are the same for L/R subframes */
+-       	snd_aes_iec958_t  channel;
++       	struct snd_aes_iec958    channel;
+ 
+         /* Validity bits can be different on L and R e.g. in
+          * professional applications
+@@ -203,14 +203,14 @@
+ 
+ typedef struct {
+ 	int			(*free_device)     (struct pcm_hw_t *card);
+-	int			(*open_device)     (snd_pcm_substream_t *substream);
+-	int			(*program_hw)      (snd_pcm_substream_t *substream);
+-	snd_pcm_uframes_t	(*playback_pointer)(snd_pcm_substream_t *substream);
+-
+-	void			(*start_playback)  (snd_pcm_substream_t *substream);
+-	void			(*stop_playback)   (snd_pcm_substream_t *substream);
+-	void			(*pause_playback)  (snd_pcm_substream_t *substream);
+-	void			(*unpause_playback)(snd_pcm_substream_t *substream);
++	int			(*open_device)     (struct snd_pcm_substream *substream);
++	int			(*program_hw)      (struct snd_pcm_substream *substream);
++	snd_pcm_uframes_t	(*playback_pointer)(struct snd_pcm_substream *substream);
++
++	void			(*start_playback)  (struct snd_pcm_substream *substream);
++	void			(*stop_playback)   (struct snd_pcm_substream *substream);
++	void			(*pause_playback)  (struct snd_pcm_substream *substream);
++	void			(*unpause_playback)(struct snd_pcm_substream *substream);
+ } stm_playback_ops_t;
+ 
+ typedef struct _IEC61937 {
+@@ -230,7 +230,7 @@
+ }pcmin_ctx;
+ 
+ typedef struct pcm_hw_t {
+-	snd_card_t		*card;
++	struct snd_card		*card;
+ 
+ 	spinlock_t		lock;
+ 	int			irq;
+@@ -238,10 +238,10 @@
+ 	unsigned long		buffer_start_addr;
+ 	unsigned long		pcmplayer_control;
+ 	unsigned long		irq_mask;
+-	snd_pcm_hardware_t      hw;
++	struct snd_pcm_hardware hw;
+ 
+ 	snd_pcm_uframes_t    	hwbuf_current_addr;
+-	snd_pcm_substream_t 	*current_substream;
++	struct snd_pcm_substream *current_substream;
+ 	char		   	*out_pipe;
+ 	char		    	*pcm_clock_reg;
+ 	char 			*pcm_player;
+@@ -290,7 +290,7 @@
+ 
+ #define chip_t pcm_hw_t
+ 
+-static int snd_pcm_dev_free(snd_device_t *dev);
++static int snd_pcm_dev_free(struct snd_device *dev);
+ 
+ static int __devinit snd_card_pcm_allocate(pcm_hw_t *stm8000, int device,char* name);
+ static int __devinit snd_iec60958_create_controls(pcm_hw_t *chip);
+@@ -301,7 +301,7 @@
+ void set_spdif_syncing_status(int enable);
+ 
+ extern void iec60958_default_channel_status(pcm_hw_t *chip);
+-extern void iec60958_set_runtime_status(snd_pcm_substream_t *substream);
++extern void iec60958_set_runtime_status(struct snd_pcm_substream *substream);
+ 
+ 
+ #define DEBUG_PRINT(_x)
+Index: linux/sound/stm/stb7100_i2s_spdif.c
+===================================================================
+--- linux.orig/sound/stm/stb7100_i2s_spdif.c	2007-11-01 17:08:24.859222000 +0000
++++ linux/sound/stm/stb7100_i2s_spdif.c	2007-11-01 17:17:31.813860000 +0000
+@@ -25,7 +25,7 @@
+  * Default HW template for PCM player 0 when used with the I2S->SPDIF
+  * protocol converter.
+  */
+-static snd_pcm_hardware_t stb7100_converter_hw =
++static struct snd_pcm_hardware stb7100_converter_hw =
+ {
+ 	.info =		(SNDRV_PCM_INFO_MMAP           |
+ 			 SNDRV_PCM_INFO_INTERLEAVED    |
+@@ -57,7 +57,7 @@
+ DECLARE_WAIT_QUEUE_HEAD(software_reset_wq);
+ static volatile int software_reset_complete = 0;
+ 
+-static void reset_pcm_converter(snd_pcm_substream_t * substream)
++static void reset_pcm_converter(struct snd_pcm_substream * substream)
+ {
+ 	pcm_hw_t * chip = snd_pcm_substream_chip(substream);
+ 	u32 reg;
+@@ -69,7 +69,7 @@
+ 	writel(reg,chip->pcm_converter+AUD_SPDIF_PR_CFG);
+ }
+ 
+-static void reset_converter_fifo(snd_pcm_substream_t * substream)
++static void reset_converter_fifo(struct snd_pcm_substream * substream)
+ {
+ 	pcm_hw_t * chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg =readl(chip->pcm_converter+AUD_SPDIF_PR_CFG);
+@@ -138,7 +138,7 @@
+ }
+ 
+ 
+-static irqreturn_t stb7100_converter_interrupt(int irq, void *dev_id, struct pt_regs *regs)
++static irqreturn_t stb7100_converter_interrupt(int irq, void *dev_id)
+ {
+ 	unsigned long val;
+ 	unsigned long handled= IRQ_NONE;
+@@ -171,19 +171,19 @@
+ 	return handled;
+ }
+ 
+-static void stb7100_converter_unpause_playback(snd_pcm_substream_t *substream)
++static void stb7100_converter_unpause_playback(struct snd_pcm_substream *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	writel((chip->pcmplayer_control|PCMP_ON), chip->pcm_player+STM_PCMP_CONTROL);
+ }
+ 
+-static void stb7100_converter_pause_playback(snd_pcm_substream_t *substream)
++static void stb7100_converter_pause_playback(struct snd_pcm_substream *substream)
+ {
+         pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+ }
+ 
+-static void stb7100_converter_stop_playback(snd_pcm_substream_t *substream)
++static void stb7100_converter_stop_playback(struct snd_pcm_substream *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg=0;
+@@ -212,7 +212,7 @@
+ }
+ 
+ 
+-static void stb7100_converter_start_playback(snd_pcm_substream_t *substream)
++static void stb7100_converter_start_playback(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t     *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long cfg_reg;
+@@ -239,7 +239,7 @@
+ 
+ }
+ 
+-static int stb7100_converter_program_player(snd_pcm_substream_t * substream)
++static int stb7100_converter_program_player(struct snd_pcm_substream * substream)
+ {
+ 	unsigned long cfg_reg = 0;
+ 	unsigned long ctl_reg = 0;
+@@ -248,7 +248,7 @@
+ 					PR_AUDIO_SAMPLES_FULLY_READ_INT);
+ 	unsigned long flags=0;
+ 
+-	snd_pcm_runtime_t * runtime = substream->runtime;
++	struct snd_pcm_runtime * runtime = substream->runtime;
+ 	pcm_hw_t          * chip    = snd_pcm_substream_chip(substream);
+ 	int val =0;
+ 
+@@ -361,7 +361,7 @@
+ };
+ 
+ 
+-static int stb7100_create_converter_device(pcm_hw_t *in_chip,snd_card_t  **this_card,int dev)
++static int stb7100_create_converter_device(pcm_hw_t *in_chip,struct snd_card **this_card,int dev)
+ {
+ 	int err = 0;
+ 	int irq = linux_pcm_irq[dev];
+@@ -396,7 +396,7 @@
+ 
+ 	chip->playback_ops  = &stb7100_converter_ops;
+ 
+-	if(request_irq(irq, stb7100_converter_interrupt, SA_INTERRUPT, "STB7100_CNV",(void*)chip)){
++	if(request_irq(irq, stb7100_converter_interrupt, IRQF_SHARED, "STB7100_CNV",(void*)chip)){
+                		printk(">>> failed to get IRQ %d\n",irq);
+ 	                stb7100_converter_free(chip);
+         	        return -EBUSY;
+Index: linux/sound/stm/stb7100_pcmin.c
+===================================================================
+--- linux.orig/sound/stm/stb7100_pcmin.c	2007-11-01 17:08:24.865222000 +0000
++++ linux/sound/stm/stb7100_pcmin.c	2007-11-01 17:17:31.819860000 +0000
+@@ -23,7 +23,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/timer.h>
+ 
+-static snd_pcm_hardware_t stb7100_pcmin_hw =
++static struct snd_pcm_hardware stb7100_pcmin_hw =
+ {
+ 	.info =		(SNDRV_PCM_INFO_MMAP           |
+ 			 SNDRV_PCM_INFO_INTERLEAVED    |
+@@ -49,16 +49,16 @@
+ 	.periods_max	  = PCM_MAX_FRAMES
+ };
+ 
+-void stb7100_reset_pcmin(snd_pcm_substream_t *substream)
++void stb7100_reset_pcmin(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	writel(1,chip->pcm_player);
+ 	writel(0,chip->pcm_player);
+ }
+ 
+-static u32 get_target_time(snd_pcm_substream_t *substream)
++static u32 get_target_time(struct snd_pcm_substream *substream)
+ {
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	u32 period_samples = bytes_to_samples(runtime,frames_to_bytes(runtime,runtime->period_size))/ runtime->channels;
+ 	u32 rate =runtime->rate;
+ 	/*TODO :- we may suffer from rounding err for 44.1 case,
+@@ -70,13 +70,13 @@
+ 
+ static void stb7100_pcmin_timer_irq(unsigned long handle)
+ {
+-	snd_pcm_substream_t *substream;
++	struct snd_pcm_substream *substream;
+ 	pcm_hw_t          *chip;
+-	snd_pcm_runtime_t *runtime;
++	struct snd_pcm_runtime *runtime;
+ 	u32 pos,irqflags;
+ 	static u32 last_jiff;
+ 
+-	substream =(snd_pcm_substream_t *) handle;
++	substream =(struct snd_pcm_substream *) handle;
+ 	runtime = substream->runtime;
+ 	chip     = snd_pcm_substream_chip(substream);
+ 
+@@ -111,7 +111,7 @@
+ 	spin_unlock_irqrestore(&chip->lock,irqflags);
+ }
+ 
+-static void stb7100_pcmin_stop_read(snd_pcm_substream_t *substream)
++static void stb7100_pcmin_stop_read(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long irqflags;
+@@ -132,7 +132,7 @@
+ 
+ }
+ 
+-static void stb7100_pcmin_start_read(snd_pcm_substream_t *substream)
++static void stb7100_pcmin_start_read(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long irqflags=0;
+@@ -159,7 +159,7 @@
+ 
+ 
+ 
+-static irqreturn_t stb7100_pcmin_interrupt(int irq, void *dev_id, struct pt_regs *regs)
++static irqreturn_t stb7100_pcmin_interrupt(int irq, void *dev_id)
+ {
+ 	unsigned long val;
+ 	pcm_hw_t *stb7100 = dev_id;
+@@ -187,10 +187,10 @@
+ 	.initiator	= 0, /* This was 1 for 7100, do we need to fix? */
+ };
+ 
+-static int stb7100_pcmin_program_fdma(snd_pcm_substream_t *substream)
++static int stb7100_pcmin_program_fdma(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t          *chip    = snd_pcm_substream_chip(substream);
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	unsigned long irqflags=0;
+ 	int err=0;
+ 
+@@ -225,11 +225,11 @@
+ 	return err;
+ }
+ 
+-static int stb7100_program_pcmin(snd_pcm_substream_t *substream)
++static int stb7100_program_pcmin(struct snd_pcm_substream *substream)
+ {
+ 
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	unsigned long ctrlreg, fmtreg;
+ 
+ 	/*The real SLCK format is to set data stable on falling edge*/
+@@ -245,7 +245,7 @@
+ 	return 0;
+ }
+ 
+-static int stb7100_pcmin_program_hw(snd_pcm_substream_t *substream)
++static int stb7100_pcmin_program_hw(struct snd_pcm_substream *substream)
+ {
+ 	int err=0;
+ 	if((err = stb7100_program_pcmin(substream)) < 0)
+@@ -256,7 +256,7 @@
+ 	return 0;
+ }
+ 
+-static int stb7100_pcmin_open(snd_pcm_substream_t *substream)
++static int stb7100_pcmin_open(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+ 	int err=0;
+@@ -323,12 +323,12 @@
+ };
+ 
+ 
+-static int __init snd_pcmin_stb710x_probe(pcm_hw_t *in_chip,snd_card_t *card,int dev)
++static int __init snd_pcmin_stb710x_probe(pcm_hw_t *in_chip,struct snd_card *card,int dev)
+ {
+ 	unsigned err=0;
+ 	pcm_hw_t * chip={0};
+ 
+-	static snd_device_ops_t ops = {
++	static struct snd_device_ops ops = {
+     		.dev_free = snd_pcm_dev_free,
+ 	};
+ 	if(driver_register(&alsa_pcmin_driver)==0){
+@@ -357,7 +357,7 @@
+ 
+ 	if(request_irq(	LINUX_PCMREADER_ALLREAD_IRQ,
+ 			stb7100_pcmin_interrupt,
+-			SA_INTERRUPT,
++			IRQF_SHARED,
+ 			"STB7100_PCMIN",
+ 			(void*)chip)){
+ 
+Index: linux/sound/stm/stb7100_snd.h
+===================================================================
+--- linux.orig/sound/stm/stb7100_snd.h	2007-11-01 17:08:24.870222000 +0000
++++ linux/sound/stm/stb7100_snd.h	2007-11-01 17:17:31.827860000 +0000
+@@ -367,9 +367,9 @@
+ 
+ #endif /*STB7100_SND_H_*/
+ 
+-static int snd_pcmin_stb710x_probe(pcm_hw_t *chip,snd_card_t *card,int dev);
+-static int snd_spdif_stb710x_probe(pcm_hw_t **chip,snd_card_t **card,int dev);
+-static int stb7100_create_converter_device(pcm_hw_t *chip,snd_card_t **this_card,int dev);
++static int snd_pcmin_stb710x_probe(pcm_hw_t *chip,struct snd_card *card,int dev);
++static int snd_spdif_stb710x_probe(pcm_hw_t **chip,struct snd_card **card,int dev);
++static int stb7100_create_converter_device(pcm_hw_t *chip,struct snd_card **this_card,int dev);
+ 
+-static int stb7100_converter_program_player(snd_pcm_substream_t *substream);
++static int stb7100_converter_program_player(struct snd_pcm_substream *substream);
+ static void stb7100_reset_pcm_player(pcm_hw_t *chip);
+Index: linux/sound/stm/stb7100_spdif.c
+===================================================================
+--- linux.orig/sound/stm/stb7100_spdif.c	2007-11-01 17:08:24.876222000 +0000
++++ linux/sound/stm/stb7100_spdif.c	2007-11-01 17:17:31.835861000 +0000
+@@ -31,7 +31,7 @@
+ /*
+  * Default HW template for SPDIF player.
+  */
+-static snd_pcm_hardware_t stb7100_spdif_hw =
++static struct snd_pcm_hardware stb7100_spdif_hw =
+ {
+ 	.info =		(SNDRV_PCM_INFO_INTERLEAVED |
+ 			 SNDRV_PCM_INFO_PAUSE),
+@@ -77,7 +77,7 @@
+ 	snd_pcm_kernel_ioctl(chip->current_substream, SNDRV_PCM_IOCTL_XRUN, NULL);
+ }
+ 
+-static irqreturn_t stb7100_spdif_interrupt(int irq, void *dev_id, struct pt_regs *regs)
++static irqreturn_t stb7100_spdif_interrupt(int irq, void *dev_id)
+ {
+ 	unsigned long int_status;
+ 	pcm_hw_t *stb7100 = dev_id;
+@@ -114,7 +114,7 @@
+ }
+ 
+ 
+-static inline void stb7100_spdif_pause_playback(snd_pcm_substream_t *substream)
++static inline void stb7100_spdif_pause_playback(struct snd_pcm_substream *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 
+@@ -141,7 +141,7 @@
+ }
+ 
+ 
+-static inline void stb7100_spdif_unpause_playback(snd_pcm_substream_t *substream)
++static inline void stb7100_spdif_unpause_playback(struct snd_pcm_substream *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	/*we are doing pause burst, must count %frame_size*/
+@@ -162,7 +162,7 @@
+ }
+ 
+ 
+-static inline void stb7100_spdif_start_playback(snd_pcm_substream_t *substream)
++static inline void stb7100_spdif_start_playback(struct snd_pcm_substream *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 
+@@ -174,7 +174,7 @@
+ }
+ 
+ 
+-static inline void stb7100_spdif_stop_playback(snd_pcm_substream_t *substream)
++static inline void stb7100_spdif_stop_playback(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	spin_lock(&chip->lock);
+@@ -186,7 +186,7 @@
+ }
+ 
+ 
+-static void stb7100_spdif_set_iec_mode(snd_pcm_substream_t *substream)
++static void stb7100_spdif_set_iec_mode(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned int decode_lat=0;
+@@ -278,10 +278,10 @@
+ }
+ 
+ 
+-static int stb7100_program_spdifplayer(snd_pcm_substream_t *substream){
++static int stb7100_program_spdifplayer(struct snd_pcm_substream *substream){
+ 
+ 	unsigned long reg;
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+ 	u32 val=0;
+ 	unsigned long flags=0;
+@@ -389,7 +389,7 @@
+ }
+ 
+ 
+-static int stb7100_spdif_program_hw(snd_pcm_substream_t *substream)
++static int stb7100_spdif_program_hw(struct snd_pcm_substream *substream)
+ {
+ 	int err;
+ 	if((err = stb7100_program_fsynth(substream)) < 0)
+@@ -405,9 +405,9 @@
+ }
+ 
+ 
+-static int stb7100_spdif_open(snd_pcm_substream_t *substream)
++static int stb7100_spdif_open(struct snd_pcm_substream *substream)
+ {
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+ 	int err=0;
+ 	const char * dmac_id =STM_DMAC_ID;
+@@ -469,12 +469,12 @@
+ 
+ 
+ 
+-int snd_spdif_stb710x_probe(pcm_hw_t **in_chip,snd_card_t **card,int dev)
++int snd_spdif_stb710x_probe(pcm_hw_t **in_chip, struct snd_card **card,int dev)
+ {
+ 
+ 	int err=0;
+ 	pcm_hw_t *chip={0};
+-	static snd_device_ops_t ops = {
++	static struct snd_device_ops ops = {
+ 		.dev_free = snd_pcm_dev_free,
+ 	};
+ 
+@@ -518,7 +518,7 @@
+ 	chip->iec_encoding_mode = ENCODING_IEC60958;
+ 
+ 	if(request_irq(LINUX_SPDIFPLAYER_ALLREAD_IRQ,
+-                       stb7100_spdif_interrupt, SA_INTERRUPT,
++                       stb7100_spdif_interrupt, IRQF_SHARED,
+                        "STB7100 SPDIF Player",(void*)chip))
+ 	{
+ 		printk((">>> failed to get IRQ\n"));
+Index: linux/sound/stm/stm7100_pcm.c
+===================================================================
+--- linux.orig/sound/stm/stm7100_pcm.c	2007-11-01 17:08:24.886222000 +0000
++++ linux/sound/stm/stm7100_pcm.c	2007-11-01 17:17:31.845861000 +0000
+@@ -145,7 +145,7 @@
+ #define SELECT_SYSBCLKINALT	(0x01 << 23)
+ 
+ 
+-static snd_pcm_hardware_t stb7100_pcm_hw =
++static struct snd_pcm_hardware stb7100_pcm_hw =
+ {
+ 	.info =		(SNDRV_PCM_INFO_MMAP           |
+ 			 SNDRV_PCM_INFO_INTERLEAVED    |
+@@ -208,10 +208,10 @@
+  * We can never calculate the exact output frequency from this driver,
+  * so we utilise a quanta value which represents a % adjustment of each frequency
+  * */
+-int adjust_audio_clock(snd_pcm_substream_t *substream,int adjusts,int dir)
++int adjust_audio_clock(struct snd_pcm_substream *substream,int adjusts,int dir)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 
+ 	int i=0,total_shift=0;
+ 	unsigned long new_pe=0, peq=0,new_md=0,new_sdiv=0;
+@@ -316,7 +316,7 @@
+ }
+ 
+ 
+-static void stb7100_pcm_stop_playback(snd_pcm_substream_t *substream)
++static void stb7100_pcm_stop_playback(struct snd_pcm_substream *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg=0;
+@@ -372,7 +372,7 @@
+ }
+ 
+ 
+-static void stb7100_pcm_start_playback(snd_pcm_substream_t *substream)
++static void stb7100_pcm_start_playback(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t     *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg=0;
+@@ -408,7 +408,7 @@
+ }
+ 
+ 
+-static void stb7100_pcm_unpause_playback(snd_pcm_substream_t *substream)
++static void stb7100_pcm_unpause_playback(struct snd_pcm_substream *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg=0;
+@@ -426,7 +426,7 @@
+ }
+ 
+ 
+-static void stb7100_pcm_pause_playback(snd_pcm_substream_t *substream)
++static void stb7100_pcm_pause_playback(struct snd_pcm_substream *substream)
+ {
+         pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long reg=0;
+@@ -444,7 +444,7 @@
+ 	spin_unlock(&chip->lock);
+ }
+ 
+-static snd_pcm_uframes_t stb7100_fdma_playback_pointer(snd_pcm_substream_t * substream)
++static snd_pcm_uframes_t stb7100_fdma_playback_pointer(struct snd_pcm_substream * substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	/*
+@@ -458,7 +458,7 @@
+ }
+ 
+ 
+-static irqreturn_t stb7100_pcm_interrupt(int irq, void *dev_id, struct pt_regs *regs)
++static irqreturn_t stb7100_pcm_interrupt(int irq, void *dev_id)
+ {
+ 	unsigned long val;
+ 	pcm_hw_t *stb7100 = dev_id;
+@@ -493,10 +493,10 @@
+ 	.initiator	= 0, /* This was 1 for 7100, do we need to fix? */
+ };
+ 
+-static int stb7100_program_fdma(snd_pcm_substream_t *substream)
++static int stb7100_program_fdma(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t          *chip    = snd_pcm_substream_chip(substream);
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	unsigned long irqflags=0;
+ 	int err=0;
+ 
+@@ -534,10 +534,10 @@
+ }
+ 
+ 
+-static int stb7100_program_fsynth(snd_pcm_substream_t *substream)
++static int stb7100_program_fsynth(struct snd_pcm_substream *substream)
+ {
+ 	int i;
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+         unsigned long flags=0;
+         int err=0, dev_num=0,sdiv=0;
+@@ -599,10 +599,10 @@
+ }
+ 
+ 
+-static int stb7100_program_pcmplayer(snd_pcm_substream_t *substream)
++static int stb7100_program_pcmplayer(struct snd_pcm_substream *substream)
+ {
+ 	unsigned long ctrlreg, fmtreg;
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long irqmask = MEM_FULL_READIRQ;
+ 	unsigned long flags=0;
+@@ -689,7 +689,7 @@
+ }
+ 
+ 
+-static int stb7100_pcm_program_hw(snd_pcm_substream_t *substream)
++static int stb7100_pcm_program_hw(struct snd_pcm_substream *substream)
+ {
+ 	int err=0;
+ 	if((err = stb7100_program_fsynth(substream)) < 0)
+@@ -807,15 +807,15 @@
+ static unsigned int stb7100_pcm_channels[] = { 2,4,6,8,10 };
+ 
+ 
+-static snd_pcm_hw_constraint_list_t stb7100_constraints_channels = {
++static struct snd_pcm_hw_constraint_list stb7100_constraints_channels = {
+ 		.count = ARRAY_SIZE(stb7100_pcm_channels),
+ 		.list = stb7100_pcm_channels,
+ 		.mask = 0
+ };
+ 
+-static int stb7100_pcm_open(snd_pcm_substream_t *substream)
++static int stb7100_pcm_open(struct snd_pcm_substream *substream)
+ {
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+     	int                err=0;
+ 	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+ 	const char * dmac_id =STM_DMAC_ID;
+@@ -879,18 +879,18 @@
+ 	.unpause_playback = stb7100_pcm_unpause_playback
+ };
+ 
+-static snd_device_ops_t ops = {
++static struct snd_device_ops ops = {
+     .dev_free = snd_pcm_dev_free,
+ };
+ 
+ 
+-static int stb7100_create_lpcm_device(pcm_hw_t *in_chip,snd_card_t **this_card,int dev)
++static int stb7100_create_lpcm_device(pcm_hw_t *in_chip, struct snd_card **this_card,int dev)
+ {
+ 	int err = 0;
+ 	int irq = linux_pcm_irq[dev];
+ 
+ 	pcm_hw_t * chip  = in_chip;
+-	snd_card_t *card={0};
++	struct snd_card *card={0};
+ 
+ 	card = snd_card_new(index[card_list[dev].major],id[card_list[dev].major], THIS_MODULE, 0);
+         if (this_card == NULL){
+@@ -919,7 +919,7 @@
+ 	sprintf(card->longname,  "STb7100_PCM%d",chip->card_data->major );
+ 	sprintf(card->driver,    "%d",chip->card_data->major);
+ 
+-	if(request_irq(irq, stb7100_pcm_interrupt, SA_INTERRUPT, "STB7100_PCM", (void*)chip)){
++	if(request_irq(irq, stb7100_pcm_interrupt, IRQF_SHARED, "STB7100_PCM", (void*)chip)){
+                		printk(">>> failed to get IRQ %d\n",irq);
+ 	                stb7100_pcm_free(chip);
+         	        return -EBUSY;
+@@ -1054,7 +1054,7 @@
+ }
+ 
+ 
+-static int snd_pcm_stb710x_probe(pcm_hw_t **chip,snd_card_t **card,int dev)
++static int snd_pcm_stb710x_probe(pcm_hw_t **chip, struct snd_card **card,int dev)
+ {
+ 	unsigned long err=0;
+ 	if( (err= snd_pcm_card_generic_probe(dev))<0){
+@@ -1114,8 +1114,8 @@
+ 
+ static int __init snd_pcm_card_probe(int dev)
+ {
+-	snd_card_t card={0};
+-	snd_card_t * ptr  = &card;
++	struct snd_card card={0};
++	struct snd_card * ptr  = &card;
+ 	pcm_hw_t *chip={0};
+ 	int err=0;
+ 
+Index: linux/sound/stm/st_pcm_core.c
+===================================================================
+--- linux.orig/sound/stm/st_pcm_core.c	2007-11-01 17:08:24.853222000 +0000
++++ linux/sound/stm/st_pcm_core.c	2007-11-01 17:17:31.856861000 +0000
+@@ -114,10 +114,10 @@
+ MODULE_DESCRIPTION(DEVICE_NAME " ALSA driver");
+ MODULE_SUPPORTED_DEVICE("{{STM," DEVICE_NAME "}}");
+ 
+-static int snd_pcm_playback_hwfree(snd_pcm_substream_t * substream)
++static int snd_pcm_playback_hwfree(struct snd_pcm_substream * substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 
+         chip->card_data->in_use = 0;
+ 
+@@ -141,14 +141,14 @@
+ }
+ 
+ 
+-static snd_pcm_uframes_t snd_pcm_playback_pointer(snd_pcm_substream_t * substream)
++static snd_pcm_uframes_t snd_pcm_playback_pointer(struct snd_pcm_substream * substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	return chip->playback_ops->playback_pointer(substream);
+ }
+ 
+ 
+-static int snd_pcm_playback_prepare(snd_pcm_substream_t * substream)
++static int snd_pcm_playback_prepare(struct snd_pcm_substream * substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	unsigned long flags=0;
+@@ -164,10 +164,12 @@
+ 	if((card_list[PCM0_DEVICE].in_use               && (chip->card_data->major == PROTOCOL_CONVERTER_DEVICE)) ||
+ 	   (card_list[PROTOCOL_CONVERTER_DEVICE].in_use && (chip->card_data->major == PCM0_DEVICE)))
+ 	{
++		int converter_enable;
++
+ 		if(chip->card_data->minor == SUB_DEVICE1)
+ 			goto setup;
+ 
+-		int converter_enable = (chip->card_data->major==PROTOCOL_CONVERTER_DEVICE ? 1:0);
++		converter_enable = (chip->card_data->major==PROTOCOL_CONVERTER_DEVICE ? 1:0);
+ 		printk("%s: device (%d,%d) is in use by (%d,%d)\n",
+                 	__FUNCTION__,
+                 	chip->card_data->major,
+@@ -191,7 +193,7 @@
+ }
+ 
+ 
+-static int snd_pcm_dev_free(snd_device_t *dev)
++static int snd_pcm_dev_free(struct snd_device *dev)
+ {
+ 	pcm_hw_t *snd_card = dev->device_data;
+ 
+@@ -205,7 +207,7 @@
+ }
+ 
+ 
+-static int snd_playback_trigger(snd_pcm_substream_t * substream, int cmd)
++static int snd_playback_trigger(struct snd_pcm_substream * substream, int cmd)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	switch(cmd)
+@@ -231,7 +233,7 @@
+ }
+ 
+ 
+-static int snd_pcm_playback_close(snd_pcm_substream_t * substream)
++static int snd_pcm_playback_close(struct snd_pcm_substream * substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 
+@@ -254,14 +256,14 @@
+ }
+ 
+ 
+-static int snd_pcm_playback_hwparams(snd_pcm_substream_t * substream,
+-					 snd_pcm_hw_params_t * hw_params)
++static int snd_pcm_playback_hwparams(struct snd_pcm_substream* substream,
++					 struct snd_pcm_hw_params* hw_params)
+ {
+ 	int   err  = 0;
+ 	int   size = 0;
+ 	char* addr = 0;
+ 
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	size = params_buffer_bytes(hw_params);
+ 
+ 	if (STM_USE_BIGPHYS_AREA && size > PCM_BIGALLOC_SIZE){
+@@ -318,12 +320,12 @@
+  * for each alsa 10 channel frame. This means we also need to ensure that
+  * the number of samples is an exact multiple of the number of channels.
+  */
+-static int snd_pcm_period_size_rule(snd_pcm_hw_params_t *params,
+-				     snd_pcm_hw_rule_t   *rule)
++static int snd_pcm_period_size_rule(struct snd_pcm_hw_params *params,
++				     struct snd_pcm_hw_rule *rule)
+ {
+-	snd_interval_t *periodsize;
+-	snd_interval_t *channels;
+-	snd_interval_t  newperiodsize;
++	struct snd_interval *periodsize;
++	struct snd_interval *channels;
++	struct snd_interval  newperiodsize;
+ 
+ 	int refine = 0;
+ 
+@@ -350,9 +352,9 @@
+ }
+ 
+ 
+-static int snd_pcm_playback_open(snd_pcm_substream_t * substream)
++static int snd_pcm_playback_open(struct snd_pcm_substream * substream)
+ {
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 	int err = 0;
+ 
+@@ -398,8 +400,8 @@
+ 
+ static struct page *snd_pcm_mmap_data_nopage(struct vm_area_struct *area, unsigned long address, int *type)
+ {
+-        snd_pcm_substream_t *substream = (snd_pcm_substream_t *)area->vm_private_data;
+-        snd_pcm_runtime_t *runtime;
++        struct snd_pcm_substream *substream = (struct snd_pcm_substream *)area->vm_private_data;
++        struct snd_pcm_runtime *runtime;
+         unsigned long offset;
+         struct page * page;
+         void *vaddr;
+@@ -441,7 +443,7 @@
+  * mmap the DMA buffer on RAM
+  */
+ 
+-static int snd_pcm_mmap(snd_pcm_substream_t *substream, struct vm_area_struct *area)
++static int snd_pcm_mmap(struct snd_pcm_substream *substream, struct vm_area_struct *area)
+ {
+         area->vm_ops = &snd_pcm_vm_ops_data;
+         area->vm_private_data = substream;
+@@ -449,15 +451,15 @@
+ 
+         area->vm_page_prot = pgprot_noncached(area->vm_page_prot);
+ 
+-        atomic_inc(&substream->runtime->mmap_count);
++        atomic_inc(&substream->mmap_count);
+         return 0;
+ }
+ 
+ 
+-static int snd_pcm_silence(snd_pcm_substream_t *substream, int channel,
++static int snd_pcm_silence(struct snd_pcm_substream *substream, int channel,
+                             snd_pcm_uframes_t    pos,       snd_pcm_uframes_t count)
+ {
+-        snd_pcm_runtime_t *runtime = substream->runtime;
++        struct snd_pcm_runtime *runtime = substream->runtime;
+         char *hwbuf;
+ 	int   totalbytes;
+ 
+@@ -474,13 +476,13 @@
+ }
+ 
+ 
+-static int snd_pcm_copy(snd_pcm_substream_t	*substream,
++static int snd_pcm_copy(struct snd_pcm_substream	*substream,
+ 			 int			 channel,
+ 			 snd_pcm_uframes_t	 pos,
+ 			 void __user		*buf,
+ 			 snd_pcm_uframes_t	 count)
+ {
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	char		  *hwbuf;
+ 	int                totalbytes;
+ 
+@@ -535,7 +537,7 @@
+ }
+ 
+ 
+-void iec60958_set_runtime_status(snd_pcm_substream_t *substream)
++void iec60958_set_runtime_status(struct snd_pcm_substream *substream)
+ {
+ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+ 
+@@ -603,7 +605,7 @@
+ }
+ 
+ 
+-static int snd_iec60958_info(snd_kcontrol_t *kcontrol, snd_ctl_elem_info_t * uinfo)
++static int snd_iec60958_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info *uinfo)
+ {
+ 	uinfo->type = SNDRV_CTL_ELEM_TYPE_IEC958;
+ 	uinfo->count = 1;
+@@ -611,8 +613,8 @@
+ }
+ 
+ 
+-static int snd_iec60958_default_get(snd_kcontrol_t * kcontrol,
+-				    snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_default_get(struct snd_kcontrol *kcontrol,
++				    struct snd_ctl_elem_value *ucontrol)
+ {
+ 	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+ 
+@@ -625,8 +627,8 @@
+ }
+ 
+ 
+-static int snd_iec60958_default_put(snd_kcontrol_t * kcontrol,
+-				    snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_default_put(struct snd_kcontrol *kcontrol,
++				    struct snd_ctl_elem_value *ucontrol)
+ {
+ 	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+ 	u32 val, old;
+@@ -651,7 +653,7 @@
+ }
+ 
+ 
+-static snd_kcontrol_new_t snd_iec60958_default __devinitdata =
++static struct snd_kcontrol_new snd_iec60958_default __devinitdata =
+ {
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
+ 	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,DEFAULT),
+@@ -661,7 +663,7 @@
+ };
+ 
+ 
+-static snd_kcontrol_new_t snd_iec60958_stream __devinitdata =
++static struct snd_kcontrol_new snd_iec60958_stream __devinitdata =
+ {
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
+ 	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,PCM_STREAM),
+@@ -670,8 +672,8 @@
+ 	.put =		snd_iec60958_default_put
+ };
+ 
+-static int snd_iec60958_maskc_get(snd_kcontrol_t * kcontrol,
+-				  snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_maskc_get(struct snd_kcontrol * kcontrol,
++				  struct snd_ctl_elem_value * ucontrol)
+ {
+ 	ucontrol->value.iec958.status[0] = IEC958_AES0_NONAUDIO          |
+ 					   IEC958_AES0_PROFESSIONAL      |
+@@ -688,8 +690,8 @@
+ }
+ 
+ 
+-static int snd_iec60958_maskp_get(snd_kcontrol_t * kcontrol,
+-				       snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_maskp_get(struct snd_kcontrol *kcontrol,
++				       struct snd_ctl_elem_value *ucontrol)
+ {
+ 	ucontrol->value.iec958.status[0] = IEC958_AES0_NONAUDIO     |
+ 					   IEC958_AES0_PROFESSIONAL |
+@@ -702,7 +704,7 @@
+ }
+ 
+ 
+-static snd_kcontrol_new_t snd_iec60958_maskc __devinitdata =
++static struct snd_kcontrol_new snd_iec60958_maskc __devinitdata =
+ {
+ 	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+@@ -712,7 +714,7 @@
+ };
+ 
+ 
+-static snd_kcontrol_new_t snd_iec60958_mask __devinitdata =
++static struct snd_kcontrol_new snd_iec60958_mask __devinitdata =
+ {
+ 	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+@@ -722,7 +724,7 @@
+ };
+ 
+ 
+-static snd_kcontrol_new_t snd_iec60958_maskp __devinitdata =
++static struct snd_kcontrol_new snd_iec60958_maskp __devinitdata =
+ {
+ 	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+@@ -732,7 +734,7 @@
+ };
+ 
+ 
+-static int snd_iec60958_raw_info(snd_kcontrol_t *kcontrol, snd_ctl_elem_info_t * uinfo)
++static int snd_iec60958_raw_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info * uinfo)
+ {
+ 	uinfo->type = SNDRV_CTL_ELEM_TYPE_BOOLEAN;
+ 	uinfo->count = 1;
+@@ -742,7 +744,7 @@
+ }
+ 
+ 
+-static int snd_iec60958_raw_get(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_raw_get(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+ {
+ 	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+ 	ucontrol->value.integer.value[0] = chip->iec60958_rawmode;
+@@ -750,7 +752,7 @@
+ }
+ 
+ 
+-static int snd_iec60958_raw_put(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_raw_put(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+ {
+ 	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+ 	unsigned char old, val;
+@@ -764,7 +766,7 @@
+ }
+ 
+ 
+-static snd_kcontrol_new_t snd_iec60958_raw __devinitdata = {
++static struct snd_kcontrol_new snd_iec60958_raw __devinitdata = {
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+ 	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,NONE) "RAW",
+ 	.info =		snd_iec60958_raw_info,
+@@ -773,14 +775,14 @@
+ };
+ 
+ 
+-static int snd_iec60958_sync_get(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_sync_get(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+ {
+ 	ucontrol->value.integer.value[0] = global_spdif_sync_status;
+ 	return 0;
+ }
+ 
+ 
+-static int snd_iec60958_sync_put(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t * ucontrol)
++static int snd_iec60958_sync_put(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+ {
+ 
+ 	unsigned char old, val;
+@@ -792,7 +794,7 @@
+ }
+ 
+ 
+-static snd_kcontrol_new_t snd_iec60958_sync __devinitdata = {
++static struct snd_kcontrol_new snd_iec60958_sync __devinitdata = {
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+ 	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,NONE) "PCM Sync",
+ 	.info =		snd_iec60958_raw_info, /* Reuse from the RAW switch */
+@@ -829,7 +831,7 @@
+ 
+ 
+ 
+-static int snd_iec_encoding_info(snd_kcontrol_t *kcontrol, snd_ctl_elem_info_t * uinfo)
++static int snd_iec_encoding_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info * uinfo)
+ {
+ 	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
+ 	uinfo->count = 1;
+@@ -841,7 +843,7 @@
+ 	return 0;
+ }
+ 
+-static int snd_iec_encoding_get(snd_kcontrol_t* kcontrol,snd_ctl_elem_value_t* ucontrol)
++static int snd_iec_encoding_get(struct snd_kcontrol* kcontrol,struct snd_ctl_elem_value* ucontrol)
+ {
+ 	int i;
+ 
+@@ -851,8 +853,8 @@
+ 	return 0;
+ }
+ 
+-static int snd_iec_encoding_put(	 snd_kcontrol_t * kcontrol,
+-					 snd_ctl_elem_value_t * ucontrol)
++static int snd_iec_encoding_put(	 struct snd_kcontrol * kcontrol,
++					 struct snd_ctl_elem_value * ucontrol)
+ {
+ 	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+ 	spin_lock_irq(&chip->lock);
+@@ -862,7 +864,7 @@
+ 	return 0;
+ }
+ 
+-static snd_kcontrol_new_t snd_iec_encoding __devinitdata = {
++static struct snd_kcontrol_new snd_iec_encoding __devinitdata = {
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+ 	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,NONE)"Encoding",
+ 	.info =		snd_iec_encoding_info,
+@@ -870,7 +872,7 @@
+ 	.put =		snd_iec_encoding_put,
+ };
+ 
+-static int snd_clock_put(snd_kcontrol_t * kcontrol,snd_ctl_elem_value_t * ucontrol)
++static int snd_clock_put(struct snd_kcontrol * kcontrol,struct snd_ctl_elem_value * ucontrol)
+ {
+ 
+ 	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+@@ -888,7 +890,7 @@
+ 
+ 
+ 
+-static int snd_clock_info(snd_kcontrol_t *kcontrol, snd_ctl_elem_info_t * uinfo)
++static int snd_clock_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info * uinfo)
+ {
+ 	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+ 	uinfo->value.integer.min = -10000;
+@@ -897,7 +899,7 @@
+ 	return 0;
+ }
+ 
+-static snd_kcontrol_new_t snd_clock_adjust  __devinitdata = {
++static struct snd_kcontrol_new snd_clock_adjust  __devinitdata = {
+ 	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
+ 	.name =		"PLAYBACK Clock Adjust",
+ 	.info =		snd_clock_info,
+@@ -909,7 +911,7 @@
+ static int __devinit snd_generic_create_controls(pcm_hw_t *chip)
+ {
+ 	int err;
+-	snd_kcontrol_t *kctl;
++	struct snd_kcontrol *kctl;
+ 
+ 	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_clock_adjust,chip));
+ 	if(err < 0)
+@@ -922,7 +924,7 @@
+ static int __devinit snd_iec60958_create_controls(pcm_hw_t *chip)
+ {
+ 	int err;
+-	snd_kcontrol_t *kctl;
++	struct snd_kcontrol *kctl;
+ 
+ 	if(chip->card_data->input_type == STM_DATA_TYPE_IEC60958)
+ 	{
+@@ -970,7 +972,7 @@
+ }
+ 
+ 
+-static void format_iec60958_frame(snd_pcm_substream_t *substream,
++static void format_iec60958_frame(struct snd_pcm_substream *substream,
+ 				  u32                 *left_subframe,
+ 				  u32                 *right_subframe)
+ {
+@@ -1067,13 +1069,13 @@
+  * to get IEC60958 formatting. Note the interface is slightly manipulated
+  * to allow channels to be skipped in the buffer.
+  */
+-int snd_pcm_format_iec60958_copy(snd_pcm_substream_t	*substream,
++int snd_pcm_format_iec60958_copy(struct snd_pcm_substream	*substream,
+ 				 int			data_channels,
+ 			 	 snd_pcm_uframes_t	pos,
+ 			 	 void	__user		*buffer,
+ 			 	 snd_pcm_uframes_t	count)
+ {
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	u32 __user        *buf32   = (u32 __user *) buffer;
+ 	int i;
+ 
+@@ -1128,12 +1130,12 @@
+ /*
+  * This is the ALSA interface for the card "ops" structure
+  */
+-static int snd_iec60958_silence(snd_pcm_substream_t *substream,
++static int snd_iec60958_silence(struct snd_pcm_substream *substream,
+ 				int                  channel,
+ 				snd_pcm_uframes_t    pos,
+ 				snd_pcm_uframes_t    count)
+ {
+-	snd_pcm_runtime_t *runtime = substream->runtime;
++	struct snd_pcm_runtime *runtime = substream->runtime;
+ 	u32               *hwbuf;
+ 	static const int dstwidth  = sizeof(u32)*2;
+ 	int i;
+@@ -1162,7 +1164,7 @@
+ }
+ 
+ 
+-static int snd_iec60958_copy(snd_pcm_substream_t  *substream,
++static int snd_iec60958_copy(struct snd_pcm_substream  *substream,
+ 			     int                   channel,
+ 			     snd_pcm_uframes_t     pos,
+ 			     void __user          *buf,
+@@ -1180,7 +1182,7 @@
+ }
+ 
+ 
+-static void snd_card_pcm_free(snd_pcm_t *pcm)
++static void snd_card_pcm_free(struct snd_pcm *pcm)
+ {
+ 	DEBUG_PRINT(("snd_card_pcm_free(pcm = 0x%08lx)\n",pcm));
+ 
+@@ -1188,7 +1190,7 @@
+ }
+ 
+ 
+-static snd_pcm_ops_t  snd_card_playback_ops_pcm = {
++static struct snd_pcm_ops  snd_card_playback_ops_pcm = {
+ 	.open      =            snd_pcm_playback_open,
+         .close     =            snd_pcm_playback_close,
+         .mmap      =            snd_pcm_mmap,
+@@ -1203,7 +1205,7 @@
+ };
+ 
+ 
+-static snd_pcm_ops_t  snd_card_playback_ops_iec60958 = {
++static struct snd_pcm_ops  snd_card_playback_ops_iec60958 = {
+ 	.open      =            snd_pcm_playback_open,
+         .close     =            snd_pcm_playback_close,
+         .mmap      =            snd_pcm_mmap,
+@@ -1221,7 +1223,7 @@
+ static int __devinit snd_card_pcm_allocate(pcm_hw_t *snd_card, int device,char* name)
+ {
+ 	int err;
+-	snd_pcm_t *pcm;
++	struct snd_pcm *pcm;
+ 
+ 	if(snd_card->card_data->input_type == STM_DATA_TYPE_IEC60958){
+ 

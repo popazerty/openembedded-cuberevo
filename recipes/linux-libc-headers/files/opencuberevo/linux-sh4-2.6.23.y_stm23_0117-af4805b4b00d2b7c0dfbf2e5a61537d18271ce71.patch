@@ -1,0 +1,38 @@
+From af4805b4b00d2b7c0dfbf2e5a61537d18271ce71 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 24 Nov 2008 14:05:53 +0100
+Subject: [PATCH] stmmac: fix module cleanup routine
+
+Unregister the stmmacphy_driver while calling the module cleanup routine.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 24e55fe..f44df1a 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -2081,6 +2081,9 @@ static int stmmac_dvr_probe(struct platform_device *pdev)
+ 	/* MDIO bus Registration */
+ 	printk(KERN_DEBUG "registering MDIO bus...\n");
+ 	ret = stmmac_mdio_register(ndev);
++	if (ret < 0) {
++		goto out;
++	}
+ 	printk(KERN_DEBUG "MDIO bus registered!\n");
+ 	ndev = __dev_get_by_name("eth0");
+ 
+@@ -2261,6 +2264,7 @@ static int __init stmmac_init_module(void)
+  */
+ static void __exit stmmac_cleanup_module(void)
+ {
++	platform_driver_unregister(&stmmacphy_driver);
+ 	platform_driver_unregister(&stmmac_driver);
+ }
+ 
+-- 
+1.5.3.6
+

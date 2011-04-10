@@ -1,0 +1,183 @@
+Index: linux-2.6.23.1-stm/arch/sh/kernel/cpu/sh4/probe.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/cpu/sh4/probe.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/cpu/sh4/probe.c
+@@ -64,6 +64,9 @@ int __init detect_cpu_and_cache_system(v
+ 	if ((cvr & 0x20000000) == 1)
+ 		boot_cpu_data.flags |= CPU_HAS_FPU;
+ 
++	/* We don't know the chip cut */
++	boot_cpu_data.cut_major = boot_cpu_data.cut_minor = -1;
++
+ 	/* Mask off the upper chip ID */
+ 	pvr &= 0xffff;
+ 
+@@ -166,16 +169,16 @@ int __init detect_cpu_and_cache_system(v
+ 	case 0x610 ... 0x611:
+ 		/* 0x0610 cut 1.x */
+ 		/* 0x0611 cut 2.x */
+-		cpu_data->type = CPU_STB7100;
+-		cpu_data->icache.ways = 2;
+-		cpu_data->dcache.ways = 2;
+-		cpu_data->flags |= CPU_HAS_FPU;
++		boot_cpu_data.type = CPU_STB7100;
++		boot_cpu_data.icache.ways = 2;
++		boot_cpu_data.dcache.ways = 2;
++		boot_cpu_data.flags |= CPU_HAS_FPU;
+ 		break;
+ 	case 0x690:
+-		cpu_data->type = CPU_STX7200;
+-		cpu_data->icache.ways = 2;
+-		cpu_data->dcache.ways = 2;
+-		cpu_data->flags |= CPU_HAS_FPU;
++		boot_cpu_data.type = CPU_STX7200;
++		boot_cpu_data.icache.ways = 2;
++		boot_cpu_data.dcache.ways = 2;
++		boot_cpu_data.flags |= CPU_HAS_FPU;
+ 		break;
+ 	case 0x500 ... 0x501:
+ 		switch (prr) {
+Index: linux-2.6.23.1-stm/arch/sh/kernel/setup.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/setup.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/setup.c
+@@ -327,7 +327,8 @@ static const char *cpu_name[] = {
+ 	[CPU_SH7751]	= "SH7751",	[CPU_SH7751R]	= "SH7751R",
+ 	[CPU_SH7760]	= "SH7760",
+ 	[CPU_ST40RA]	= "ST40RA",	[CPU_ST40GX1]	= "ST40GX1",
+-	[CPU_STB7100]	= "STb710x",	[CPU_STX7200]	= "STx7200",
++	[CPU_STB7100]	= "STb7100",	[CPU_STB7109]	= "STb7109",
++	[CPU_STX7200]	= "STx7200",
+ 	[CPU_SH4_202]	= "SH4-202",	[CPU_SH4_501]	= "SH4-501",
+ 	[CPU_SH7770]	= "SH7770",	[CPU_SH7780]	= "SH7780",
+ 	[CPU_SH7781]	= "SH7781",	[CPU_SH7343]	= "SH7343",
+@@ -393,6 +393,12 @@ static int show_cpuinfo(struct seq_file 
+ 	seq_printf(m, "processor\t: %d\n", cpu);
+ 	seq_printf(m, "cpu family\t: %s\n", init_utsname()->machine);
+ 	seq_printf(m, "cpu type\t: %s\n", get_cpu_subtype(c));
++	if (c->cut_major == -1)
++		seq_printf(m, "cut\t\t: unknown\n");
++	else if (c->cut_minor == -1)
++		seq_printf(m, "cut\t\t: %d.x\n", c->cut_major);
++	else
++		seq_printf(m, "cut\t\t: %d.%d\n", c->cut_major, c->cut_minor);
+ 
+ 	show_cpuflags(m, c);
+ 
+Index: linux-2.6.23.1-stm/include/asm-sh/processor.h
+===================================================================
+--- linux-2.6.23.1-stm.orig/include/asm-sh/processor.h
++++ linux-2.6.23.1-stm/include/asm-sh/processor.h
+@@ -50,7 +50,7 @@ enum cpu_type {
+ 	/* SH-4 types */
+ 	CPU_SH7750, CPU_SH7750S, CPU_SH7750R, CPU_SH7751, CPU_SH7751R,
+ 	CPU_SH7760, CPU_ST40RA, CPU_ST40GX1, CPU_STI5528, CPU_STM8000,
+-	CPU_STB7100, CPU_STX7200, CPU_SH4_202, CPU_SH4_501,
++	CPU_STB7100, CPU_STB7109, CPU_STX7200, CPU_SH4_202, CPU_SH4_501,
+ 
+ 	/* SH-4A types */
+ 	CPU_SH7770, CPU_SH7780, CPU_SH7781, CPU_SH7785, CPU_SHX3,
+@@ -64,6 +64,7 @@ enum cpu_type {
+ 
+ struct sh_cpuinfo {
+ 	unsigned int type;
++	int cut_major, cut_minor;
+ 	unsigned long loops_per_jiffy;
+ 	unsigned long asid_cache;
+ 
+Index: linux-2.6.23.1-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -1098,13 +1098,18 @@ void __init stx7100_early_device_init(vo
+ 	devid = sysconf_read(sc);
+ 	chip_7109 = (((devid >> 12) & 0x3ff) == 0x02c);
+ 	chip_revision = (devid >> 28) + 1;
++	boot_cpu_data.cut_major = chip_revision;
+ 
+ 	printk("%s version %ld.x\n",
+ 	       chip_7109 ? "STx7109" : "STx7100", chip_revision);
+ 
+-	sc = sysconf_claim(SYS_STA, 9, 0, 7, "devid");
+-	devid = sysconf_read(sc);
+-	printk("Chip version %ld.%ld\n", (devid >> 4)+1, devid & 0xf);
++	if (chip_7109) {
++		boot_cpu_data.type = CPU_STB7109;
++		sc = sysconf_claim(SYS_STA, 9, 0, 7, "devid");
++		devid = sysconf_read(sc);
++		printk("Chip version %ld.%ld\n", (devid >> 4)+1, devid & 0xf);
++		boot_cpu_data.cut_minor = devid & 0xf;
++	}
+ 
+ 	/* Configure the ST40 RTC to source its clock from clockgenB.
+ 	 * In theory this should be board specific, but so far nobody
+Index: linux-2.6.23.1-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -706,6 +706,8 @@ void __init stx7200_early_device_init(vo
+ 	sc = sysconf_claim(SYS_DEV, 0, 0, 31, "devid");
+ 	devid = sysconf_read(sc);
+ 	chip_revision = (devid >> 28) +1;
++	boot_cpu_data.cut_major = chip_revision;
++
+ 	printk("STx7200 version %ld.x\n", chip_revision);
+ 
+ 	/* ClockgenB powers up with all the frequency synths bypassed.
+Index: linux-2.6.23.1-stm/drivers/serial/stasc-dma.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/drivers/serial/stasc-dma.c
++++ linux-2.6.23.1-stm/drivers/serial/stasc-dma.c
+@@ -51,37 +51,31 @@ static unsigned long FDMA_RXREQ[ASC_MAX_
+ static unsigned long FDMA_TXREQ[ASC_MAX_PORTS];
+ static struct asc_dma_port asc_dma_ports[ASC_MAX_PORTS];
+ 
+-void asc_fdma_setreq(void)
++void __init asc_fdma_setreq(void)
+ {
+-#if defined(CONFIG_CPU_SUBTYPE_STB7100)
+-#define SYSCONF_BASE		0xb9001000
+-#define SYSCONF_DEVICEID	(SYSCONF_BASE + 0x000)
+-
+-	u32 devid = ctrl_inl(SYSCONF_DEVICEID);
+-	u32 cpu_subtype = (((devid >> 12) & 0x3ff) == 0x02c) ? 7109 : 7100;
+-
+-	if (cpu_subtype == 7100)
+-	{
++	switch (cpu_data->type) {
++	case CPU_STB7100:
+ 		FDMA_RXREQ[0] = STB7100_FDMA_REQ_UART_2_RX;
+ 		FDMA_RXREQ[1] = STB7100_FDMA_REQ_UART_3_RX;
+ 		FDMA_TXREQ[0] = STB7100_FDMA_REQ_UART_2_TX;
+ 		FDMA_TXREQ[1] = STB7100_FDMA_REQ_UART_3_TX;
+-	}
+-	else
+-	{
++		break;
++	case CPU_STB7109:
+ 		FDMA_RXREQ[0] = STB7109_FDMA_REQ_UART_2_RX;
+ 		FDMA_RXREQ[1] = STB7109_FDMA_REQ_UART_3_RX;
+ 		FDMA_TXREQ[0] = STB7109_FDMA_REQ_UART_2_TX;
+ 		FDMA_TXREQ[1] = STB7109_FDMA_REQ_UART_3_TX;
++		break;
++	case CPU_STX7200:
++		FDMA_RXREQ[0] = STB7200_FDMA_REQ_UART_2_RX;
++		FDMA_RXREQ[1] = STB7200_FDMA_REQ_UART_3_RX;
++		FDMA_TXREQ[0] = STB7200_FDMA_REQ_UART_2_TX;
++		FDMA_TXREQ[1] = STB7200_FDMA_REQ_UART_3_TX;
++		break;
++	default:
++		printk(KERN_ERR "stasc-dma: Unknown CPU\n");
++		break;
+ 	}
+-#elif defined(CONFIG_CPU_SUBTYPE_STX7200)
+-	FDMA_RXREQ[0] = STB7200_FDMA_REQ_UART_2_RX;
+-	FDMA_RXREQ[1] = STB7200_FDMA_REQ_UART_3_RX;
+-	FDMA_TXREQ[0] = STB7200_FDMA_REQ_UART_2_TX;
+-	FDMA_TXREQ[1] = STB7200_FDMA_REQ_UART_3_TX;
+-#else
+-#error Unknown CPU
+-#endif
+ }
+ 
+ static int asc_dma_rxflush_one_buffer(struct asc_port *ascport,

@@ -1,0 +1,147 @@
+commit ba656d16dbfeec31d179bc526606d6763408edee
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Tue May 13 15:33:09 2008 +0100
+
+    DB679 (STEM based EMI to ATAPI drive interface) support.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 81c3bff..60876ac 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -562,6 +562,13 @@ config SH_ST_DB641
+ 	  See "arch/sh/boards/st/common/db641.c" for configuration
+ 	  informations.
+ 
++config SH_ST_DB679
++	bool "db679: STEM based EMI to ATAPI drive interface"
++	depends on SH_ST_STEM
++	help
++	  Supports DB679 STEM board. See "arch/sh/boards/st/common/db679.c"
++	  for configuration informations.
++
+ config SH_ST_MB520
+ 	bool "mb520: STB peripherals board"
+ 	depends on SH_ST_STPM_HD_V1
+diff --git a/arch/sh/boards/st/common/Makefile b/arch/sh/boards/st/common/Makefile
+index 522ffa9..5bf28de 100644
+--- a/arch/sh/boards/st/common/Makefile
++++ b/arch/sh/boards/st/common/Makefile
+@@ -6,6 +6,7 @@ obj-$(CONFIG_SH_ST_HARP_IRQ) += harp-irq.o
+ obj-$(CONFIG_SH_ST_EPLD) += epld.o
+ 
+ obj-$(CONFIG_SH_ST_DB641) += db641.o
++obj-$(CONFIG_SH_ST_DB679) += db679.o
+ obj-$(CONFIG_SH_ST_MB520) += mb520.o
+ obj-$(CONFIG_SH_ST_MB562) += mb562.o
+ obj-$(CONFIG_SH_ST_MB588) += mb588.o
+diff --git a/arch/sh/boards/st/common/db679.c b/arch/sh/boards/st/common/db679.c
+new file mode 100644
+index 0000000..466feff
+--- /dev/null
++++ b/arch/sh/boards/st/common/db679.c
+@@ -0,0 +1,38 @@
++/*
++ * arch/sh/boards/st/common/db679.c
++ *
++ * Copyright (C) 2007 STMicroelectronics Limited
++ * Author: Pawel MOLL <pawel.moll@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * STMicroelectronics NAND Flash STEM board
++ *
++ * This code assumes that STEM_notCS0 and STEM_notINTR0 lines are used,
++ * so jumpers J1 and J2 shall be set to 1-2 positions.
++ *
++ * Some additional main board setup may be required to use proper CS signal
++ * signal - see "include/asm-sh/<board>/stem.h" for more information.
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/stm/soc.h>
++#include <asm/mach/stem.h>
++
++
++
++static int __init db679_init(void)
++{
++#if defined(CONFIG_CPU_SUBTYPE_STB7100)
++	stx7100_configure_pata(STEM_CS0_BANK, STEM_INTR0_IRQ);
++#elif defined(CONFIG_CPU_SUBTYPE_STX7200)
++	stx7200_configure_pata(STEM_CS0_BANK, STEM_INTR0_IRQ);
++#else
++#	error Unsupported SOC.
++#endif
++	return 0;
++}
++arch_initcall(db679_init);
++
+diff --git a/arch/sh/boards/st/mb519/setup.c b/arch/sh/boards/st/mb519/setup.c
+index 42b5164..c4f4b8c 100644
+--- a/arch/sh/boards/st/mb519/setup.c
++++ b/arch/sh/boards/st/mb519/setup.c
+@@ -200,7 +200,6 @@ static int __init device_init(void)
+ 	stx7200_configure_ethernet(1, 0, 1, 1);
+ #endif
+ 	stx7200_configure_lirc();
+-//	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
+ 
+ 	return platform_add_devices(mb519_devices, ARRAY_SIZE(mb519_devices));
+ }
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index 284e110..354fc03 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -262,10 +262,6 @@ static int __init device_init(void)
+ 	stx7111_configure_usb();
+ 	stx7111_configure_ethernet(1, 0, 0, 0);
+         stx7111_configure_lirc();
+-#if 0
+-	// stx7200_configure_ethernet(1, 0, 1, 1);
+-	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
+-#endif
+ 
+ 	vpp_pio = stpio_request_pin(3,4, "VPP", STPIO_OUT);
+ 
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index 791cfa5..0f47a14 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -124,9 +124,6 @@ static int __init device_init(void)
+ #if 0
+         stx7105_configure_lirc();
+ #endif
+-#if 0
+-	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
+-#endif
+ 
+ 	return platform_add_devices(mb680_devices, ARRAY_SIZE(mb680_devices));
+ }
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index f5e3d75..95386d6 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -19,7 +19,6 @@
+ #include <linux/phy.h>
+ #include <linux/stm/sysconf.h>
+ #include <linux/stm/emi.h>
+-#include <linux/pata_platform.h>
+ #include <linux/stm/fdma-plat.h>
+ #include <linux/stm/fdma-reqs.h>
+ #include <linux/mtd/nand.h>
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 8a677ba..58c1980 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -19,7 +19,6 @@
+ #include <linux/phy.h>
+ #include <linux/stm/sysconf.h>
+ #include <linux/stm/emi.h>
+-#include <linux/pata_platform.h>
+ #include <linux/stm/fdma-plat.h>
+ #include <linux/stm/fdma-reqs.h>
+ #include <linux/mtd/nand.h>

@@ -1,0 +1,23 @@
+serial_stasc: Don't wait for characters to drain when setting termios
+
+Remove the loop which waiting for all tx characters to drain before
+applying the new termios. If this functionality is needed it will have
+been handled at a higher level, and if it wasn't requested, we shouldn't
+do it. It also breaks in cases where flow control has been enabled but
+CTS is not active.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/drivers/serial/stasc.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/serial/stasc.c
++++ linux-2.6.23-stm/drivers/serial/stasc.c
+@@ -538,9 +538,6 @@ asc_set_termios_cflag (struct asc_port *
+ 	unsigned int ctrl_val;
+ 	unsigned long flags;
+ 
+-	/* wait for end of current transmission */
+-	while (!asc_tx_empty(port)){};
+-
+ 	spin_lock_irqsave(&port->lock, flags);
+ 
+ 	/* read control register */

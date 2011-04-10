@@ -1,0 +1,1893 @@
+commit e9378edf744a633202427db1a76491d575a37d0d
+Author: Pawel MOLL <pawel.moll@st.com>
+Date:   Mon Feb 4 14:30:08 2008 +0000
+
+    ASC FDMA acceleration patch.
+    
+    Removes old implementation (totally messed up), adds new.
+    
+    Signed-off-by: Pawel MOLL <pawel.moll@st.com>
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index 8548c73..beae335 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -728,10 +728,24 @@ void __init stx7100_configure_hwrng(void)
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+-	STASC_DEVICE(0x18030000, 123, 0, 0, 1, 4, 7), /* oe pin: 6 */
+-	STASC_DEVICE(0x18031000, 122, 1, 0, 1, 4, 5), /* oe pin: 6 */
+-	STASC_DEVICE(0x18032000, 121, 4, 3, 2, 4, 5),
+-	STASC_DEVICE(0x18033000, 120, 5, 0, 1, 2, 3),
++	STASC_DEVICE(0x18030000, 123, -1, -1, 0, 0, 1, 4, 7), /* oe pin: 6 */
++	STASC_DEVICE(0x18031000, 122, -1, -1, 1, 0, 1, 4, 5), /* oe pin: 6 */
++	STASC_DEVICE(0x18032000, 121, -1, -1, 4, 3, 2, 4, 5),
++	STASC_DEVICE(0x18033000, 120, -1, -1, 5, 0, 1, 2, 3),
++};
++
++static unsigned int __initdata stm_stasc_fdma_requests_7100[][2] = {
++	{ STB7100_FDMA_REQ_UART_0_RX, STB7100_FDMA_REQ_UART_0_TX },
++	{ STB7100_FDMA_REQ_UART_1_RX, STB7100_FDMA_REQ_UART_1_TX },
++	{ STB7100_FDMA_REQ_UART_2_RX, STB7100_FDMA_REQ_UART_2_TX },
++	{ STB7100_FDMA_REQ_UART_3_RX, STB7100_FDMA_REQ_UART_3_TX },
++};
++
++static unsigned int __initdata stm_stasc_fdma_requests_7109[][2] = {
++	{ STB7109_FDMA_REQ_UART_0_RX, STB7109_FDMA_REQ_UART_0_TX },
++	{ STB7109_FDMA_REQ_UART_1_RX, STB7109_FDMA_REQ_UART_1_TX },
++	{ STB7109_FDMA_REQ_UART_2_RX, STB7109_FDMA_REQ_UART_2_TX },
++	{ STB7109_FDMA_REQ_UART_3_RX, STB7109_FDMA_REQ_UART_3_TX },
+ };
+ 
+ /* the serial console device */
+@@ -750,6 +764,18 @@ void __init stb7100_configure_asc(const int *ascs, int num_ascs, int console)
+ 	struct platform_device *pdev;
+ 
+ 	for (i=0; i<num_ascs; i++) {
++		unsigned int *fdma_requests;
++
++		if (chip_7109)
++			fdma_requests = stm_stasc_fdma_requests_7109[ascs[i]];
++		else
++			fdma_requests = stm_stasc_fdma_requests_7100[ascs[i]];
++
++		stm_stasc_devices[ascs[i]].resource[2].start = fdma_requests[0];
++		stm_stasc_devices[ascs[i]].resource[2].end   = fdma_requests[0];
++		stm_stasc_devices[ascs[i]].resource[3].start = fdma_requests[1];
++		stm_stasc_devices[ascs[i]].resource[3].end   = fdma_requests[1];
++
+ 		pdev = &stm_stasc_devices[ascs[i]];
+ 
+ 		switch (ascs[i]) {
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index fa7236e..96ad98d 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -921,10 +921,18 @@ void __init stx7200_configure_nand(struct nand_config_data *data)
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+-	STASC_DEVICE(0xfd030000, ILC_IRQ(104), 0, 0, 1, 4, 7), /* oe pin: 6 */
+-	STASC_DEVICE(0xfd031000, ILC_IRQ(105), 1, 0, 1, 4, 5), /* oe pin: 6 */
+-	STASC_DEVICE(0xfd032000, ILC_IRQ(106), 4, 3, 2, 4, 5),
+-	STASC_DEVICE(0xfd033000, ILC_IRQ(107), 5, 4, 3, 5, 6),
++	STASC_DEVICE(0xfd030000, ILC_IRQ(104),
++			STB7200_FDMA_REQ_UART_0_RX, STB7200_FDMA_REQ_UART_0_TX,
++			0, 0, 1, 4, 7), /* oe pin: 6 */
++	STASC_DEVICE(0xfd031000, ILC_IRQ(105),
++			STB7200_FDMA_REQ_UART_1_RX, STB7200_FDMA_REQ_UART_1_TX,
++			1, 0, 1, 4, 5), /* oe pin: 6 */
++	STASC_DEVICE(0xfd032000, ILC_IRQ(106),
++			STB7200_FDMA_REQ_UART_2_RX, STB7200_FDMA_REQ_UART_2_TX,
++			4, 3, 2, 4, 5),
++	STASC_DEVICE(0xfd033000, ILC_IRQ(107),
++			STB7200_FDMA_REQ_UART_3_RX, STB7200_FDMA_REQ_UART_3_TX,
++			5, 4, 3, 5, 6),
+ };
+ 
+ /* the serial console device */
+diff --git a/drivers/serial/Kconfig b/drivers/serial/Kconfig
+index 4871c44..f61e58c 100644
+--- a/drivers/serial/Kconfig
++++ b/drivers/serial/Kconfig
+@@ -1272,11 +1272,11 @@ config SERIAL_ST_ASC_CONSOLE
+ 	depends on SERIAL_ST_ASC=y
+ 	select SERIAL_CORE_CONSOLE
+ 
+-config SERIAL_ST_ASC_DMA
+-	bool "Support for 710x FDMA on ST ASC"
+-	depends on SERIAL_ST_ASC && STM_DMA
++config SERIAL_ST_ASC_FDMA
++	bool "Support for 710x & 7200 FDMA on ST ASC"
++	depends on (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200) && SERIAL_ST_ASC && STM_DMA
+ 	help
+-	  This enables 710x on-chip FDMA to be used with the Asychronous Serial
+-	  Controller on STMicroelectronics 710x system-on-chip devices.
++	  This enables on-chip FDMA to be used with the Asychronous Serial
++	  Controller on STMicroelectronics 710x/7200 system-on-chip devices.
+ 
+ endmenu
+diff --git a/drivers/serial/Makefile b/drivers/serial/Makefile
+index 949a729..3203a4f 100644
+--- a/drivers/serial/Makefile
++++ b/drivers/serial/Makefile
+@@ -65,4 +65,4 @@ obj-$(CONFIG_SERIAL_NETX) += netx-serial.o
+ obj-$(CONFIG_SERIAL_OF_PLATFORM) += of_serial.o
+ obj-$(CONFIG_SERIAL_KS8695) += serial_ks8695.o
+ obj-$(CONFIG_SERIAL_ST_ASC) += stasc.o
+-obj-$(CONFIG_SERIAL_ST_ASC_DMA) += stasc-dma.o
++obj-$(CONFIG_SERIAL_ST_ASC_FDMA) += stasc-fdma.o
+diff --git a/drivers/serial/stasc-dma.c b/drivers/serial/stasc-dma.c
+deleted file mode 100644
+index 4837b63..0000000
+--- a/drivers/serial/stasc-dma.c
++++ /dev/null
+@@ -1,623 +0,0 @@
+-/*
+- * STMicroelectronics Asynchronous Serial Controller (ASC) driver
+- * FDMA extension
+- *
+- * Copyright (C) 2006 STMicroelectronics Limited
+- * Author: Nigel Hathaway <nigel.hathaway@st.com>
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- */
+-
+-#include <linux/stm/fdma-reqs.h>
+-#include <linux/timer.h>
+-#include <linux/stm/stm-dma.h>
+-#include <asm/cacheflush.h>
+-
+-#include "stasc.h"
+-
+-/* Key running performance parameters */
+-#ifdef CONFIG_STM_DMA
+-#define DMA_RXBUFSIZE 1024
+-#define DMA_RXBUFERS 8 /* must be power of 2 */
+-#define DMA_TXBUFSIZE 2048
+-#define DMA_TXBUFERS 4 /* must be power of 2 */
+-#define RXPOLL_PERIOD (50 * HZ /1000)
+-#endif
+-
+-struct asc_dma_port
+-{
+-	int rxdma_running;
+-	int txdma_running;
+-	int rxdma_chid;
+-	int txdma_chid;
+-	struct stm_dma_params rxdmap;
+-	struct stm_dma_params txdmap;
+-	struct stm_dma_req *rx_dma_req;
+-	struct stm_dma_req *tx_dma_req;
+-	unsigned char *rxdmabuf[DMA_RXBUFERS];
+-	int rxdmabuf_count[DMA_RXBUFERS];
+-	unsigned char *txdmabuf[DMA_TXBUFERS];
+-	int txdmabuf_count[DMA_TXBUFERS];
+-	int rxdmabuf_head;
+-	int rxdmabuf_tail;
+-	int txdmabuf_head;
+-	int txdmabuf_tail;
+-	int last_residue;
+-	struct timer_list rxpoll_timer;
+-};
+-
+-static unsigned long FDMA_RXREQ[ASC_MAX_PORTS];
+-static unsigned long FDMA_TXREQ[ASC_MAX_PORTS];
+-static struct asc_dma_port asc_dma_ports[ASC_MAX_PORTS];
+-
+-void __init asc_fdma_setreq(void)
+-{
+-	switch (cpu_data->type) {
+-	case CPU_STB7100:
+-		FDMA_RXREQ[0] = STB7100_FDMA_REQ_UART_2_RX;
+-		FDMA_RXREQ[1] = STB7100_FDMA_REQ_UART_3_RX;
+-		FDMA_TXREQ[0] = STB7100_FDMA_REQ_UART_2_TX;
+-		FDMA_TXREQ[1] = STB7100_FDMA_REQ_UART_3_TX;
+-		break;
+-	case CPU_STB7109:
+-		FDMA_RXREQ[0] = STB7109_FDMA_REQ_UART_2_RX;
+-		FDMA_RXREQ[1] = STB7109_FDMA_REQ_UART_3_RX;
+-		FDMA_TXREQ[0] = STB7109_FDMA_REQ_UART_2_TX;
+-		FDMA_TXREQ[1] = STB7109_FDMA_REQ_UART_3_TX;
+-		break;
+-	case CPU_STX7200:
+-		FDMA_RXREQ[0] = STB7200_FDMA_REQ_UART_2_RX;
+-		FDMA_RXREQ[1] = STB7200_FDMA_REQ_UART_3_RX;
+-		FDMA_TXREQ[0] = STB7200_FDMA_REQ_UART_2_TX;
+-		FDMA_TXREQ[1] = STB7200_FDMA_REQ_UART_3_TX;
+-		break;
+-	default:
+-		printk(KERN_ERR "stasc-dma: Unknown CPU\n");
+-		break;
+-	}
+-}
+-
+-static int asc_dma_rxflush_one_buffer(struct asc_port *ascport,
+-      struct asc_dma_port *ascdmaport,  struct tty_struct *tty, int space)
+-{
+-	unsigned char *buffer = ascdmaport->rxdmabuf[ascdmaport->rxdmabuf_tail];
+-	int count = ascdmaport->rxdmabuf_count[ascdmaport->rxdmabuf_tail];
+-
+-	/* Copy as much data as possibly to the tty receive buffer */
+-	tty->ldisc.receive_buf(tty, buffer, NULL, min(count, space));
+-
+-	/* If we didn't use up all the data in the buffer */
+-	if (count > space) {
+-		/* Keep the bit we didn't use */
+-		int residue = count - space;
+-		ascport->port.icount.rx += space;
+-		memmove (buffer, buffer + space, residue);
+-		ascdmaport->rxdmabuf_count[ascdmaport->rxdmabuf_tail] = residue;
+-		space = 0;
+-	} else {
+-		/* Otherwise move on to the next buffer */
+-		ascport->port.icount.rx += count;
+-		space = tty->receive_room;
+-		ascdmaport->rxdmabuf_count[ascdmaport->rxdmabuf_tail] = 0;
+-		if (ascdmaport->rxdmabuf_head != ascdmaport->rxdmabuf_tail)
+-			ascdmaport->rxdmabuf_tail = (ascdmaport->rxdmabuf_tail + 1) & (DMA_RXBUFERS - 1);
+-	}
+-
+-	return space;
+-}
+-
+-static void asc_dma_rxflush(struct uart_port *port)
+-{
+-	struct asc_port *ascport = &asc_ports[port->line];
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-	struct tty_struct *tty = port->info->tty;
+-	int space = tty->receive_room;
+-	int err=0;
+-
+-	/* Make space to start new DMA on new block, if necessary */
+-	if (ascdmaport->rxdmabuf_count[ascdmaport->rxdmabuf_head] != 0) {
+-		if (((ascdmaport->rxdmabuf_head + 1) & (DMA_RXBUFERS - 1)) == ascdmaport->rxdmabuf_tail) {
+-			space = asc_dma_rxflush_one_buffer(ascport, ascdmaport, tty, space);
+-			if (((ascdmaport->rxdmabuf_head + 1) & (DMA_RXBUFERS - 1)) == ascdmaport->rxdmabuf_tail) {
+-/*				printk(KERN_WARNING "ASC RX FDMA overflow on buffer#%d\n", ascdmaport->rxdmabuf_head); */
+-				return;
+-			}
+-		}
+-		
+-		/* Use next free block to receive into */
+-		ascdmaport->rxdmabuf_head = (ascdmaport->rxdmabuf_head + 1) & (DMA_RXBUFERS - 1);
+-	}
+-	
+-	/* Try to set RX DMA going again */
+-	dma_params_addrs(&ascdmaport->rxdmap,
+-			 ascdmaport->rxdmap.sar,
+-			 virt_to_phys(ascdmaport->rxdmabuf[ascdmaport->rxdmabuf_head]),
+-			 ascdmaport->rxdmap.node_bytes);
+-
+-	dma_params_DIM_0_x_1(&ascdmaport->rxdmap);
+-
+-	if((err = dma_compile_list(ascdmaport->rxdma_chid, &ascdmaport->rxdmap, GFP_KERNEL)) < 0) {
+-		printk(KERN_ERR "ASC RX FDMA failed to reconfigure, error %d\n", err);
+-		return;
+-	}
+-
+-	dma_cache_wback_inv(ascdmaport->rxdmabuf[ascdmaport->rxdmabuf_head], DMA_RXBUFSIZE);
+-
+-	if((err = dma_xfer_list(ascdmaport->rxdma_chid,&ascdmaport->rxdmap)) < 0) {
+-		printk(KERN_ERR "ASC RX FDMA failed to start, error %d\n", err);
+-		return;
+-	}
+-	ascdmaport->rxdma_running = 1;
+-
+-	/* Transfer as many buffers as possible to the tty receive buffer */
+-	while (space > 0 && ascdmaport->rxdmabuf_head != ascdmaport->rxdmabuf_tail) {
+-		space = asc_dma_rxflush_one_buffer(ascport, ascdmaport, tty, space);
+-	}
+-}
+-
+-static void asc_rxfmda_done(unsigned long param)
+-{
+-	struct uart_port *port = (struct uart_port *)param;
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-	struct tty_struct *tty = port->info->tty;
+-	int overrun = asc_in(port, STA) & ASC_STA_OE;
+-	int residue, count;
+-
+-	/* If stopping, do no more */
+-	if (!ascdmaport->rxdma_running)
+-		return;
+-
+-	/* Report any overrun errors */
+-	if (overrun) {
+-		unsigned char n = '\0';
+-		char o = TTY_OVERRUN;
+-		port->icount.overrun++;
+-		tty->ldisc.receive_buf(tty, &n, &o, 1);
+-	}
+-
+-	/* Determine if the DMA was stopped */
+-	ascdmaport->rxdma_running = 0;
+-	residue = get_dma_residue(ascdmaport->rxdma_chid);
+-	count = DMA_RXBUFSIZE - residue;
+-
+-	/* If it was stopped, remove any data from the ASC FIFO */
+-	if (residue) {
+-		int i;
+-		unsigned char *buffer = ascdmaport->rxdmabuf[ascdmaport->rxdmabuf_head] + count;
+-		residue = min(FIFO_SIZE/2, residue);
+-
+-		/* FIFO will be maximum half full */
+-		for (i=0; i<residue; i++) {
+-			if (asc_in(port, STA) & ASC_STA_RBF) {
+-				count++;
+-				*buffer++ = (unsigned char)asc_in(port, RXBUF);
+-			} else
+-				break;
+-		}
+-	}
+-
+-	/* Flush the data to the tty buffer and set DMA going again */
+-	ascdmaport->rxdmabuf_count[ascdmaport->rxdmabuf_head] = count;
+-	asc_dma_rxflush(port);
+-}
+-
+-static void asc_rxfmda_error(unsigned long param)
+-{
+-	printk(KERN_ERR "ASC RX FDMA error\n");
+-}
+-
+-void asc_fdma_start_tx(struct uart_port *port)
+-{
+-	struct circ_buf *xmit = &port->info->xmit;
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-	int newtail, count, to_send = 0;
+-	unsigned char *insert;
+-
+-	/* Don't do anything if nothing left to send */
+-	if (uart_tx_stopped(port) || (uart_circ_empty(xmit) && !port->x_char))
+-		return;
+-
+-	/* Also do nothing if no buffer space left */
+-	if (ascdmaport->txdmabuf_tail == ((ascdmaport->txdmabuf_head + 1) & (DMA_TXBUFERS-1)))
+-		return;
+-
+-	/* Work out where to put the new data to send */
+-	newtail = (ascdmaport->txdmabuf_tail - 1) & (DMA_TXBUFERS-1);
+-	insert = ascdmaport->txdmabuf[newtail];
+-	count = uart_circ_chars_pending(xmit);
+-	if (count > DMA_TXBUFSIZE)
+-		count = DMA_TXBUFSIZE;
+-
+-	/* Handle xon/xoff character if required */
+-	if (port->x_char) {
+-		*insert++ = port->x_char;
+-		port->icount.tx++;
+-		to_send++;
+-		if (count == DMA_TXBUFSIZE)
+-			count--;
+-
+-		/* Corner case: must send at least 4 bytes */
+-		while (to_send + count < 4) {
+-			*insert++ = port->x_char;
+-			to_send++;
+-		}
+-
+-		port->x_char = 0;
+-	}
+-	to_send += count;
+-
+-	/* Ensure that a multiple of 4 bytes is sent */
+-	if (to_send > 4) {
+-		while (to_send % 4) {
+-			to_send--;
+-			count--;
+-		}
+-	}
+-
+-	/* Fill up the buffer with the data to send */
+-	if (count > 0 && to_send >= 4) {
+-		int bytes_to_end = CIRC_CNT_TO_END(xmit->head, xmit->tail, UART_XMIT_SIZE);
+-
+-		/* If the circular buffer wraps round */
+-		if (count > bytes_to_end) {
+-			/* Copy up to the end of the buffer */
+-			memcpy(insert, xmit->buf + xmit->tail, bytes_to_end);
+-			xmit->tail = (xmit->tail + bytes_to_end) & (UART_XMIT_SIZE - 1);
+-			count -= bytes_to_end;
+-			insert += bytes_to_end;
+-			port->icount.tx += bytes_to_end;
+-
+-			/* Copy remainder at the beginning */
+-			memcpy(insert, xmit->buf + xmit->tail, count);
+-			xmit->tail = (xmit->tail + count) & (UART_XMIT_SIZE - 1);
+-			port->icount.tx += count;
+-		} else {
+-			/* Just copy to fill up the remaining bytes */
+-			memcpy(insert, xmit->buf + xmit->tail, count);
+-			xmit->tail = (xmit->tail + count) & (UART_XMIT_SIZE - 1);
+-			port->icount.tx += count;
+-		}
+-	}
+-
+-	/* Send any data */
+-	if (to_send >= 4) {
+-		/* Post the buffer to send */
+-		ascdmaport->txdmabuf_count[newtail] = to_send;
+-		ascdmaport->txdmabuf_tail = newtail;
+-
+-		/* Start the transfer going if DMA is not running */
+-		if (!ascdmaport->txdma_running) {
+-			int err;
+-			ascdmaport->txdmabuf_head = ascdmaport->txdmabuf_tail;
+-			ascdmaport->txdma_running = 1;
+-
+-			dma_params_addrs(&ascdmaport->txdmap,
+-					virt_to_phys(ascdmaport->txdmabuf[newtail]),
+-					virt_to_phys((void*)(port->mapbase + ASC_TXBUF)),
+-					to_send);
+-
+-			dma_params_DIM_1_x_0(&ascdmaport->txdmap);
+-
+-			err = dma_compile_list(ascdmaport->txdma_chid, &ascdmaport->txdmap, GFP_KERNEL);
+-
+-			dma_cache_wback(ascdmaport->txdmabuf[newtail], DMA_TXBUFSIZE);
+-
+-			if(err==0)
+-				dma_xfer_list(ascdmaport->txdma_chid,&ascdmaport->txdmap);
+-			else
+-				printk(KERN_ERR "ASC TX FDMA failed to configure, error %d\n",err);
+-		}
+-	} else if (to_send > 0 && !uart_circ_empty(xmit) && !ascdmaport->txdma_running) {
+-
+-		/* Feed out last little bit if stopped */
+-		while(!uart_circ_empty(xmit)) {
+-			asc_out (port, TXBUF, xmit->buf[xmit->tail]);
+-			xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+-			port->icount.tx++;
+-		}
+-	}
+-
+-	/* Wake up UART driver if necessary */
+-	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+-		uart_write_wakeup(port);
+-}
+-
+-static void asc_txfmda_done(unsigned long param)
+-{
+-	struct uart_port *port = (struct uart_port *)param;
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-
+-	/* If on a stop request, do no more */
+-	if (!ascdmaport->txdma_running)
+-		return;
+-
+-	ascdmaport->txdmabuf_count[ascdmaport->txdmabuf_head] = 0;
+-
+-	/* If completed, tidy up */
+-	if (ascdmaport->txdmabuf_tail == ascdmaport->txdmabuf_head) {
+-		struct circ_buf *xmit = &port->info->xmit;
+-		int count = uart_circ_chars_pending(xmit);
+-		ascdmaport->txdma_running = 0;
+-
+-		/* Feed out any odd bytes left over */
+-		if (count < 4) {
+-			while(!uart_circ_empty(xmit)) {
+-				asc_out (port, TXBUF, xmit->buf[xmit->tail]);
+-				xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+-				port->icount.tx++;
+-			}
+-		}
+-	} else {
+-		/* Otherwise start the new block going */
+-		int newhead = (ascdmaport->txdmabuf_head - 1) & (DMA_TXBUFERS - 1);
+-		ascdmaport->txdmabuf_head = newhead;
+-		if (ascdmaport->txdmabuf_count[newhead] != 0) {
+-			int err;
+-
+-			dma_params_addrs(&ascdmaport->txdmap,
+-					virt_to_phys(ascdmaport->txdmabuf[newhead]),
+-					ascdmaport->txdmap.dar,
+-					ascdmaport->txdmabuf_count[newhead]);
+-			dma_params_DIM_1_x_0(&ascdmaport->txdmap);
+-
+-			if((err=dma_compile_list(ascdmaport->txdma_chid, &ascdmaport->txdmap, GFP_KERNEL))<0) {
+-				printk(KERN_ERR "ASC TX FDMA  failed to reconfigure, error %d\n",err);
+-				return;
+-			}
+-
+-			dma_cache_wback(ascdmaport->txdmabuf[newhead], DMA_TXBUFSIZE);
+-
+-			if((err=dma_xfer_list(ascdmaport->txdma_chid,&ascdmaport->txdmap))<0) {
+-				printk(KERN_ERR "ASC TX FDMA  failed to restart, error %d\n",err);
+-				return;
+-			}
+-			asc_fdma_start_tx(port);
+-		} else
+-			ascdmaport->txdma_running = 0;
+-	}
+-}
+-
+-static void asc_txfmda_error(unsigned long param)
+-{
+-	printk(KERN_ERR "ASC TX FDMA error\n");
+-}
+-
+-static void asc_rxtimer_fn(unsigned long param)
+-{
+-	struct uart_port *port = (struct uart_port *)param;
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-	int residue;
+-
+-	/* If not running, process and try to run */
+-	if (!ascdmaport->rxdma_running) {
+-		asc_dma_rxflush(port);
+-	} else {
+-		/* If receive has paused with data, stop so as to flush all received so far */
+-		residue = get_dma_residue(ascdmaport->rxdma_chid);
+-		if (residue == ascdmaport->last_residue && (residue != DMA_RXBUFSIZE || 
+-                       ascdmaport->rxdmabuf_count[ascdmaport->rxdmabuf_tail] != 0)) {
+-			dma_stop_channel(ascdmaport->rxdma_chid);
+-			ascdmaport->last_residue = 0;
+-		}
+-		else
+-			ascdmaport->last_residue = residue;
+-	}
+-
+-	/* Reschedule the timer */
+-	mod_timer(&ascdmaport->rxpoll_timer, jiffies + RXPOLL_PERIOD);
+-}
+-
+-void asc_fdma_stop_tx(struct uart_port *port)
+-{
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-
+-	if (ascdmaport->txdma_running) {
+-		int i;
+-		ascdmaport->txdma_running = 0;
+-		for (i=0; i<DMA_TXBUFERS; i++)
+-			ascdmaport->txdmabuf_count[i] = 0;
+-		ascdmaport->txdmabuf_head = ascdmaport->txdmabuf_tail = 0;
+-		dma_stop_channel(ascdmaport->txdma_chid);
+-		dma_wait_for_completion(ascdmaport->txdma_chid);
+-	}
+-}
+-
+-void asc_fdma_stop_rx(struct uart_port *port)
+-{
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-	int i;
+-
+-	del_timer_sync(&ascdmaport->rxpoll_timer);
+-
+-	if (ascdmaport->rxdma_running) {
+-		ascdmaport->rxdma_running = 0;
+-		dma_stop_channel(ascdmaport->rxdma_chid);
+-	}
+-
+-	for (i=0; i<DMA_RXBUFERS; i++)
+-		ascdmaport->rxdmabuf_count[i] = 0;
+-	ascdmaport->rxdmabuf_head = ascdmaport->rxdmabuf_tail = 0;
+-}
+-
+-static struct stm_dma_req_config rx_dma_req_config = {
+-	.rw		= REQ_CONFIG_READ,
+-	.opcode		= REQ_CONFIG_OPCODE_1,
+-	.count		= 4,
+-	.increment	= 0,
+-	.hold_off	= 0,
+-	.initiator	= 1,
+-};
+-
+-static struct stm_dma_req_config tx_dma_req_config = {
+-	.rw		= REQ_CONFIG_WRITE,
+-	.opcode		= REQ_CONFIG_OPCODE_1,
+-	.count		= 1,
+-	.increment	= 0,
+-	.hold_off	= 0,
+-	.initiator	= 1,
+-};
+-
+-int asc_enable_fdma(struct uart_port *port)
+-{
+-	struct asc_port *ascport = &asc_ports[port->line];
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-	const char * fdmac_id =STM_DMAC_ID;
+-	const char * lb_cap_channel = STM_DMA_CAP_LOW_BW;
+-	/* Allocate the 2 DMA channels */
+-
+-	if (!ascport->dma_enabled) {
+-		int i, err=0;
+-		ascdmaport->rxdma_chid = request_dma_bycap(&fdmac_id,&lb_cap_channel, "ASC_RX");
+-		if (ascdmaport->rxdma_chid < 0) {
+-			return -EBUSY;
+-		}
+-
+-		ascdmaport->txdma_chid = request_dma_bycap(&fdmac_id,&lb_cap_channel, "ASC_TX");
+-		if (ascdmaport->txdma_chid < 0) {
+-			free_dma(ascdmaport->rxdma_chid);
+-			return -EBUSY;
+-		}
+-
+-		/* Allocate tx/rx DMA buffers and get the DMA channels */
+-		for (i=0; i<DMA_RXBUFERS; i++) {
+-			ascdmaport->rxdmabuf[i] = kmalloc(DMA_RXBUFSIZE, __GFP_DMA | GFP_KERNEL);
+-			ascdmaport->rxdmabuf_count[i] = 0;
+-		}
+-		for (i=0; i<DMA_TXBUFERS; i++) {
+-			ascdmaport->txdmabuf[i] = kmalloc(DMA_TXBUFSIZE, __GFP_DMA | GFP_KERNEL);
+-			ascdmaport->txdmabuf_count[i] = 0;
+-		}
+-
+-		ascdmaport->rxdmabuf_head = 0;
+-		ascdmaport->rxdmabuf_tail = 0;
+-		ascdmaport->txdmabuf_head = 0;
+-		ascdmaport->txdmabuf_tail = 0;
+-
+-		ascdmaport->rxdma_running = 0;
+-
+-		/* Set up the rx DMA parameters */
+-		dma_params_init(&ascdmaport->rxdmap,
+-			       MODE_PACED,
+-			       STM_DMA_LIST_OPEN);
+-
+-		//dma_params_interrupts(&ascdmaport->rxdmap,STM_DMA_LIST_COMP_INT);
+-
+-		dma_params_comp_cb(&ascdmaport->rxdmap,
+-				   asc_rxfmda_done,
+-				   (unsigned long)port,
+-				   STM_DMA_CB_CONTEXT_TASKLET);
+-
+-		dma_params_err_cb(&ascdmaport->rxdmap,
+-				  asc_rxfmda_error,
+-				  (unsigned long)port,
+-				  STM_DMA_CB_CONTEXT_TASKLET);
+-
+-		dma_params_addrs(&ascdmaport->rxdmap,
+-				virt_to_phys((void*)(port->mapbase + ASC_RXBUF)),
+-				virt_to_phys(ascdmaport->rxdmabuf[0]),
+-				DMA_RXBUFSIZE);
+-
+-		ascdmaport->rx_dma_req = dma_req_config(ascdmaport->rxdma_chid,
+-					    FDMA_RXREQ[port->line],
+-					    &rx_dma_req_config);
+-		if (ascdmaport->rx_dma_req == NULL) {
+-			printk(KERN_ERR "%s DMA req line %ld not available\n",
+-			       __FUNCTION__, FDMA_RXREQ[port->line]);
+-			return -EBUSY;
+-		}
+-
+-		dma_params_req(&ascdmaport->rxdmap, ascdmaport->rx_dma_req);
+-
+-		dma_params_DIM_0_x_1(&ascdmaport->rxdmap);
+-
+-		if((err=dma_compile_list(ascdmaport->rxdma_chid, &ascdmaport->rxdmap, GFP_KERNEL)) < 0) {
+-			printk(KERN_ERR "%s RX failed, err %d\n",__FUNCTION__,err);
+-			return -ENODEV;
+-		}
+-
+-		/* Set up the tx DMA parameters */
+-		ascdmaport->txdma_running = 0;
+-
+-		dma_params_init(&ascdmaport->txdmap,
+-				  MODE_PACED,
+-				  STM_DMA_LIST_OPEN);
+-
+-		//dma_params_interrupts(&ascdmaport->txdmap,STM_DMA_LIST_COMP_INT);
+-
+-		dma_params_comp_cb(&ascdmaport->txdmap,
+-				  asc_txfmda_done,
+-				  (unsigned long)port,
+-				  STM_DMA_CB_CONTEXT_TASKLET);
+-
+-		dma_params_err_cb(&ascdmaport->txdmap,
+-				 asc_txfmda_error,
+-				 (unsigned long)port,
+-				 STM_DMA_CB_CONTEXT_TASKLET);
+-
+-		ascdmaport->tx_dma_req = dma_req_config(ascdmaport->txdma_chid,
+-					    FDMA_TXREQ[port->line],
+-					    &tx_dma_req_config);
+-		if (ascdmaport->tx_dma_req == NULL) {
+-			printk(KERN_ERR "%s DMA req line %ld not available\n",
+-			       __FUNCTION__, FDMA_TXREQ[port->line]);
+-			return -EBUSY;
+-		}
+-
+-		dma_params_req(&ascdmaport->txdmap, ascdmaport->tx_dma_req);
+-
+-		/* We can delay compilation of the transmit descriptor until
+-		 * we know which port we are on*/
+-
+-		/* Disable rx/tx interrupts */
+-		asc_out(port, INTEN, asc_in(port, INTEN) & ~(ASC_INTEN_THE | ASC_INTEN_RBE));
+-		ascport->dma_enabled = 1;
+-
+-		/* Start reception going */
+-		ascdmaport->last_residue = 0;
+-		dma_cache_wback_inv(ascdmaport->rxdmabuf[0], DMA_RXBUFSIZE);
+-		if ((err = dma_xfer_list(ascdmaport->rxdma_chid,&ascdmaport->rxdmap)) < 0)
+-			printk(KERN_ERR "ASC RX FDMA failed to start - error %d\n",err);
+-		else
+-			ascdmaport->rxdma_running = 1;
+-
+-		/* Start reception poll timer going */
+-		init_timer(&ascdmaport->rxpoll_timer);
+-		ascdmaport->rxpoll_timer.function = asc_rxtimer_fn;
+-		ascdmaport->rxpoll_timer.data = (unsigned long)port;
+-		ascdmaport->rxpoll_timer.expires = jiffies + RXPOLL_PERIOD;
+-		add_timer(&ascdmaport->rxpoll_timer);
+-	}
+-
+-	return 0;
+-}
+-
+-void asc_disable_fdma(struct uart_port *port)
+-{
+-	struct asc_port *ascport = &asc_ports[port->line];
+-	struct asc_dma_port *ascdmaport = &asc_dma_ports[port->line];
+-
+-	if (ascport->dma_enabled) {
+-		int i;
+-
+-		/* Stop and release DMA and buffer resources */
+-		asc_fdma_stop_rx(port);
+-		asc_fdma_stop_tx(port);
+-		free_dma(ascdmaport->rxdma_chid);
+-		free_dma(ascdmaport->txdma_chid);
+-		dma_params_free(&ascdmaport->rxdmap);
+-		dma_params_free(&ascdmaport->txdmap);
+-		memset(&ascdmaport->rxdmap,0,sizeof(struct stm_dma_params));
+-		memset(&ascdmaport->txdmap,0,sizeof(struct stm_dma_params));
+-
+-		for (i=0; i<DMA_RXBUFERS; i++) {
+-			kfree(ascdmaport->rxdmabuf[i]);
+-			ascdmaport->rxdmabuf[i] = NULL;
+-		}
+-		for (i=0; i<DMA_TXBUFERS; i++) {
+-			kfree(ascdmaport->txdmabuf[i]);
+-			ascdmaport->txdmabuf[i] = NULL;
+-		}
+-		ascport->dma_enabled = 0;
+-	}
+-}
+diff --git a/drivers/serial/stasc-fdma.c b/drivers/serial/stasc-fdma.c
+new file mode 100644
+index 0000000..8be44eb
+--- /dev/null
++++ b/drivers/serial/stasc-fdma.c
+@@ -0,0 +1,846 @@
++/*
++ * STMicroelectronics Asynchronous Serial Controller (ASC) driver
++ * FDMA extension
++ *
++ * Copyright (C) 2007 STMicroelectronics Limited
++ * Author: Pawel MOLL <pawel.moll@st.com>
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ */
++
++#include <linux/timer.h>
++#include <linux/stm/stm-dma.h>
++#include <linux/dma-mapping.h>
++
++#include "stasc.h"
++
++
++/* RX buffers */
++#define RX_NODES_NUMBER 4  /* Keep it power of 2 */
++#define RX_NODE_SIZE 2048  /* Keep it power of 2 */
++#define RX_DATA_FIFO_SIZE 32
++
++
++
++/* Self-documenting constants, aren't they? */
++#define ALIGN_SIZE 0x4
++#define ALIGN_MASK (ALIGN_SIZE - 1)
++
++
++
++/* It is better to get error messages, isn't it? */
++#define SHOW_ERROR
++
++#ifdef SHOW_ERROR
++#define ERROR(fmt, args...) printk(KERN_ERR "%s:%d: %s(): ERROR: " fmt, \
++		__FILE__, __LINE__, __FUNCTION__, ## args)
++#else
++#define ERROR(...)
++#endif
++
++
++
++/* Define SHOW_TRACE to get a lot of tracing messages,
++ * useful for debugging */
++#undef SHOW_TRACE
++
++#ifdef SHOW_TRACE
++#define TRACE(fmt, args...) printk(KERN_INFO "%s:%d: %s(): " fmt, \
++		__FILE__, __LINE__, __FUNCTION__, ## args)
++#else
++#define TRACE(...)
++#endif
++
++
++
++/********************************************************** TX track */
++
++
++
++struct asc_port_fdma_tx_channel {
++	int running;
++	int channel;
++	struct stm_dma_req *req;
++	struct stm_dma_params params;
++	unsigned long transfer_size;
++};
++
++
++
++static void asc_fdma_tx_callback_done(unsigned long param);
++static void asc_fdma_tx_callback_error(unsigned long param);
++
++
++
++static struct stm_dma_req_config tx_dma_req_config = {
++	.rw        = REQ_CONFIG_WRITE,
++	.opcode    = REQ_CONFIG_OPCODE_1,
++	.count     = 4,
++	.increment = 0,
++	.hold_off  = 0,
++	.initiator = 0,
++};
++
++static int asc_fdma_tx_prepare(struct uart_port *port)
++{
++	struct asc_port_fdma_tx_channel *tx;
++	const char *fdmac_id[] = { STM_DMAC_ID, NULL };
++	const char *lb_cap[] = { STM_DMA_CAP_LOW_BW, NULL };
++	const char *hb_cap[] = { STM_DMA_CAP_HIGH_BW, NULL };
++
++	TRACE("Preparing FDMA TX for port %p.\n", port);
++
++	/* Allocate channel description structure */
++	tx = kmalloc(sizeof *tx, GFP_KERNEL);
++	if (tx == NULL) {
++		ERROR("Can't get memory for TX channel description!\n");
++		return -ENOMEM;
++	}
++	memset(tx, 0, sizeof *tx);
++	asc_ports[port->line].fdma.tx = tx;
++
++	/* Get DMA channel */
++	tx->channel = request_dma_bycap(fdmac_id, lb_cap, "ASC_TX");
++	if (tx->channel < 0) {
++		tx->channel = request_dma_bycap(fdmac_id, hb_cap, "ASC_TX");
++		if (tx->channel < 0) {
++			ERROR("FDMA TX channel request failed!\n");
++			kfree(tx);
++			return -EBUSY;
++		}
++	}
++
++	/* Prepare request line, using req_id set in stasc.c */
++	tx->req = dma_req_config(tx->channel,
++			asc_ports[port->line].fdma.tx_req_id,
++			&tx_dma_req_config);
++	if (tx->req == NULL) {
++		ERROR("FDMA TX req line for port %p not available!\n", port);
++		free_dma(tx->channel);
++		kfree(tx);
++		return -EBUSY;
++	}
++
++	/* Now - parameters initialisation */
++	dma_params_init(&tx->params, MODE_PACED, STM_DMA_LIST_OPEN);
++
++	/* Set callbacks */
++	dma_params_comp_cb(&tx->params, asc_fdma_tx_callback_done,
++			(unsigned long)port, STM_DMA_CB_CONTEXT_TASKLET);
++	dma_params_err_cb(&tx->params, asc_fdma_tx_callback_error,
++			(unsigned long)port, STM_DMA_CB_CONTEXT_TASKLET);
++
++	/* Source pace - 1, destination pace - 0 */
++	dma_params_DIM_1_x_0(&tx->params);
++
++	/* Request line */
++	dma_params_req(&tx->params, tx->req);
++
++	/* Compile the paramters just to have .ops field filled... (!!!) */
++	dma_compile_list(tx->channel, &tx->params, GFP_KERNEL);
++
++	return 0;
++}
++
++static void asc_fdma_tx_shutdown(struct uart_port *port)
++{
++	struct asc_port_fdma_tx_channel *tx = asc_ports[port->line].fdma.tx;
++
++	TRACE("Shutting down FDMA TX for port %p.\n", port);
++
++	BUG_ON(tx->running);
++
++	dma_params_free(&tx->params);
++	dma_req_free(tx->channel, tx->req);
++	free_dma(tx->channel);
++
++	kfree(tx);
++}
++
++
++
++static void asc_fdma_tx_callback_done(unsigned long param)
++{
++	struct uart_port *port = (struct uart_port *)param;
++	struct asc_port_fdma_tx_channel *tx = asc_ports[port->line].fdma.tx;
++	struct circ_buf *xmit = &port->info->xmit;
++
++	TRACE("Transmission of %lu bytes on ASC FDMA TX done for port %p.\n",
++			tx->transfer_size, port);
++
++	/* If channel was stopped (tx->running == 0), do nothing */
++	if (unlikely(!tx->running))
++		return;
++
++	tx->running = 0;
++
++	/* Move buffer pointer by transferred size */
++	xmit->tail = (xmit->tail + tx->transfer_size) & (UART_XMIT_SIZE - 1);
++	port->icount.tx += tx->transfer_size;
++
++	/* If appropriate, notify higher layers that
++	 * there is some place in buffer */
++	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
++		uart_write_wakeup(port);
++
++	/* If there is (still or again) some data in buffer -
++	 * transmit it now. */
++	if (CIRC_CNT_TO_END(xmit->head, xmit->tail, UART_XMIT_SIZE) > 0)
++		asc_fdma_tx_start(port);
++}
++
++static void asc_fdma_tx_callback_error(unsigned long param)
++{
++	ERROR("ASC FDMA TX error\n");
++}
++
++int asc_fdma_tx_start(struct uart_port *port)
++{
++	struct asc_port_fdma_tx_channel *tx = asc_ports[port->line].fdma.tx;
++	struct circ_buf *xmit = &port->info->xmit;
++	int result = 0;
++
++	TRACE("Starting ASC FDMA TX on port %p.\n", port);
++
++	BUG_ON(!asc_ports[port->line].fdma.enabled);
++
++	/* Do nothing if some transfer is in progress... */
++	if (tx->running)
++		return 0;
++
++	/* Get the transfer size - as this is a "simulated" circular
++	 * buffer (I mean modulo), we can just transfer data from tail
++	 * to end of physical buffer (or to tail, whichever comes first);
++	 * the wrapped rest (if exist) will be transmitted when this one
++	 * is done (see asc_fdma_tx_callback_done). */
++	tx->transfer_size = CIRC_CNT_TO_END(xmit->head, xmit->tail,
++			UART_XMIT_SIZE);
++	BUG_ON(tx->transfer_size <= 0);
++
++	/* No jokes, please. The buffer _must_ be aligned! */
++	BUG_ON(virt_to_phys(xmit->buf) & ALIGN_MASK);
++
++	/* If first character to be transmitted is unaligned - DIY.
++	 * If transfer size is lower than 4 bytes (minimum FDMA
++	 * transfer unit) - DIY */
++	while (tx->transfer_size > 0 && (xmit->tail & ALIGN_MASK ||
++			tx->transfer_size < ALIGN_SIZE)) {
++		int size = ALIGN_SIZE - (xmit->tail & ALIGN_MASK);
++		int i;
++
++		if (tx->transfer_size < size)
++			size = tx->transfer_size;
++
++		TRACE("Transmitting %d (beginning from byte %d in buffer)"
++				" bytes on port %p via ASC TX register.\n",
++				size, xmit->tail, port);
++
++		/* Put the data into the TX FIFO and forget :-) */
++		for (i = 0; i < size; i++)
++			asc_out(port, TXBUF, xmit->buf[xmit->tail++]);
++
++		/* We assumed that would not wrap around this
++		 * circular buffer... */
++		BUG_ON(xmit->tail > UART_XMIT_SIZE);
++
++		/* Update counters */
++		xmit->tail &= UART_XMIT_SIZE - 1;
++		port->icount.tx += size;
++
++		tx->transfer_size -= size;
++	}
++
++	/* Anything left for FDMAzilla? :-) */
++	if (tx->transfer_size > 0) {
++		/* Align transfer size to 4 bytes and carry on -
++		 * the rest will be transmitted after finishing this transfer */
++		tx->transfer_size &= ~ALIGN_MASK;
++
++		TRACE("Transmitting %lu bytes on port %p via FDMA.\n",
++				tx->transfer_size, port);
++
++		/* Check buffer alignment */
++		BUG_ON(virt_to_phys(xmit->buf + xmit->tail) & ALIGN_MASK);
++
++		/* Write back the buffer cache */
++		dma_map_single(port->dev, xmit->buf + xmit->tail,
++				tx->transfer_size, DMA_TO_DEVICE);
++
++		/* Setup DMA transfer parameters
++		 * (source & destination addresses and size) */
++		dma_params_addrs(&tx->params,
++				virt_to_phys(xmit->buf + xmit->tail),
++				(unsigned long)(port->membase + ASC_TXBUF),
++				tx->transfer_size);
++
++		result = dma_compile_list(tx->channel, &tx->params, GFP_KERNEL);
++		if (result == 0) {
++			/* Launch transfer */
++			result = dma_xfer_list(tx->channel, &tx->params);
++			if (result == 0)
++				tx->running = 1;
++			else
++				ERROR("Can't launch TX DMA transfer!\n");
++		} else {
++			ERROR("Can't compile TX DMA paramters list!\n");
++		}
++	}
++
++	return result;
++}
++
++void asc_fdma_tx_stop(struct uart_port *port)
++{
++	struct asc_port_fdma_tx_channel *tx = asc_ports[port->line].fdma.tx;
++
++	TRACE("Stopping ASC FDMA TX on port %p.\n", port);
++
++	BUG_ON(!asc_ports[port->line].fdma.enabled);
++	BUG_ON(!tx->running);
++
++	dma_stop_channel(tx->channel);
++
++	tx->running = 0;
++}
++
++
++
++/********************************************************** RX track */
++
++
++
++struct asc_port_fdma_rx_data {
++	int remainder;
++	unsigned char *chars;
++	int size;
++};
++
++struct asc_port_fdma_rx_channel {
++	/* Port pointer */
++	struct uart_port *port;
++
++	/* FDMA channel data */
++	int running;
++	int channel;
++	struct stm_dma_req *req;
++	struct stm_dma_params params[RX_NODES_NUMBER];
++
++	/* Buffers */
++	int order;
++	unsigned char *chars;  /* size defined by order */
++	unsigned char *flags;  /* size defined by order */
++	unsigned char *remainders;  /* one page */
++	struct asc_port_fdma_rx_data data[RX_DATA_FIFO_SIZE];
++
++	/* Data processing work */
++	struct work_struct ldisc_work;
++
++	/* Run-time data */
++	int last_residue;
++	int remainders_head;
++	int remainders_tail;
++	int data_head;
++	int data_tail;
++};
++
++
++
++static void asc_fdma_rx_callback_done(unsigned long param);
++static void asc_fdma_rx_callback_error(unsigned long param);
++static void asc_fdma_rx_ldisc_work(struct work_struct *work);
++
++
++
++static struct stm_dma_req_config asc_fdma_rx_req_config = {
++	.rw        = REQ_CONFIG_READ,
++	.opcode    = REQ_CONFIG_OPCODE_1,
++	.count     = 4,
++	.increment = 0,
++	.hold_off  = 0,
++	.initiator = 0,
++};
++
++static int asc_fdma_rx_prepare(struct uart_port *port)
++{
++	struct asc_port_fdma_rx_channel *rx;
++	const char *fdmac_id[] = { STM_DMAC_ID, NULL };
++	const char *lb_cap[] = { STM_DMA_CAP_LOW_BW, NULL };
++	const char *hb_cap[] = { STM_DMA_CAP_HIGH_BW, NULL };
++	int result;
++	int i;
++
++	TRACE("Preparing FDMA RX for port %p.\n", port);
++
++	/* Allocate and clear channel description structure */
++	rx = kmalloc(sizeof *rx, GFP_KERNEL);
++	asc_ports[port->line].fdma.rx = rx;
++	if (rx == NULL) {
++		ERROR("Can't get memory for RX channel description!\n");
++		result = -ENOMEM;
++		goto error_description;
++	}
++	memset(rx, 0, sizeof *rx);
++	rx->port = port;
++
++	/* Pages are allocated in "order" units ;-) */
++	rx->order = get_order(RX_NODE_SIZE * RX_NODES_NUMBER);
++
++	/* Allocate buffer filled with TTY_NORMAL character flag */
++	rx->flags = (unsigned char *)__get_free_pages(GFP_KERNEL | __GFP_DMA,
++			rx->order);
++	if (rx->flags == NULL) {
++		ERROR("Can't get memory pages for flags buffer!\n");
++		result = -ENOMEM;
++		goto error_flags;
++	}
++	memset(rx->flags, TTY_NORMAL, RX_NODE_SIZE * RX_NODES_NUMBER);
++
++	/* Allocate characters buffer */
++	rx->chars = (unsigned char *)__get_free_pages(GFP_KERNEL | __GFP_DMA,
++			rx->order);
++	if (rx->chars == NULL) {
++		ERROR("Can't get memory pages for chars buffer!\n");
++		result = -ENOMEM;
++		goto error_chars;
++	}
++	/* Well, finally it is going to be used by FDMA! */
++	dma_map_single(port->dev, rx->chars, RX_NODE_SIZE * RX_NODES_NUMBER,
++			DMA_FROM_DEVICE);
++
++	/* Allocate remainders buffer */
++	rx->remainders = (unsigned char *)__get_free_page(GFP_KERNEL);
++	if (rx->remainders == NULL) {
++		ERROR("Can't get memory page for remainders buffer!\n");
++		result = -ENOMEM;
++		goto error_remainders;
++	}
++
++	/* Get DMA channel */
++	rx->channel = request_dma_bycap(fdmac_id, lb_cap, "ASC_RX");
++	if (rx->channel < 0) {
++		rx->channel = request_dma_bycap(fdmac_id, hb_cap, "ASC_RX");
++		if (rx->channel < 0) {
++			ERROR("FDMA RX channel request failed!\n");
++			result = -EBUSY;
++			goto error_channel;
++		}
++	}
++
++	/* Prepare request line, using req_id set in stasc.c */
++	rx->req = dma_req_config(rx->channel,
++			asc_ports[port->line].fdma.rx_req_id,
++			&asc_fdma_rx_req_config);
++	if (rx->req == NULL) {
++		ERROR("DMA RX req line for port %p not available!\n", port);
++		result = -EBUSY;
++		goto error_req;
++	}
++
++	/* Now - parameters initialisation */
++	for (i = 0; i < RX_NODES_NUMBER; i++) {
++		dma_params_init(&rx->params[i], MODE_PACED, STM_DMA_LIST_CIRC);
++
++		/* Link nodes */
++		if (i > 0)
++			dma_params_link(&rx->params[i - 1], &rx->params[i]);
++
++		/* Set callbacks */
++		dma_params_comp_cb(&rx->params[i], asc_fdma_rx_callback_done,
++				(unsigned long)port, STM_DMA_CB_CONTEXT_ISR);
++		dma_params_err_cb(&rx->params[i], asc_fdma_rx_callback_error,
++				(unsigned long)port, STM_DMA_CB_CONTEXT_ISR);
++
++		/* Get callback every time a node is completed */
++		dma_params_interrupts(&rx->params[i], STM_DMA_NODE_COMP_INT);
++
++		/* Source pace - 0, destination pace - 1 */
++		dma_params_DIM_0_x_1(&rx->params[i]);
++
++		/* Request line */
++		dma_params_req(&rx->params[i], rx->req);
++
++		/* Node buffer address */
++		dma_params_addrs(&rx->params[i],
++				(unsigned long)(port->membase + ASC_RXBUF),
++				virt_to_phys(rx->chars + (i * RX_NODE_SIZE)),
++				RX_NODE_SIZE);
++	}
++
++	/* Compile the parameters (the first one, in fact)
++	 * to be ready to launch... */
++	result = dma_compile_list(rx->channel, rx->params, GFP_KERNEL);
++	if (result != 0) {
++		ERROR("Can't compile RX DMA paramters list!\n");
++		goto error_compile;
++	}
++
++	/* Initialize data parsing work for shared workqueue */
++	INIT_WORK(&rx->ldisc_work, asc_fdma_rx_ldisc_work);
++
++	return 0;
++
++error_compile:
++	dma_params_free(rx->params); /* Frees whole list */
++error_req:
++	free_dma(rx->channel);
++error_channel:
++	free_page((unsigned long)rx->remainders);
++error_remainders:
++	free_pages((unsigned long)rx->chars, rx->order);
++error_chars:
++	free_pages((unsigned long)rx->flags, rx->order);
++error_flags:
++	kfree(rx);
++error_description:
++	return result;
++}
++
++static void asc_fdma_rx_shutdown(struct uart_port *port)
++{
++	struct asc_port_fdma_rx_channel *rx = asc_ports[port->line].fdma.rx;
++
++	TRACE("Shutting down FDMA RX for port %p.\n", port);
++
++	BUG_ON(rx->running);
++
++	dma_params_free(rx->params); /* Frees whole list */
++	dma_req_free(rx->channel, rx->req);
++	free_dma(rx->channel);
++
++	free_page((unsigned long)rx->remainders);
++	free_pages((unsigned long)rx->chars, rx->order);
++	free_pages((unsigned long)rx->flags, rx->order);
++
++	kfree(rx);
++}
++
++
++
++static inline void asc_fdma_disable_tne_interrupt(struct uart_port *port)
++{
++	unsigned long intenable;
++
++	/* Clear TNE (Timeout not empty) interrupt enable in INTEN */
++	intenable = asc_in(port, INTEN);
++	intenable &= ~ASC_INTEN_TNE;
++	asc_out(port, INTEN, intenable);
++}
++
++static inline void asc_fdma_enable_tne_interrupt(struct uart_port *port)
++{
++	unsigned long intenable;
++
++	/* Set TNE (Timeout not empty) interrupt enable in INTEN */
++	intenable = asc_in(port, INTEN);
++	intenable |= ASC_INTEN_TNE;
++	asc_out(port, INTEN, intenable);
++}
++
++static inline void asc_fdma_rx_add_data(struct asc_port_fdma_rx_channel *rx,
++		int remainder, unsigned char *chars, int size)
++{
++	TRACE("Adding %d bytes of%s data (%p) to RX %p FIFO.\n",
++			size, remainder ? " remainder" : "", chars, rx);
++
++	rx->data[rx->data_tail].remainder = remainder;
++	rx->data[rx->data_tail].chars = chars;
++	rx->data[rx->data_tail].size = size;
++	rx->data_tail = (rx->data_tail + 1) & (RX_DATA_FIFO_SIZE - 1);
++}
++
++static void asc_fdma_rx_callback_done(unsigned long param)
++{
++	struct uart_port *port = (struct uart_port *)param;
++	struct asc_port_fdma_rx_channel *rx = asc_ports[port->line].fdma.rx;
++	int current_residue;
++	int remainder_length = 0;
++	int remainders_start = rx->remainders_tail;
++
++	TRACE("Transfer on ASC FDMA RX done for port %p (status 0x%08x).\n",
++			port, asc_in(port, STA));
++
++	/* If channel was stopped - do nothing... */
++	if (unlikely(!rx->running))
++		return;
++
++	/* We have to service timeout case as quick as possible! */
++	preempt_disable();
++
++	/* How much data was actually transferred by FDMA so far? */
++	current_residue = get_dma_residue(rx->channel);
++
++	TRACE("FDMA residue value is %d for port %p (rx %p).\n",
++			current_residue, port, rx);
++
++	/* Paused channel? */
++	if (dma_get_status(rx->channel) == DMA_CHANNEL_STATUS_PAUSED) {
++		unsigned long status = asc_in(port, STA);
++
++		/* Read RX FIFO until empty, but no more than half of FIFO
++		 * size - if there is more (or HALF FULL bit is signalled
++		 * again) it means that some data came again.
++		 * Let FDMA handle this... */
++		while (!(status & ASC_STA_RHF) &&
++				(remainder_length < FIFO_SIZE / 2) &&
++				(status & ASC_STA_RBF)) {
++			unsigned long ch = asc_in(port, RXBUF);
++
++			rx->remainders[rx->remainders_tail] = ch & 0xff;
++			rx->remainders_tail = (rx->remainders_tail + 1) &
++					(PAGE_SIZE - 1);
++			remainder_length++;
++			status = asc_in(port, STA);
++
++			/* That means buffer overrun! */
++			BUG_ON(rx->remainders_tail == rx->remainders_head);
++		}
++
++		/* Launch FDMA again */
++		dma_unpause_channel(rx->channel);
++		asc_fdma_enable_tne_interrupt(port);
++
++		TRACE("Got %d bytes of remainder from port's %p RX FIFO.\n",
++				remainder_length, port);
++	}
++
++	/* Ahhh... The most important thing is done! */
++	preempt_enable();
++
++	/* Add residue data (if any) to fifo */
++	if (current_residue < rx->last_residue) {
++		int offset = (RX_NODES_NUMBER * RX_NODE_SIZE) -
++				rx->last_residue;
++		int size = rx->last_residue - current_residue;
++		asc_fdma_rx_add_data(rx, 0, rx->chars + offset, size);
++	} else if (current_residue > rx->last_residue) {
++		/* FDMA buffer has just wrapped
++		 * So, lets pass received data in two parts -
++		 * first the ending... */
++		int offset = (RX_NODES_NUMBER * RX_NODE_SIZE) -
++				rx->last_residue;
++		int size = rx->last_residue;
++		asc_fdma_rx_add_data(rx, 0, rx->chars + offset, size);
++		/* Now the beginning (offset = 0) */
++		size = (RX_NODES_NUMBER * RX_NODE_SIZE) - current_residue;
++		asc_fdma_rx_add_data(rx, 0, rx->chars, size);
++	}
++
++	/* Add remainders to disc fifo (if any) */
++	if (remainder_length > 0) {
++		if (rx->remainders_tail > rx->remainders_head) {
++			asc_fdma_rx_add_data(rx, 1,
++					rx->remainders + remainders_start,
++					remainder_length);
++		} else {
++			/* Wrapped situation again */
++			asc_fdma_rx_add_data(rx, 1,
++					rx->remainders + remainders_start,
++					PAGE_SIZE - remainders_start);
++			asc_fdma_rx_add_data(rx, 1, rx->remainders,
++					rx->remainders_tail);
++		}
++	}
++
++	/* Schedule work that will pass aquired data to TTY line discipline */
++	schedule_work(&rx->ldisc_work);
++
++	/* Update statistics */
++	port->icount.rx += remainder_length +
++		((rx->last_residue - current_residue) &
++		(RX_NODES_NUMBER * RX_NODE_SIZE - 1));
++
++	/* Well, almost done */
++	rx->last_residue = current_residue;
++}
++
++static void asc_fdma_rx_callback_error(unsigned long param)
++{
++	ERROR("ASC FDMA RX error.\n");
++}
++
++static void asc_fdma_rx_ldisc_work(struct work_struct *work)
++{
++	struct asc_port_fdma_rx_channel *rx = container_of(work,
++			struct asc_port_fdma_rx_channel, ldisc_work);
++	struct uart_port *port = rx->port;
++	struct tty_ldisc *ldisc = tty_ldisc_ref_wait(port->info->tty);
++
++	while (rx->data_head != rx->data_tail) {
++		/* Get a data portion from fifo */
++		struct asc_port_fdma_rx_data *data = &rx->data[rx->data_head];
++
++		TRACE("Passing %d bytes of%s data (%p) from port %p"
++				" to discipline %p.\n", data->size,
++				data->remainder ? " remainder" : "",
++				data->chars, port, ldisc);
++
++		/* Feed TTY line discipline with received data and flags buffer
++		 * (already prepared and filled with TTY_NORMAL flags) */
++		ldisc->receive_buf(port->info->tty, data->chars,
++				rx->flags, data->size);
++
++		if (data->remainder)
++			/* Free space in circular buffer */
++			rx->remainders_head = (rx->remainders_head +
++					data->size) & (PAGE_SIZE - 1);
++		else
++			/* Invalidate buffer's cache, if transferred by FDMA */
++			dma_map_single(port->dev, data->chars, data->size,
++					DMA_FROM_DEVICE);
++
++		/* Remove the entry from fifo */
++		rx->data_head = (rx->data_head + 1) & (RX_DATA_FIFO_SIZE - 1);
++	}
++
++	tty_ldisc_deref(ldisc);
++}
++
++
++
++static int asc_fdma_rx_start(struct uart_port *port)
++{
++	struct asc_port_fdma_rx_channel *rx = asc_ports[port->line].fdma.rx;
++	int result;
++
++	TRACE("Starting ASC FDMA RX on port %p (status 0x%04x).\n",
++			port, asc_in(port, STA));
++
++	BUG_ON(rx->running);
++
++	/* Initialize pointers */
++	rx->remainders_head = 0;
++	rx->remainders_tail = 0;
++	rx->data_head = 0;
++	rx->data_tail = 0;
++	rx->last_residue = RX_NODE_SIZE * RX_NODES_NUMBER;
++
++	/* Launch transfer */
++	result = dma_xfer_list(rx->channel, rx->params);
++	if (result == 0) {
++		rx->running = 1;
++
++		/* Turn on timeout interrupt */
++		asc_fdma_enable_tne_interrupt(port);
++	} else
++		ERROR("Can't launch RX DMA transfer!\n");
++
++	return result;
++}
++
++void asc_fdma_rx_stop(struct uart_port *port)
++{
++	struct asc_port_fdma_rx_channel *rx = asc_ports[port->line].fdma.rx;
++
++	TRACE("Stopping ASC FDMA RX on port %p.\n", port);
++
++	BUG_ON(!asc_ports[port->line].fdma.enabled);
++	BUG_ON(!rx->running);
++
++	asc_fdma_disable_tne_interrupt(port);
++
++	dma_stop_channel(rx->channel);
++
++	rx->running = 0;
++}
++
++void asc_fdma_rx_timeout(struct uart_port *port)
++{
++	struct asc_port_fdma_rx_channel *rx = asc_ports[port->line].fdma.rx;
++
++	BUG_ON(!asc_ports[port->line].fdma.enabled);
++	BUG_ON(!rx->running);
++
++	TRACE("Timeout on ASC FDMA port %p when RX FIFO is not empty."
++			" (status 0x%08x)\n", port, asc_in(port, STA));
++
++	asc_fdma_disable_tne_interrupt(port);
++
++	/* Let's flush (and pause) the channel's buffer - when done,
++	 * normal callback will be called */
++	dma_flush_channel(rx->channel);
++}
++
++
++
++/********************************************************** Generic */
++
++
++
++int asc_fdma_startup(struct uart_port *port)
++{
++	struct asc_port_fdma *fdma = &asc_ports[port->line].fdma;
++	int result;
++
++	TRACE("Starting up ASC FDMA support for port %p (line %d).\n",
++			port, port->line);
++
++	BUG_ON(fdma->ready);
++
++	result = asc_fdma_tx_prepare(port);
++	if (result == 0) {
++		result = asc_fdma_rx_prepare(port);
++		if (result == 0)
++			fdma->ready = 1;
++		else {
++			ERROR("FDMA RX preparation failed!\n");
++			asc_fdma_tx_shutdown(port);
++		}
++	} else
++		ERROR("FDMA TX preparation failed!\n");
++
++	return result;
++}
++
++void asc_fdma_shutdown(struct uart_port *port)
++{
++	struct asc_port_fdma *fdma = &asc_ports[port->line].fdma;
++
++	TRACE("Shutting down ASC FDMA support for port %p.\n", port);
++
++	if (fdma->enabled)
++		asc_fdma_disable(port);
++
++	if (fdma->ready) {
++		asc_fdma_rx_shutdown(port);
++		asc_fdma_tx_shutdown(port);
++		fdma->ready = 0;
++	}
++}
++
++
++
++int asc_fdma_enable(struct uart_port *port)
++{
++	struct asc_port_fdma *fdma = &asc_ports[port->line].fdma;
++	int result;
++
++	TRACE("Enabling ASC FDMA acceleration for port %p.\n", port);
++
++	BUG_ON(fdma->enabled);
++
++	result = asc_fdma_rx_start(port);
++	if (result == 0)
++		fdma->enabled = 1;
++	else
++		ERROR("Can't start receiving!\n");
++
++	return result;
++}
++
++void asc_fdma_disable(struct uart_port *port)
++{
++	struct asc_port_fdma *fdma = &asc_ports[port->line].fdma;
++
++	TRACE("Disabling ASC FDMA acceleration for port %p.\n", port);
++
++	BUG_ON(!fdma->enabled);
++
++	if (fdma->tx->running)
++		asc_fdma_tx_stop(port);
++
++	if (fdma->rx->running)
++		asc_fdma_rx_stop(port);
++
++	fdma->enabled = 0;
++}
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index 4335615..4894abe 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -20,6 +20,7 @@
+ #include <linux/spinlock.h>
+ #include <linux/platform_device.h>
+ #include <linux/stm/soc.h>
++#include <linux/stm/fdma-reqs.h>
+ 
+ #include <asm/system.h>
+ #include <asm/io.h>
+@@ -151,8 +152,8 @@ static unsigned int asc_get_mctrl(struct uart_port *port)
+  */
+ static void asc_start_tx(struct uart_port *port)
+ {
+-	if (asc_dma_enabled(port))
+-		asc_fdma_start_tx(port);
++	if (asc_fdma_enabled(port))
++		asc_fdma_tx_start(port);
+ 	else
+ 		asc_transmit_chars(port);
+ }
+@@ -162,8 +163,8 @@ static void asc_start_tx(struct uart_port *port)
+  */
+ static void asc_stop_tx(struct uart_port *port)
+ {
+-	if (asc_dma_enabled(port))
+-		asc_fdma_stop_tx(port);
++	if (asc_fdma_enabled(port))
++		asc_fdma_tx_stop(port);
+ 	else
+ 		asc_disable_tx_interrupts(port);
+ }
+@@ -173,8 +174,8 @@ static void asc_stop_tx(struct uart_port *port)
+  */
+ static void asc_stop_rx(struct uart_port *port)
+ {
+-	if (asc_dma_enabled(port))
+-		asc_fdma_stop_rx(port);
++	if (asc_fdma_enabled(port))
++		asc_fdma_rx_stop(port);
+ 	else
+ 		asc_disable_rx_interrupts(port);
+ }
+@@ -202,6 +203,7 @@ static void asc_break_ctl(struct uart_port *port, int break_state)
+ static int asc_startup(struct uart_port *port)
+ {
+ 	asc_request_irq(port);
++	asc_fdma_startup(port);
+ 	asc_transmit_chars(port);
+ 	asc_enable_rx_interrupts(port);
+ 
+@@ -210,10 +212,9 @@ static int asc_startup(struct uart_port *port)
+ 
+ static void asc_shutdown(struct uart_port *port)
+ {
+-	if (asc_dma_enabled(port))
+-		asc_disable_fdma(port);
+ 	asc_disable_tx_interrupts(port);
+ 	asc_disable_rx_interrupts(port);
++	asc_fdma_shutdown(port);
+ 	asc_free_irq(port);
+ }
+ 
+@@ -311,6 +312,11 @@ static void __devinit asc_init_port(struct asc_port *ascport,
+ 	port->mapbase	= pdev->resource[0].start;
+ 	port->irq	= pdev->resource[1].start;
+ 
++#ifdef CONFIG_SERIAL_ST_ASC_FDMA
++	ascport->fdma.rx_req_id = pdev->resource[2].start;
++	ascport->fdma.tx_req_id = pdev->resource[3].start;
++#endif
++
+ 	/* Assume that we can always use ioremap */
+ 	port->flags	|= UPF_IOREMAP;
+ 	port->membase	= NULL;
+@@ -418,8 +424,6 @@ static int __init asc_init(void)
+ 
+ 	printk(banner);
+ 
+-	asc_fdma_setreq();
+-
+ 	ret = uart_register_driver(&asc_uart_driver);
+ 	if (ret)
+ 		return ret;
+@@ -561,20 +565,31 @@ asc_set_termios_cflag (struct asc_port *ascport, int cflag, int baud)
+ 
+ 	/* Undocumented feature: use max possible baud */
+ 	if (cflag & 0020000)
+-		asc_out (port, BAUDRATE, 0x0000ffff);
++		asc_out(port, BAUDRATE, 0x0000ffff);
+ 
+-	/* Undocumented feature: use DMA */
+-	if (cflag & 0040000)
+-		asc_enable_fdma(port);
+-	else
+-		asc_disable_fdma(port);
++	/* Undocumented feature: FDMA "acceleration" */
++	if ((cflag & 0040000) && !asc_fdma_enabled(port)) {
++		/* TODO: check parameters if suitable for FDMA transmission */
++		asc_disable_tx_interrupts(port);
++		asc_disable_rx_interrupts(port);
++		if (asc_fdma_enable(port) != 0) {
++			asc_enable_rx_interrupts(port);
++			asc_enable_tx_interrupts(port);
++		}
++	} else if (!(cflag & 0040000) && asc_fdma_enabled(port)) {
++		asc_fdma_disable(port);
++		asc_enable_rx_interrupts(port);
++		asc_enable_tx_interrupts(port);
++	}
+ 
+ 	/* Undocumented feature: use local loopback */
+ 	if (cflag & 0100000)
+ 		ctrl_val |= ASC_CTL_LOOPBACK;
++	else
++		ctrl_val &= ~ASC_CTL_LOOPBACK;
+ 
+ 	/* Set the timeout */
+-	asc_out(port, TIMEOUT, 16);
++	asc_out(port, TIMEOUT, 20);
+ 
+ 	/* write final value and enable port */
+ 	asc_out (port, CTL, (ctrl_val | ASC_CTL_RUN));
+@@ -743,6 +758,7 @@ static irqreturn_t asc_interrupt(int irq, void *ptr)
+ 	unsigned long status;
+ 
+ 	spin_lock(&port->lock);
++
+ #if defined(CONFIG_KGDB_ST_ASC)
+         /* To be Fixed: it seems that on a lot of ST40 platforms the breakpoint
+            condition is not checked without this delay. This problem probably
+@@ -750,20 +766,35 @@ static irqreturn_t asc_interrupt(int irq, void *ptr)
+          */
+         udelay(1000);
+ #endif
++
+ 	status = asc_in (port, STA);
+-	if (status & ASC_STA_RBF) {
+-		/* Receive FIFO not empty */
+-		asc_receive_chars(port);
+-	}
++
++	if (asc_fdma_enabled(port)) {
++		/* FDMA transmission, only timeout-not-empty
++		 * interrupt shall be enabled */
++		if (likely(status & ASC_STA_TNE))
++			asc_fdma_rx_timeout(port);
++		else
++			printk(KERN_ERR"Unknown ASC interrupt for port %p!"
++			    "(ASC_STA = %08x)\n", port, asc_in(port, STA));
++	} else {
++		if (status & ASC_STA_RBF) {
++			/* Receive FIFO not empty */
++			asc_receive_chars(port);
++		}
++
+ #if defined(CONFIG_KGDB_ST_ASC)
+ 	if ((asc_default_console_device->id == kgdbasc_portno) &&
+ 			(status == BRK_STATUS)){
+ 		breakpoint();
+ 	}
+ #endif
+-	if ((status & ASC_STA_THE) && (asc_in(port, INTEN) & ASC_INTEN_THE)) {
+-		/* Transmitter FIFO at least half empty */
+-		asc_transmit_chars(port);
++
++		if ((status & ASC_STA_THE) &&
++				(asc_in(port, INTEN) & ASC_INTEN_THE)) {
++			/* Transmitter FIFO at least half empty */
++			asc_transmit_chars(port);
++		}
+ 	}
+ 
+ 	spin_unlock(&port->lock);
+diff --git a/drivers/serial/stasc.h b/drivers/serial/stasc.h
+index e1d4b44..9eb38dd 100644
+--- a/drivers/serial/stasc.h
++++ b/drivers/serial/stasc.h
+@@ -13,16 +13,30 @@
+  *    2) STm8000 Datasheet (ADCS: 7323276)
+  */
+ 
++#ifndef _STASC_H
++#define _STASC_H
++
+ #include <linux/serial_core.h>
++#include <linux/stm/stm-dma.h>
++
++struct asc_port_fdma {
++	int ready;
++	int enabled;
++	struct asc_port_fdma_rx_channel *rx;
++	unsigned int rx_req_id;
++	struct asc_port_fdma_tx_channel *tx;
++	unsigned int tx_req_id;
++};
+ 
+-struct asc_port
+-{
++struct asc_port {
+ 	struct uart_port port;
+ 	unsigned char pio_port;
+ 	unsigned char pio_pin[4]; /* Tx, Rx, CTS, RTS */
+ 	struct stpio_pin *pios[4];
+-	int     break_flag;
+-	int dma_enabled;
++	int break_flag;
++#ifdef CONFIG_SERIAL_ST_ASC_FDMA
++	struct asc_port_fdma fdma;
++#endif
+ };
+ 
+ #define ASC_MAJOR		204
+@@ -176,28 +190,28 @@ ASC_FUNC(RETRIES,   ASC_RETRIES)
+ #define asc_in(port, reg)		asc_ ## reg ## _in (port)
+ #define asc_out(port, reg, value)	asc_ ## reg ## _out ((port), (value))
+ 
+-/*---- DMA interface ------------------------------------------*/
++/*---- FDMA interface ------------------------------------------*/
+ 
+-#ifdef CONFIG_SERIAL_ST_ASC_DMA
+-static int inline asc_dma_enabled(struct uart_port* port)
++#ifdef CONFIG_SERIAL_ST_ASC_FDMA
++int asc_fdma_startup(struct uart_port *port);
++void asc_fdma_shutdown(struct uart_port *port);
++int asc_fdma_enable(struct uart_port *port);
++void asc_fdma_disable(struct uart_port *port);
++static inline int asc_fdma_enabled(struct uart_port *port)
+ {
+-	struct asc_port *ascport = &asc_ports[port->line];
+-	return ascport->dma_enabled;
++	return asc_ports[port->line].fdma.enabled;
+ }
+-void asc_fdma_setreq(void);
+-int asc_enable_fdma(struct uart_port *port);
+-void asc_disable_fdma(struct uart_port *port);
+ #else
+-static int inline asc_dma_enabled(struct uart_port* ascport)
+-{
+-	return 0;
+-}
+-static void inline asc_fdma_setreq(void) { }
+-static int inline asc_enable_fdma(struct uart_port *port) { return -ENOSYS; }
+-static void inline asc_disable_fdma(struct uart_port *port) { }
++int asc_fdma_startup(struct uart_port *port) { return -ENOSYS; }
++void asc_fdma_shutdown(struct uart_port *port) {}
++static inline int asc_fdma_enable(struct uart_port *port) { return -ENOSYS; }
++static inline void asc_fdma_disable(struct uart_port *port) {}
++static inline int asc_fdma_enabled(struct uart_port *port) { return 0; }
+ #endif
+ 
+-void asc_fdma_setreq(void);
+-void asc_fdma_start_tx(struct uart_port *port);
+-void asc_fdma_stop_tx(struct uart_port *port);
+-void asc_fdma_stop_rx(struct uart_port *port);
++int asc_fdma_tx_start(struct uart_port *port);
++void asc_fdma_tx_stop(struct uart_port *port);
++void asc_fdma_rx_stop(struct uart_port *port);
++void asc_fdma_rx_timeout(struct uart_port *port);
++
++#endif /* _STASC_H */
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index 74b143f..5dfbdb3 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -17,7 +17,8 @@
+ }
+ 
+ 
+-#define STASC_DEVICE(_base, _irq, _pio_port, _ptx, _prx, _pcts, _prts)	\
++#define STASC_DEVICE(_base, _irq, _fdma_req_rx, _fdma_req_tx,		\
++		_pio_port, _ptx, _prx, _pcts, _prts)			\
+ {									\
+ 	.name		= "stasc",					\
+ 	.num_resources	= 2,						\
+@@ -29,6 +30,14 @@
+ 		}, {							\
+ 			.start	= _irq,					\
+ 			.flags	= IORESOURCE_IRQ			\
++		}, {							\
++			.start	= _fdma_req_rx,				\
++			.end    = _fdma_req_rx,				\
++			.flags	= IORESOURCE_DMA			\
++		}, {							\
++			.start	= _fdma_req_tx,				\
++			.end    = _fdma_req_tx,				\
++			.flags	= IORESOURCE_DMA			\
+ 		}							\
+ 	},								\
+ 	.dev = {							\

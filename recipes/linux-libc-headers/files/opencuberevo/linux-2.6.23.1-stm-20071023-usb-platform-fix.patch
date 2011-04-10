@@ -1,0 +1,76 @@
+Make the platform device naming consistent in USB.
+
+Signed-off-by: Francesco Rundo <francesco.rundo@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2007-10-29 14:17:18.016463000 +0000
++++ linux/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2007-10-29 14:46:33.092240000 +0000
+@@ -154,7 +154,7 @@
+ static u64 st40_dma_mask = 0xfffffff;
+ 
+ static struct platform_device  st40_ohci_device = {
+-	.name = "ST40-ohci",
++	.name = "stm-ohci",
+ 	.id=1,
+ 	.dev = {
+ 		.dma_mask = &st40_dma_mask,
+@@ -166,7 +166,7 @@
+ };
+ 
+ static struct platform_device  st40_ehci_device = {
+-	.name = "ST40-ehci",
++	.name = "stm-ehci",
+ 	.id=2,
+ 	.dev = {
+ 		.dma_mask = &st40_dma_mask,
+Index: linux/drivers/usb/host/ehci-stcore.c
+===================================================================
+--- linux.orig/drivers/usb/host/ehci-stcore.c	2007-10-29 14:17:18.059467000 +0000
++++ linux/drivers/usb/host/ehci-stcore.c	2007-10-29 14:23:02.813559000 +0000
+@@ -176,7 +176,7 @@
+ 	.remove = ehci_hcd_st40_driver_remove,
+ 	.shutdown = usb_hcd_platform_shutdown,
+ 	.driver = {
+-		.name = "ST40-ehci",
++		.name = "stm-ehci",
+ 		.bus = &platform_bus_type
+ 	}
+ };
+Index: linux/drivers/usb/host/ohci-stcore.c
+===================================================================
+--- linux.orig/drivers/usb/host/ohci-stcore.c	2007-10-29 14:17:18.088465000 +0000
++++ linux/drivers/usb/host/ohci-stcore.c	2007-10-29 14:23:02.816559000 +0000
+@@ -161,7 +161,9 @@
+ static struct platform_driver ohci_hcd_stm_driver = {
+ 	.driver = {
+ 		.name = "stm-ohci",
++                .bus = &platform_bus_type
+ 	},
+ 	.probe = ohci_hcd_stm_probe,
+ 	.remove = ohci_hcd_stm_remove,
++        .shutdown = usb_hcd_platform_shutdown,
+ };
+Index: linux/include/linux/stm/soc_init.h
+===================================================================
+--- linux.orig/include/linux/stm/soc_init.h	2007-10-29 14:47:31.285763000 +0000
++++ linux/include/linux/stm/soc_init.h	2007-10-29 14:47:56.133988000 +0000
+@@ -51,7 +51,7 @@
+ 
+ #define USB_EHCI_DEVICE(_port, _base, _irq)				\
+ {									\
+-	.name = "ST40-ehci",						\
++	.name = "stm-ehci",						\
+ 	.id=_port,							\
+ 	.dev = {							\
+ 		.dma_mask = &st40_dma_mask,				\
+@@ -76,7 +76,7 @@
+ 
+ #define USB_OHCI_DEVICE(_port, _base, _irq)				\
+ {									\
+-	.name = "ST40-ohci",						\
++	.name = "stm-ohci",						\
+ 	.id=_port,							\
+ 	.dev = {							\
+ 		.dma_mask = &st40_dma_mask,				\

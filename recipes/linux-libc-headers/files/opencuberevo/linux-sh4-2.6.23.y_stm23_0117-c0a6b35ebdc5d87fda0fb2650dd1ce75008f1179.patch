@@ -1,0 +1,31 @@
+From c0a6b35ebdc5d87fda0fb2650dd1ce75008f1179 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 1 Dec 2008 10:10:19 +0100
+Subject: [PATCH] stmmac: fix a compilation error within the suspend method
+
+This patch fixes an error within the suspend method
+compiling the driver with CONFIG_PM enabled.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index cb3fc0e..26cb166 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -2161,7 +2161,8 @@ static int stmmac_suspend(struct platform_device *pdev, pm_message_t state)
+ 		/* Clear the Rx/Tx descriptors */
+ 		priv->mac_type->ops->init_rx_desc(priv->dma_rx,
+ 						  priv->dma_rx_size);
+-		priv->mac_type->ops->disable_rx_ic(priv->dma_rx, rxsize,
++		priv->mac_type->ops->disable_rx_ic(priv->dma_rx,
++						   priv->dma_rx_size,
+ 						   rx_coalesce);
+ 		priv->mac_type->ops->init_tx_desc(priv->dma_tx,
+ 						  priv->dma_tx_size);
+-- 
+1.5.3.6
+

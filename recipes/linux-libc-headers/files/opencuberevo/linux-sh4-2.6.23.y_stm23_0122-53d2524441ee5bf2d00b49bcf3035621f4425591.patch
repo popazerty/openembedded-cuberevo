@@ -1,0 +1,168 @@
+From 53d2524441ee5bf2d00b49bcf3035621f4425591 Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Thu, 19 Nov 2009 14:05:34 +0000
+Subject: [PATCH] stm_nand_flex: Add support for cacheline transfers
+
+This patch updates the stm-nand-flex driver, adding an option to perform data
+transfers via a cache-line.  Using the cache-line reduces the impact of STBus
+latencies at the expense of increased IRQ latency.  This method of data transfer
+should be regarded as experimental at present.
+---
+ drivers/mtd/nand/Kconfig         |    8 ++++
+ drivers/mtd/nand/stm_nand_emi.c  |    1 -
+ drivers/mtd/nand/stm_nand_flex.c |   77 ++++++++++++++++++++++++++++++++++++--
+ 3 files changed, 81 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/mtd/nand/Kconfig b/drivers/mtd/nand/Kconfig
+index c43040c..dda3486 100644
+--- a/drivers/mtd/nand/Kconfig
++++ b/drivers/mtd/nand/Kconfig
+@@ -332,6 +332,14 @@ config MTD_NAND_STM_FLEX
+          This driver is required to access NAND devices when boot-from-NAND is
+          enabled.
+ 
++config STM_NAND_FLEX_CACHED
++       depends on EXPERIMENTAL
++       depends on MTD_NAND_STM_FLEX
++       bool "Cached Transfers [EXPERIMENTAL]"
++       help
++	  Perform page transers via the cache-line.  Reduces the impact of STBus
++	  latencies at the expence of an incresed IRQ latency.
++
+ config STM_NAND_FLEX_BOOTMODESUPPORT
+         bool "Enable support for boot mode ECC"
+         depends on MTD_NAND_STM_FLEX
+diff --git a/drivers/mtd/nand/stm_nand_emi.c b/drivers/mtd/nand/stm_nand_emi.c
+index d0c4980..b697d84 100644
+--- a/drivers/mtd/nand/stm_nand_emi.c
++++ b/drivers/mtd/nand/stm_nand_emi.c
+@@ -489,7 +489,6 @@ static int nand_config_emi(int bank, struct nand_timing_data *td)
+ 					  "CLKA_EMI_MASTER",
+ 					  NULL};
+ 	const char * const *c = clk_names;
+-	uint32_t emi_clk_rate;
+ 	struct clk *emi_clk;
+ 
+ 	printk(KERN_INFO NAME ": Configuring EMI Bank %d for NAND access\n",
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index 7d6a022..c272c8e 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -39,6 +39,8 @@
+  *      FLEX data register...
+  *
+  *  Changelog:
++ *	2009-11-19 Angus Clark <angus.clark@st.com>
++ *		- Added support for cacheline transfers
+  *	2009-11-17 Angus Clark <angus.clark@st.com>
+  *		- Handle different EMI clock names
+  *	2009-09-21 Angus Clark <angus.clark@st.com>
+@@ -134,11 +136,11 @@ struct stm_nand_flex_controller {
+ 
+ 	uint8_t			*buf;			/* Bounce buffer for  */
+ 							/* non-aligned xfer   */
++#ifdef CONFIG_STM_NAND_FLEX_CACHED
++	void __iomem		*data_cached;		/* Cached data IO */
++	spinlock_t		lock;
++#endif
+ 
+-	void __iomem		*data_phys;
+-	int			dma_chan;		/* FDMA channel	      */
+-	unsigned long		init_fdma_jiffies;	/* Rate limit init    */
+-	struct stm_dma_params	dma_params[4];		/* FDMA params        */
+ } flex;
+ 
+ /* The command line passed to nboot_setup() */
+@@ -317,6 +319,56 @@ static int flex_verify_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_STM_NAND_FLEX_CACHED
++static void flex_read_buf_cached(struct mtd_info *mtd, uint8_t *buf, int len)
++{
++	unsigned long irq_flags;
++
++	/* Switch to 4-byte reads */
++	flex_writereg(FLX_DATA_CFG_BEAT_4 | FLX_DATA_CFG_CSN_STATUS,
++		      EMINAND_FLEX_DATAREAD_CONFIG);
++	
++	while (len > 0) {
++		spin_lock_irqsave(&(flex.lock), irq_flags);
++		__flush_invalidate_region(flex.data_cached, 32);
++		memcpy_fromio(buf, flex.data_cached,
++			      min(len, 32));
++		spin_unlock_irqrestore(&(flex.lock), irq_flags);
++
++		buf += 32;
++		len -= 32;
++	}
++
++	/* Switch back to 1-byte reads */
++	flex_writereg(FLX_DATA_CFG_BEAT_1 | FLX_DATA_CFG_CSN_STATUS,
++		      EMINAND_FLEX_DATAREAD_CONFIG);
++}
++
++static void flex_write_buf_cached(struct mtd_info *mtd, const uint8_t *buf, int len)
++{
++	unsigned long irq_flags;
++
++	/* Switch to 4-byte reads */
++	flex_writereg(FLX_DATA_CFG_BEAT_4 | FLX_DATA_CFG_CSN_STATUS,
++		      EMINAND_FLEX_DATAWRITE_CONFIG);
++
++		while (len > 0) {
++		spin_lock_irqsave(&(flex.lock), irq_flags);
++		memcpy_toio(flex.data_cached, buf, min(len, 32));
++		__flush_purge_region(flex.data_cached, 32);
++		spin_unlock_irqrestore(&(flex.lock), irq_flags);
++
++		buf += 32;
++		len -= 32;
++	}
++
++	/* Switch back to 1-byte writes  */
++	flex_writereg(FLX_DATA_CFG_BEAT_1 | FLX_DATA_CFG_CSN_STATUS,
++		      EMINAND_FLEX_DATAWRITE_CONFIG);
++
++}
++#endif
++
+ #ifdef CONFIG_STM_NAND_FLEX_BOOTMODESUPPORT
+ /* OOB Layout for Boot Mode HW ECC (SP and LP devices) */
+ static struct nand_ecclayout boot_oob_16 = {
+@@ -857,6 +909,17 @@ static int __init flex_init_controller(struct platform_device *pdev)
+ 		goto out2;
+ 	}
+ 
++#ifdef CONFIG_STM_NAND_FLEX_CACHED
++	flex.data_cached = ioremap_cache(resource->start + EMINAND_FLEX_DATA, 32);
++	if (!flex.data_cached) {
++		printk(KERN_ERR NAME " Failed to map data reg address  0x%08x\n",
++		       resource->start + EMINAND_FLEX_DATA);
++		res = -EINVAL;
++		goto out3;
++	}
++	spin_lock_init(&flex.lock);
++#endif
++
+ 	flex.buf = kmalloc(NAND_MAX_PAGESIZE +  NAND_MAX_OOBSIZE,
+ 			   GFP_KERNEL | __GFP_DMA);
+ 	if (!flex.buf) {
+@@ -985,8 +1048,14 @@ static int __init stm_nand_flex_probe(struct platform_device *pdev)
+ 	data->chip.cmd_ctrl = flex_cmd_ctrl;
+ 	data->chip.select_chip = flex_select_chip;
+ 	data->chip.read_byte = flex_read_byte;
++	
++#ifdef CONFIG_STM_NAND_FLEX_CACHED
++	data->chip.read_buf = flex_read_buf_cached;
++	data->chip.write_buf = flex_write_buf_cached;
++#else
+ 	data->chip.read_buf = flex_read_buf;
+ 	data->chip.write_buf = flex_write_buf;
++#endif
+ 	data->chip.verify_buf = flex_verify_buf;
+ 	data->chip.waitfunc = flex_nand_wait;
+ 	if (stmdata->flex_rbn_connected)
+-- 
+1.6.0.6
+

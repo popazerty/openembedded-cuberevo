@@ -1,0 +1,255 @@
+This is a tidy up of some the SMSC911x DMA code:
+
+ - Resurrect the use of 2D FDMA transfers when receiving data from
+   the FIFO. This was suggested by Thomas Betker <thomas.betker@5etech.eu>
+   in bugzilla 1566.
+
+ - A tidying up of the DMA config options to give four options, one of which
+   is no DMA, in which case we don't even include the DMA code which
+   saves a little space.
+
+ - Remove support in Platform_DmaStartXfer() for Rx packets, which is
+   never used now. This exposed a bug in the RxPacketDepth array which
+   was one element too small.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/drivers/net/Kconfig
+===================================================================
+--- linux.orig/drivers/net/Kconfig
++++ linux/drivers/net/Kconfig
+@@ -866,18 +866,35 @@ config SMSC911x
+ 	  <file:Documentation/networking/net-modules.txt>. The module
+ 	  will be called smsc911x.
+ 
+-config SMSC911x_DMA
+-	boolean "SMSC 911x DMA support (EXPERIMENTAL)"
+-	depends on SMSC911x && EXPERIMENTAL
+-	---help---
+-	  Enabling this option will set the default behaviour of the
+-	  SMSC 911x driver to use DMA transfers, otherwise it will use
+-	  PIO transfers. This may reduce the CPU overhead, will probably
+-	  reduce performance.
++choice
++	depends on SMSC911x
++	prompt "SMSC 911x DMA support"
++	default SMSC911x_DMA_NONE
++
++config SMSC911x_DMA_NONE
++	bool "None"
++	---help---
++	  DMA support is disabled
++
++config SMSC911x_DMA_FIFOSEL
++	bool "Use freerunning 1D DMA and FIFOSEL"
++	---help---
++	  This transfer mode uses freerunning DMA transfers to a linear
++	  block of memory (hence the 1D transfer) which maps onto the
++	  911x's FIFO register. To do this the the FIFOSEL pin must be
++	  connected to EMI address pin A16.
++
++config SMSC911x_DMA_2D
++	bool "Use freerunning 2D DMA"
++	---help---
++	  This transfer mode uses freerunning 2D transfers to the main
++	  911x register bank. This is slightly slower than either of the
++	  other options, because it makes less efficient use of the STbus,
++	  but doesn't require the FIFOSEL pin to be wired up or any
++	  pacing signals.
+ 
+ config SMSC911x_DMA_PACED
+-	depends on EXPERIMENTAL && SMSC911x_DMA
+-	bool "SMSC 911x DMA using paced transfers"
++	bool "Use paced non-incrementing DMA"
+ 	---help---
+ 	  Enabling this option will cause SMSC 911x DMA receive transfers to
+ 	  use paced rather than freerunning DMA. This mainly used on boards
+@@ -887,6 +904,8 @@ config SMSC911x_DMA_PACED
+ 	  permanently active, by default this is SSC 1 and 2 Tx empty, but
+ 	  this may need to be changed if either SSC is in use.
+ 
++endchoice
++
+ config SMC9194
+ 	tristate "SMC 9194 support"
+ 	depends on NET_VENDOR_SMC && (ISA || MAC && BROKEN)
+Index: linux/drivers/net/smsc_911x/st40-shdma.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/st40-shdma.c
++++ linux/drivers/net/smsc_911x/st40-shdma.c
+@@ -3,7 +3,6 @@
+ #include <linux/stm/stm-dma.h>
+ #include <linux/stm/710x_fdma.h>
+ 
+-static struct stm_dma_params rx_transfer;
+ static struct stm_dma_params tx_transfer;
+ 
+ static void err_cb(void* x);
+@@ -89,8 +88,6 @@ static void Platform_ReleaseDmaChannel_s
+ 
+ static void Platform_DmaInitialize_sg(void)
+ {
+-	SMSC_TRACE("DMA Rx using freefrunning transfers and FIFOSEL");
+-
+ 	declare_dma_parms(&rx_transfer_sg,
+ 			  MODE_DST_SCATTER,
+ 			  STM_DMA_LIST_OPEN,
+@@ -98,7 +95,15 @@ static void Platform_DmaInitialize_sg(vo
+ 			  STM_DMA_NOBLOCK_MODE,
+ 			  (char*)STM_DMAC_ID);
+ 	dma_parms_err_cb(&rx_transfer_sg, err_cb, NULL, 0);
++#if defined(CONFIG_SMSC911x_DMA_2D)
++	SMSC_TRACE("DMA Rx using freefrunning 2D transfers");
++	dma_parms_DIM_2_x_1(&rx_transfer_sg,0x20,0);
++#elif defined(CONFIG_SMSC911x_DMA_FIFOSEL)
++	SMSC_TRACE("DMA Rx using freefrunning 1D transfers and FIFOSEL");
+ 	dma_parms_DIM_1_x_1(&rx_transfer_sg,0);
++#else
++#error Unknown DMA mode
++#endif
+ }
+ #endif
+ 
+@@ -132,7 +137,6 @@ void Platform_ReleaseDmaChannel(
+ 	DWORD dwDmaChannel)
+ {
+ 	free_dma(dwDmaChannel);
+-	dma_free_descriptor(&rx_transfer);
+ 	dma_free_descriptor(&tx_transfer);
+ 	Platform_ReleaseDmaChannel_sg();
+ }
+@@ -147,16 +151,6 @@ BOOLEAN Platform_DmaInitialize(
+ 	PPLATFORM_DATA platformData,
+ 	DWORD dwDmaCh)
+ {
+-	/* From LAN to memory */
+-	declare_dma_parms(  	&rx_transfer,
+-				MODE_FREERUNNING,
+-			       	STM_DMA_LIST_OPEN,
+-			       	STM_DMA_SETUP_CONTEXT_ISR,
+-			       	STM_DMA_NOBLOCK_MODE,
+-			       	(char*)STM_DMAC_ID);
+-	dma_parms_err_cb(&rx_transfer, err_cb, NULL, 0);
+-	dma_parms_DIM_2_x_1(&rx_transfer,0x20,0);
+-
+ 	/* From memory to LAN */
+ 	declare_dma_parms(  	&tx_transfer,
+ 				MODE_FREERUNNING,
+@@ -196,7 +190,7 @@ BOOLEAN Platform_DmaStartXfer(
+ 
+ 	// 3. calculate the physical transfer addresses
+ 	dwLanPhysAddr = CpuToPhysicalAddr((void *)pDmaXfer->dwLanReg);
+-	dwMemPhysAddr = 0x1fffffffUL & CpuToPhysicalAddr((void *)pDmaXfer->pdwBuf);
++	dwMemPhysAddr = PHYSADDR(CpuToPhysicalAddr((void *)pDmaXfer->pdwBuf));
+ 
+ 	// 4. validate the address alignments
+ 	// need CL alignment for CL bursts
+@@ -215,16 +209,10 @@ BOOLEAN Platform_DmaStartXfer(
+ 	}
+ 
+ 	// 5. Prepare the DMA channel structure
+-	if (pDmaXfer->fMemWr) {
+-		src = PHYSADDR(dwLanPhysAddr);
+-		dst = PHYSADDR(dwMemPhysAddr);
+-		dmap = &rx_transfer;
+-	} else {
+-
+-		src = PHYSADDR(dwMemPhysAddr);
+-		dst = PHYSADDR(dwLanPhysAddr);
+-		dmap = &tx_transfer;
+-	}
++	BUG_ON(pDmaXfer->fMemWr);
++	src = PHYSADDR(dwMemPhysAddr);
++	dst = PHYSADDR(dwLanPhysAddr);
++	dmap = &tx_transfer;
+ 
+ 	dma_parms_comp_cb(dmap, pCallback, pCallbackData, 0);
+ 	dma_parms_addrs(dmap,src,dst, pDmaXfer->dwDwCnt << 2);
+@@ -272,7 +260,7 @@ BOOLEAN Platform_DmaStartSgXfer(
+ 	}
+ 
+ 	// 3. calculate the physical transfer addresses
+-	dwLanPhysAddr = 0x1fffffffUL & (CpuToPhysicalAddr((void *)pDmaXfer->dwLanReg));
++	dwLanPhysAddr = PHYSADDR(CpuToPhysicalAddr((void *)pDmaXfer->dwLanReg));
+ 
+ 	// 4. Map (flush) the buffer
+ 	sg = (struct scatterlist*)pDmaXfer->pdwBuf;
+@@ -356,7 +344,10 @@ BOOLEAN Platform_DmaStartSgXfer(
+ 	}
+ 
+ 	// 3. calculate the physical transfer addresses
+-	dwLanPhysAddr = 0x1fffffffUL & (CpuToPhysicalAddr((void *)pDmaXfer->dwLanReg) + (1<<16));
++	dwLanPhysAddr = PHYSADDR(CpuToPhysicalAddr((void *)pDmaXfer->dwLanReg));
++#ifdef CONFIG_SMSC911x_DMA_FIFOSEL
++	dwLanPhysAddr += (1<<16);
++#endif
+ 
+ 	// 4. Map (flush) the buffer
+ 	sg_count = dma_map_sg(NULL, (struct scatterlist*)pDmaXfer->pdwBuf,
+Index: linux/drivers/net/smsc_911x/st40.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/st40.c
++++ linux/drivers/net/smsc_911x/st40.c
+@@ -88,7 +88,7 @@
+ #endif
+ 
+ #define PLATFORM_CACHE_LINE_BYTES (32UL)
+-#ifdef CONFIG_SMSC911x_DMA
++#ifndef CONFIG_SMSC911x_DMA_NONE
+ #define PLATFORM_RX_DMA	(TRANSFER_REQUEST_DMA)
+ #define PLATFORM_TX_DMA	(TRANSFER_REQUEST_DMA)
+ #else
+@@ -467,8 +467,41 @@ void Platform_ReadFifo(
+ }
+ #endif
+ 
++#ifdef CONFIG_SMSC911x_DMA_NONE
++DWORD Platform_RequestDmaChannel(PPLATFORM_DATA platformData)
++{ return TRANSFER_REQUEST_DMA; }
++
++DWORD Platform_RequestDmaChannelSg(PPLATFORM_DATA platformData)
++{ return TRANSFER_REQUEST_DMA; }
++
++void Platform_ReleaseDmaChannel(PPLATFORM_DATA platformData, DWORD dwDmaChannel)
++{ }
++
++BOOLEAN Platform_IsValidDmaChannel(DWORD dwDmaCh)
++{ return FALSE; }
++
++BOOLEAN Platform_DmaInitialize(
++	PPLATFORM_DATA platformData,
++	DWORD dwDmaCh)
++{ return FALSE; }
++
++BOOLEAN Platform_DmaStartXfer(
++	PPLATFORM_DATA platformData,
++	const DMA_XFER * const pDmaXfer,
++	void (*pCallback)(void*),
++	void* pCallbackData)
++{ return FALSE; }
++
++BOOLEAN Platform_DmaStartSgXfer(
++	PPLATFORM_DATA platformData,
++	const DMA_XFER * const pDmaXfer,
++	void (*pCallback)(void*),
++	void* pCallbackData)
++{ return FALSE; }
++#else
+ #ifdef CONFIG_STB7100_FDMA
+ #include "st40-shdma.c"
+ #else
+ #include "st40-gpdma.c"
+ #endif
++#endif
+Index: linux/drivers/net/smsc_911x/smsc911x.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/smsc911x.c
++++ linux/drivers/net/smsc_911x/smsc911x.c
+@@ -4494,7 +4494,7 @@ void Rx_ReceiverOn(PPRIVATE_DATA private
+ 	}
+ }
+ 
+-unsigned int RxPacketDepth[MAX_RX_SKBS];
++unsigned int RxPacketDepth[MAX_RX_SKBS+1];
+ 
+ /* This function is called from the interrupt handler or from a tasklet triggered by the
+  * interrupt handler when the status register has INT_STS_RSFL_ set, or RxOverrun is set.

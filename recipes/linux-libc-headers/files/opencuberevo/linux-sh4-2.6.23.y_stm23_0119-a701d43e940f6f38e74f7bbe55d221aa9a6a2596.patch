@@ -1,0 +1,70 @@
+From a701d43e940f6f38e74f7bbe55d221aa9a6a2596 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Mon, 23 Feb 2009 10:03:30 +0100
+Subject: [PATCH] stm_pm: Added EXPORT_SYMBOL on every platform_pm funtion
+
+Added EXPORT_SYMBOL macro on every platform_pm functions
+required to build USB modules
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/stm/platform-pm.c |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/stm/platform-pm.c b/drivers/stm/platform-pm.c
+index d1f0994..2e7a5d2 100644
+--- a/drivers/stm/platform-pm.c
++++ b/drivers/stm/platform-pm.c
+@@ -100,41 +100,49 @@ int platform_pm_init(struct platform_device *pdev, int phy)
+ {
+ 	return _platform_pm(RAW_INIT, TYPE_PDEV, (void *)pdev, phy, 0);
+ }
++EXPORT_SYMBOL(platform_pm_init);
+ 
+ int platform_pm_pwdn_req(struct platform_device *pdev, int phy, int pwd)
+ {
+ 	return _platform_pm(RAW_PWD_REQ, TYPE_PDEV, (void *)pdev, phy, pwd);
+ }
++EXPORT_SYMBOL(platform_pm_pwdn_req);
+ 
+ int platform_pm_pwdn_ack(struct platform_device *pdev, int phy, int ack)
+ {
+ 	return _platform_pm(RAW_PWD_ACK, TYPE_PDEV, (void *)pdev, phy, ack);
+ }
++EXPORT_SYMBOL(platform_pm_pwdn_ack);
+ 
+ int platform_pm_reset(struct platform_device *pdev, int phy)
+ {
+ 	return _platform_pm(RAW_RESET, TYPE_PDEV, (void *)pdev, 0, 0);
+ }
++EXPORT_SYMBOL(platform_pm_reset);
+ 
+ int platform_pm_init_n(char *name, int phy)
+ {
+ 	return _platform_pm(RAW_INIT, TYPE_NAME, (void *)name, phy, 0);
+ }
++EXPORT_SYMBOL(platform_pm_init_n);
+ 
+ int platform_pm_pwdn_req_n(char *name, int phy, int pwd)
+ {
+ 	return _platform_pm(RAW_PWD_REQ, TYPE_NAME, (void *)name, phy, pwd);
+ }
++EXPORT_SYMBOL(platform_pm_pwdn_req_n);
+ 
+ int platform_pm_pwdn_ack_n(char *name, int phy, int ack)
+ {
+ 	return _platform_pm(RAW_PWD_ACK, TYPE_NAME, (void *)name, phy, ack);
+ }
++EXPORT_SYMBOL(platform_pm_pwdn_ack_n);
+ 
+ int platform_pm_reset_n(char *name, int phy)
+ {
+ 	return _platform_pm(RAW_RESET, TYPE_NAME, (void *)name, phy, 0);
+ }
++EXPORT_SYMBOL(platform_pm_reset_n);
+ 
+ int platform_add_pm_devices(struct platform_device_pm *pm, unsigned long size)
+ {
+-- 
+1.6.0.6
+

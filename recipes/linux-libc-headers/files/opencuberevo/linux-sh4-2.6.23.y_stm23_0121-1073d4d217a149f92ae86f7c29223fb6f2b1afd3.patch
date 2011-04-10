@@ -1,0 +1,108 @@
+From 1073d4d217a149f92ae86f7c29223fb6f2b1afd3 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 21 Aug 2009 09:59:05 +0100
+Subject: [PATCH] sound_stm: Rigorous cut version checks removed
+
+Rigorous cut version checks in SOC audio drivers proved to be
+pointless and sometimes harmful... Removed.
+
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/stx7105.c |    5 -----
+ sound/stm/stx7111.c |    5 -----
+ sound/stm/stx7141.c |    5 -----
+ sound/stm/stx7200.c |   15 ++-------------
+ 4 files changed, 2 insertions(+), 28 deletions(-)
+
+diff --git a/sound/stm/stx7105.c b/sound/stm/stx7105.c
+index 6e448f4..7c94812 100644
+--- a/sound/stm/stx7105.c
++++ b/sound/stm/stx7105.c
+@@ -512,11 +512,6 @@ static int __init snd_stm_stx7105_init(void)
+ 		goto error_soc_type;
+ 	}
+ 
+-	/* Cut 2.0 presumably will bring something new into the
+-	 * matter, so above configuration must be checked!
+-	 * - transfer_sizes (FIFO sizes has changed) */
+-	WARN_ON(cpu_data->cut_major > 3);
+-
+ 	/* Ugly but quick hack to have SPDIF player & I2S to SPDIF
+ 	 * converters enabled without loading STMFB...
+ 	 * TODO: do this in some sane way! */
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index e3b8dc9..4b9bf42 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -516,11 +516,6 @@ static int __init snd_stm_stx7111_init(void)
+ 		goto error_soc_type;
+ 	}
+ 
+-	/* Cut 2.0 presumably will bring something new into the
+-	 * matter, so above configuration must be checked!
+-	 * - transfer_sizes (FIFO sizes has changed) */
+-	WARN_ON(cpu_data->cut_major > 1);
+-
+ 	/* Ugly but quick hack to have SPDIF player & I2S to SPDIF
+ 	 * converters enabled without loading STMFB...
+ 	 * TODO: do this in some sane way! */
+diff --git a/sound/stm/stx7141.c b/sound/stm/stx7141.c
+index 347eb18..8edb12f 100644
+--- a/sound/stm/stx7141.c
++++ b/sound/stm/stx7141.c
+@@ -518,11 +518,6 @@ static int __init snd_stm_stx7141_init(void)
+ 		goto error_soc_type;
+ 	}
+ 
+-	/* Cut 2.0 presumably will bring something new into the
+-	 * matter, so above configuration must be checked!
+-	 * - transfer_sizes (FIFO sizes has changed) */
+-	WARN_ON(cpu_data->cut_major > 1);
+-
+ 	/* Ugly but quick hack to have SPDIF player & I2S to SPDIF
+ 	 * converters enabled without loading STMFB...
+ 	 * TODO: do this in some sane way! */
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index a499fc0..b14b2a2 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -750,8 +750,7 @@ static int __init snd_stm_stx7200_init(void)
+ 	snd_stm_assert(hdmi_spdif_player.resource[0].flags == IORESOURCE_MEM,
+ 			return -EINVAL);
+ 
+-	switch (cpu_data->cut_major) {
+-	case 1:
++	if (cpu_data->cut_major < 2) {
+ 		SET_VER(snd_stm_fsynth_info, fsynth_0, 3);
+ 		SET_VER(snd_stm_fsynth_info, fsynth_1, 3);
+ 
+@@ -775,10 +774,7 @@ static int __init snd_stm_stx7200_init(void)
+ 		hdmi_spdif_player.resource[0].end = 0xfd106c3f;
+ 
+ 		SET_VER(snd_stm_pcm_reader_info, pcm_reader_0, 3);
+-
+-		break;
+-
+-	case 2 ... 3:
++	} else {
+ 		SET_VER(snd_stm_fsynth_info, fsynth_0, 5);
+ 		SET_VER(snd_stm_fsynth_info, fsynth_1, 5);
+ 
+@@ -804,13 +800,6 @@ static int __init snd_stm_stx7200_init(void)
+ 		ver = (cpu_data->cut_major == 2 ? 5 : 6);
+ 		SET_VER(snd_stm_pcm_reader_info, pcm_reader_0, ver);
+ 		SET_VER(snd_stm_pcm_reader_info, pcm_reader_1, ver);
+-
+-		break;
+-
+-	default:
+-		snd_stm_printe("Not supported STx7200 cut %d detected!\n",
+-				cpu_data->cut_major);
+-		return -EINVAL;
+ 	}
+ 
+ 	/* Ugly but quick hack to have HDMI SPDIF player & I2S to SPDIF
+-- 
+1.6.0.6
+

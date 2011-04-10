@@ -1,0 +1,205 @@
+From d2b1a7bfb25c42fa4eaab1d018224179f428f1a2 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 7 Nov 2008 11:21:34 +0100
+Subject: [PATCH] stmmac: new extra stats via ethtool
+
+Removed useless statistical fields from ethtool (that can be directly taken
+from netdev stat structure) and added new ones (for example, useful for
+understanding how many packets are serviced during the reception and
+transmission processes).
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/common.h         |   32 +++++++++++++++++++-------------
+ drivers/net/stmmac/stmmac_ethtool.c |   34 ++++++++++++++++++----------------
+ drivers/net/stmmac/stmmac_main.c    |   11 +++++++----
+ 3 files changed, 44 insertions(+), 33 deletions(-)
+
+diff --git a/drivers/net/stmmac/common.h b/drivers/net/stmmac/common.h
+index bba4869..5525861 100644
+--- a/drivers/net/stmmac/common.h
++++ b/drivers/net/stmmac/common.h
+@@ -130,6 +130,7 @@
+ #define MMC_CONTROL_MAX_FRAME		0x7FF
+ 
+ struct stmmac_extra_stats {
++	/* Transmit errors */
+ 	unsigned long tx_underflow;
+ 	unsigned long tx_carrier;
+ 	unsigned long tx_losscarrier;
+@@ -138,6 +139,9 @@ struct stmmac_extra_stats {
+ 	unsigned long tx_vlan;
+ 	unsigned long tx_jabber;
+ 	unsigned long tx_frame_flushed;
++	unsigned long tx_payload_error;
++	unsigned long tx_ip_header_error;
++	/* Receive errors */
+ 	unsigned long rx_desc;
+ 	unsigned long rx_partial;
+ 	unsigned long rx_runt;
+@@ -150,13 +154,10 @@ struct stmmac_extra_stats {
+ 	unsigned long rx_gmac_overflow;
+ 	unsigned long rx_watchdog;
+ 	unsigned long rx_filter;
+-	unsigned long rx_dropped;
+-	unsigned long rx_bytes;
+-	unsigned long tx_bytes;
+-	unsigned long tx_irq_n;
+-	unsigned long rx_irq_n;
++	unsigned long rx_missed_cntr;
++	unsigned long rx_overflow_cntr;
++	/* Tx/Rx IRQ errors */
+ 	unsigned long tx_undeflow_irq;
+-	unsigned long threshold;
+ 	unsigned long tx_process_stopped_irq;
+ 	unsigned long tx_jabber_irq;
+ 	unsigned long rx_overflow_irq;
+@@ -165,14 +166,19 @@ struct stmmac_extra_stats {
+ 	unsigned long rx_watchdog_irq;
+ 	unsigned long tx_early_irq;
+ 	unsigned long fatal_bus_error_irq;
+-	unsigned long rx_poll_n;
+-	unsigned long tx_task_n;
+-	unsigned long tx_payload_error;
+-	unsigned long tx_ip_header_error;
+-	unsigned long rx_missed_cntr;
+-	unsigned long rx_overflow_cntr;
++	/* Extra info */
++	unsigned long threshold; /* DMA tx/rx threshold (CSR6) */
++	unsigned long tx_task_n; /* Tx tasklet invokations */
++	unsigned long rx_poll_n; /* Rx poll method invokations */
++	unsigned long tx_pkt_n; /* Frames transmitted */
++	unsigned long rx_pkt_n; /* Frames received */
++	/* average of the #frames/#schedul_times */
++	unsigned long avg_tx_pkt_on_sched;
++	unsigned long avg_rx_pkt_on_sched;
++	unsigned long dma_tx_normal_irq; /* number of DMA normal TX irq */
++	unsigned long dma_rx_normal_irq; /* number of DMA normal RX irq */
+ };
+-#define EXTRA_STATS 41
++#define EXTRA_STATS 42
+ 
+ /* In case of GMAC, the device can compute the HW checksums and
+  * found if the frame is corrupted. It can also decide to let the
+diff --git a/drivers/net/stmmac/stmmac_ethtool.c b/drivers/net/stmmac/stmmac_ethtool.c
+index ee5a345..43419b1 100644
+--- a/drivers/net/stmmac/stmmac_ethtool.c
++++ b/drivers/net/stmmac/stmmac_ethtool.c
+@@ -204,6 +204,8 @@ static struct {
+ 	"tx_vlan"}, {
+ 	"tx_jabber"}, {
+ 	"tx_frame_flushed"}, {
++	"tx_payload_error"}, {
++	"tx_ip_header_error"}, {
+ 	"rx_desc"}, {
+ 	"rx_partial"}, {
+ 	"rx_runt"}, {
+@@ -216,13 +218,9 @@ static struct {
+ 	"rx_gmac_overflow"}, {
+ 	"rx_watchdog"}, {
+ 	"rx_filter"}, {
+-	"rx_dropped"}, {
+-	"rx_bytes"}, {
+-	"tx_bytes"}, {
+-	"tx_irq_n"}, {
+-	"rx_irq_n"}, {
++	"rx_missed_cntr"}, {
++	"rx_overflow_cntr"}, {
+ 	"tx_undeflow_irq"}, {
+-	"threshold"}, {
+ 	"tx_process_stopped_irq"}, {
+ 	"tx_jabber_irq"}, {
+ 	"rx_overflow_irq"}, {
+@@ -231,12 +229,15 @@ static struct {
+ 	"rx_watchdog_irq"}, {
+ 	"tx_early_irq"}, {
+ 	"fatal_bus_error_irq"}, {
+-	"rx_poll_n"}, {
++	"threshold"}, {
+ 	"tx_task_n"}, {
+-	"tx_payload_error"}, {
+-	"tx_ip_header_error"}, {
+-	"rx_missed_cntr"}, {
+-"rx_overflow_cntr"},};
++	"rx_poll_n"}, {
++	"tx_pkt_n"}, {
++	"rx_pkt_n"}, {
++	"avg_tx_pkt_on_sched"}, {
++	"avg_rx_pkt_on_sched"}, {
++	"dma_tx_normal_irq"}, {
++"dma_rx_normal_irq"},};
+ 
+ static int stmmac_stats_count(struct net_device *dev)
+ {
+@@ -253,11 +254,12 @@ static void stmmac_ethtool_stats(struct net_device *dev,
+ 
+ 	priv->mac_type->ops->dma_diagnostic_fr(&dev->stats, &priv->xstats,
+ 					       ioaddr);
+-	/* rx/tx extra stats such as tx/rx_bytes and rx_dropped are not
+-	   updated within the critical paths. It's worth getting them here. */
+-	priv->xstats.tx_bytes = dev->stats.tx_bytes;
+-	priv->xstats.rx_dropped = dev->stats.rx_dropped;
+-	priv->xstats.rx_bytes = dev->stats.rx_bytes;
++	if (priv->xstats.tx_task_n)
++		priv->xstats.avg_tx_pkt_on_sched =
++			(priv->xstats.tx_pkt_n / priv->xstats.tx_task_n);
++	if (priv->xstats.rx_poll_n)
++		priv->xstats.avg_rx_pkt_on_sched =
++			(priv->xstats.rx_pkt_n / priv->xstats.rx_poll_n);
+ 
+ 	extra = (u32 *) & priv->xstats;
+ 
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index e75ba78..24e55fe 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -859,6 +859,7 @@ static void stmmac_tx(struct net_device *dev)
+ 
+ 		if (priv->mac_type->ops->get_tx_owner(p))
+ 			break;
++
+ 		/* verify tx error by looking at the last segment */
+ 		last = priv->mac_type->ops->get_tx_ls(p);
+ 		if (likely(last)) {
+@@ -868,9 +869,9 @@ static void stmmac_tx(struct net_device *dev)
+ 							   p, ioaddr);
+ 			if (likely(tx_error == 0)) {
+ 				dev->stats.tx_packets++;
+-			} else {
++				priv->xstats.tx_pkt_n++;
++			} else
+ 				dev->stats.tx_errors++;
+-			}
+ 		}
+ 		DBG(intr, DEBUG, "stmmac_tx: curr %d, dirty %d\n",
+ 		    priv->cur_tx, priv->dirty_tx);
+@@ -1077,13 +1078,13 @@ static void stmmac_dma_interrupt(struct net_device *dev)
+ 
+ 			RX_DBG("Receive irq [buf: 0x%08x]\n",
+ 			       readl(ioaddr + DMA_CUR_RX_BUF_ADDR));
+-			priv->xstats.rx_irq_n++;
++			priv->xstats.dma_rx_normal_irq++;
+ 			stmmac_schedule_rx(dev);
+ 		}
+ 		if (intr_status & (DMA_STATUS_TI)) {
+ 			DBG(intr, INFO, " Transmit irq [buf: 0x%08x]\n",
+ 			    readl(ioaddr + DMA_CUR_TX_BUF_ADDR));
+-			priv->xstats.tx_irq_n++;
++			priv->xstats.dma_tx_normal_irq++;
+ 			tasklet_schedule(&priv->tx_task);
+ 		}
+ 	}
+@@ -1602,7 +1603,9 @@ static int stmmac_poll(struct net_device *dev, int *budget)
+ 	dev->quota -= work_done;
+ 	*budget -= work_done;
+ 
++	/* Update rx internal stats */
+ 	priv->xstats.rx_poll_n++;
++	priv->xstats.rx_pkt_n += work_done;
+ 
+ 	if (work_done < limit) {
+ 		netif_rx_complete(dev);
+-- 
+1.5.3.6
+

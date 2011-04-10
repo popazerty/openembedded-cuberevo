@@ -1,0 +1,90 @@
+From cd2d2c1a2e99a5178dfaad07482002a3e0339556 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Fri, 17 Oct 2008 16:52:19 +0100
+Subject: [PATCH] spi_stm: Add support for hard wired SSC controllers
+
+Add a simple check for a hard wired SSC controller (one which doesn't
+go through PIO pins).
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ drivers/spi/spi_stm_ssc.c |   19 ++++++++++++++++---
+ include/linux/stm/soc.h   |    3 +++
+ 2 files changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/spi/spi_stm_ssc.c b/drivers/spi/spi_stm_ssc.c
+index 5f9adcf..35d3f11 100644
+--- a/drivers/spi/spi_stm_ssc.c
++++ b/drivers/spi/spi_stm_ssc.c
+@@ -472,6 +472,10 @@ static int __init spi_stm_probe(struct platform_device *pdev)
+ 		return -ENODEV;
+ 	}
+ 
++	/* Check for hard wired SSC which doesn't use PIO pins */
++	if (pio_info->pio[0].pio_port == SSC_NO_PIO)
++		goto ssc_hard_wired;
++
+ 	/* Get PIO pins */
+ 	pio_info->clk = stpio_request_set_pin(pio_info->pio[0].pio_port,
+ 					  pio_info->pio[0].pio_pin,
+@@ -501,6 +505,8 @@ static int __init spi_stm_probe(struct platform_device *pdev)
+ 		return -ENODEV;
+ 	}
+ 
++ssc_hard_wired:
++
+ 	/* Disable I2C and Reset SSC */
+ 	ssc_store32(st_ssc, SSC_I2C, 0x0);
+ 	reg = ssc_load16(st_ssc, SSC_CTL);
+@@ -517,6 +523,9 @@ static int __init spi_stm_probe(struct platform_device *pdev)
+ 	reg &= ~SSC_CTL_MS;
+ 	ssc_store32(st_ssc, SSC_CTL, reg);
+ 
++	if (pio_info->pio[0].pio_port == SSC_NO_PIO)
++		goto ssc_hard_wired2;
++
+ #ifdef CONFIG_CPU_SUBTYPE_STX7141
+ 	stpio_configure_pin(pio_info->clk, STPIO_OUT);
+ 	stpio_configure_pin(pio_info->sdout, STPIO_OUT);
+@@ -527,6 +536,8 @@ static int __init spi_stm_probe(struct platform_device *pdev)
+ 	stpio_configure_pin(pio_info->sdin, STPIO_IN);
+ #endif
+ 
++ssc_hard_wired2:
++
+ 	st_ssc->fcomms = clk_get_rate(clk_get(NULL, "comms_clk"));;
+ 
+ 	/* Start bitbang worker */
+@@ -557,9 +568,11 @@ static int  spi_stm_remove(struct platform_device *pdev)
+ 
+ 	spi_bitbang_stop(&st_ssc->bitbang);
+ 
+-	stpio_free_pin(pio_info->sdin);
+-	stpio_free_pin(pio_info->clk);
+-	stpio_free_pin(pio_info->sdout);
++	if (pio_info->sdin) {
++		stpio_free_pin(pio_info->sdin);
++		stpio_free_pin(pio_info->clk);
++		stpio_free_pin(pio_info->sdout);
++	}
+ 
+ 	return 0;
+ }
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index b65bc58..6b4a263 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -39,6 +39,9 @@ struct ssc_pio_t {
+ #define ssc8_has(cap)  ssc_capability(8,cap)
+ #define ssc9_has(cap)  ssc_capability(9,cap)
+ 
++/* Set pio[x].pio_port to SSC_NO_PIO for hard wired SSC's */
++#define SSC_NO_PIO	0xff
++
+ struct plat_ssc_data {
+ 	unsigned short		capability;	/* bitmask on the ssc capability */
+ 	unsigned long		routing;
+-- 
+1.5.3.6
+

@@ -1,0 +1,21 @@
+sh_stm: Remove spurious configuration of MII pin
+
+Remove configuration of the "MDO_EN" pin from the Ethernet configuration.
+Its not part of the MII interface, and should never have been there.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -636,10 +636,6 @@ void stx7105_configure_ethernet(int reve
+ 	stx7105_pio_sysconf(9, 6, 1, "eth");
+ 	pin = stpio_request_pin(9, 6, "eth", STPIO_ALT_BIDIR);
+ 
+-	/* MDO_EN */
+-	stx7105_pio_sysconf(9, 7, 1, "eth");
+-	pin = stpio_request_pin(9, 7, "eth", STPIO_ALT_OUT);
+-
+ 	platform_device_register(&stx7105eth_device);
+ }
+ 

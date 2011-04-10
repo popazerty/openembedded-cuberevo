@@ -1,0 +1,158 @@
+From 249f66d9d50cd601276ee9d083ce9000fb814f6f Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 6 May 2009 12:20:23 +0200
+Subject: [PATCH] stm: pm: Registered PMB as sysdev device
+
+This patch registers the PMB as sysdev device to better support
+the resume from hibernation
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/cpu.c |    4 --
+ arch/sh/mm/pmb.c             |   70 +++++++++++++++++++++++++++---------------
+ include/asm-sh/mmu.h         |    9 -----
+ 3 files changed, 45 insertions(+), 38 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/cpu.c b/arch/sh/kernel/cpu/sh4/cpu.c
+index bfacd8b..0d9b41d 100644
+--- a/arch/sh/kernel/cpu/sh4/cpu.c
++++ b/arch/sh/kernel/cpu/sh4/cpu.c
+@@ -47,7 +47,6 @@ void save_processor_state(void)
+ 	if (arch_swsusp_processor_state)
+ 		arch_swsusp_processor_state(PM_EVENT_FREEZE);
+ 
+-	pmb_pm_state(PM_EVENT_FREEZE);
+ 	return;
+ }
+ 
+@@ -58,9 +57,6 @@ void restore_processor_state(void)
+ 	struct irq_desc *desc;
+ 	void (*irq_func)(unsigned int irq);
+ 
+-	/* restore the (hw) pmb setting */
+-	pmb_pm_state(PM_EVENT_ON);
+-
+ 	if (arch_swsusp_processor_state)
+ 		arch_swsusp_processor_state(PM_EVENT_ON);
+ 
+diff --git a/arch/sh/mm/pmb.c b/arch/sh/mm/pmb.c
+index ebe15c1..ef2cbcb 100644
+--- a/arch/sh/mm/pmb.c
++++ b/arch/sh/mm/pmb.c
+@@ -15,6 +15,8 @@
+  */
+ #include <linux/init.h>
+ #include <linux/kernel.h>
++#include <linux/sysdev.h>
++#include <linux/cpu.h>
+ #include <linux/module.h>
+ #include <linux/slab.h>
+ #include <linux/bitops.h>
+@@ -29,6 +31,7 @@
+ #include <asm/mmu.h>
+ #include <asm/io.h>
+ #include <asm/mmu_context.h>
++#include <asm/cacheflush.h>
+ 
+ #if 0
+ #define DPRINTK(fmt, args...) printk(KERN_ERR "%s: " fmt, __FUNCTION__, ## args)
+@@ -533,31 +536,6 @@ int pmb_virt_to_phys(void *addr, unsigned long *phys, unsigned long *flags)
+ }
+ EXPORT_SYMBOL(pmb_virt_to_phys);
+ 
+-#ifdef CONFIG_PM
+-int pmb_pm_state(int state)
+-{
+-	static int prev_state;
+-	int idx;
+-	switch (state) {
+-	case PM_EVENT_ON:
+-	  if (prev_state == PM_EVENT_FREEZE) {
+-		for (idx = 0; idx < NR_PMB_ENTRIES; ++idx)
+-		  if (pmbm[idx].usage)
+-			pmb_mapping_set(&pmbm[idx]);
+-		}
+-	  break;
+-	case PM_EVENT_SUSPEND:
+-	  break;
+-	case PM_EVENT_FREEZE:
+-	  break;
+-	default:
+-	  return -1;
+-	}
+-	prev_state = state;
+-	return 0;
+-}
+-#endif
+-
+ static int pmb_seq_show(struct seq_file *file, void *iter)
+ {
+ 	int i;
+@@ -617,3 +595,45 @@ static int __init pmb_debugfs_init(void)
+ 	return 0;
+ }
+ postcore_initcall(pmb_debugfs_init);
++
++#ifdef CONFIG_PM
++static int pmb_sysdev_suspend(struct sys_device *dev, pm_message_t state)
++{
++	static pm_message_t prev_state;
++	int idx;
++	switch (state.event) {
++	case PM_EVENT_ON:
++		/* Resumeing from hibernation */
++		if (prev_state.event == PM_EVENT_FREEZE) {
++			for (idx = 0; idx < NR_PMB_ENTRIES; ++idx)
++				if (pmbm[idx].usage)
++					pmb_mapping_set(&pmbm[idx]);
++			flush_cache_all();
++		}
++	  break;
++	case PM_EVENT_SUSPEND:
++	  break;
++	case PM_EVENT_FREEZE:
++	  break;
++	}
++	prev_state = state;
++	return 0;
++}
++
++static int pmb_sysdev_resume(struct sys_device *dev)
++{
++	return pmb_sysdev_suspend(dev, PMSG_ON);
++}
++
++static struct sysdev_driver pmb_sysdev_driver = {
++	.suspend = pmb_sysdev_suspend,
++	.resume = pmb_sysdev_resume,
++};
++
++static int __init pmb_sysdev_init(void)
++{
++	return sysdev_driver_register(&cpu_sysdev_class, &pmb_sysdev_driver);
++}
++
++subsys_initcall(pmb_sysdev_init);
++#endif
+diff --git a/include/asm-sh/mmu.h b/include/asm-sh/mmu.h
+index 03fbad6..d789783 100644
+--- a/include/asm-sh/mmu.h
++++ b/include/asm-sh/mmu.h
+@@ -45,14 +45,5 @@ int  pmb_unmap(unsigned long addr);
+ void pmb_init(void);
+ int pmb_virt_to_phys(void *addr, unsigned long *phys, unsigned long *flags);
+ 
+-#ifdef CONFIG_32BIT
+-int pmb_pm_state(int state);
+-#else
+-static inline int pmb_pm_state(int state)
+-{
+-	return 0;
+-}
+-#endif
+-
+ #endif /* __MMU_H */
+ 
+-- 
+1.6.0.6
+

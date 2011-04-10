@@ -1,0 +1,60 @@
+This patch is a back-port from 2.6.20.
+Original git patch was:
+
+    usb-storage: use first bulk endpoints, not last
+
+    According to the Bulk-Only spec, usb-storage is supposed to use the
+    _first_ bulk-in and bulk-out endpoints it finds, not the _last_.  And
+    while we're at it, we ought to test the direction of the interrupt
+    endpoint as well.  This patch (as842) makes both changes.
+
+    Signed-off-by: Alan Stern <stern@rowland.harvard.edu>
+    Cc: Matthew Dharm <mdharm-usb@one-eyed-alien.net>
+    Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/drivers/usb/storage/usb.c
+===================================================================
+--- linux.orig/drivers/usb/storage/usb.c	2006-06-18 02:49:35.000000000 +0100
++++ linux/drivers/usb/storage/usb.c	2007-03-06 14:31:16.053917000 +0000
+@@ -676,9 +676,9 @@
+ 	struct usb_endpoint_descriptor *ep_int = NULL;
+ 
+ 	/*
+-	 * Find the endpoints we need.
++	 * Find the first endpoint of each type we need.
+ 	 * We are expecting a minimum of 2 endpoints - in and out (bulk).
+-	 * An optional interrupt is OK (necessary for CBI protocol).
++	 * An optional interrupt-in is OK (necessary for CBI protocol).
+ 	 * We will ignore any others.
+ 	 */
+ 	for (i = 0; i < altsetting->desc.bNumEndpoints; i++) {
+@@ -688,16 +688,22 @@
+ 		if ((ep->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
+ 				== USB_ENDPOINT_XFER_BULK) {
+ 			/* BULK in or out? */
+-			if (ep->bEndpointAddress & USB_DIR_IN)
+-				ep_in = ep;
+-			else
+-				ep_out = ep;
++			if (ep->bEndpointAddress & USB_DIR_IN){
++				if (!ep_in)
++					ep_in = ep;
++			} else {
++				if (!ep_out)
++					ep_out = ep;
++			}
+ 		}
+ 
+ 		/* Is it an interrupt endpoint? */
+ 		else if ((ep->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
+-				== USB_ENDPOINT_XFER_INT) {
+-			ep_int = ep;
++				== USB_ENDPOINT_XFER_INT &&
++			 (ep->bmAttributes & USB_ENDPOINT_DIR_MASK)
++			 	== USB_DIR_IN) {
++			if (!ep_int)
++				ep_int = ep;
+ 		}
+ 	}
+ 

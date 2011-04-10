@@ -1,0 +1,27 @@
+From b6b12551e6a5aea3d6a529d97d3cd23afb6b7a36 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 9 Jul 2009 14:52:47 +0200
+Subject: [PATCH] stmmac: fix a pointer to private data in the ethtool_setsettings
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_ethtool.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_ethtool.c b/drivers/net/stmmac/stmmac_ethtool.c
+index 71202b8..918bca9 100644
+--- a/drivers/net/stmmac/stmmac_ethtool.c
++++ b/drivers/net/stmmac/stmmac_ethtool.c
+@@ -64,7 +64,7 @@ int stmmac_ethtool_getsettings(struct net_device *dev, struct ethtool_cmd *cmd)
+ 
+ int stmmac_ethtool_setsettings(struct net_device *dev, struct ethtool_cmd *cmd)
+ {
+-	struct stmmac_priv *priv = dev->priv;
++	struct stmmac_priv *priv = netdev_priv(dev);
+ 	struct phy_device *phy = priv->phydev;
+ 	int rc;
+ 
+-- 
+1.6.0.6
+

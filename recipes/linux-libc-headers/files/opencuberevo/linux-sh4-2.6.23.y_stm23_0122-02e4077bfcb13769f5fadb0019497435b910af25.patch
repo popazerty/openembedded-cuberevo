@@ -1,0 +1,65 @@
+From 02e4077bfcb13769f5fadb0019497435b910af25 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Tue, 10 Nov 2009 17:27:27 +0000
+Subject: [PATCH] stm_nand: Update EMI Master Clock name for the new clock LLA.
+
+The STM_NAND drivers query the EMI Master clock before configuring the timing
+parameters.  This patch updates the clock name to match the new clock LLA,
+depending on which SoC is used.  [Hopefully the clock names will be consistent
+across platforms again, once the clock LLA updates have been completed!]
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ drivers/mtd/nand/stm_nand_emi.c  |    8 +++++++-
+ drivers/mtd/nand/stm_nand_flex.c |    7 ++++++-
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/stm_nand_emi.c b/drivers/mtd/nand/stm_nand_emi.c
+index c56fa95..e7db725 100644
+--- a/drivers/mtd/nand/stm_nand_emi.c
++++ b/drivers/mtd/nand/stm_nand_emi.c
+@@ -483,6 +483,8 @@ static int nand_config_emi(int bank, struct nand_timing_data *td)
+ 	uint32_t bus_release;
+ 	uint32_t wait_active_low;
+ 
++	struct clk *clk;
++
+ 	printk(KERN_INFO NAME ": Configuring EMI Bank %d for NAND access\n",
+ 	       bank);
+ 
+@@ -493,7 +495,11 @@ static int nand_config_emi(int bank, struct nand_timing_data *td)
+ 	}
+ 
+ 	/* Timings set in number of clock cycles */
+-	emi_clk = clk_get_rate(clk_get(NULL, "emi_master"));
++	clk = clk_get(NULL, "emi_master");
++	if (!clk || IS_ERR(clk))
++		clk = clk_get(NULL, "CLKA_EMI_MASTER");
++	BUG_ON(!clk || IS_ERR(clk));
++	emi_clk = clk_get_rate(clk);
+ 	emi_t_ns = 1000000000UL / emi_clk;
+ 	emi_p_ns = emi_t_ns / 2;
+ 
+diff --git a/drivers/mtd/nand/stm_nand_flex.c b/drivers/mtd/nand/stm_nand_flex.c
+index 192fb73..59493f0 100644
+--- a/drivers/mtd/nand/stm_nand_flex.c
++++ b/drivers/mtd/nand/stm_nand_flex.c
+@@ -693,9 +693,14 @@ static void flex_set_timings(struct nand_timing_data *tm)
+ 	uint32_t reg;
+ 	uint32_t emi_clk;
+ 	uint32_t emi_t_ns;
++	struct clk *clk;
+ 
+ 	/* Timings set in terms of EMI clock cycles */
+-	emi_clk = clk_get_rate(clk_get(NULL, "emi_master"));
++	clk = clk_get(NULL, "emi_master");
++	if (!clk || IS_ERR(clk))
++		clk = clk_get(NULL, "CLKA_EMI_MASTER");
++	BUG_ON(!clk || IS_ERR(clk));
++	emi_clk = clk_get_rate(clk);
+ 	emi_t_ns = 1000000000UL / emi_clk;
+ 
+ 	/* CONTROL_TIMING */
+-- 
+1.6.0.6
+

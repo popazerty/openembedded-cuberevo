@@ -1,0 +1,86 @@
+From 9c8b2e623fbf5a8e27c4209a52edbdd74bcc2540 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 11 Feb 2009 13:54:19 +0000
+Subject: [PATCH] sound_stm: Make sure that FDMA is running when starting playback/capture
+
+As the dma_xfer_list() doesn't guarantee that the FDMA is ready and
+steady to go, we have to assure this on our own...
+
+Unfortunately this may result in a busy wait.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/pcm_player.c   |    4 ++++
+ sound/stm/pcm_reader.c   |    4 ++++
+ sound/stm/spdif_player.c |    4 ++++
+ 3 files changed, 12 insertions(+), 0 deletions(-)
+
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 95bda3d..b6650d0 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -26,6 +26,7 @@
+ #include <linux/io.h>
+ #include <linux/platform_device.h>
+ #include <linux/interrupt.h>
++#include <linux/delay.h>
+ #include <asm/cacheflush.h>
+ #include <linux/stm/stm-dma.h>
+ #include <sound/driver.h>
+@@ -616,6 +617,9 @@ static inline int snd_stm_pcm_player_start(struct snd_pcm_substream *substream)
+ 				pcm_player->device->bus_id);
+ 		return -EINVAL;
+ 	}
++	while (dma_get_status(pcm_player->fdma_channel) !=
++			DMA_CHANNEL_STATUS_RUNNING)
++		udelay(5);
+ 
+ 	/* Launch PCM player */
+ 
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 3415f3e..01a0a34 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -25,6 +25,7 @@
+ #include <linux/io.h>
+ #include <linux/platform_device.h>
+ #include <linux/interrupt.h>
++#include <linux/delay.h>
+ #include <asm/cacheflush.h>
+ #include <linux/stm/stm-dma.h>
+ #include <sound/driver.h>
+@@ -614,6 +615,9 @@ static inline int snd_stm_pcm_reader_start(struct snd_pcm_substream *substream)
+ 				pcm_reader->device->bus_id);
+ 		return -EINVAL;
+ 	}
++	while (dma_get_status(pcm_reader->fdma_channel) !=
++			DMA_CHANNEL_STATUS_RUNNING)
++		udelay(5);
+ 
+ 	/* Launch PCM reader */
+ 
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 0d77a75..8ba1284 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -25,6 +25,7 @@
+ #include <linux/io.h>
+ #include <linux/platform_device.h>
+ #include <linux/interrupt.h>
++#include <linux/delay.h>
+ #include <asm/cacheflush.h>
+ #include <linux/stm/stm-dma.h>
+ #include <sound/driver.h>
+@@ -633,6 +634,9 @@ static inline int snd_stm_spdif_player_start(struct snd_pcm_substream
+ 				spdif_player->device->bus_id);
+ 		return -EINVAL;
+ 	}
++	while (dma_get_status(spdif_player->fdma_channel) !=
++			DMA_CHANNEL_STATUS_RUNNING)
++		udelay(5);
+ 
+ 	/* Launch SPDIF player */
+ 
+-- 
+1.5.6.3
+

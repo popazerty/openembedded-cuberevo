@@ -1,0 +1,28 @@
+From e1a8d221baf3b688da702cb4f462214f1ce1e7c6 Mon Sep 17 00:00:00 2001
+From: Peter Bennett <peter.bennett@st.com>
+Date: Wed, 18 Feb 2009 17:35:05 +0000
+Subject: [PATCH] sound_stm: Stop warnings for STi7105 Cut2
+
+This patch stops any warnings from the audio code for STi7105 Cut2
+
+Signed-off-by: Peter Bennett <peter.bennett@st.com>
+---
+ sound/stm/stx7105.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/sound/stm/stx7105.c b/sound/stm/stx7105.c
+index 95b6d59..0c4b99d 100644
+--- a/sound/stm/stx7105.c
++++ b/sound/stm/stx7105.c
+@@ -515,7 +515,7 @@ static int __init snd_stm_stx7105_init(void)
+ 	/* Cut 2.0 presumably will bring something new into the
+ 	 * matter, so above configuration must be checked!
+ 	 * - transfer_sizes (FIFO sizes has changed) */
+-	WARN_ON(cpu_data->cut_major > 1);
++	WARN_ON(cpu_data->cut_major > 2);
+ 
+ 	/* Ugly but quick hack to have SPDIF player & I2S to SPDIF
+ 	 * converters enabled without loading STMFB...
+-- 
+1.5.6.3
+

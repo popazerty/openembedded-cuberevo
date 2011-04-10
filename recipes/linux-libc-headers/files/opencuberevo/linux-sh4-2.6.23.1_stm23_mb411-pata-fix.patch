@@ -1,0 +1,29 @@
+This fixes the PATA support into the MB411 board setup.
+It also enables the interface by setting the EPLD ATAPI register to 1.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+
+--- linux/arch/sh/boards/st/mb411/setup.c	2007-11-29 14:06:28.000000000 +0100
++++ linux/arch/sh/boards/st/mb411/setup.c	2007-12-04 09:09:35.735100000 +0100
+@@ -173,6 +173,11 @@ static int __init device_init(void)
+ 	stx7100_configure_alsa();
+ 	stx7100_configure_lirc();
+ 	stx7100_configure_ethernet(0, 0, 0);
++#ifdef CONFIG_PATA_PLATFORM
++	/* Set the EPLD ATAPI register to 1, enabling the IDE interface.*/
++	epld_write(1, EPLD_ATAPI);
++	stx7100_configure_pata(3, 8);
++#endif
+ 
+ 	return platform_add_devices(mb411_devices,
+                                     ARRAY_SIZE(mb411_devices));
+--- linux/include/asm-sh/mb411/harp.h.orig	2007-12-04 09:03:16.063333000 +0100
++++ linux/include/asm-sh/mb411/harp.h	2007-12-04 09:03:58.713531000 +0100
+@@ -27,6 +27,7 @@
+ #define EPLD_TEST		0x1e0000
+ 
+ #define EPLD_FLASH		0x400000
++#define EPLD_ATAPI		0x900000
+ 
+ /* Some registers are also available in the POD EPLD */
+ #define EPLD_POD_BASE		0x02100000

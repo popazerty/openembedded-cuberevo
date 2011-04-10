@@ -1,0 +1,17 @@
+This reduces the PBL setting to 8, following a recomendation from the
+hardware validation team. This appears to improve half duplex relibility.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -444,7 +444,7 @@ printk("%s: speed %d\n", __FUNCTION__, s
+ 
+ static struct plat_stmmacenet_data stx7105eth_private_data = {
+ 	.bus_id = 0,
+-	.pbl = 32,
++	.pbl = 8,
+ 	.has_gmac = 1,
+ 	.fix_mac_speed = fix_mac_speed,
+ };

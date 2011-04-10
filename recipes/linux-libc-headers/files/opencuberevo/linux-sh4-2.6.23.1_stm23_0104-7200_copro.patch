@@ -1,0 +1,194 @@
+drivers/stm: Add support for STx7200.
+
+It should, perhaps, be questioned why we don't just rename
+coproc-stb7100.c to coproc-stx7x0x.c
+
+Signed-off-by: Daniel Thompson <daniel.thompson@st.com>
+Index: linux-2.6.23-stm/drivers/stm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Kconfig
++++ linux-2.6.23-stm/drivers/stm/Kconfig
+@@ -113,7 +113,8 @@ config STM_SPI_HW_FIFO
+ config STM_COPROCESSOR_SUPPORT
+ 	bool "STMicroelectronics coprocessor support"
+ 	default y
+-        depends on CPU_SUBTYPE_STB7100
++	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200
++	depends on !32BIT
+ 	---help---
+         Many of the ST system-on-chip devices have multiple CPUs, where a
+         master CPU running Linux has control over a number of slave CPUs,
+@@ -129,6 +130,14 @@ config STM_COPROCESSOR_SUPPORT
+         size{n} defines the region size for the n.th slave core (max 16M).
+ 
+         Example: coprocessor_mem=32m:16m,16m
++
++config STM_NUM_COPROCESSOR
++	int
++	depends on STM_COPROCESSOR_SUPPORT
++	default 2 if CPU_SUBTYPE_STB7100
++	default 4 if CPU_SUBTYPE_STX7200
++	default 0
++
+ choice
+ 	prompt "STM coprocessor loading strategy"
+         depends on STM_COPROCESSOR_SUPPORT
+@@ -150,7 +159,7 @@ config  STM_COPROCESSOR_FRMW
+ endchoice
+ 
+ config  COPROCESSOR_DEBUG
+-        depends on STM_COPROCESSOR || STM_COPROCESSOR_FRMW
++        depends on STM_COPROCESSOR_SUPPORT
+         bool "STM coprocessor debug"
+         default n
+         ---help---
+Index: linux-2.6.23-stm/drivers/stm/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Makefile
++++ linux-2.6.23-stm/drivers/stm/Makefile
+@@ -7,11 +7,7 @@ obj-$(CONFIG_STM_DMA)		+= 710x_fdma2.o
+ obj-$(CONFIG_STM_PIO)		+= pio.o
+ obj-$(CONFIG_STM_SSC)		+= stm_ssc.o
+ obj-$(CONFIG_STM_SPI)		+= stm_spi.o
+-ifneq ($(CONFIG_32BIT),y)
+-obj-$(CONFIG_STM_COPROCESSOR)	+= stm-coprocessor.o
+-obj-$(CONFIG_STM_COPROCESSOR_FRMW)   += stm-coprocessor_frmw.o
+-ifneq ($(CONFIG_STM_COPROCESSOR)$(CONFIG_STM_COPROCESSOR_FRMW),nn)
+-obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= copro-stb7100.o
+-endif
+-endif
++obj-$(CONFIG_STM_COPROCESSOR_SUPPORT)	+= copro-stb7100.o
++obj-$(CONFIG_STM_COPROCESSOR)		+= stm-coprocessor.o
++obj-$(CONFIG_STM_COPROCESSOR_FRMW)	+= stm-coprocessor_frmw.o
+ obj-y				+= emi.o
+Index: linux-2.6.23-stm/arch/sh/configs/cb101_defconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/configs/cb101_defconfig
++++ linux-2.6.23-stm/arch/sh/configs/cb101_defconfig
+@@ -1122,6 +1122,11 @@ CONFIG_STM_DMA_FW_KERNEL=y
+ CONFIG_STM_SSC=y
+ # CONFIG_STM_SSC_DEBUG is not set
+ # CONFIG_STM_SPI is not set
++CONFIG_STM_COPROCESSOR_SUPPORT=y
++CONFIG_STM_NUM_COPROCESSOR=4
++CONFIG_STM_COPROCESSOR=y
++# CONFIG_STM_COPROCESSOR_FRMW is not set
++# CONFIG_COPROCESSOR_DEBUG is not set
+ 
+ #
+ # File systems
+Index: linux-2.6.23-stm/arch/sh/configs/mb519_defconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/configs/mb519_defconfig
++++ linux-2.6.23-stm/arch/sh/configs/mb519_defconfig
+@@ -739,6 +739,11 @@ CONFIG_STM_DMA_FW_KERNEL=y
+ CONFIG_STM_SSC=y
+ # CONFIG_STM_SSC_DEBUG is not set
+ # CONFIG_STM_SPI is not set
++CONFIG_STM_COPROCESSOR_SUPPORT=y
++CONFIG_STM_NUM_COPROCESSOR=4
++CONFIG_STM_COPROCESSOR=y
++# CONFIG_STM_COPROCESSOR_FRMW is not set
++# CONFIG_COPROCESSOR_DEBUG is not set
+ 
+ #
+ # File systems
+Index: linux-2.6.23-stm/drivers/stm/copro-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/copro-stb7100.c
++++ linux-2.6.23-stm/drivers/stm/copro-stb7100.c
+@@ -2,19 +2,18 @@
+ #include <linux/module.h>
+ #include <linux/init.h>
+ #include <linux/delay.h>
+-#include <linux/seq_file.h>i
++#include <linux/seq_file.h>
+ #include <linux/stm/coprocessor.h>
+ #include <linux/stm/sysconf.h>
+ #include <asm-generic/sections.h>
+ #include <asm/io.h>
+ 
+-#define N_COPROC	2
+ struct coproc_board_info coproc_info = {
+ 	.name = "st231",
+-	.max_coprs = N_COPROC,
++	.max_coprs = CONFIG_STM_NUM_COPROCESSOR,
+ };
+ 
+-coproc_t coproc[N_COPROC];
++coproc_t coproc[CONFIG_STM_NUM_COPROCESSOR];
+ 
+ static struct sysconf_field* copro_reset_out;
+ 
+@@ -22,7 +21,7 @@ struct cpu_reg {
+ 	struct sysconf_field* boot;
+ 	struct sysconf_field* reset;
+ };
+-static struct cpu_reg cpu_regs[N_COPROC];
++static struct cpu_reg cpu_regs[CONFIG_STM_NUM_COPROCESSOR];
+ 
+ int coproc_cpu_open(coproc_t * cop)
+ {
+@@ -33,7 +32,19 @@ int __init coproc_cpu_init(coproc_t * co
+ {
+ 	unsigned int id = cop->pdev.id;
+ 
++#if defined CONFIG_CPU_SUBTYPE_STB7100
++	const unsigned int boot_lookup[] =   { 28, 26 };
++	const unsigned int reset_lookup[]  = { 29, 27 };
++#elif defined CONFIG_CPU_SUBTYPE_STX7200
++	const unsigned int boot_lookup[] =   { 28, 36, 26, 34 };
++	const unsigned int reset_lookup[]  = { 29, 37, 27, 35 };
++#else
++#error Need to define the sysconf configuration for this CPU subtype
++#endif
++
++	BUG_ON(id >= ARRAY_SIZE(boot_lookup));
+ 	BUG_ON(id >= coproc_info.max_coprs);
++
+ 	if(!copro_reset_out)
+ 	if(!(copro_reset_out=sysconf_claim(SYS_CFG, 9, 27, 27, NULL))){
+ 		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_9\n");
+@@ -41,14 +52,14 @@ int __init coproc_cpu_init(coproc_t * co
+ 		}
+ 
+ 	if(!cpu_regs[id].boot)
+-	if(!(cpu_regs[id].boot = sysconf_claim(SYS_CFG,26+id*2, 0, 31, NULL))){
+-		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n",26+id*2);
++	if(!(cpu_regs[id].boot = sysconf_claim(SYS_CFG, boot_lookup[id], 0, 31, NULL))){
++		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n", boot_lookup[id]);
+ 		return 1;
+ 		}
+ 
+ 	if(!cpu_regs[id].reset)
+-	if(!(cpu_regs[id].reset = sysconf_claim(SYS_CFG, 27+id*2, 0,31, NULL))){
+-		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n",27+id*2);
++	if(!(cpu_regs[id].reset = sysconf_claim(SYS_CFG, reset_lookup[id], 0,31, NULL))){
++		printk(KERN_ERR"Error on sysconf_claim SYS_CFG_%u\n", reset_lookup[id]);
+ 		return 1;
+ 		}
+ 
+Index: linux-2.6.23-stm/arch/sh/configs/hms1_defconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/configs/hms1_defconfig
++++ linux-2.6.23-stm/arch/sh/configs/hms1_defconfig
+@@ -1117,6 +1117,7 @@ CONFIG_STM_SSC=y
+ # CONFIG_STM_SSC_DEBUG is not set
+ # CONFIG_STM_SPI is not set
+ CONFIG_STM_COPROCESSOR_SUPPORT=y
++CONFIG_STM_NUM_COPROCESSOR=2
+ CONFIG_STM_COPROCESSOR=y
+ # CONFIG_STM_COPROCESSOR_FRMW is not set
+ # CONFIG_COPROCESSOR_DEBUG is not set
+Index: linux-2.6.23-stm/arch/sh/configs/mb442_defconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/configs/mb442_defconfig
++++ linux-2.6.23-stm/arch/sh/configs/mb442_defconfig
+@@ -1106,6 +1106,7 @@ CONFIG_STM_SSC=y
+ # CONFIG_STM_SSC_DEBUG is not set
+ # CONFIG_STM_SPI is not set
+ CONFIG_STM_COPROCESSOR_SUPPORT=y
++CONFIG_STM_NUM_COPROCESSOR=2
+ CONFIG_STM_COPROCESSOR=y
+ # CONFIG_STM_COPROCESSOR_FRMW is not set
+ # CONFIG_COPROCESSOR_DEBUG is not set

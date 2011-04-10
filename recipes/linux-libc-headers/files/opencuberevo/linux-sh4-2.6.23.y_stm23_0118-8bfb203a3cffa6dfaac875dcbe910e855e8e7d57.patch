@@ -1,0 +1,862 @@
+From 8bfb203a3cffa6dfaac875dcbe910e855e8e7d57 Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Fri, 13 Feb 2009 12:03:29 +0100
+Subject: [PATCH] sh_clk: SH clock extended to be compliant with LLA
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/clock.c             |   64 ++++++-
+ arch/sh/kernel/cpu/sh4/Makefile        |   12 +-
+ arch/sh/kernel/cpu/sh4/clock-common.c  |  325 ++++++++++++++++++++++++++++++++
+ arch/sh/kernel/cpu/sh4/clock-common.h  |   83 ++++++++
+ arch/sh/kernel/cpu/sh4/clock-oslayer.h |  230 ++++++++++++++++++++++
+ include/asm-sh/clock.h                 |   31 +++-
+ 6 files changed, 732 insertions(+), 13 deletions(-)
+ create mode 100644 arch/sh/kernel/cpu/sh4/clock-common.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/clock-common.h
+ create mode 100644 arch/sh/kernel/cpu/sh4/clock-oslayer.h
+
+diff --git a/arch/sh/kernel/cpu/clock.c b/arch/sh/kernel/cpu/clock.c
+index f900ae4..3fabc66 100644
+--- a/arch/sh/kernel/cpu/clock.c
++++ b/arch/sh/kernel/cpu/clock.c
+@@ -140,7 +140,19 @@ EXPORT_SYMBOL_GPL(clk_get_rate);
+ 
+ int clk_set_rate(struct clk *clk, unsigned long rate)
+ {
+-	return clk_set_rate_ex(clk, rate, 0);
++	int ret = -EOPNOTSUPP;
++
++	if (likely(clk->ops && clk->ops->set_rate)) {
++		unsigned long flags;
++
++		spin_lock_irqsave(&clock_lock, flags);
++		ret = clk->ops->set_rate(clk, rate);
++		spin_unlock_irqrestore(&clock_lock, flags);
++	}
++
++	if (unlikely(clk->flags & CLK_RATE_PROPAGATES))
++		propagate_rate(clk);
++	return ret;
+ }
+ EXPORT_SYMBOL_GPL(clk_set_rate);
+ 
+@@ -148,11 +160,11 @@ int clk_set_rate_ex(struct clk *clk, unsigned long rate, int algo_id)
+ {
+ 	int ret = -EOPNOTSUPP;
+ 
+-	if (likely(clk->ops && clk->ops->set_rate)) {
++	if (likely(clk->ops && clk->ops->set_rate_ex)) {
+ 		unsigned long flags;
+ 
+ 		spin_lock_irqsave(&clock_lock, flags);
+-		ret = clk->ops->set_rate(clk, rate, algo_id);
++		ret = clk->ops->set_rate_ex(clk, rate, algo_id);
+ 		spin_unlock_irqrestore(&clock_lock, flags);
+ 	}
+ 
+@@ -194,6 +206,36 @@ long clk_round_rate(struct clk *clk, unsigned long rate)
+ }
+ EXPORT_SYMBOL_GPL(clk_round_rate);
+ 
++int clk_set_parent(struct clk *clk, struct clk *parent)
++{
++	int ret = -EINVAL;
++	struct clk *old;
++	if (!parent || !clk)
++		return ret;
++	old = clk->parent;
++	if (likely(clk->ops && clk->ops->set_parent)) {
++		unsigned long flags;
++		spin_lock_irqsave(&clock_lock, flags);
++		ret = clk->ops->set_parent(clk, parent);
++		spin_unlock_irqrestore(&clock_lock, flags);
++		clk->parent = (ret ? old : parent);
++	}
++	if (unlikely(clk->flags & CLK_RATE_PROPAGATES))
++		propagate_rate(clk);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(clk_set_parent);
++
++int clk_observe(struct clk *clk, unsigned long *div)
++{
++	int ret = -EINVAL;
++	if (!clk)
++		return ret;
++	if (likely(clk->ops && clk->ops->observe))
++		ret = clk->ops->observe(clk, div);
++	return ret;
++}
++
+ /*
+  * Returns a clock. Note that we first try to use device id on the bus
+  * and clock name. If this fails, we try to use clock name only.
+@@ -272,3 +314,19 @@ static int __init clk_proc_init(void)
+ 	return 0;
+ }
+ subsys_initcall(clk_proc_init);
++
++int clk_for_each(int (*fn)(struct clk *clk, void *data), void *data)
++{
++	struct clk *clkp;
++	int result = 0;
++
++	if (!fn)
++		return -1;
++
++	mutex_lock(&clock_list_sem);
++	list_for_each_entry(clkp, &clock_list, node) {
++		result |= fn(clkp, data);
++		}
++	mutex_unlock(&clock_list_sem);
++	return result;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/Makefile b/arch/sh/kernel/cpu/sh4/Makefile
+index 0690f7d..e3f4cdc 100644
+--- a/arch/sh/kernel/cpu/sh4/Makefile
++++ b/arch/sh/kernel/cpu/sh4/Makefile
+@@ -29,12 +29,12 @@ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= setup-stx7200.o
+ # Primary on-chip clocks (common)
+ ifndef CONFIG_CPU_SH4A
+ clock-$(CONFIG_CPU_SH4)			:= clock-sh4.o
+-clock-$(CONFIG_CPU_SUBTYPE_STX5197)	:= clock-stx5197.o
+-clock-$(CONFIG_CPU_SUBTYPE_STB7100)	:= clock-stb7100.o
+-clock-$(CONFIG_CPU_SUBTYPE_STX7105)	:= clock-stx7105.o
+-clock-$(CONFIG_CPU_SUBTYPE_STX7111)	:= clock-stx7111.o
+-clock-$(CONFIG_CPU_SUBTYPE_STX7141)	:= clock-stx7141.o
+-clock-$(CONFIG_CPU_SUBTYPE_STX7200)	:= clock-stx7200.o
++clock-$(CONFIG_CPU_SUBTYPE_STX5197)	:= clock-stx5197.o clock-common.o
++clock-$(CONFIG_CPU_SUBTYPE_STB7100)	:= clock-stb7100.o clock-common.o
++clock-$(CONFIG_CPU_SUBTYPE_STX7105)	:= clock-stx7105.o clock-common.o
++clock-$(CONFIG_CPU_SUBTYPE_STX7111)	:= clock-stx7111.o clock-common.o
++clock-$(CONFIG_CPU_SUBTYPE_STX7141)	:= clock-stx7141.o clock-common.o
++clock-$(CONFIG_CPU_SUBTYPE_STX7200)	:= clock-stx7200.o clock-common.o
+ endif
+ 
+ # Additional clocks by subtype
+diff --git a/arch/sh/kernel/cpu/sh4/clock-common.c b/arch/sh/kernel/cpu/sh4/clock-common.c
+new file mode 100644
+index 0000000..f466e76
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/clock-common.c
+@@ -0,0 +1,325 @@
++/************************************************************************
++File  : Low Level clock API
++        Common LLA functions (SOC independant)
++
++Author: F. Charpentier <fabrice.charpentier@st.com>
++
++Copyright (C) 2008 STMicroelectronics
++************************************************************************/
++
++#if defined(ST_OS21)
++#include <math.h>
++#include "clock.h"
++
++#else   /* Linux */
++
++#include <linux/clk.h>
++#include <asm-generic/div64.h>
++
++/*
++ * Linux specific function
++ */
++
++/* Return the number of set bits in x. */
++static unsigned int population(unsigned int x)
++{
++	/* This is the traditional branch-less algorithm for population count */
++	x = x - ((x >> 1) & 0x55555555);
++	x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
++	x = (x + (x >> 4)) & 0x0f0f0f0f;
++	x = x + (x << 8);
++	x = x + (x << 16);
++
++	return x >> 24;
++}
++
++/* Return the index of the most significant set in x.
++ * The results are 'undefined' is x is 0 (0xffffffff as it happens
++ * but this is a mere side effect of the algorithm. */
++static unsigned int most_significant_set_bit(unsigned int x)
++{
++	/* propagate the MSSB right until all bits smaller than MSSB are set */
++	x = x | (x >> 1);
++	x = x | (x >> 2);
++	x = x | (x >> 4);
++	x = x | (x >> 8);
++	x = x | (x >> 16);
++
++	/* now count the number of set bits [clz is population(~x)] */
++	return population(x) - 1;
++}
++#endif
++
++#include "clock-oslayer.h"
++#include "clock-common.h"
++
++/* ========================================================================
++   Name:        clk_pll800_freq()
++   Description: Convert PLLx_CFG to freq for PLL800
++   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++   ======================================================================== */
++
++unsigned long clk_pll800_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, pdiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0xff;
++	ndiv = (cfg >>  8) & 0xff;
++	pdiv = (cfg >> 16) & 0x7;
++	freq = (((2 * (input/1000) * ndiv) / mdiv) / (1 << pdiv)) * 1000;
++
++	return freq;
++}
++
++/* ========================================================================
++   Name:        clk_pll1600_freq()
++   Description: Convert PLLx_CFG to freq for PLL1600
++                Always returns HS output value.
++   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++   ======================================================================== */
++
++unsigned long clk_pll1600_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0x7;
++	ndiv = (cfg >>  8) & 0xff;
++	freq = ((2 * (input/1000) * ndiv) / mdiv) * 1000;
++
++	return freq;
++}
++
++/* ========================================================================
++   Name:        clk_fsyn_get_rate()
++   Description: Parameters to freq computation for frequency synthesizers
++   ======================================================================== */
++
++/* This has to be enhanced to support several Fsyn types */
++
++unsigned long clk_fsyn_get_rate(unsigned long input, unsigned long pe,
++		unsigned long md, unsigned long sd)
++{
++#ifdef ST_OS21
++
++    unsigned long rate,ref;
++    int pediv,mddiv,sddiv;
++
++    pediv = (pe&0xffff);
++    mddiv =(md&0x1f);
++    mddiv = ( mddiv - 32 );
++    sddiv =(sd&0x7);
++    sddiv = pow(2,(sddiv+1));
++
++    ref = input / 1000000;
++
++    rate = ((pow(2,15)*(ref*8))/(sddiv*((pediv*(1.0+mddiv/32.0))-((pediv-pow(2,15))*(1.0+(mddiv+1.0)/32.0)))))*1000000;
++
++    return(rate);
++
++#else   /* Linux: does not allow use of FPU in kernel space */
++
++	long long p, q, r, s, t, u;
++
++	p = 1048576ll * input;
++	q = 32768 * md;
++	r = 1081344 - pe;
++	s = r + q;
++	t = (1 << (sd + 1)) * s;
++	u = div64_64(p, t);
++
++	return u;
++
++ #endif
++}
++
++/* ========================================================================
++   Name:        clk_fsyn_get_params()
++   Description: Freq to parameters computation for frequency synthesizers
++   Input:       input=input freq (Hz), output=output freq (Hz)
++   Output:      updated *md, *pe & *sdiv
++   Return:      'clk_err_t' error code
++   ======================================================================== */
++
++/* This has to be enhanced to support several Fsyn types */
++
++int clk_fsyn_get_params(int input, int output, int *md, int *pe, int *sdiv)
++{
++#ifdef ST_OS21
++
++    double fr, Tr, Td1, Tx, fmx, nd1, nd2, Tdif;
++    int NTAP, msdiv, mfmx, ndiv, fout;
++
++    NTAP = 32;
++    mfmx = 0;
++
++    ndiv = 1.0;
++
++    fr = input * 8.0;
++    Tr = 1.0 / fr;
++    Td1 = 1.0 / (NTAP * fr);
++    msdiv = 0;
++
++    /* Looking for SDIV */
++    while (! ((mfmx >= (input*8)) && (mfmx <= (input*16))) && (msdiv < 7))
++    {
++        msdiv = msdiv + 1;
++        mfmx = pow(2,msdiv) * output;
++    }
++
++    *sdiv = msdiv - 1;
++    fmx = mfmx / (float)1000000.0;
++    if ((fmx < (8*input)) || (fmx > (16*input)))
++    {
++        return(CLK_ERR_BAD_PARAMETER);
++    }
++
++    Tx = 1 / (fmx * 1000000.0);
++
++    Tdif = Tr - Tx;
++
++    /* Looking for MD */
++    nd1 = floor((32.0 * (mfmx - fr) / mfmx));
++    nd2 = nd1 + 1.0;
++
++    *md = 32.0 - nd2;
++
++    /* Looking for PE */
++    *pe = ceil((32.0 * (mfmx - fr) / mfmx - nd1) * 32768.0);
++
++    return(0);
++
++#else   /* Linux */
++
++	unsigned long long p, q;
++	unsigned int predivide;
++	int preshift; /* always +ve but used in subtraction */
++	unsigned int lsdiv;
++	int lmd;
++	unsigned int lpe = 1 << 14;
++
++	/* pre-divide the frequencies */
++	p = 1048576ull * input;    /* <<20? */
++	q = output;
++
++	predivide = (unsigned int)div64_64(p, q);
++
++	/* determine an appropriate value for the output divider using eqn. #4
++	 * with md = -16 and pe = 32768 (and round down) */
++	lsdiv = predivide / 524288;
++	if (lsdiv > 1) {
++		/* sdiv = fls(sdiv) - 1; // this doesn't work
++		 * for some unknown reason */
++		lsdiv = most_significant_set_bit(lsdiv);
++	} else
++		lsdiv = 1;
++
++	/* pre-shift a common sub-expression of later calculations */
++	preshift = predivide >> lsdiv;
++
++	/* determine an appropriate value for the coarse selection using eqn. #5
++	 * with pe = 32768 (and round down which for signed values means away
++	 * from zero) */
++	lmd = ((preshift - 1048576) / 32768) - 1;         /* >>15? */
++
++	/* calculate a value for pe that meets the output target */
++	lpe = -1 * (preshift - 1081344 - (32768 * lmd));  /* <<15? */
++
++	/* finally give sdiv its true hardware form */
++	lsdiv--;
++	/* special case for 58593.75Hz and harmonics...
++	* can't quite seem to get the rounding right */
++	if (lmd == -17 && lpe == 0) {
++		lmd = -16;
++		lpe = 32767;
++	}
++
++	/* update the outgoing arguments */
++	*sdiv = lsdiv;
++	*md = lmd;
++	*pe = lpe;
++
++	/* return 0 if all variables meet their contraints */
++	return (lsdiv <= 7 && -16 <= lmd && lmd <= -1 && lpe <= 32767) ? 0 : -1;
++
++#endif
++}
++
++/* ========================================================================
++   Name:        clk_err_string
++   Description: Convert LLA error code to string.
++   Returns:     const char *ErrMessage
++   ======================================================================== */
++
++const char *clk_err_string(int err)
++{
++    static const char *errors[]={"unknown error","feature not supported","bad parameter","fatal error"};
++    if ( err > CLK_ERR_INTERNAL ) return(errors[0]);
++
++    return(errors[err]);
++}
++
++/* ========================================================================
++   Name:        clk_short_name
++   Description: Returns clock name with prefix skipped (XXX_).
++                "CLKA_DISP_200" becomes "DISP_200".
++   Returns:     const char *ShortName
++   ======================================================================== */
++
++const char *clk_short_name(const char *name)
++{
++    const char *Ptr;
++
++    for( Ptr = name; *Ptr && (*Ptr!='_'); Ptr++ );
++    Ptr++;  /* Skipping '_' */
++
++    return(Ptr);
++}
++
++#if !defined(ST_OS21)
++#define TOLLERANCE	5
++#define tollerance	((rate * (TOLLERANCE))/100)
++
++int get_ratio_field(unsigned long rate, unsigned long prate, int *ratios)
++{
++	int idx;
++	unsigned long h_threshold = rate + tollerance;
++	unsigned long l_threshold = rate - tollerance;
++
++	if (!prate || !rate || !ratios)
++		return NO_MORE_RATIO;
++	if (rate > prate)
++		return NO_MORE_RATIO;
++	for (idx = 0; ratios[idx] != NO_MORE_RATIO; ++idx) {
++		if (ratios[idx] == RATIO_RESERVED)
++			continue;
++		if (!ratios[idx])
++			continue;
++		if (prate/ratios[idx] >= l_threshold &&
++		    prate/ratios[idx] <= h_threshold)
++			return idx;
++	}
++	return NO_MORE_RATIO;
++}
++
++int get_xratio_field(unsigned long rate, unsigned long prate,
++	struct xratio *ratios)
++{
++	int idx;
++	unsigned long h_threshold = rate + tollerance;
++	unsigned long l_threshold = rate - tollerance;
++	if (!prate || !rate || !ratios)
++		return NO_MORE_RATIO;
++	if (rate > prate)
++		return NO_MORE_RATIO;
++	for (idx = 0; ratios[idx].ratio != NO_MORE_RATIO; ++idx) {
++		if (ratios[idx].ratio == RATIO_RESERVED)
++			continue;
++		if (!ratios[idx].ratio)
++			continue;
++		if (prate/ratios[idx].ratio >= l_threshold &&
++		    prate/ratios[idx].ratio <= h_threshold)
++			return idx;
++	}
++	return NO_MORE_RATIO;
++}
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/clock-common.h b/arch/sh/kernel/cpu/sh4/clock-common.h
+new file mode 100644
+index 0000000..a32b4f9
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/clock-common.h
+@@ -0,0 +1,83 @@
++/************************************************************************
++File  : Low Level clock API
++        Common LLA functions (SOC independant)
++
++Author: F. Charpentier <fabrice.charpentier@st.com>
++
++Copyright (C) 2008 STMicroelectronics
++************************************************************************/
++
++#ifndef __CLKLLA_COMMON_H
++#define __CLKLLA_COMMON_H
++
++#ifndef ST_OS21
++#define NO_MORE_RATIO		-1
++#define RATIO_RESERVED		-2
++
++int get_ratio_field(unsigned long rate, unsigned long prate, int *ratios);
++
++struct xratio {
++	unsigned long ratio;
++	unsigned long field;
++};
++
++int get_xratio_field(unsigned long rate, unsigned long prate,
++	struct xratio *ratios);
++#endif
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/* ========================================================================
++   Name:        clk_pll800_freq()
++   Description: Convert PLLx_CFG to freq for PLL800
++   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++   ======================================================================== */
++
++unsigned long clk_pll800_freq( unsigned long input, unsigned long cfg );
++
++/* ========================================================================
++   Name:        clk_pll1600_freq()
++   Description: Convert PLLx_CFG to freq for PLL1600
++                Always returns HS output value.
++   Params:      'input' freq (Hz), 'cfg'=PLLx_CFG register value
++   ======================================================================== */
++
++unsigned long clk_pll1600_freq( unsigned long input, unsigned long cfg );
++
++/* ========================================================================
++   Name:        clk_fsyn_get_rate()
++   Description: Parameters to freq computation for frequency synthesizers
++   ======================================================================== */
++
++/* This has to be enhanced to support several Fsyn types */
++
++unsigned long clk_fsyn_get_rate( unsigned long input, unsigned long pe, unsigned long md, unsigned long sd );
++
++/* ========================================================================
++   Name:        clk_fsyn_get_params()
++   Description: Freq to parameters computation for frequency synthesizers
++   Input:       input=input freq (Hz), output=output freq (Hz)
++   Output:      updated *md, *pe & *sdiv
++   Return:      'clk_err_t' error code
++   ======================================================================== */
++
++/* This has to be enhanced to support several Fsyn types */
++
++int clk_fsyn_get_params( int input, int output, int *md, int *pe, int *sdiv );
++
++/* ========================================================================
++   Name:        clk_err_string
++   Description: Convert LLA error code to string.
++   Returns:     const char *ErrMessage
++   ======================================================================== */
++
++const char *clk_err_string( int err );
++
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* #ifndef __CLKLLA_COMMON_H */
+diff --git a/arch/sh/kernel/cpu/sh4/clock-oslayer.h b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+new file mode 100644
+index 0000000..5cdf1a3
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+@@ -0,0 +1,230 @@
++/*
++ * OS Specific CLOCK LLA mappings
++ *
++ * Copyright (c)2008 STMicroelectronics
++ */
++
++#ifndef __CLKLLA_OSLAYER_H
++#define __CLKLLA_OSLAYER_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++
++#ifdef ST_OS21
++
++#ifndef DEFINED_U32
++typedef unsigned int U32;
++#define DEFINED_U32
++#endif
++
++/* Clock operation registration macro (used by clock-xxxx.c) */
++#define REGISTER_OPS( _name, _desc, _init, _setparent, _setfreq, _recalc, _enable, _disable, \
++			_observe, _measure ) 				\
++static struct clk_ops  _name= {						\
++	.init=_init,							\
++	.set_parent=_setparent,						\
++	.set_rate=_setfreq,						\
++	.recalc=_recalc, 						\
++	.enable=_enable,						\
++	.disable=_disable,						\
++	.observe=_observe,						\
++	.get_measure=_measure, 						\
++ }
++
++/* Clock registration macro (used by clock-xxxx.c) */
++#define REGISTER_CLK( _id, _ops, _nominal, _flags ) 			\
++[_id] = (clk_t){ .name = #_id,  \
++                 .id = _id,     \
++                 .ops = (_ops), \
++                 .flags=_flags, \
++                 .nominal_rate = _nominal \
++}
++
++/* Registers access functions */
++#include "stsys.h"
++#include "clock-regs.h"     /* Defined in "clock_lla/socs" */
++
++/* Register access macros.
++   WARNING: take care. Different macros depending on register type !!
++   CLOCKGENs => CLK_READ, CLK_WRITE
++   SYSCONF   => SYSCONF_READ, SYSCONF_WRITE
++   PIO       => PIO_SET_MODE to output clock
++ */
++#define CLK_READ(a)     STSYS_ReadRegDev32LE(a)
++#define CLK_WRITE(a,d)  STSYS_WriteRegDev32LE(a,d)
++
++#define SYS_DEV 0
++#define SYS_STA 1
++#define SYS_CFG 2
++
++static inline U32 SYSCONF_READ(int type, int num, int lsb, int msb)
++{
++	unsigned long offset = ((type == 0) ? 0 : ((type == 1) ? 8 : 0x100)) + ((num) * 4 );
++	unsigned long tmp;
++	int field_bits = msb - lsb + 1;
++	tmp = STSYS_ReadRegDev32LE(offset + SYSCFG_BASE_ADDRESS);
++	if (field_bits != 32) {
++		tmp >>= lsb;
++		tmp &= (1 << field_bits) -1;
++	}
++	return tmp;
++}
++
++static inline void SYSCONF_WRITE(int type, int num, int lsb, int msb,
++	unsigned long value)
++{
++	unsigned long offset = ((type == 0) ? 0 : ((type == 1) ? 8 : 0x100)) + ((num) * 4 );
++	unsigned long tmp;
++	int field_bits = msb - lsb + 1;
++	tmp = STSYS_ReadRegDev32LE(offset + SYSCFG_BASE_ADDRESS);
++	if (field_bits != 32) {
++		unsigned long mask = ~(((1 << field_bits) -1) << lsb);
++		tmp &= mask;
++		tmp |= value << lsb;
++	}
++	STSYS_WriteRegDev32LE(offset + SYSCFG_BASE_ADDRESS, tmp);
++}
++
++#define STPIO_NONPIO		0	/* Non-PIO function (ST40 defn) */
++#define STPIO_BIDIR_Z1		0	/* Input weak pull-up (arch defn) */
++#define STPIO_BIDIR		1	/* Bidirectonal open-drain */
++#define STPIO_OUT		2	/* Output push-pull */
++#define STPIO_IN		4	/* Input Hi-Z */
++#define STPIO_ALT_OUT		6	/* Alt output push-pull (arch defn) */
++#define STPIO_ALT_BIDIR		7	/* Alt bidir open drain (arch defn) */
++
++static inline void PIO_SET_MODE(unsigned long bank, unsigned long line, long mode)
++{
++    unsigned long piobase = PIO_BASE_ADDRESS(bank);
++    unsigned long offset = ((mode & (1 << 0)) ? 0x4 : 0x8);
++    STSYS_WriteRegDev32LE((void*)(piobase + PIO_CLEAR_PnC0 + offset),
++        (0x1 << line));
++    STSYS_WriteRegDev32LE((void*)(piobase + PIO_SET_PnC1 + offset),
++        (0x1 << line));
++    STSYS_WriteRegDev32LE((void*)(piobase + PIO_CLEAR_PnC2 + offset),
++        (0x1 << line));
++}
++
++#else   /* LINUX */
++
++#include <linux/io.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/pio.h>
++#include <asm-generic/errno-base.h>
++
++#define clk_t	struct clk
++#define U32 					unsigned long
++
++/* Register access macros */
++#define CLK_READ(addr)          		ioread32(addr)
++#define CLK_WRITE(addr,val)			iowrite32(val, addr)
++#define STSYS_ReadRegDev32LE(addr)		ioread32(addr)
++#define STSYS_WriteRegDev32LE(addr,val)		iowrite32(val, addr)
++
++static inline U32  SYSCONF_READ(unsigned long type, unsigned long num,
++	unsigned long lsb, unsigned long msb)
++{
++	static struct sysconf_field *sc;
++	if (!sc)
++		sc = sysconf_claim(type, num,  lsb, msb, "Clk lla");
++	return sysconf_read(sc);;
++}
++
++static inline void SYSCONF_WRITE(unsigned long type, unsigned long num,
++	unsigned long lsb, unsigned long msb, unsigned long value)
++{
++	static struct sysconf_field *sc;
++	if (!sc)
++		sc = sysconf_claim(type, num,  lsb, msb, "Clk lla");
++	sysconf_write(sc, value);
++}
++
++static inline void PIO_SET_MODE(unsigned long bank, unsigned long line, long mode)
++{
++	static struct stpio_pin *pio;
++	if (!pio)
++		pio = stpio_request_pin(bank, line, "Clk Observer", mode);
++	else
++		stpio_configure_pin(pio, mode);
++}
++
++#ifdef CONFIG_CLK_LOW_LEVEL_DEBUG
++typedef struct clk_ops_dbg
++{
++        const char *name;       /* Clocks group description ("clockgen A","LMI"...) */
++} clk_ops_dbg_t;
++
++/*
++ *  Clock operation with debug info
++ */
++
++/* Clock operation registration macro (used by clock-xxxx.c) */
++#define REGISTER_OPS( _name, _desc, _init, _setparent, _setfreq, _recalc, _enable, _disable, \
++			_observe, _measure )				\
++static struct clk_ops  _name= {						\
++	.init=_init,							\
++	.set_parent=_setparent,						\
++	.set_rate=_setfreq,						\
++	.recalc=_recalc,						\
++	.enable=_enable,						\
++	.disable=_disable,						\
++	.observe=_observe,						\
++	.get_measure=_measure,						\
++	.private_data=(void*)&(clk_ops_dbg_t){ .name=_desc },		\
++}
++
++/* Clock registration macro (used by clock-xxxx.c) */
++#define REGISTER_CLK( _id, _ops, _nominal, _flags )			\
++[_id] = (clk_t){ .name = #_id,						\
++		 .id = _id,						\
++		 .ops = (_ops),						\
++		 .flags=_flags,						\
++		 .nominal_rate=_nominal,				\
++}
++#else
++/*
++ * CLock Operation without debug info
++ */
++#define REGISTER_OPS( _name, _desc, _init, _setparent, _setfreq, _recalc, _enable, _disable, \
++			_observe, _measure )				\
++static struct clk_ops  _name= {						\
++	.init=_init,							\
++	.set_parent=_setparent,						\
++	.set_rate=_setfreq,						\
++	.recalc=_recalc,						\
++	.enable=_enable,						\
++	.disable=_disable,						\
++	.observe=_observe,						\
++	.get_measure=_measure,						\
++}
++
++/* Clock registration macro (used by clock-xxxx.c) */
++#define REGISTER_CLK( _id, _ops, _nominal, _flags )			\
++[_id] = (clk_t){ .name = #_id,						\
++		 .id = _id,						\
++		 .ops = (_ops),						\
++		 .flags=_flags,						\
++}
++#endif
++
++#define time_ticks_per_sec()                    CONFIG_HZ
++#define task_delay(x)                           mdelay((x)/CONFIG_HZ)
++
++/* Low level API errors */
++typedef enum clk_err
++{
++	CLK_ERR_NONE = 0,
++	CLK_ERR_FEATURE_NOT_SUPPORTED = -EPERM,
++	CLK_ERR_BAD_PARAMETER = -EINVAL,
++	CLK_ERR_INTERNAL = -EFAULT /* Internal & fatal error */
++} clk_err_t;
++
++#endif	/* End Linux */
++
++
++#ifdef __cplusplus
++}
++#endif
++#endif /* #ifndef __CLKLLA_OSLAYER_H */
+diff --git a/include/asm-sh/clock.h b/include/asm-sh/clock.h
+index b550a27..26b1cd0 100644
+--- a/include/asm-sh/clock.h
++++ b/include/asm-sh/clock.h
+@@ -9,12 +9,17 @@
+ struct clk;
+ 
+ struct clk_ops {
+-	void (*init)(struct clk *clk);
+-	void (*enable)(struct clk *clk);
+-	void (*disable)(struct clk *clk);
++	int (*init)(struct clk *clk);
++	int (*enable)(struct clk *clk);
++	int (*disable)(struct clk *clk);
+ 	void (*recalc)(struct clk *clk);
+-	int (*set_rate)(struct clk *clk, unsigned long rate, int algo_id);
++	int (*set_rate)(struct clk *clk, unsigned long rate);
++	int (*set_parent)(struct clk *clk, struct clk *parent);
+ 	long (*round_rate)(struct clk *clk, unsigned long rate);
++	int (*observe)(struct clk *clk, unsigned long *div); /* Route clock on external pin */
++	unsigned long (*get_measure)(struct clk *clk);
++	void *private_data;
++	int (*set_rate_ex)(struct clk *clk, unsigned long rate, int aldo_id);
+ };
+ 
+ struct clk {
+@@ -26,9 +31,12 @@ struct clk {
+ 	struct clk		*parent;
+ 	struct clk_ops		*ops;
+ 
++	void			*private_data;
++
+ 	struct kref		kref;
+ 
+ 	unsigned long		rate;
++	unsigned long		nominal_rate;
+ 	unsigned long		flags;
+ };
+ 
+@@ -49,6 +57,18 @@ void clk_recalc_rate(struct clk *);
+ int clk_register(struct clk *);
+ void clk_unregister(struct clk *);
+ 
++int clk_for_each(int (*fn)(struct clk *clk, void *data), void *data);
++
++/**
++ * Routes the clock on an external pin (if possible)
++ */
++int clk_observe(struct clk *clk, unsigned long *div);
++
++/**
++ * Evaluate the clock rate in hardware (if possible)
++ */
++unsigned long clk_get_measure(struct clk *clk);
++
+ /* the exported API, in addition to clk_set_rate */
+ /**
+  * clk_set_rate_ex - set the clock rate for a clock source, with additional parameter
+@@ -79,4 +99,7 @@ enum clk_sh_algo_id {
+ 
+ 	IP_N1,
+ };
++
++/* arch/sh/kernel/cpu/clock.c */
++int clk_init(void);
+ #endif /* __ASM_SH_CLOCK_H */
+-- 
+1.5.6.3
+

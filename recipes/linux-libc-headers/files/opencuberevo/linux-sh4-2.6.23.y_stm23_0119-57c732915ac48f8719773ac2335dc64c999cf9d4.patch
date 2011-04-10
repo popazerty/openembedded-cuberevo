@@ -1,0 +1,69 @@
+From 57c732915ac48f8719773ac2335dc64c999cf9d4 Mon Sep 17 00:00:00 2001
+From: Carl Shaw <car.shaw@st.com>
+Date: Thu, 4 Jun 2009 16:35:32 +0100
+Subject: [PATCH] sh_stm: PCI support for PDK7105 board
+
+This board uses a mini-pci connector rather than a standard PCI
+connector. It also uses a PIO to do the pci reset.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ arch/sh/Kconfig                   |    2 ++
+ arch/sh/boards/st/pdk7105/setup.c |   20 ++++++++++++++++++++
+ 2 files changed, 22 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 43198a9..8ca04ce 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -628,6 +628,8 @@ config SH_ST_MB680
+ config SH_ST_PDK7105
+ 	bool "PDK7105-SDK : STi7105 SDK Reference board"
+ 	depends on CPU_SUBTYPE_STX7105
++	select SYS_SUPPORTS_PCI
++	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select PDK7105-SDK if configuring for an
+ 	  STMicroelectronics STi7105 SDK Reference Board.
+diff --git a/arch/sh/boards/st/pdk7105/setup.c b/arch/sh/boards/st/pdk7105/setup.c
+index e5a2ab9..bd56121 100644
+--- a/arch/sh/boards/st/pdk7105/setup.c
++++ b/arch/sh/boards/st/pdk7105/setup.c
+@@ -287,6 +287,25 @@ lirc_scd_t lirc_scd = {
+ 	.noiserecov = 0,
+ };
+ 
++/* PCI configuration */
++static struct pci_config_data  pci_config = {
++	.pci_irq = { PCI_PIN_DEFAULT, PCI_PIN_DEFAULT,
++			PCI_PIN_UNUSED, PCI_PIN_UNUSED },
++	.serr_irq = PCI_PIN_UNUSED,
++	.idsel_lo = 30,
++	.idsel_hi = 30,
++	.req_gnt = { PCI_PIN_DEFAULT, PCI_PIN_UNUSED,
++			PCI_PIN_UNUSED, PCI_PIN_UNUSED },
++	.pci_clk = 33333333,
++	.pci_reset_pio = stpio_to_gpio(15, 7)
++};
++
++int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
++{
++	/* We can use the standard function on this board */
++	return  stx7105_pcibios_map_platform_irq(&pci_config, pin);
++}
++
+ static int __init device_init(void)
+ {
+ 	u32 bank1_start;
+@@ -311,6 +330,7 @@ static int __init device_init(void)
+ 		nand_device.id = 0;
+ 	}
+ 
++	stx7105_configure_pci(&pci_config);
+ 	stx7105_configure_sata();
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+-- 
+1.6.0.6
+

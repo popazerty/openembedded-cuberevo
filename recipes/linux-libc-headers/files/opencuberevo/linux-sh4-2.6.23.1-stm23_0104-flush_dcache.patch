@@ -1,0 +1,20 @@
+Define the flush_kernel_dcache_page function for archs with
+physical caches to solve cache coherency issues.
+It fixes bug 2998 too.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+
+--- linux-sh4-2.6.23.1_stm23_0104/include/asm-sh/cacheflush.h.orig	2008-01-03 14:07:47.000000000 +0100
++++ linux-sh4-2.6.23.1_stm23_0104/include/asm-sh/cacheflush.h	2008-01-03 14:08:20.000000000 +0100
+@@ -61,5 +61,11 @@ extern void __flush_invalidate_region(vo
+ 
+ #define HAVE_ARCH_UNMAPPED_AREA
+ 
++#define ARCH_HAS_FLUSH_KERNEL_DCACHE_PAGE
++static inline void flush_kernel_dcache_page(struct page *page)
++{
++	flush_dcache_page(page);
++}
++
+ #endif /* __KERNEL__ */
+ #endif /* __ASM_SH_CACHEFLUSH_H */

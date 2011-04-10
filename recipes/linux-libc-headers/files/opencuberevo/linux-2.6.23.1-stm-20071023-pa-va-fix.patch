@@ -1,0 +1,33 @@
+Index: linux-2.6.23.1-stm/include/asm-sh/page.h
+===================================================================
+--- linux-2.6.23.1-stm.orig/include/asm-sh/page.h
++++ linux-2.6.23.1-stm/include/asm-sh/page.h
+@@ -125,8 +125,8 @@ typedef struct { unsigned long pgd; } pg
+ #define __pa(x)			((unsigned long)(x)-PAGE_OFFSET+__MEMORY_START)
+ #define __va(x)			((void *)((unsigned long)(x)+PAGE_OFFSET-__MEMORY_START))
+ #else
+-#define __pa(x)			((unsigned long)(x)-PAGE_OFFSET+__MEMORY_START)
+-#define __va(x)			((void *)((unsigned long)(x)+PAGE_OFFSET-__MEMORY_START))
++#define __pa(x)			((unsigned long)(x)-PAGE_OFFSET)
++#define __va(x)			((void *)((unsigned long)(x)+PAGE_OFFSET))
+ #endif
+ 
+ #define pfn_to_kaddr(pfn)	__va((pfn) << PAGE_SHIFT)
+Index: linux-2.6.23.1-stm/arch/sh/mm/init.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/mm/init.c
++++ linux-2.6.23.1-stm/arch/sh/mm/init.c
+@@ -209,11 +209,8 @@ void __init paging_init(void)
+ 	free_area_init_nodes(max_zone_pfns);
+ 
+ 	set_fixmap_nocache(FIX_UNCACHED_CODE, __pa(&_start_uncached));
+-#if 0
+-	cached_to_uncached = fix_to_virt(FIX_UNCACHED_CODE) -
+-		(unsigned long)&_start_uncached;
+-#elif 0
+-	cached_to_uncached = 0x38000000;
++#ifndef CONFIG_32BIT
++	cached_to_uncached = 0x20000000;
+ #endif
+ }
+ 

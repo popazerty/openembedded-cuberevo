@@ -1,0 +1,37 @@
+From 895c52b1ba20b93cb2e33a6019fa2f514062e003 Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Thu, 19 Feb 2009 16:22:15 +0100
+Subject: [PATCH] stm_pm: Fixed kernel config dependency problem
+
+Fixed kernel config problem to avoid compilation error
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/base/power/sysfs.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/base/power/sysfs.c b/drivers/base/power/sysfs.c
+index b056fb1..167278c 100644
+--- a/drivers/base/power/sysfs.c
++++ b/drivers/base/power/sysfs.c
+@@ -23,7 +23,7 @@
+  *      is requested, the device is first resumed, then suspended into the new
+  *      low-power state.
+  */
+-#ifdef CONFIG_PM
++#ifdef CONFIG_PM_SLEEP
+ static ssize_t state_show(struct device *dev, struct device_attribute *attr,
+ 	char *buf)
+ {
+@@ -139,7 +139,7 @@ static DEVICE_ATTR(wakeup, 0644, wake_show, wake_store);
+ 
+ 
+ static struct attribute * power_attrs[] = {
+-#ifdef CONFIG_PM
++#ifdef CONFIG_PM_SLEEP
+ 	&dev_attr_state.attr,
+ #endif
+ 	&dev_attr_wakeup.attr,
+-- 
+1.5.6.3
+

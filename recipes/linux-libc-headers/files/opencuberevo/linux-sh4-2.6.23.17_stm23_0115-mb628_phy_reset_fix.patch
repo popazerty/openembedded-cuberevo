@@ -1,0 +1,23 @@
+commit 485d587aed5b37412eb70bc6cbc06e607f22d19e
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Tue Jul 22 15:38:30 2008 +0100
+
+    sh_stm: Fix mb628 PHY initialization problem.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index 0b4e803..e8ed80d 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -172,6 +172,10 @@ static int mb628_phy_reset(void *bus)
+ 	reg |= EPLD_RESET_MII;
+ 	epld_write(reg, EPLD_RESET);
+ 
++	/* DP83865 (PHY chip) has a looong initialization
++	 * procedure... Let's give him some time to settle down... */
++	udelay(1000);
++
+ 	return 1;
+ }
+ 

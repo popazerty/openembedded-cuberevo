@@ -1,0 +1,77 @@
+From a82aafb6c08048675d1222f6a18c26176fefb45c Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 13 Jul 2009 08:40:25 +0200
+Subject: [PATCH] tiny-linux: uninline various functions
+
+This patch uninlines various functions.
+The idea behind comes from the Linux Tiny project: http://elinux.org/Linux_Tiny
+
+After applying this patch the Kernel text shrinks by over ~2KiB.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ fs/buffer.c     |    2 +-
+ fs/ext2/namei.c |    2 +-
+ fs/namei.c      |    6 +++---
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/fs/buffer.c b/fs/buffer.c
+index 14b6bc4..58b9d6d 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -566,7 +566,7 @@ EXPORT_SYMBOL(mark_buffer_async_write);
+ /*
+  * The buffer's backing address_space's private_lock must be held
+  */
+-static inline void __remove_assoc_queue(struct buffer_head *bh)
++static void __remove_assoc_queue(struct buffer_head *bh)
+ {
+ 	list_del_init(&bh->b_assoc_buffers);
+ 	WARN_ON(!bh->b_assoc_map);
+diff --git a/fs/ext2/namei.c b/fs/ext2/namei.c
+index e69beed..1f05cb4 100644
+--- a/fs/ext2/namei.c
++++ b/fs/ext2/namei.c
+@@ -36,7 +36,7 @@
+ #include "acl.h"
+ #include "xip.h"
+ 
+-static inline int ext2_add_nondir(struct dentry *dentry, struct inode *inode)
++static int ext2_add_nondir(struct dentry *dentry, struct inode *inode)
+ {
+ 	int err = ext2_add_link(dentry, inode);
+ 	if (!err) {
+diff --git a/fs/namei.c b/fs/namei.c
+index 314afe6..c1ca807 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -609,7 +609,7 @@ static __always_inline int __do_follow_link(struct path *path, struct nameidata
+ 		char *s = nd_get_link(nd);
+ 		error = 0;
+ 		if (s)
+-			error = __vfs_follow_link(nd, s);
++			error = vfs_follow_link(nd, s);
+ 		if (dentry->d_inode->i_op->put_link)
+ 			dentry->d_inode->i_op->put_link(dentry, nd, cookie);
+ 	}
+@@ -626,7 +626,7 @@ static __always_inline int __do_follow_link(struct path *path, struct nameidata
+  * Without that kind of total limit, nasty chains of consecutive
+  * symlinks can cause almost arbitrarily long lookups. 
+  */
+-static inline int do_follow_link(struct path *path, struct nameidata *nd)
++static int do_follow_link(struct path *path, struct nameidata *nd)
+ {
+ 	int err = -ELOOP;
+ 	if (current->link_count >= MAX_NESTED_LINKS)
+@@ -1472,7 +1472,7 @@ static int may_delete(struct inode *dir,struct dentry *victim,int isdir)
+  *  3. We should have write and exec permissions on dir
+  *  4. We can't do it if dir is immutable (done in permission())
+  */
+-static inline int may_create(struct inode *dir, struct dentry *child,
++static int may_create(struct inode *dir, struct dentry *child,
+ 			     struct nameidata *nd)
+ {
+ 	if (child->d_inode)
+-- 
+1.6.0.6
+

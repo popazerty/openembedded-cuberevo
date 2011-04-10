@@ -1,0 +1,495 @@
+Backport latest SH4 cache updates from mainline 2.6.22
+Add implementation of flush_icache_range() suitable for signal handler and kprobes
+Remove flush_cache_sigtramp() and change signal.c to use flush_icache_range()
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/arch/sh/mm/cache-sh4.c
+===================================================================
+--- linux.orig/arch/sh/mm/cache-sh4.c	2007-08-30 12:38:04.175300000 +0100
++++ linux/arch/sh/mm/cache-sh4.c	2007-08-30 12:43:12.294516000 +0100
+@@ -1,6 +1,7 @@
+ /*
+  * arch/sh/mm/cache-sh4.c
+  *
++ * Copyright (c) 2007 STMicroelectronics (R&D) Ltd.
+  * Copyright (C) 1999, 2000, 2002  Niibe Yutaka
+  * Copyright (C) 2001, 2002, 2003, 2004, 2005  Paul Mundt
+  * Copyright (C) 2003  Richard Curnow
+@@ -23,8 +24,18 @@
+ #include <asm/io.h>
+ #include <asm/uaccess.h>
+ #include <asm/pgalloc.h>
++#include <linux/mutex.h>
+ #include <asm/mmu_context.h>
+ #include <asm/cacheflush.h>
++#include <linux/debugfs.h>
++
++/*
++ * The maximum number of pages we support up to when doing ranged dcache
++ * flushing. Anything exceeding this will simply flush the dcache in its
++ * entirety.
++ */
++#define MAX_DCACHE_PAGES        64
++#define MAX_ICACHE_PAGES        32
+ 
+ static void __flush_dcache_segment_1way(unsigned long start,
+ 					unsigned long extent);
+@@ -82,9 +93,9 @@
+  */
+ 
+ /* Worst case assumed to be 64k cache, direct-mapped i.e. 4 synonym bits. */
+-#define MAX_P3_SEMAPHORES 16
++#define MAX_P3_MUTEXES 16
+ 
+-struct semaphore p3map_sem[MAX_P3_SEMAPHORES];
++struct mutex p3map_mutex[MAX_P3_MUTEXES];
+ 
+ void __init p3_cache_init(void)
+ {
+@@ -114,7 +125,7 @@
+ 		panic("%s failed.", __FUNCTION__);
+ 
+ 	for (i = 0; i < cpu_data->dcache.n_aliases; i++)
+-		sema_init(&p3map_sem[i], 1);
++		mutex_init(&p3map_mutex[i]);
+ }
+ 
+ /*
+@@ -177,44 +188,50 @@
+ 	}
+ }
+ 
++
+ /*
+  * Write back the range of D-cache, and purge the I-cache.
+  *
+- * Called from kernel/module.c:sys_init_module and routine for a.out format.
++ * Called from kernel/module.c:sys_init_module, routine for a.out format,
++ * signal handler code and kprobes code
+  */
+ void flush_icache_range(unsigned long start, unsigned long end)
+ {
+-	flush_cache_all();
+-}
+-
+-/*
+- * Write back the D-cache and purge the I-cache for signal trampoline.
+- * .. which happens to be the same behavior as flush_icache_range().
+- * So, we simply flush out a line.
+- */
+-void flush_cache_sigtramp(unsigned long addr)
+-{
+-	unsigned long v, index;
+-	unsigned long flags;
++	int icacheaddr;
++	unsigned long flags, v;
+ 	int i;
+ 
+-	v = addr & ~(L1_CACHE_BYTES-1);
+-	asm volatile("ocbwb	%0"
+-		     : /* no output */
+-		     : "m" (__m(v)));
+-
+-	index = CACHE_IC_ADDRESS_ARRAY | (v & cpu_data->icache.entry_mask);
+-
+-	local_irq_save(flags);
+-	jump_to_P2();
++	/* If there are too many pages then just blow the caches */
++        if (((end - start) >> PAGE_SHIFT) >= MAX_ICACHE_PAGES) {
++                flush_cache_all();
++	} else {
++		/* selectively flush d-cache then invalidate the i-cache */
++		/* this is inefficient, so only use for small ranges */
++		start &= ~(L1_CACHE_BYTES-1);
++		end += L1_CACHE_BYTES-1;
++		end &= ~(L1_CACHE_BYTES-1);
++
++		local_irq_save(flags);
++		jump_to_P2();
++
++		for (v = start; v < end; v+=L1_CACHE_BYTES) {
++			asm volatile("ocbwb	%0"
++				     : /* no output */
++				     : "m" (__m(v)));
++
++			icacheaddr = CACHE_IC_ADDRESS_ARRAY | (
++					v & cpu_data->icache.entry_mask);
++
++			for (i = 0; i < cpu_data->icache.ways;
++	     			i++, icacheaddr += cpu_data->icache.way_incr)
++					/* Clear i-cache line valid-bit */
++					ctrl_outl(0, icacheaddr);
++		}
+ 
+-	for (i = 0; i < cpu_data->icache.ways;
+-	     i++, index += cpu_data->icache.way_incr)
+-		ctrl_outl(0, index);	/* Clear out Valid-bit */
++		back_to_P1();
++		local_irq_restore(flags);
++	}
+ 
+-	back_to_P1();
+-	wmb();
+-	local_irq_restore(flags);
+ }
+ 
+ static inline void flush_cache_4096(unsigned long start,
+@@ -302,19 +319,122 @@
+ 	flush_icache_all();
+ }
+ 
++static void __flush_cache_mm(struct mm_struct *mm, unsigned long start,
++		             unsigned long end)
++{
++	unsigned long d = 0, p = start & PAGE_MASK;
++	unsigned long alias_mask = cpu_data->dcache.alias_mask;
++	unsigned long n_aliases = cpu_data->dcache.n_aliases;
++	unsigned long select_bit;
++	unsigned long all_aliases_mask;
++	unsigned long addr_offset;
++	pgd_t *dir;
++	pmd_t *pmd;
++	pud_t *pud;
++	pte_t *pte;
++	int i;
++
++	dir = pgd_offset(mm, p);
++	pud = pud_offset(dir, p);
++	pmd = pmd_offset(pud, p);
++	end = PAGE_ALIGN(end);
++
++	all_aliases_mask = (1 << n_aliases) - 1;
++
++	do {
++		if (pmd_none(*pmd) || unlikely(pmd_bad(*pmd))) {
++		        p &= PMD_MASK;
++		        p += PMD_SIZE;
++		        pmd++;
++
++		        continue;
++		}
++
++		pte = pte_offset_kernel(pmd, p);
++
++		do {
++		        unsigned long phys;
++		        pte_t entry = *pte;
++
++		        if (!(pte_val(entry) & _PAGE_PRESENT)) {
++		                pte++;
++		                p += PAGE_SIZE;
++		                continue;
++		        }
++
++		        phys = pte_val(entry) & PTE_PHYS_MASK;
++
++		        if ((p ^ phys) & alias_mask) {
++		                d |= 1 << ((p & alias_mask) >> PAGE_SHIFT);
++		                d |= 1 << ((phys & alias_mask) >> PAGE_SHIFT);
++
++		                if (d == all_aliases_mask)
++		                        goto loop_exit;
++		        }
++
++		        pte++;
++		        p += PAGE_SIZE;
++		} while (p < end && ((unsigned long)pte & ~PAGE_MASK));
++	       pmd++;
++	} while (p < end);
++
++loop_exit:
++	addr_offset = 0;
++	select_bit = 1;
++
++	for (i = 0; i < n_aliases; i++) {
++		if (d & select_bit) {
++		        (*__flush_dcache_segment_fn)(addr_offset, PAGE_SIZE);
++		        wmb();
++		}
++
++		select_bit <<= 1;
++		addr_offset += PAGE_SIZE;
++	}
++}
++
++/*
++ * Note : (RPC) since the caches are physically tagged, the only point
++ * of flush_cache_mm for SH-4 is to get rid of aliases from the
++ * D-cache.  The assumption elsewhere, e.g. flush_cache_range, is that
++ * lines can stay resident so long as the virtual address they were
++ * accessed with (hence cache set) is in accord with the physical
++ * address (i.e. tag).  It's no different here.  So I reckon we don't
++ * need to flush the I-cache, since aliases don't matter for that.  We
++ * should try that.
++ *
++ * Caller takes mm->mmap_sem.
++ */
+ void flush_cache_mm(struct mm_struct *mm)
+ {
+ 	/*
+-	 * Note : (RPC) since the caches are physically tagged, the only point
+-	 * of flush_cache_mm for SH-4 is to get rid of aliases from the
+-	 * D-cache.  The assumption elsewhere, e.g. flush_cache_range, is that
+-	 * lines can stay resident so long as the virtual address they were
+-	 * accessed with (hence cache set) is in accord with the physical
+-	 * address (i.e. tag).  It's no different here.  So I reckon we don't
+-	 * need to flush the I-cache, since aliases don't matter for that.  We
+-	 * should try that.
++	 * If cache is only 4k-per-way, there are never any 'aliases'.  Since
++	 * the cache is physically tagged, the data can just be left in there.
++	 */
++	if (current_cpu_data.dcache.n_aliases == 0)
++		return;
++
++	/*
++	 * Don't bother groveling around the dcache for the VMA ranges
++	 * if there are too many PTEs to make it worthwhile.
+ 	 */
+-	flush_cache_all();
++	if (mm->nr_ptes >= MAX_DCACHE_PAGES)
++		flush_dcache_all();
++	else {
++		struct vm_area_struct *vma;
++
++		/*
++		 * In this case there are reasonably sized ranges to flush,
++		 * iterate through the VMA list and take care of any aliases.
++		 */
++		for (vma = mm->mmap; vma; vma = vma->vm_next)
++		        __flush_cache_mm(mm, vma->vm_start, vma->vm_end);
++	}
++
++	/* Only touch the icache if one of the VMAs has VM_EXEC set. */
++	if (mm->exec_vm)
++		flush_icache_all();
++
+ }
+ 
+ /*
+@@ -370,96 +490,31 @@
+ void flush_cache_range(struct vm_area_struct *vma, unsigned long start,
+ 		       unsigned long end)
+ {
+-	unsigned long d = 0, p = start & PAGE_MASK;
+-	unsigned long alias_mask = cpu_data->dcache.alias_mask;
+-	unsigned long n_aliases = cpu_data->dcache.n_aliases;
+-	unsigned long select_bit;
+-	unsigned long all_aliases_mask;
+-	unsigned long addr_offset;
+-	unsigned long phys;
+-	pgd_t *dir;
+-	pmd_t *pmd;
+-	pud_t *pud;
+-	pte_t *pte;
+-	pte_t entry;
+-	int i;
+-
+-	/*
+-	 * If cache is only 4k-per-way, there are never any 'aliases'.  Since
+-	 * the cache is physically tagged, the data can just be left in there.
+-	 */
+-	if (n_aliases == 0)
+-		return;
+-
+-	all_aliases_mask = (1 << n_aliases) - 1;
+-
+-	/*
+-	 * Don't bother with the lookup and alias check if we have a
+-	 * wide range to cover, just blow away the dcache in its
+-	 * entirety instead. -- PFM.
+-	 */
+-	if (((end - start) >> PAGE_SHIFT) >= 64) {
+-		flush_dcache_all();
+-
+-		if (vma->vm_flags & VM_EXEC)
+-			flush_icache_all();
+-
+-		return;
+-	}
+-
+-	dir = pgd_offset(vma->vm_mm, p);
+-	pud = pud_offset(dir, p);
+-	pmd = pmd_offset(pud, p);
+-	end = PAGE_ALIGN(end);
+-
+-	do {
+-		if (pmd_none(*pmd) || pmd_bad(*pmd)) {
+-			p &= ~((1 << PMD_SHIFT) - 1);
+-			p += (1 << PMD_SHIFT);
+-			pmd++;
+-
+-			continue;
+-		}
+-
+-		pte = pte_offset_kernel(pmd, p);
+-
+-		do {
+-			entry = *pte;
+-
+-			if ((pte_val(entry) & _PAGE_PRESENT)) {
+-				phys = pte_val(entry) & PTE_PHYS_MASK;
+-
+-				if ((p ^ phys) & alias_mask) {
+-					d |= 1 << ((p & alias_mask) >> PAGE_SHIFT);
+-					d |= 1 << ((phys & alias_mask) >> PAGE_SHIFT);
+-
+-					if (d == all_aliases_mask)
+-						goto loop_exit;
+-				}
+-			}
+-
+-			pte++;
+-			p += PAGE_SIZE;
+-		} while (p < end && ((unsigned long)pte & ~PAGE_MASK));
+-		pmd++;
+-	} while (p < end);
+-
+-loop_exit:
+-	for (i = 0, select_bit = 0x1, addr_offset = 0x0; i < n_aliases;
+-	     i++, select_bit <<= 1, addr_offset += PAGE_SIZE)
+-		if (d & select_bit) {
+-			(*__flush_dcache_segment_fn)(addr_offset, PAGE_SIZE);
+-			wmb();
+-		}
+-
+-	if (vma->vm_flags & VM_EXEC) {
+-		/*
+-		 * TODO: Is this required???  Need to look at how I-cache
+-		 * coherency is assured when new programs are loaded to see if
+-		 * this matters.
+-		 */
++        /*
++         * If cache is only 4k-per-way, there are never any 'aliases'.  Since
++         * the cache is physically tagged, the data can just be left in there.
++         */
++        if (cpu_data->dcache.n_aliases == 0)
++                return;
++
++        /*
++         * Don't bother with the lookup and alias check if we have a
++         * wide range to cover, just blow away the dcache in its
++         * entirety instead. -- PFM.
++         */
++        if (((end - start) >> PAGE_SHIFT) >= MAX_DCACHE_PAGES)
++                flush_dcache_all();
++        else
++                __flush_cache_mm(vma->vm_mm, start, end);
++
++        if (vma->vm_flags & VM_EXEC) {
++                /*
++                 * TODO: Is this required???  Need to look at how I-cache
++                 * coherency is assured when new programs are loaded to see if
++                 * this matters.
++                 */
+ 		flush_icache_all();
+-	}
++        }
+ }
+ 
+ /*
+Index: linux/arch/sh/mm/pg-sh4.c
+===================================================================
+--- linux.orig/arch/sh/mm/pg-sh4.c	2007-08-30 12:38:04.191285000 +0100
++++ linux/arch/sh/mm/pg-sh4.c	2007-08-30 12:43:12.307516000 +0100
+@@ -19,10 +19,11 @@
+ #include <asm/io.h>
+ #include <asm/uaccess.h>
+ #include <asm/pgalloc.h>
++#include <linux/mutex.h>
+ #include <asm/mmu_context.h>
+ #include <asm/cacheflush.h>
+ 
+-extern struct semaphore p3map_sem[];
++extern struct mutex p3map_mutex[];
+ 
+ #define CACHE_ALIAS (cpu_data->dcache.alias_mask)
+ 
+@@ -53,7 +54,7 @@
+ 		unsigned long flags;
+ 
+ 		entry = pfn_pte(phys_addr >> PAGE_SHIFT, pgprot);
+-		down(&p3map_sem[(address & CACHE_ALIAS)>>12]);
++		mutex_lock(&p3map_mutex[(address & CACHE_ALIAS)>>12]);
+ 		set_pte(pte, entry);
+ 		local_irq_save(flags);
+ 		__flush_tlb_page(get_asid(), p3_addr);
+@@ -61,7 +62,7 @@
+ 		update_mmu_cache(NULL, p3_addr, entry);
+ 		__clear_user_page((void *)p3_addr, to);
+ 		pte_clear(&init_mm, p3_addr, pte);
+-		up(&p3map_sem[(address & CACHE_ALIAS)>>12]);
++		mutex_unlock(&p3map_mutex[(address & CACHE_ALIAS)>>12]);
+ 	}
+ }
+ 
+@@ -94,7 +95,7 @@
+ 		unsigned long flags;
+ 
+ 		entry = pfn_pte(phys_addr >> PAGE_SHIFT, pgprot);
+-		down(&p3map_sem[(address & CACHE_ALIAS)>>12]);
++		mutex_lock(&p3map_mutex[(address & CACHE_ALIAS)>>12]);
+ 		set_pte(pte, entry);
+ 		local_irq_save(flags);
+ 		__flush_tlb_page(get_asid(), p3_addr);
+@@ -102,6 +103,6 @@
+ 		update_mmu_cache(NULL, p3_addr, entry);
+ 		__copy_user_page((void *)p3_addr, from, to);
+ 		pte_clear(&init_mm, p3_addr, pte);
+-		up(&p3map_sem[(address & CACHE_ALIAS)>>12]);
++		mutex_unlock(&p3map_mutex[(address & CACHE_ALIAS)>>12]);
+ 	}
+ }
+Index: linux/include/asm-sh/cpu-sh4/cacheflush.h
+===================================================================
+--- linux.orig/include/asm-sh/cpu-sh4/cacheflush.h	2007-08-30 12:38:04.254286000 +0100
++++ linux/include/asm-sh/cpu-sh4/cacheflush.h	2007-08-30 12:43:12.372518000 +0100
+@@ -28,7 +28,6 @@
+ #define flush_dcache_mmap_unlock(mapping)	do { } while (0)
+ 
+ void flush_icache_range(unsigned long start, unsigned long end);
+-void flush_cache_sigtramp(unsigned long addr);
+ void flush_icache_user_range(struct vm_area_struct *vma, struct page *page,
+ 			     unsigned long addr, int len);
+ 
+Index: linux/arch/sh/kernel/signal.c
+===================================================================
+--- linux.orig/arch/sh/kernel/signal.c	2007-08-30 12:38:04.210285000 +0100
++++ linux/arch/sh/kernel/signal.c	2007-08-30 12:43:12.390516000 +0100
+@@ -424,9 +424,7 @@
+ 		current->comm, current->pid, frame, regs->pc, regs->pr);
+ #endif
+ 
+-	flush_cache_sigtramp(regs->pr);
+-	if ((-regs->pr & (L1_CACHE_BYTES-1)) < sizeof(frame->retcode))
+-		flush_cache_sigtramp(regs->pr + L1_CACHE_BYTES);
++	flush_icache_range(regs->pr, regs->pr + sizeof(frame->retcode));
+ 	return;
+ 
+ give_sigsegv:
+@@ -499,9 +497,7 @@
+ 		current->comm, current->pid, frame, regs->pc, regs->pr);
+ #endif
+ 
+-	flush_cache_sigtramp(regs->pr);
+-	if ((-regs->pr & (L1_CACHE_BYTES-1)) < sizeof(frame->retcode))
+-		flush_cache_sigtramp(regs->pr + L1_CACHE_BYTES);
++	flush_icache_range(regs->pr, regs->pr + sizeof(frame->retcode));
+ 	return;
+ 
+ give_sigsegv:
+Index: linux/arch/sh/kernel/sys_sh.c
+===================================================================
+--- linux.orig/arch/sh/kernel/sys_sh.c	2007-08-30 12:39:33.702640000 +0100
++++ linux/arch/sh/kernel/sys_sh.c	2007-08-30 12:43:12.394516000 +0100
+@@ -303,7 +303,11 @@
+ 			break;
+ 	}
+ 	if (op & CACHEFLUSH_I) {
++#ifdef CONFIG_CPU_SH4
++		flush_icache_range(addr, addr+len);
++#else
+ 		flush_cache_all();
++#endif
+ 	}
+ 
+ #endif

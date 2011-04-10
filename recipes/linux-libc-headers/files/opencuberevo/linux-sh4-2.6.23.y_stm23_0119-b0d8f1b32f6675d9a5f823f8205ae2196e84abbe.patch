@@ -1,0 +1,42 @@
+From b0d8f1b32f6675d9a5f823f8205ae2196e84abbe Mon Sep 17 00:00:00 2001
+From: Angus CLARK <angus.clark@st.com>
+Date: Wed, 13 May 2009 11:41:33 +0100
+Subject: [PATCH] sh_stm: More conservative NAND timings for mb705
+
+Use more conservative NAND timings for mb705.  Previous timings caused IO errors
+on 7105C1.
+
+Signed-off-by: Angus Clark <angus.clark@st.com>
+---
+ arch/sh/boards/st/common/mb705.c |    9 ++++-----
+ 1 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/arch/sh/boards/st/common/mb705.c b/arch/sh/boards/st/common/mb705.c
+index 2988d1e..2d4421f 100644
+--- a/arch/sh/boards/st/common/mb705.c
++++ b/arch/sh/boards/st/common/mb705.c
+@@ -232,17 +232,16 @@ static struct plat_stmnand_data nand_config = {
+ 	.rbn_port		= -1,
+ 	.rbn_pin		= -1,
+ 
+-	/* Timing data for STM_NAND_EMI/FLEX/AFM drivers */
+ 	.timing_data = &(struct nand_timing_data) {
+-		.sig_setup	= 20,		/* times in ns */
+-		.sig_hold	= 10,
++		.sig_setup	= 50,		/* times in ns */
++		.sig_hold	= 50,
+ 		.CE_deassert	= 0,
+ 		.WE_to_RBn	= 100,
+ 		.wr_on		= 10,
+-		.wr_off		= 30,
++		.wr_off		= 40,
+ 		.rd_on		= 10,
+ 		.rd_off		= 40,
+-		.chip_delay	= 40,		/* in us */
++		.chip_delay	= 30,		/* in us */
+ 	},
+ 	.flex_rbn_connected	= 1,
+ };
+-- 
+1.6.0.6
+

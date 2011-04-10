@@ -1,0 +1,4989 @@
+Index: linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/hms1/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+@@ -97,7 +97,6 @@ static int __init hms1_device_init(void)
+ 	stx7100_configure_pwm(&pwm_private_info);
+ 	stx7100_configure_ssc(&ssc_private_info);
+ 	stx7100_configure_usb();
+-	stx7100_configure_alsa();
+ 	stx7100_configure_pata(3, IRL1_IRQ);
+ 
+ 	vpp_pio = stpio_request_pin(2,5, "VPP", STPIO_OUT);
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb411/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb411/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb411/setup.c
+@@ -170,7 +170,6 @@ static int __init device_init(void)
+ 	stx7100_configure_pwm(&pwm_private_info);
+ 	stx7100_configure_ssc(&ssc_private_info);
+ 	stx7100_configure_usb();
+-	stx7100_configure_alsa();
+ 	stx7100_configure_lirc();
+ 	stx7100_configure_ethernet(0, 0, 0);
+ #ifdef CONFIG_PATA_PLATFORM
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb442/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb442/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb442/setup.c
+@@ -153,7 +153,6 @@ static int __init device_init(void)
+ 	stx7100_configure_pwm(&pwm_private_info);
+ 	stx7100_configure_ssc(&ssc_private_info);
+ 	stx7100_configure_usb();
+-	stx7100_configure_alsa();
+ 	stx7100_configure_lirc();
+ 	stx7100_configure_pata(3, IRL1_IRQ);
+ 
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb448/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb448/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb448/setup.c
+@@ -142,7 +142,6 @@ static int __init device_init(void)
+ 	stx7100_configure_sata();
+ 	stx7100_configure_ssc(&ssc_private_info);
+ 	stx7100_configure_usb();
+-	stx7100_configure_alsa();
+ 	stx7100_configure_ethernet(0, 0, 0);
+ 
+ 	vpp_pio = stpio_request_pin(2,7, "VPP", STPIO_OUT);
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -365,247 +365,6 @@ static void fdma_setup(int chip_7109, in
+ #endif
+ }
+ 
+-/* ALSA resources ---------------------------------------------------------- */
+-
+-static struct resource alsa_710x_resource_pcm0[3] = {
+-
+-	[0] = {/* allocatable channels*/
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags 	= IORESOURCE_IRQ
+-	},
+-	[1]= {/*fdma reqline*/
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags = IORESOURCE_IRQ
+-	},
+-	[2] = {/*rising or falling edge I2s clocking
+-		 1 == FALLING_EDGE
+-		 0 == RISING EDGE */
+-		 /*.start = runtime dependant*/
+-		 /*.end = runtime dependant*/
+-		.flags = IORESOURCE_IRQ
+-	}
+-};
+-
+-static struct resource alsa_710x_resource_pcm1[3] = {
+-
+-	[0] = {/* allocatable channels*/
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags 	= IORESOURCE_IRQ,
+-	},
+-	[1]= {/*fdma reqline*/
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags = IORESOURCE_IRQ,
+-	},
+-	[2] = {/*rising or falling edge I2s clocking
+-		 1 == FALLING_EDGE
+-		 0 == RISING EDGE */
+-		 /*.start = runtime dependant*/
+-		 /*.end = runtime dependant*/
+-		.flags = IORESOURCE_IRQ
+-	}
+-};
+-
+-static struct resource alsa_710x_resource_spdif[2] = {
+-
+-	[0] = {/*min allocatable channels*/
+-		.start = 2,
+-		.end   =2,
+-		.flags = IORESOURCE_IRQ
+-	},
+-	[1] = {/*fdma reqline*/
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags = IORESOURCE_IRQ
+-	}
+-};
+-
+-static struct resource alsa_710x_resource_cnv[2] = {
+-
+-	[0] = {/*min allocatable channels*/
+-		.start = 10,
+-		.end   =10,
+-		.flags = IORESOURCE_IRQ,
+-	},
+-	[1] = {/*fdma reqline*/
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags = IORESOURCE_IRQ,
+-	}
+-};
+-
+-static struct resource alsa_710x_resource_pcmin[3] = {
+-
+-	[0] = {/*min allocatable channels*/
+-		.start = 0,
+-		.end   = 0,
+-		.flags = IORESOURCE_IRQ,
+-	},
+-	[1] = {/*fdma reqline*/
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags = IORESOURCE_IRQ,
+-	},
+-	[2] = {/*rising or falling edge I2s clocking
+-		 1 == FALLING_EDGE
+-		 0 == RISING EDGE */
+-		/*.start = runtime dependant*/
+-		/*.end   = runtime dependant*/
+-		.flags = IORESOURCE_IRQ,
+-	}
+-};
+-
+-static struct platform_device alsa_710x_device_pcm0 = {
+-	.name			= "710x_ALSA_PCM0",
+-	.id			= -1,
+-	.num_resources		= ARRAY_SIZE(alsa_710x_resource_pcm0),
+-	.resource		= alsa_710x_resource_pcm0,
+-};
+-
+-static struct platform_device alsa_710x_device_pcm1 = {
+-	.name			= "710x_ALSA_PCM1",
+-	.id			= -1,
+-	.num_resources		= ARRAY_SIZE(alsa_710x_resource_pcm1),
+-	.resource		= alsa_710x_resource_pcm1,
+-};
+-
+-static struct platform_device alsa_710x_device_spdif = {
+-	.name			= "710x_ALSA_SPD",
+-	.id			= -1,
+-	.num_resources		= ARRAY_SIZE(alsa_710x_resource_spdif),
+-	.resource		= alsa_710x_resource_spdif,
+-};
+-
+-static struct platform_device alsa_710x_device_cnv = {
+-	.name			= "710x_ALSA_CNV",
+-	.id			= -1,
+-	.num_resources		= ARRAY_SIZE(alsa_710x_resource_cnv),
+-	.resource		= alsa_710x_resource_cnv,
+-};
+-
+-static struct platform_device alsa_710x_device_pcmin = {
+-	.name			= "710x_ALSA_PCMIN",
+-	.id			= -1,
+-	.num_resources		= ARRAY_SIZE(alsa_710x_resource_pcmin),
+-	.resource		= alsa_710x_resource_pcmin,
+-};
+-
+-static struct platform_device *alsa_devices[] __initdata = {
+-	&alsa_710x_device_pcm0,
+-	&alsa_710x_device_pcm1,
+- 	&alsa_710x_device_spdif,
+-	&alsa_710x_device_cnv,
+-	&alsa_710x_device_pcmin,
+-};
+-
+-void __init stx7100_configure_alsa(void)
+-{
+-	if (chip_7109) {
+-		switch (chip_revision) {
+-		case 1:
+-			alsa_710x_resource_pcm0[2].start =0;
+-			alsa_710x_resource_pcm0[2].end = 0;
+-
+-			alsa_710x_resource_pcm1[2].start =0;
+-			alsa_710x_resource_pcm1[2].end = 0;
+-
+-			alsa_710x_resource_pcmin[2].start = 1;
+-			alsa_710x_resource_pcmin[2].end =   1;
+-			break;
+-		case 2:
+-			alsa_710x_resource_pcm0[2].start =0;
+-			alsa_710x_resource_pcm0[2].end = 0;
+-
+-			alsa_710x_resource_pcm1[2].start =0;
+-			alsa_710x_resource_pcm1[2].end = 0;
+-
+-			alsa_710x_resource_pcmin[2].start = 0;
+-			alsa_710x_resource_pcmin[2].end =   0;
+-			break;
+-		default:
+-			/* 7109 cut >= 3.0 */
+-			alsa_710x_resource_pcm0[2].start =1;
+-			alsa_710x_resource_pcm0[2].end = 1;
+-
+-			alsa_710x_resource_pcm1[2].start =1;
+-			alsa_710x_resource_pcm1[2].end = 1;
+-
+-			alsa_710x_resource_pcmin[2].start = 0;
+-			alsa_710x_resource_pcmin[2].end =   0;
+-			break;
+-		}
+-
+-		alsa_710x_resource_pcm0[0].start = 2;
+-		alsa_710x_resource_pcm0[0].end = 10;
+-
+-		alsa_710x_resource_pcm1[0].start = 2;
+-		alsa_710x_resource_pcm1[0].end 	= 2;
+-
+-		alsa_710x_resource_pcm0[1].start = STB7109_FDMA_REQ_PCM_0;
+-		alsa_710x_resource_pcm0[1].end = STB7109_FDMA_REQ_PCM_0;
+-
+-		alsa_710x_resource_pcm1[1].start = STB7109_FDMA_REQ_PCM_1;
+-		alsa_710x_resource_pcm1[1].end = STB7109_FDMA_REQ_PCM_1;
+-
+-		alsa_710x_resource_spdif[1].start = STB7109_FDMA_REQ_SPDIF;
+-		alsa_710x_resource_spdif[1].end =   STB7109_FDMA_REQ_SPDIF;
+-
+-		alsa_710x_resource_cnv[0].start =2;
+-		alsa_710x_resource_cnv[0].end = 10;
+-		alsa_710x_resource_cnv[1].start = STB7109_FDMA_REQ_PCM_0;
+-		alsa_710x_resource_cnv[1].end = STB7109_FDMA_REQ_PCM_0;
+-
+-		alsa_710x_resource_pcmin[1].start = STB7109_FDMA_REQ_PCM_READ;
+-		alsa_710x_resource_pcmin[1].end =   STB7109_FDMA_REQ_PCM_READ;
+-	} else {
+-		/* 7100 */
+-		if(chip_revision >=3){
+-			alsa_710x_resource_pcm0[0].start = 2;
+-			alsa_710x_resource_pcm0[0].end = 10;
+-			alsa_710x_resource_pcm1[0].start =2;
+-			alsa_710x_resource_pcm1[0].end 	= 2;
+-			alsa_710x_resource_cnv[0].start =2;
+-			alsa_710x_resource_cnv[0].end = 10;
+-		}
+-		else {
+-			alsa_710x_resource_pcm0[0].start = 10;
+-			alsa_710x_resource_pcm0[0].end = 10;
+-			alsa_710x_resource_pcm1[0].start = 10;
+-			alsa_710x_resource_pcm1[0].end 	= 10;
+-			alsa_710x_resource_cnv[0].start =10;
+-			alsa_710x_resource_cnv[0].end = 10;
+-		}
+-		alsa_710x_resource_pcm0[1].start = STB7100_FDMA_REQ_PCM_0;
+-		alsa_710x_resource_pcm0[1].end = STB7100_FDMA_REQ_PCM_0;
+-
+-		alsa_710x_resource_pcm1[1].start = STB7100_FDMA_REQ_PCM_1;
+-		alsa_710x_resource_pcm1[1].end = STB7100_FDMA_REQ_PCM_1;
+-
+-		alsa_710x_resource_spdif[1].start =  STB7100_FDMA_REQ_SPDIF;
+-		alsa_710x_resource_spdif[1].end =  STB7100_FDMA_REQ_SPDIF;
+-
+-		alsa_710x_resource_cnv[1].start = STB7100_FDMA_REQ_PCM_0;
+-		alsa_710x_resource_cnv[1].end = STB7100_FDMA_REQ_PCM_0;
+-
+-		alsa_710x_resource_pcmin[1].start = STB7100_FDMA_REQ_PCM_READ;
+-		alsa_710x_resource_pcmin[1].end =   STB7100_FDMA_REQ_PCM_READ;
+-
+-		alsa_710x_resource_pcm0[2].start =0;
+-		alsa_710x_resource_pcm0[2].end = 0;
+-
+-		alsa_710x_resource_pcm1[2].start =0;
+-		alsa_710x_resource_pcm1[2].end = 0;
+-
+-		alsa_710x_resource_pcmin[2].start = 0;
+-		alsa_710x_resource_pcmin[2].end =   0;
+-	}
+-
+-	platform_add_devices(alsa_devices, ARRAY_SIZE(alsa_devices));
+-}
+-
+ /* SSC resources ----------------------------------------------------------- */
+ 
+ static struct resource ssc_resource[] = {
+Index: linux-2.6.23-stm/sound/core/pcm_lib.c
+===================================================================
+--- linux-2.6.23-stm.orig/sound/core/pcm_lib.c
++++ linux-2.6.23-stm/sound/core/pcm_lib.c
+@@ -127,7 +127,6 @@ void snd_pcm_playback_silence(struct snd
+ 
+ static void xrun(struct snd_pcm_substream *substream)
+ {
+-printk("%s\n", __FUNCTION__);
+ 	snd_pcm_stop(substream, SNDRV_PCM_STATE_XRUN);
+ #ifdef CONFIG_SND_PCM_XRUN_DEBUG
+ 	if (substream->pstr->xrun_debug) {
+Index: linux-2.6.23-stm/sound/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/sound/Kconfig
++++ linux-2.6.23-stm/sound/Kconfig
+@@ -67,8 +67,6 @@ source "sound/mips/Kconfig"
+ 
+ source "sound/sh/Kconfig"
+ 
+-source "sound/stm/Kconfig"
+-
+ # the following will depend on the order of config.
+ # here assuming USB is defined before ALSA
+ source "sound/usb/Kconfig"
+Index: linux-2.6.23-stm/sound/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/sound/Makefile
++++ linux-2.6.23-stm/sound/Makefile
+@@ -5,7 +5,7 @@ obj-$(CONFIG_SOUND) += soundcore.o
+ obj-$(CONFIG_SOUND_PRIME) += sound_firmware.o
+ obj-$(CONFIG_SOUND_PRIME) += oss/
+ obj-$(CONFIG_DMASOUND) += oss/
+-obj-$(CONFIG_SND) += core/ i2c/ drivers/ isa/ pci/ ppc/ arm/ sh/ synth/ usb/ sparc/ parisc/ pcmcia/ mips/ soc/ stm/
++obj-$(CONFIG_SND) += core/ i2c/ drivers/ isa/ pci/ ppc/ arm/ sh/ synth/ usb/ sparc/ parisc/ pcmcia/ mips/ soc/
+ obj-$(CONFIG_SND_AOA) += aoa/
+ 
+ # This one must be compilable even if sound is configured out
+Index: linux-2.6.23-stm/sound/stm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/Kconfig
++++ /dev/null
+@@ -1,41 +0,0 @@
+-# ALSA SH4 drivers
+-
+-menu "ST PCM-ALSA driver"
+-	depends on SND!=n && CPU_SUBTYPE_ST40
+-
+-config SND_STM8000
+-	tristate "STM8000 ALSA driver"
+-	depends on CPU_SUBTYPE_STM8000
+-	select SND_PCM
+-	help
+-	  Say Y here for ALSA support on the STm8000.
+-
+-	  To compile this driver as a module, choose M here: the module
+-	  will be called snd-stm8000.
+-
+-config SND_STB710X
+-	tristate "STB710x ALSA driver"
+-	depends on CPU_SUBTYPE_STB7100
+-	select SND_PCM
+-	select STM_DMA
+-	help
+-	  Say Y here for ALSA support on the STb710x.
+-
+-	  To compile this driver as a module, choose M here: the module
+-	  will be called snd-stb710x.
+-
+-config STB7100_IEC_DEBUG
+-	bool "STB710x ALSA driver IEC debug"
+-	depends on CPU_SUBTYPE_STB7100
+-	select SND_PCM
+-	select STM_DMA
+-	help
+-	  Say Y here for ALSA-IEC debugging on the STb710x.
+-
+-config STB7100_FIFO_DEBUG
+-	bool "STb710x Player FIFO under/overflow checking"
+-	depends on SND_STB710X
+-	select SND_PCM
+-	help
+-	  Say Y here for runtime checking of FIFO status
+-endmenu
+Index: linux-2.6.23-stm/sound/stm/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/Makefile
++++ /dev/null
+@@ -1,10 +0,0 @@
+-
+-snd-stm8000-objs := st_pcm_core.o
+-snd-stb710x-objs := st_pcm_core.o
+-snd-spdif-stb710x-objs :=st_pcm_core.o
+-
+-obj-$(CONFIG_SND_STM8000) += snd-stm8000.o
+-obj-$(CONFIG_SND_STB710X) += snd-stb710x.o
+-
+-
+-
+Index: linux-2.6.23-stm/sound/stm/stb7100_i2s_spdif.c
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/stb7100_i2s_spdif.c
++++ /dev/null
+@@ -1,443 +0,0 @@
+-/*
+- *  STb7100 PCM->SPDIF protocol converter setup
+- *  Copyright (c) 2005 STMicroelectronics Limited
+- *
+- *  *  Authors:  Mark Glaisher <Mark.Glaisher@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-
+-/*
+- * Default HW template for PCM player 0 when used with the I2S->SPDIF
+- * protocol converter.
+- */
+-static struct snd_pcm_hardware stb7100_converter_hw =
+-{
+-	.info =		(SNDRV_PCM_INFO_MMAP           |
+-			 SNDRV_PCM_INFO_INTERLEAVED    |
+-			 SNDRV_PCM_INFO_BLOCK_TRANSFER |
+-			 SNDRV_PCM_INFO_MMAP_VALID     |
+-			 SNDRV_PCM_INFO_PAUSE),
+-
+-	.formats =	(SNDRV_PCM_FMTBIT_S32_LE),
+-
+-	.rates =	(SNDRV_PCM_RATE_32000 |
+-			 SNDRV_PCM_RATE_44100 |
+-			 SNDRV_PCM_RATE_48000),
+-
+-	.rate_min	  = 32000,
+-	.rate_max	  = 48000,
+-	.channels_min	  = 10,
+-	.channels_max	  = 10,
+-	.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
+-	.period_bytes_min = FRAMES_TO_BYTES(1,10),
+-	.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
+-	/*The above 5 parms will be overidden in stb7100_pcm_open once
+-	 * we have loaded the channel configs for this cpu - we still need
+-	 * to provide defaults however*/
+-	.periods_min	  = 1,
+-	.periods_max	  = PCM_MAX_FRAMES
+-};
+-
+-
+-DECLARE_WAIT_QUEUE_HEAD(software_reset_wq);
+-static volatile int software_reset_complete = 0;
+-
+-static void reset_pcm_converter(struct snd_pcm_substream * substream)
+-{
+-	pcm_hw_t * chip = snd_pcm_substream_chip(substream);
+-	u32 reg;
+-
+-	software_reset_complete = 0;
+-	reg = readl(chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-	writel((reg|PR_CFG_CONV_SW_RESET),chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-	wait_event(software_reset_wq, (software_reset_complete != 0));
+-	writel(reg,chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-}
+-
+-static void reset_converter_fifo(struct snd_pcm_substream * substream)
+-{
+-	pcm_hw_t * chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg =readl(chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-	writel((reg & ~PR_CFG_FIFO_ENABLE),chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-	writel(reg |=PR_CFG_FIFO_ENABLE ,chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-}
+-
+-static inline void bit_duplicate(u32 bits, u32 *word1, u32 *word2)
+-{
+-	int i,test_bit;
+-
+-	*word1 = 0;
+-	*word2 = 0;
+-	test_bit = 1;
+-
+-	for(i=0;i<16;i++) {
+-		if(bits & test_bit) {
+-			*word1 |= (1<<(i*2));
+-			*word1 |= (1<<(i*2+1));
+-		}
+-
+-		test_bit <<= 1;
+-	}
+-	/*
+-	 * Note that test bit keeps going!
+-	 */
+-	for(i=0;i<16;i++) {
+-		if(bits & test_bit) {
+-			*word2 |= (1<<(i*2));
+-			*word2 |= (1<<(i*2+1));
+-		}
+-
+-		test_bit <<= 1;
+-	}
+-
+-}
+-
+-
+-static void stb7100_converter_write_channel_status(pcm_hw_t *chip)
+-{
+-	u32 chstatus,word1,word2;
+-
+-	chstatus = chip->current_spdif_control.channel.status[0]        |
+-		   (chip->current_spdif_control.channel.status[1] <<8)  |
+-		   (chip->current_spdif_control.channel.status[2] <<16) |
+-		   (chip->current_spdif_control.channel.status[3] <<24);
+-
+-	bit_duplicate(chstatus, &word1, &word2);
+-
+-	writel(	word1, chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE);
+-
+-	writel(	word2, chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE + 4);
+-
+-	chstatus = chip->current_spdif_control.channel.status[4]        |
+-		   (chip->current_spdif_control.channel.status[5] <<8)  |
+-		   (chip->current_spdif_control.channel.status[6] <<16) |
+-		   (chip->current_spdif_control.channel.status[7] <<24);
+-
+-	bit_duplicate(chstatus, &word1, &word2);
+-
+-	writel(	word1, chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE + 8);
+-	writel(	word2, chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE + 12);
+-
+-	writel(	0, chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE + 16);
+-	writel(	0, chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE + 20);
+-}
+-
+-
+-static irqreturn_t stb7100_converter_interrupt(int irq, void *dev_id)
+-{
+-	unsigned long val;
+-	unsigned long handled= IRQ_NONE;
+-	pcm_hw_t *chip = dev_id;
+-
+-        /* Read and clear interrupt status */
+-	spin_lock(&chip->lock);
+-	val = readl(chip->pcm_converter + AUD_SPDIF_PR_INT_STA);
+-	writel(val,chip->pcm_converter + AUD_SPDIF_PR_INT_CLR);
+-	spin_unlock(&chip->lock);
+-
+-	if(val & PR_SOFT_RESET_INT_ENABLE){
+-		software_reset_complete = 1;
+-		wake_up(&software_reset_wq);
+-		handled = IRQ_HANDLED;
+-	}
+-	if(val & PR_UNDERFLOW_INT){
+-		printk("%s I2S Converter PLayer FIFO Underflow detected\n",__FUNCTION__);
+-		handled = IRQ_HANDLED;
+-	}
+-	if(val & PR_I2S_FIFO_OVERRUN_INT){
+-		printk("%s I2S Converter PLayer FIFO Overflow detected\n",__FUNCTION__);
+-		handled = IRQ_HANDLED;
+-	}
+-	if(val & PR_AUDIO_SAMPLES_FULLY_READ_INT){
+-            /* Inform higher layer that we have completed a period */
+-		snd_pcm_period_elapsed(chip->current_substream);
+-		handled =IRQ_HANDLED;
+-	}
+-	return handled;
+-}
+-
+-static void stb7100_converter_unpause_playback(struct snd_pcm_substream *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	writel((chip->pcmplayer_control|PCMP_ON), chip->pcm_player+STM_PCMP_CONTROL);
+-}
+-
+-static void stb7100_converter_pause_playback(struct snd_pcm_substream *substream)
+-{
+-        pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+-}
+-
+-static void stb7100_converter_stop_playback(struct snd_pcm_substream *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
+-
+-	spin_lock(&chip->lock);
+-
+-	reg = readl(chip->pcm_converter + AUD_SPDIF_PR_CFG) & ~PR_CFG_DEVICE_ENABLE;
+-	writel(reg, chip->pcm_converter + AUD_SPDIF_PR_CFG );
+-
+-	reg = readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
+-	writel((reg|PR_CTRL_OFF), chip->pcm_converter+AUD_SPDIF_PR_SPDIF_CTRL);
+-
+-	reset_converter_fifo(substream);
+-
+-	writel(0         , chip->pcm_converter + AUD_SPDIF_PR_INT_EN);
+-	writel(0xffffffff, chip->pcm_converter + AUD_SPDIF_PR_INT_CLR);
+-
+-	/*
+-	 * Stop PCM Player0 with mute, see the stm7100_pcm.c for an explanation
+-	 */
+-	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+-
+-	spin_unlock(&chip->lock);
+-	dma_stop_channel(chip->fdma_channel);
+-	dma_params_free(&chip->dmap);
+-}
+-
+-
+-static void stb7100_converter_start_playback(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t     *chip = snd_pcm_substream_chip(substream);
+-	unsigned long cfg_reg;
+-	unsigned long ctrl_reg;
+-	int res = 0;
+-	/*
+-	 * We appear to need to reset the PCM player otherwise we end up
+-	 * with channel data sent to the wrong channels when starting up for
+-	 * the second time.
+-	 */
+-	stb7100_reset_pcm_player(chip);
+-
+-	res=dma_xfer_list(chip->fdma_channel,&chip->dmap);
+-	if(res !=0)
+-		printk("%s FDMA_CH %d failed to start %d\n",__FUNCTION__,chip->fdma_channel,res);
+-
+-	cfg_reg = readl(chip->pcm_converter + AUD_SPDIF_PR_CFG) ;
+-	ctrl_reg = readl(chip->pcm_converter +AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
+-
+-	writel(ctrl_reg | PR_CTRL_AUDIO_DATA_MODE,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
+-	writel(cfg_reg  | PR_CFG_DEVICE_ENABLE, chip->pcm_converter + AUD_SPDIF_PR_CFG );
+-
+-	writel((chip->pcmplayer_control | PCMP_ON), chip->pcm_player + STM_PCMP_CONTROL);
+-
+-}
+-
+-static int stb7100_converter_program_player(struct snd_pcm_substream * substream)
+-{
+-	unsigned long cfg_reg = 0;
+-	unsigned long ctl_reg = 0;
+-	unsigned long interrupt_list = (PR_INTERRUPT_ENABLE             |
+-					PR_SOFT_RESET_INT_ENABLE        |
+-					PR_AUDIO_SAMPLES_FULLY_READ_INT);
+-	unsigned long flags=0;
+-
+-	struct snd_pcm_runtime * runtime = substream->runtime;
+-	pcm_hw_t          * chip    = snd_pcm_substream_chip(substream);
+-	int val =0;
+-
+-	if(chip->fifo_check_mode)
+-		interrupt_list |= (PR_I2S_FIFO_OVERRUN_INT | PR_UNDERFLOW_INT);
+-
+-	/*we only ever call from the stm7100_pcm program func,
+-	 * therefore we assume we already own the chip lock*/
+-	spin_lock_irqsave(&chip->lock,flags);
+-	/*
+-	 * Clear then enable the protocol converter interrupts.
+-	 */
+-	writel(0xffffffff,    chip->pcm_converter + AUD_SPDIF_PR_INT_CLR);
+-	writel(interrupt_list,chip->pcm_converter + AUD_SPDIF_PR_INT_EN);
+-
+-	cfg_reg = (PR_CFG_FIFO_ENABLE | PR_CFG_REQ_ACK_ENABLE);
+-
+-	if(runtime->format == SNDRV_PCM_FORMAT_S16_LE)
+-	  cfg_reg |= PR_CFG_WORD_SZ_16BIT;
+-	else
+-	  cfg_reg |= PR_CFG_WORD_SZ_24BIT;
+-
+-	writel(cfg_reg, chip->pcm_converter + AUD_SPDIF_PR_CFG );
+-
+-	/*
+-	 * Setup initial channel status data for the hardware mode and
+-	 * program for the new data burst.
+-	 */
+-	chip->pending_spdif_control = chip->default_spdif_control;
+-	iec60958_set_runtime_status(substream);
+-	chip->iec60958_output_count = 0;
+-
+-	chip->current_spdif_control = chip->pending_spdif_control;
+-	stb7100_converter_write_channel_status(chip);
+-
+-	val = 	chip->current_spdif_control.validity_l[0]        |
+-	 	(chip->current_spdif_control.validity_l[1] <<8)  |
+-	 	(chip->current_spdif_control.validity_l[2] <<16) |
+-	 	(chip->current_spdif_control.validity_l[3] <<24);
+-	/*TODO need a way to set up and expose the channel status/user & validity to the user*/
+-	writel(val,chip->pcm_converter + AUD_SPDIF_PR_VALIDITY);
+-
+-	val = 	chip->current_spdif_control.user[0]        |
+-		(chip->current_spdif_control.user[1] <<8)  |
+-		(chip->current_spdif_control.user[2] <<16) |
+-		(chip->current_spdif_control.user[3] <<24);
+-
+-	writel(val,chip->pcm_converter + AUD_SPDIF_PR_USER_DATA);
+-
+-	/*
+-	 * These following writes refer to the IEC encoded mode - which is part
+-	 * of the converter block but not implemented in the instance of the
+-	 * 7100, so make sure it is all swithced off
+-	 */
+-	writel(0,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PAUSE);
+-	writel(0,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_DATA_BURST);
+-	writel(0,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PA_PB);
+-	writel(0,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PC_PD);
+-	writel(0,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CL1);
+-	writel(0,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CR1);
+-	writel(0,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_SUV);
+-
+-	/*
+-	 * Setup the control register, but don't start it all of just yet.
+-	 */
+-	ctl_reg   = PR_CTRL_SW_STUFFING | PR_CTRL_16BIT_DATA_NOROUND | PR_CTRL_OFF;
+-	ctl_reg  |= SPDIF_FSYNTH_DIVIDE32_128;
+-        ctl_reg  |= ((runtime->period_size * 2) << PR_CTRL_SAMPLES_SHIFT);
+-
+-	writel(ctl_reg, chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
+-	spin_unlock_irqrestore(&chip->lock,flags);
+-	/*this reset will cause us to de-schedule, then well get an IRQ when
+-	 * the reset has completed, so make sure we dont hold any locks by now*/
+-	reset_pcm_converter(substream);
+-	return 0;
+-}
+-
+-
+-static int stb7100_converter_free(pcm_hw_t *card)
+-{
+-	writel(0, card->pcm_converter + AUD_SPDIF_PR_CFG );
+-	writel(0, card->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
+-	writel(PCMP_OFF, card->pcm_player + STM_PCMP_CONTROL);
+-
+-	if(card->fdma_channel)
+-		free_dma(card->fdma_channel);
+-
+-	iounmap(card->pcm_clock_reg);
+-	iounmap(card->out_pipe);
+-	iounmap(card->pcm_player);
+-	iounmap(card->pcm_converter);
+-
+-	if(card->irq > 0)
+-		free_irq(card->irq,(void *)card);
+-
+-	kfree(card);
+-	return 0;
+-}
+-
+-
+-static stm_playback_ops_t stb7100_converter_ops = {
+-	.free_device      = stb7100_converter_free,
+-	.open_device      = stb7100_pcm_open,
+-	.program_hw       = stb7100_pcm_program_hw,
+-	.playback_pointer = stb7100_fdma_playback_pointer,
+-	.start_playback   = stb7100_converter_start_playback,
+-	.stop_playback    = stb7100_converter_stop_playback,
+-	.pause_playback   = stb7100_converter_pause_playback,
+-	.unpause_playback = stb7100_converter_unpause_playback
+-};
+-
+-
+-static int stb7100_create_converter_device(pcm_hw_t *in_chip,struct snd_card **this_card,int dev)
+-{
+-	int err = 0;
+-	int irq = linux_pcm_irq[dev];
+-	pcm_hw_t * chip = in_chip;
+-
+-	*this_card = snd_card_new(index[card_list[dev].major],id[card_list[dev].major], THIS_MODULE, 0);
+-        if (this_card == NULL){
+-      		printk(" cant allocate new card of %d\n",card_list[dev].major);
+-      		return -ENOMEM;
+-        }
+-
+-	chip->fdma_channel =-1;
+-	chip->card_data = &card_list[dev];
+-	spin_lock_init(&chip->lock);
+-
+-        chip->card          = *this_card;
+-	chip->irq           = -1;
+-	chip->pcm_clock_reg = ioremap(AUD_CFG_BASE, 0);
+-	chip->out_pipe      = ioremap(FDMA2_BASE_ADDRESS,0);
+-
+-	strcpy((*this_card)->shortname, "STb7100_CNV");
+-	strcpy((*this_card)->longname,  "STb7100_CNV");
+-	sprintf((*this_card)->driver,   "%d",chip->card_data->major);
+-        /*
+-         * In this case we need the base address of pcm0 for the player +
+-         * the base address of the IEC60958 device for the conversion block
+-         */
+-	chip->pcm_player    = ioremap(pcm_base_addr[0],0);
+-	chip->pcm_converter = ioremap(pcm_base_addr[chip->card_data->major],0);
+-	chip->hw            = stb7100_converter_hw;
+-	chip->oversampling_frequency = 128;
+-
+-	chip->playback_ops  = &stb7100_converter_ops;
+-
+-	if(request_irq(irq, stb7100_converter_interrupt, IRQF_SHARED, "STB7100_CNV",(void*)chip)){
+-               		printk(">>> failed to get IRQ %d\n",irq);
+-	                stb7100_converter_free(chip);
+-        	        return -EBUSY;
+-        }
+-
+-	chip->irq = irq;
+-
+-	iec60958_default_channel_status(chip);
+-
+-	/*
+-	 * For the converter device we rely on the PCM0 clock setup to drive
+-	 * the IEC block.
+-	 */
+-	set_default_device_clock(chip);
+-
+-	stb7100_reset_pcm_player(chip);
+-
+-	if((err = snd_card_pcm_allocate(chip,chip->card_data->minor,(*this_card)->longname)) < 0) {
+-        	printk(" >>> Failed to create PCM-SPDIF converter Stream\n");
+-        	stb7100_converter_free(chip);
+-    	}
+-
+-    	if ((err = snd_iec60958_create_controls(chip)) < 0){
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-	if((err = snd_generic_create_controls(chip)) < 0){
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-
+-	if((err = snd_device_new((*this_card), SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0){
+-        	printk(">>> creating sound device :%d,%d failed\n",chip->card_data->major,chip->card_data->minor);
+-        	stb7100_converter_free(chip);
+-		return err;
+-    	}
+-
+-	if((err = snd_card_register((*this_card))) < 0){
+-        	stb7100_converter_free(chip);
+-		return err;
+-    	}
+-    	return 0;
+-}
+-
+Index: linux-2.6.23-stm/sound/stm/stb7100_pcmin.c
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/stb7100_pcmin.c
++++ /dev/null
+@@ -1,396 +0,0 @@
+-/*
+- *  STb710x Digitial PCM Reader Sound Driver
+- *  Copyright (c)   (c) 2005 STMicroelectronics Limited
+- *
+- *  *  Authors:  Mark Glaisher <Mark.Glaisher@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-#include <linux/device.h>
+-#include <linux/platform_device.h>
+-#include <linux/timer.h>
+-
+-static struct snd_pcm_hardware stb7100_pcmin_hw =
+-{
+-	.info =		(SNDRV_PCM_INFO_MMAP           |
+-			 SNDRV_PCM_INFO_INTERLEAVED    |
+-			 SNDRV_PCM_INFO_BLOCK_TRANSFER |
+-			 SNDRV_PCM_INFO_MMAP_VALID),
+-
+-	.formats =	SNDRV_PCM_FMTBIT_S32_LE,
+-
+-	.rates =	(SNDRV_PCM_RATE_32000 |
+-			 SNDRV_PCM_RATE_44100 |
+-			 SNDRV_PCM_RATE_48000 |
+-			 SNDRV_PCM_RATE_96000 |
+-			 SNDRV_PCM_RATE_192000 ),
+-
+-	.rate_min	  = 32000,
+-	.rate_max	  = 192000,
+-	.channels_min	  = 2,
+-	.channels_max	  = 2,
+-	.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,2),
+-	.period_bytes_min = FRAMES_TO_BYTES(1,2),
+-	.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,2),
+-	.periods_min	  = 1,
+-	.periods_max	  = PCM_MAX_FRAMES
+-};
+-
+-void stb7100_reset_pcmin(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	writel(1,chip->pcm_player);
+-	writel(0,chip->pcm_player);
+-}
+-
+-static u32 get_target_time(struct snd_pcm_substream *substream)
+-{
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	u32 period_samples = bytes_to_samples(runtime,frames_to_bytes(runtime,runtime->period_size))/ runtime->channels;
+-	u32 rate =runtime->rate;
+-	/*TODO :- we may suffer from rounding err for 44.1 case,
+-	 * but the 1ms overhead obviates the discrepency. */
+-	u32 period_data =  (rate / period_samples);
+-	u32 period_time = (PCMIN_MILLIS_PSEC / period_data) + PCMIN_TMR_OVRHD_MILLIS;
+-	return  ( jiffies + ((period_time  * HZ)/ PCMIN_MILLIS_PSEC)) ;
+-}
+-
+-static void stb7100_pcmin_timer_irq(unsigned long handle)
+-{
+-	struct snd_pcm_substream *substream;
+-	pcm_hw_t          *chip;
+-	struct snd_pcm_runtime *runtime;
+-	u32 pos,irqflags;
+-	static u32 last_jiff;
+-
+-	substream =(struct snd_pcm_substream *) handle;
+-	runtime = substream->runtime;
+-	chip     = snd_pcm_substream_chip(substream);
+-
+-	spin_lock_irqsave(&chip->lock,irqflags);
+-	if(chip->pcmin.timer_halt){
+-		chip->pcmin.timer_halt=0;
+-		return;
+-	}
+-
+-	pos = substream->runtime->dma_bytes - get_dma_residue(chip->fdma_channel);
+-	if(pos < chip->pcmin.last_fr)
+-		chip->pcmin.fr_delta = pos  + (snd_pcm_lib_buffer_bytes(substream) - chip->pcmin.last_fr);
+-	else
+-		chip->pcmin.fr_delta  += (pos - chip->pcmin.last_fr);
+-
+-	chip->pcmin.last_fr = pos;
+-
+-	if(chip->pcmin.fr_delta >=  frames_to_bytes(runtime,runtime->period_size)){
+-		snd_pcm_period_elapsed(substream);
+-		chip->pcmin.fr_delta=0;
+-	}
+-	else printk("%s Period Not elapsed\n 	Frame delta Actual %x expected %x\n	Timer delta Actual %ld expected %ld\n",
+-			__FUNCTION__,
+-			chip->pcmin.fr_delta,
+-			frames_to_bytes(runtime,runtime->period_size),
+-			((jiffies - last_jiff) *1000) /HZ,
+-			get_target_time(substream)-jiffies);
+-
+-	/*wait for *about a sample period in time*/
+-	mod_timer(&chip->pcmin.period_timer,get_target_time(substream));
+-	last_jiff = jiffies;
+-	spin_unlock_irqrestore(&chip->lock,irqflags);
+-}
+-
+-static void stb7100_pcmin_stop_read(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long irqflags;
+-
+-
+-	if(chip->fifo_check_mode)
+-		writel(PCMIN_INT_OVF, chip->pcm_player + STM_PCMIN_ITS_EN_CLR);
+-
+-	dma_stop_channel(chip->fdma_channel);
+-	dma_params_free(&chip->dmap);
+-	chip->dma_req = NULL; /* free'd by the above call to dma_params_free() */
+-
+-	spin_lock_irqsave(&chip->lock,irqflags);
+-	writel(AUD_PCMIN_CTRL_OFF_MODE,chip->pcm_player + STM_PCMIN_CTRL);
+-	stb7100_reset_pcmin(substream);
+-	chip->pcmin.timer_halt=1;
+-	spin_unlock_irqrestore(&chip->lock,irqflags);
+-
+-}
+-
+-static void stb7100_pcmin_start_read(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long irqflags=0;
+-	int res = dma_xfer_list(chip->fdma_channel,&chip->dmap);
+-	if(res !=0)
+-		printk("%s FDMA_CH %d failed to start %d\n",__FUNCTION__,chip->fdma_channel,res);
+-
+-	writel(chip->pcmplayer_control | AUD_PCMIN_CTRL_PCM_MODE,chip->pcm_player + STM_PCMIN_CTRL);
+-	stb7100_reset_pcmin(substream);
+-
+-	if(chip->fifo_check_mode)
+-		writel(PCMIN_INT_OVF | PCMIN_INT_VSYNC	,chip->pcm_player + STM_PCMIN_ITS_EN);
+-
+-	spin_lock_irqsave(&chip->lock,irqflags);
+-
+-	chip->pcmin.fr_delta =0;
+-	chip->pcmin.last_fr =0;
+-	chip->pcmin.period_timer.data = (u32)substream;
+-	chip->pcmin.period_timer.function = &stb7100_pcmin_timer_irq;
+-	mod_timer(&(chip->pcmin.period_timer),get_target_time(substream));
+-	chip->pcmin.timer_halt=0;
+-	spin_unlock_irqrestore(&chip->lock,irqflags);
+-}
+-
+-
+-
+-static irqreturn_t stb7100_pcmin_interrupt(int irq, void *dev_id)
+-{
+-	unsigned long val;
+-	pcm_hw_t *stb7100 = dev_id;
+-	irqreturn_t res =IRQ_NONE;
+-
+-	/* Read and clear interrupt status */
+-	spin_lock(&stb7100->lock);
+-	val =  readl(stb7100->pcm_player + STM_PCMIN_ITS);
+-	writel(val,stb7100->pcm_player + STM_PCMIN_ITS_CLR);
+-	spin_unlock(&stb7100->lock);
+-
+-	if(unlikely(val & PCMIN_INT_OVF) == PCMIN_INT_OVF){
+-		printk("%s PCM Reader FIFO Overflow detected\n",__FUNCTION__);
+-		res=IRQ_HANDLED;
+-	}
+-	return res;
+-}
+-
+-static struct stm_dma_req_config pcmin_req_config = {
+-	.rw		= REQ_CONFIG_READ,
+-	.opcode		= REQ_CONFIG_OPCODE_4,
+-	.count		= 1,
+-	.increment	= 0,
+-	.hold_off	= 0,
+-	.initiator	= 0, /* This was 1 for 7100, do we need to fix? */
+-};
+-
+-static int stb7100_pcmin_program_fdma(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t          *chip    = snd_pcm_substream_chip(substream);
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	unsigned long irqflags=0;
+-	int err=0;
+-
+-	if(!chip->out_pipe || ! chip->pcm_player)
+-		return -EINVAL;
+-
+-	spin_lock_irqsave(&chip->lock,irqflags);
+-
+-	if (chip->dma_req == NULL) {
+-		chip->dma_req = dma_req_config(chip->fdma_channel, chip->fdma_req, &pcmin_req_config);
+-		if (chip->dma_req == NULL) {
+-			spin_unlock_irqrestore(&chip->lock,irqflags);
+-			return -EBUSY;
+-		}
+-	}
+-
+-	dma_params_init(&chip->dmap,
+-			MODE_PACED,
+-			STM_DMA_LIST_CIRC);
+-
+-	dma_params_DIM_0_x_1(&chip->dmap);
+-
+-	dma_params_req(&chip->dmap, chip->dma_req);
+-
+-	dma_params_addrs(&chip->dmap,
+-			virt_to_phys(chip->pcm_player+STM_PCMP_DATA_FIFO),
+-			runtime->dma_addr,
+-			snd_pcm_lib_buffer_bytes(substream));
+-
+-	dma_compile_list(chip->fdma_channel, &chip->dmap, GFP_ATOMIC);
+-	spin_unlock_irqrestore(&chip->lock,irqflags);
+-	return err;
+-}
+-
+-static int stb7100_program_pcmin(struct snd_pcm_substream *substream)
+-{
+-
+-	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	unsigned long ctrlreg, fmtreg;
+-
+-	/*The real SLCK format is to set data stable on falling edge*/
+-	fmtreg= AUD_PCMIN_FMT_ORDER_MSB | AUD_PCMIN_FMT_ALIGN_LR |
+-		AUD_PCMIN_FMT_PADDING_ON |  AUD_PCMIN_FMT_SLCK_EDGE_RISING |
+-		AUD_PCMIN_FMT_LR_POLARITY_HIGH | AUD_PCMIN_FMT_DATA_SZ_24 |
+-		AUD_PCMIN_FMT_NBIT_32 ;
+-
+-	ctrlreg =  (runtime->period_size * runtime->channels) << AUD_PCMIN_CTRL_SAMPLES_SHIFT;
+-	ctrlreg = AUD_PCMIN_CTRL_DATA_ROUND | AUD_PCMIN_CTRL_MEM_FMT_16_0;
+-	writel(fmtreg,chip->pcm_player + STM_PCMIN_FMT	);
+-	chip->pcmplayer_control = ctrlreg;
+-	return 0;
+-}
+-
+-static int stb7100_pcmin_program_hw(struct snd_pcm_substream *substream)
+-{
+-	int err=0;
+-	if((err = stb7100_program_pcmin(substream)) < 0)
+-		return err;
+-
+-	if((err = stb7100_pcmin_program_fdma(substream)) < 0)
+-		return err;
+-	return 0;
+-}
+-
+-static int stb7100_pcmin_open(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+-	int err=0;
+-	const char * dmac_id =STM_DMAC_ID;
+-	const char * lb_cap_channel = STM_DMA_CAP_LOW_BW;
+-	const char * hb_cap_channel = STM_DMA_CAP_HIGH_BW;
+-
+-	if(chip->fdma_channel <0){
+-		err=request_dma_bycap(&dmac_id,&hb_cap_channel,"STB710x_PCMIN_DMA");
+-		if(err <0){
+-			err=request_dma_bycap(&dmac_id,&lb_cap_channel,	"STB710x_PCMIN_DMA");
+-			if(err <0){
+-				printk(" %s error in DMA request %d\n",__FUNCTION__,err);
+-				return err;
+-			}
+-		}
+-		chip->fdma_channel= err;
+-		init_timer(&chip->pcmin.period_timer);
+-		chip->pcmin.period_timer.data = (u32)substream;
+-		chip->pcmin.period_timer.function = &stb7100_pcmin_timer_irq;
+-		add_timer(&chip->pcmin.period_timer);
+-	}
+-	return 0;
+-}
+-
+-static int stb7100_pcmin_free(pcm_hw_t *card)
+-{
+-	del_timer(&card->pcmin.period_timer);
+-	stb7100_pcm_free(card);
+-	return 0;
+-}
+-
+-
+-static stm_playback_ops_t stb7100_pcmin_ops = {
+-	.free_device      = stb7100_pcmin_free,
+-	.open_device      = stb7100_pcmin_open,
+-	.program_hw       = stb7100_pcmin_program_hw,
+-
+-	.playback_pointer = stb7100_fdma_playback_pointer,
+-	.start_playback   = stb7100_pcmin_start_read,
+-	.stop_playback    = stb7100_pcmin_stop_read,
+-};
+-
+-static struct platform_device *pcmin_platform_device;
+-
+-static int __init stb710x_alsa_pcmin_probe(struct device *dev)
+-{
+-	pcmin_platform_device = to_platform_device(dev);
+-	return 0;
+-}
+-
+-static struct device_driver alsa_pcmin_driver = {
+-	.name  = "710x_ALSA_PCMIN",
+-	.owner = THIS_MODULE,
+-	.bus   = &platform_bus_type,
+-	.probe = stb710x_alsa_pcmin_probe,
+-};
+-
+-static struct device alsa_pcmin_device = {
+-	.bus_id="alsa_710x_pcmin",
+-	.driver = &alsa_pcmin_driver,
+-	.parent   = &platform_bus ,
+-	.bus      = &platform_bus_type,
+-};
+-
+-
+-static int __init snd_pcmin_stb710x_probe(pcm_hw_t *in_chip,struct snd_card *card,int dev)
+-{
+-	unsigned err=0;
+-	pcm_hw_t * chip={0};
+-
+-	static struct snd_device_ops ops = {
+-    		.dev_free = snd_pcm_dev_free,
+-	};
+-	if(driver_register(&alsa_pcmin_driver)==0){
+-		if(device_register(&alsa_pcmin_device)!=0)
+-			return -ENOSYS;
+-	}
+-	else return -ENOSYS;
+-
+-	if((chip = kcalloc(1,sizeof(pcm_hw_t), GFP_KERNEL)) == NULL)
+-        	return -ENOMEM;
+-
+-	spin_lock_init(&chip->lock);
+-	chip->irq 		= -1;
+-	chip->fdma_channel 	= -1;
+-
+-	chip->card         	= card;
+-	chip->card_data = &card_list[dev];
+-
+-	chip->hw           = stb7100_pcmin_hw;
+-	chip->playback_ops  = &stb7100_pcmin_ops;
+-
+-	chip->oversampling_frequency = 256;
+-	chip->pcm_clock_reg = ioremap(AUD_CFG_BASE, 0);
+-	chip->out_pipe      = ioremap(FDMA2_BASE_ADDRESS, 0);
+-	chip->pcm_player    = ioremap(PCMIN_BASE,0);
+-
+-	if(request_irq(	LINUX_PCMREADER_ALLREAD_IRQ,
+-			stb7100_pcmin_interrupt,
+-			IRQF_SHARED,
+-			"STB7100_PCMIN",
+-			(void*)chip)){
+-
+-               	printk(">>> failed to get IRQ %d\n",LINUX_PCMREADER_ALLREAD_IRQ);
+-	        stb7100_pcm_free(chip);
+-        	return -EBUSY;
+-        }
+-	else chip->irq = LINUX_PCMREADER_ALLREAD_IRQ;
+-
+-	if((err = snd_card_pcm_allocate(chip,chip->card_data->minor,card->longname)) < 0){
+-        	printk(">>> Failed to create PCM stream \n");
+-	        stb7100_pcm_free(chip);
+-	}
+-
+-	if((err = snd_device_new(card, SNDRV_DEV_LOWLEVEL,chip, &ops)) < 0){
+-		printk(">>> creating sound device :%d,%d failed\n",
+-			chip->card_data->major,chip->card_data->minor);
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-
+-	if ((err = snd_card_register(card)) < 0) {
+-		printk("%s snd_card_registration() failed !\n",__FUNCTION__);
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-	if(register_platform_driver(	pcmin_platform_device,
+-					chip,
+-					card_list[PCMIN_DEVICE].major)!=0){
+-
+-		printk("%s Error Registering PCM Reader\n",__FUNCTION__);
+-		return -ENODEV;
+-	}
+-	in_chip = chip;
+-	return 0;
+-}
+Index: linux-2.6.23-stm/sound/stm/stb7100_snd.h
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/stb7100_snd.h
++++ /dev/null
+@@ -1,375 +0,0 @@
+-/*
+- *  STb7100 ALSA Sound Driver
+- *  Copyright (c) 2005 STMicroelectronics Limited
+- *
+- *  *  Authors:  Mark Glaisher <Mark.Glaisher@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-#ifndef STB7100_SND_H_
+-#define STB7100_SND_H_
+-
+-#define FDMA2_BASE_ADDRESS			0x19220000
+-#define AUD_CFG_BASE				0x19210000
+-#define SPDIF_BASE				0x18103000
+-#define PCMP0_BASE				0x18101000
+-#define PCMP1_BASE				0x18101800
+-#define PCM0_CONVERTER_BASE     		0x18103800
+-#define PCMIN_BASE				0x18102000
+-
+-#define FDMA2_BASE_ADDRESS			0x19220000
+-#define AUD_CFG_BASE				0x19210000
+-
+-#define LINUX_PCMPLAYER0_ALLREAD_IRQ		144
+-#define LINUX_PCMPLAYER1_ALLREAD_IRQ		145
+-#define LINUX_SPDIFPLAYER_ALLREAD_IRQ		147
+-#define LINUX_SPDIFCONVERTER_ALLREAD_IRQ	142
+-#define	LINUX_PCMREADER_ALLREAD_IRQ		146
+-
+-/*
+- * Thankfully the block register offsets for PCM0/1 & spdif
+- * are the same, only with a differing base address.
+- *
+- * Alas this is not the case for the Fsynth's, so we must specify those seperately
+- */
+-#define STM_PCMP_DATA_FIFO			0x04
+-#define STM_PCMP_IRQ_STATUS			0x08
+-#define STM_PCMP_IRQ_ENABLE			0x10
+-#define STM_PCMP_ITS_CLR 			0x0C
+-#define STM_PCMP_IRQ_EN_SET			0x14
+-#define STM_PCMP_IRQ_EN_CLR			0x18
+-#define STM_PCMP_CONTROL        		0x1C
+-#define STM_PCMP_STATUS         		0x20
+-#define STM_PCMP_FORMAT         		0x24
+-
+-/*
+- * The STb7100 PCM Player has an interrupt status, which inconveniently doesn't
+- * have the bits laid out in the same position as the PCM Player Status register.
+- */
+-#define PCMP_INT_STATUS_ALLREAD			(1<<1)
+-#define PCMP_INT_STATUS_UNDERFLOW		(1<<0)
+-
+-
+-#define AUD_FSYN0_MD				0x10
+-#define AUD_FSYN0_PE 				0x14
+-#define AUD_FSYN0_SDIV				0x18
+-#define AUD_FSYN0_PROG_EN      			0x1c
+-
+-#define AUD_FSYN1_MD				0x20
+-#define AUD_FSYN1_PE				0x24
+-#define AUD_FSYN1_SDIV				0x28
+-#define AUD_FSYN1_PROG_EN			0x2c
+-
+-#define AUD_FSYN2_MD				0x30
+-#define AUD_FSYN2_PE 				0x34
+-#define AUD_FSYN2_SDIV				0x38
+-#define AUD_FSYN2_PROG_EN			0x3c
+-
+-
+-/*spdif control reg operators*/
+-
+-#define SPDIF_OFF				0x00
+-#define SPDIF_MUTE_NULL_DATA			0x01
+-#define SPDIF_MUTE_BURST			0x02
+-#define SPDIF_PCM_ON				0x03
+-#define SPDIF_ENCODED_ON			0x04
+-#define SPDIF_IDLE 				(1L<<3)
+-#define SPDIF_BIT16_DATA_ROUND 			(1L<<4)
+-#define SPDIF_BIT16_DATA_NOROUND 		(0L<<4)
+-#define SPDIF_FSYNTH_DIVIDE32_1			(0L<<5)
+-#define SPDIF_FSYNTH_DIVIDE32_128		(1L<<5)
+-#define SPDIF_FSYNTH_DIVIDE32_192		(6L<<5)
+-#define SPDIF_FSYNTH_DIVIDE32_256		(2L<<5)
+-#define SPDIF_FSYNTH_DIVIDE32_384		(3L<<5)
+-#define SPDIF_FSYNTH_DIVIDE32_512		(4L<<5)
+-#define SPDIF_FSYNTH_DIVIDE32_784		(6L<<5)
+-#define SPDIF_BYTE_SWAP 			(1L<<13)
+-#define SPDIF_HW_STUFFING 			(1L<<14)
+-#define SPDIF_SW_STUFFING 			(0L<<14)
+-#define SPDIF_SAMPLES_SHIFT			15
+-
+-
+-#define AUD_SPDIF_STA 				0x20
+-#define AUD_SPDIF_PA_PB 			0x24
+-#define AUD_SPDIF_PC_PD 			0x28
+-#define AUD_SPDIF_CL1   			0x2c/*left subframe status 31-0*/
+-#define AUD_SPDIF_CR1   			0x30 /*right subframe status 31-0*/
+-#define AUD_SPDIF_CL2_CR2_UV 			0x34
+-#define AUD_SPDIF_PAU_LAT 			0x38
+-#define AUD_SPDIF_FRA_LEN_BST 			0x3c
+-
+-
+-/*spdif int generation vals*/
+-#define ENABLE_INT_UNDERFLOW 			(1L<<0)
+-#define ENABLE_INT_EODBURST 			(1L<<1)
+-#define ENABLE_INT_EOBLOCK 			(1L<<2)
+-#define ENABLE_INT_EOLATENCY 			(1L<<3)
+-#define ENABLE_INT_EOPD				(1L<<4)
+-#define ENABLE_INT_NSAMPLE 			(1L<<5)
+-
+-#define SPDIF_INT_STATUS_UNF			(1L<<0)
+-#define SPDIF_INT_STATUS_EODBURST  		(1L<<1)
+-#define SPDIF_INT_STATUS_EOBLOCK 		(1L<<2)
+-#define SPDIF_INT_STATUS_EOLATENCY 		(1L<<3)
+-#define SPDIF_INT_STATUS_EOPD	 		(1L<<4)
+-#define SPDIF_INT_STATUS_ALLREAD 		(1L<<5)
+-
+-
+-#define MPEG_DECODE_LAT_48KHZ 21 /*really 20.9 ms*/
+-#define MPEG_DECODE_LAT_441KHZ 23 /*really 22.75 ms*/
+-#define MPEG_DECODE_LAT_32KHZ 31 /*really 30.35 ms*/
+-
+-#define TIME_TO_FRAMES(freq,time)((time * freq) /1000)
+-
+-#define  IEC61937_PA  		 0xF872
+-#define  IEC61937_PB  		 0x4E1F
+-#define  IEC61937_DTS_TYPE_1	 11
+-#define  IEC61937_DTS_TYPE_2	 12
+-#define  IEC61937_DTS_TYPE_3	 13
+-#define  IEC61937_AC3_STREAM     0x1
+-
+-#define DUMP_CONVERTER_STATE(chip) (\
+-	printk("%s\n\
+-	AUD_SPDIF_PR_CFG %x\n\
+-	AUD_SPDIF_PR_STAT %x\n\
+-	AUD_SPDIF_PR_INT_EN %x\n\
+-	AUD_SPDIF_PR_INT_STA %x\n\
+-	AUD_SPDIF_PR_INT_CLR %x\n\
+-	AUD_SPDIF_PR_VALIDITY %x\n\
+-	AUD_SPDIF_PR_USER_DATA %x\n\
+-	AUD_SPDIF_PR_CHANNEL_STA_BASE %x\n\
+-	AUD_SPDIF_PR_SPDIF_CTRL	%x\n\
+-	AUD_SPDIF_PR_SPDIF_STA	%x\n\
+-	AUD_SPDIF_PR_SPDIF_PAUSE %x\n\
+-	AUD_SPDIF_PR_SPDIF_DATA_BURST %x\n\
+-	AUD_SPDIF_PR_SPDIF_PA_PB %x\n\
+-	AUD_SPDIF_PR_SPDIF_PC_PD %x\n\
+-	AUD_SPDIF_PR_SPDIF_CL1	%x\n\
+-	AUD_SPDIF_PR_SPDIF_CR1	%x\n\
+-	AUD_SPDIF_PR_SPDIF_SUV	%x\n",\
+-	__FUNCTION__,\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_CFG),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_STAT ),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_INT_EN),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_INT_STA),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_INT_CLR),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_VALIDITY ),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_USER_DATA),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_CHANNEL_STA_BASE),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_STA),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PAUSE),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_DATA_BURST),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PA_PB),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_PC_PD),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CL1),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CR1	),\
+-	(int)readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_SUV)));
+-
+-#define DUMP_SPDIF_STATE()(\
+-	printk("%s\n\
+-	AUD_SPDIF_RST  %x\n\
+-	AUD_SPDIF_DATA %x\n\
+-	AUD_SPDIF_ITS  %x\n\
+-	AUD_SPDIF_ITS_CLR %x\n\
+-	AUD_SPDIF_ITS_EN %x\n\
+-	AUD_SPDIF_ITS_EN_SET %x\n\
+-	AUD_SPDIF_ITS_EN_CLR %x\n\
+-	AUD_SPDIF_CTL %x\n\
+-	AUD_SPDIF_STA %x\n\
+-	AUD_SPDIF_PA_PB %x\n\
+-	AUD_SPDIF_PC_PD %x\n \
+-	AUD_SPDIF_CL1 %x\n\
+-	AUD_SPDIF_CR1 %x\n\
+-	AUD_SPDIF_CL2CR2UV %x\n\
+-	AUD_SPDIF_FRA_LEN_BST %x\n\
+-	AUD_SPDIF_PAU_LAT %x \n",\
+-		__FUNCTION__,\
+-		(int)readl(chip->pcm_player+0x00),\
+-		(int)readl(chip->pcm_player+STM_PCMP_DATA_FIFO),\
+-		(int)readl(chip->pcm_player+STM_PCMP_IRQ_STATUS),\
+-		(int)readl(chip->pcm_player+STM_PCMP_ITS_CLR ),\
+-		(int)readl(chip->pcm_player+STM_PCMP_IRQ_ENABLE),\
+-		(int)readl(chip->pcm_player+STM_PCMP_IRQ_EN_SET),\
+-		(int)readl(chip->pcm_player+STM_PCMP_IRQ_EN_CLR),\
+-		(int)readl(chip->pcm_player+STM_PCMP_CONTROL),\
+-		(int)readl(chip->pcm_player+STM_PCMP_STATUS ),\
+-		(int)readl(chip->pcm_player+AUD_SPDIF_PA_PB),\
+-		(int)readl(chip->pcm_player+AUD_SPDIF_PC_PD),\
+-		(int)readl(chip->pcm_player+AUD_SPDIF_CL1),\
+-		(int)readl(chip->pcm_player+AUD_SPDIF_CR1),\
+-		(int)readl(chip->pcm_player+AUD_SPDIF_CL2_CR2_UV),\
+-		(int)readl(chip->pcm_player+AUD_SPDIF_FRA_LEN_BST),\
+-		(int)readl(chip->pcm_player+AUD_SPDIF_PAU_LAT)))
+-
+-#define DUMP_PCM_STATE(chip)(\
+-	printk("%s\n\
+-	STM_PCMP_RST %x\n\
+-	STM_PCMP_DATA_FIFO %x\n\
+-	STM_PCMP_IRQ_STATUS %x\n\
+-	STM_PCMP_IRQ_ENABLE %x\n\
+-	STM_PCMP_ITS_CLR  %x\n\
+-	STM_PCMP_IRQ_EN_SET %x\n\
+-	STM_PCMP_IRQ_EN_CLR %x\n\
+-	STM_PCMP_CONTROL %x\n\
+-	STM_PCMP_STATUS  %x\n\
+-	STM_PCMP_FORMAT %x\n",\
+-	__FUNCTION__,\
+-	(int)readl(chip->pcm_player+0x00),\
+-	(int)readl(chip->pcm_player+STM_PCMP_DATA_FIFO),\
+-	(int)readl(chip->pcm_player+STM_PCMP_IRQ_STATUS),\
+-	(int)readl(chip->pcm_player+STM_PCMP_IRQ_ENABLE),\
+-	(int)readl(chip->pcm_player+STM_PCMP_ITS_CLR ),\
+-	(int)readl(chip->pcm_player+STM_PCMP_IRQ_EN_SET),\
+-	(int)readl(chip->pcm_player+STM_PCMP_IRQ_EN_CLR),\
+-	(int)readl(chip->pcm_player+STM_PCMP_CONTROL),\
+-	(int)readl(chip->pcm_player+STM_PCMP_STATUS ),\
+-	(int)readl(chip->pcm_player+STM_PCMP_FORMAT )));
+-
+-#define DUMP_PCMIN(chip)( \
+-	printk("%s\n %x PCMIN_ITS %x\n %x PCMIN_IT_EN %x\n %x PCMIN_CTRL %x\n %x \
+-PCMIN_STA %x\n %x PCMIN_FMT %x\n %x AUD_IO_CTL %x\n %x IRQ_VECT_NR %x\n\n", \
+-	__FUNCTION__, \
+-	(int)chip->pcm_player + STM_PCMIN_ITS, \
+-	(int)readl(chip->pcm_player + STM_PCMIN_ITS), \
+-	(int)chip->pcm_player + STM_PCMIN_ITS_EN, \
+-	(int)readl(chip->pcm_player + STM_PCMIN_ITS_EN), \
+-	(int)chip->pcm_player + STM_PCMIN_CTRL, \
+-	(int)readl(chip->pcm_player + STM_PCMIN_CTRL), \
+-	(int)chip->pcm_player + STM_PCMIN_STA, \
+-	(int)readl(chip->pcm_player + STM_PCMIN_STA), \
+-	(int)chip->pcm_player + STM_PCMIN_FMT, \
+-	(int)readl(chip->pcm_player + STM_PCMIN_FMT), \
+-	(int)chip->pcm_clock_reg + AUD_IO_CTL_REG, \
+-	(int)readl(chip->pcm_clock_reg + AUD_IO_CTL_REG), \
+-	(int) ((chip->irq * 0x20) +0x200) ));
+-/*
+- * I2S to SPDIF Protocol converter defines
+- */
+-#define AUD_SPDIF_PR_CFG			0x00
+-#define AUD_SPDIF_PR_STAT			0x04
+-#define AUD_SPDIF_PR_INT_EN			0x08
+-#define AUD_SPDIF_PR_INT_STA			0x0c
+-#define AUD_SPDIF_PR_INT_CLR			0x10
+-#define AUD_SPDIF_PR_VALIDITY			0x100
+-#define AUD_SPDIF_PR_USER_DATA			0x104
+-#define AUD_SPDIF_PR_CHANNEL_STA_BASE		0x108
+-#define AUD_SPDIF_PR_SPDIF_CTRL			0x200
+-#define AUD_SPDIF_PR_SPDIF_STA			0x204
+-#define AUD_SPDIF_PR_SPDIF_PAUSE		0x208
+-#define AUD_SPDIF_PR_SPDIF_DATA_BURST		0x20c
+-#define AUD_SPDIF_PR_SPDIF_PA_PB		0x210
+-#define AUD_SPDIF_PR_SPDIF_PC_PD		0x214
+-#define AUD_SPDIF_PR_SPDIF_CL1			0x218
+-#define AUD_SPDIF_PR_SPDIF_CR1			0x21c
+-#define AUD_SPDIF_PR_SPDIF_SUV			0x220
+-
+-#define PR_CFG_DEVICE_ENABLE			(1L<<0)
+-#define PR_CFG_CONV_SW_RESET			(1L<<1)
+-#define PR_CFG_FIFO_ENABLE			(1L<<2)
+-#define PR_CFG_WORD_SZ_16BIT			(0L<<3)
+-#define PR_CFG_WORD_SZ_20BIT			(1L<<3)
+-#define PR_CFG_WORD_SZ_24BIT			(2L<<3)
+-#define PR_CFG_REQ_ACK_ENABLE			(1L<<5)
+-
+-
+-#define PR_PD_PAUSE_BURST_INT			(1L<<31)
+-#define PR_AUDIO_SAMPLES_FULLY_READ_INT		(1L<<22)
+-#define PR_PD_DATA_BURST_INT			(1L<<21)
+-#define PR_LATENCY_INT				(1L<<20)
+-#define PR_EOBLOCK_INT				(1L<<19)
+-#define PR_EODATABURST_INT			(1L<<18)
+-#define PR_UNDERFLOW_INT			(1L<<17)
+-#define PR_RUN_STOP_INT				(1L<<16)
+-#define PR_I2S_FIFO_OVERRUN_INT			(1L<<8)
+-#define PR_CHLL_STS_UNDERRUN_INT		(1L<<7)
+-#define PR_CHLL_STS_EMPTY_INT			(1L<<6)
+-#define PR_USER_DATA_UNDERRUN_INT		(1L<<5)
+-#define PR_USER_DATA_EMPTY_INT			(1L<<4)
+-#define PR_VALIDITY_UNDERRUN_INT		(1L<<3)
+-#define PR_VALIDITY_EMPTY_INT			(1L<<2)
+-#define PR_SOFT_RESET_INT_ENABLE		(1L<<1)
+-#define PR_INTERRUPT_ENABLE			(1L<<0)
+-
+-
+-#define PR_CTRL_OFF				0
+-#define PR_CTRL_MUTE_PCM_NULL_DATA		1
+-#define PR_CTRL_MUTE_PAUSE_BURST		2
+-#define PR_CTRL_AUDIO_DATA_MODE			3
+-#define PR_CTRL_16BIT_DATA_NOROUND		0
+-#define PR_CTRL_16BIT_DATA_ROUND		(1L<<4)
+-#define PR_CTRL_SW_STUFFING			0
+-#define PR_CTRL_HW_STUFFING			(1L<<14)
+-#define PR_CTRL_SAMPLES_SHIFT			15
+-
+-
+-#define STM_PCMIN_HRST				0x00
+-#define STM_PCMIN_DATA				0x04
+-#define STM_PCMIN_ITS				0x08
+-#define STM_PCMIN_ITS_CLR			0x0c
+-#define STM_PCMIN_ITS_EN			0x10
+-#define STM_PCMIN_ITS_EN_SET			0x14
+-#define STM_PCMIN_ITS_EN_CLR			0x18
+-#define STM_PCMIN_CTRL				0x1c
+-#define STM_PCMIN_STA				0x20
+-#define STM_PCMIN_FMT				0x24
+-
+-
+-#define PCMIN_INT_OVF				(1<<0)
+-#define PCMIN_INT_VSYNC				(1<<1)
+-
+-#define AUD_PCMIN_CTRL_SAMPLES_SHIFT		(1<<4)
+-#define AUD_PCMIN_CTRL_MEM_FMT_16_16		(1<<2)
+-#define AUD_PCMIN_CTRL_MEM_FMT_16_0		(0<<2)
+-#define AUD_PCMIN_CTRL_NO_ROUND			(0<<3)
+-#define AUD_PCMIN_CTRL_DATA_ROUND		(1<<3)
+-#define AUD_PCMIN_CTRL_PCM_MODE			0x02
+-#define AUD_PCMIN_CTRL_CD_MODE			0x00
+-#define AUD_PCMIN_CTRL_OFF_MODE			0x03
+-
+-#define AUD_PCMIN_FMT_ORDER_MSB			(1<<7)
+-#define AUD_PCMIN_FMT_ORDER_LSB			(0<<7)
+-#define AUD_PCMIN_FMT_ALIGN_RL			(0<<6)
+-#define AUD_PCMIN_FMT_ALIGN_LR			(1<<6)
+-#define AUD_PCMIN_FMT_PADDING_ON		(0<<5)
+-#define AUD_PCMIN_FMT_PADDING_OFF		(1<<5)
+-#define AUD_PCMIN_FMT_SLCK_EDGE_RISING		(0<<4)
+-#define AUD_PCMIN_FMT_SLCK_EDGE_FALLING		(1<<4)
+-#define AUD_PCMIN_FMT_LR_POLARITY_HIGH		(1<<3)
+-#define AUD_PCMIN_FMT_LR_POLARITY_LOW		(0<<3)
+-#define AUD_PCMIN_FMT_DATA_SZ_24		(0<<1)
+-#define AUD_PCMIN_FMT_DATA_SZ_18		(2<<1)
+-#define AUD_PCMIN_FMT_DATA_SZ_20		(1<<1)
+-#define AUD_PCMIN_FMT_DATA_SZ_16		(3<<1)
+-#define AUD_PCMIN_FMT_NBIT_32			(0<<0)
+-#define AUD_PCMIN_FMT_NBIT_16			(1<<0)
+-
+-#define AUD_PCMIN_STA_ALLREAD			1<<19
+-#define AUD_PCMIN_STA_SAMPLES_MASK		0x1FFFC
+-#define AUD_PCMIN_STA_RUNNING 			1
+-
+-#define PCMIN_TMR_OVRHD_MILLIS 	1
+-#define PCMIN_MILLIS_PSEC		1000
+-
+-#endif /*STB7100_SND_H_*/
+-
+-static int snd_pcmin_stb710x_probe(pcm_hw_t *chip,struct snd_card *card,int dev);
+-static int snd_spdif_stb710x_probe(pcm_hw_t **chip,struct snd_card **card,int dev);
+-static int stb7100_create_converter_device(pcm_hw_t *chip,struct snd_card **this_card,int dev);
+-
+-static int stb7100_converter_program_player(struct snd_pcm_substream *substream);
+-static void stb7100_reset_pcm_player(pcm_hw_t *chip);
+Index: linux-2.6.23-stm/sound/stm/stb7100_spdif.c
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/stb7100_spdif.c
++++ /dev/null
+@@ -1,564 +0,0 @@
+-/*
+- *  STb710x SPDIF player setup
+- *  Copyright (c) 2005 STMicroelectronics Limited
+- *
+- *  *  Authors:  Mark Glaisher <Mark.Glaisher@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-#include <asm/dma.h>
+-#include <linux/stm/stm-dma.h>
+-#if (STM_USE_BIGPHYS_AREA == 0)
+-#define SPDIF_MAX_FRAMES	((128*1024)/8)  /* <128k, max slab allocation */
+-#else
+-#define SPDIF_MAX_FRAMES	48000           /* 1s @ 48KHz */
+-#endif
+-
+-/*
+- * Default HW template for SPDIF player.
+- */
+-static struct snd_pcm_hardware stb7100_spdif_hw =
+-{
+-	.info =		(SNDRV_PCM_INFO_INTERLEAVED |
+-			 SNDRV_PCM_INFO_PAUSE),
+-
+-	.formats =	(SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S24_LE),
+-
+-	.rates =	(SNDRV_PCM_RATE_32000 |
+-			 SNDRV_PCM_RATE_44100 |
+-			 SNDRV_PCM_RATE_48000),
+-
+-	.rate_min	  = 32000,
+-	.rate_max	  = 48000,
+-	.channels_min	  = 2,
+-	.channels_max	  = 2,
+-	.buffer_bytes_max = FRAMES_TO_BYTES(SPDIF_MAX_FRAMES,2),
+-	.period_bytes_min = FRAMES_TO_BYTES(1,2),
+-	.period_bytes_max = FRAMES_TO_BYTES(SPDIF_MAX_FRAMES,2),
+-	.periods_min	  = 1,
+-	.periods_max	  = SPDIF_MAX_FRAMES
+-};
+-
+-
+-static inline void reset_spdif_on(pcm_hw_t  *chip)
+-{
+-	writel(1,chip->pcm_player);
+-}
+-
+-static inline void reset_spdif_off(pcm_hw_t  *chip)
+-{
+-	writel(0,chip->pcm_player);
+-}
+-
+-static void stb7100_iec61937_deferred_unpause(pcm_hw_t * chip)
+-{
+-	spin_lock(&chip->lock);
+-	writel(SPDIF_INT_STATUS_EODBURST ,chip->pcm_player +STM_PCMP_IRQ_EN_CLR);
+-	writel((chip->pcmplayer_control|chip->spdif_player_mode),
+-		chip->pcm_player+STM_PCMP_CONTROL);
+-	spin_unlock(&chip->lock);
+-	chip->iec61937.pause_count=0;
+-	/*throw an xrun to flush the buffer of invalidated data bursts and re-align the
+-	 * next burst with a block boundary*/
+-	snd_pcm_kernel_ioctl(chip->current_substream, SNDRV_PCM_IOCTL_XRUN, NULL);
+-}
+-
+-static irqreturn_t stb7100_spdif_interrupt(int irq, void *dev_id)
+-{
+-	unsigned long int_status;
+-	pcm_hw_t *stb7100 = dev_id;
+-	irqreturn_t status =IRQ_NONE;;
+-	/* Read and clear interrupt status */
+-	spin_lock(&stb7100->lock);
+-	int_status = readl(stb7100->pcm_player + STM_PCMP_IRQ_STATUS);
+-	writel(int_status,stb7100->pcm_player + STM_PCMP_ITS_CLR);
+-	spin_unlock(&stb7100->lock);
+-
+-	if((int_status & SPDIF_INT_STATUS_ALLREAD) == SPDIF_INT_STATUS_ALLREAD ){
+-		snd_pcm_period_elapsed(stb7100->current_substream);
+-		status =  IRQ_HANDLED;
+-	}
+-	if((int_status & SPDIF_INT_STATUS_UNF)==SPDIF_INT_STATUS_UNF) {
+-		printk("%s SPDIF PLayer FIFO Underflow detected\n",__FUNCTION__);
+-		status = IRQ_HANDLED;
+-	}
+-	if((int_status & SPDIF_INT_STATUS_EOLATENCY) == SPDIF_INT_STATUS_EOLATENCY){
+-		status =  IRQ_HANDLED;
+-	}
+-	if((int_status & SPDIF_INT_STATUS_EODBURST) == SPDIF_INT_STATUS_EODBURST){
+-		stb7100->iec61937.pause_count = ((stb7100->iec61937.pause_count+1)
+-						%stb7100->iec61937.frame_size);
+-		/*we have to wait until we have completed an entire iec91637 burst length
+-		 * before we stop emitting bursts, so we have to wait for mod(iec61937_frame_size)*/
+-		if((stb7100->iec61937.pause_count==0) && (stb7100->iec61937.unpause_flag==1)){
+-			stb7100->iec61937.unpause_flag=0;
+-			stb7100_iec61937_deferred_unpause(stb7100);
+-		}
+-		status =  IRQ_HANDLED;
+-	}
+-	return status;
+-}
+-
+-
+-static inline void stb7100_spdif_pause_playback(struct snd_pcm_substream *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-
+-	if (chip->iec_encoding_mode != ENCODING_IEC60958) {
+-		/*here we turn on iec61937 pause bursts, modulated by the
+-		 * frames of latency value*/
+-		chip->iec61937.pause_count = chip->iec60958_output_count;
+-		chip->iec60958_output_count=0;
+-		writel(chip->irq_mask | SPDIF_INT_STATUS_EODBURST,chip->pcm_player+STM_PCMP_IRQ_EN_SET);
+-    	}
+-	else{
+-		 /*the SPDIF IP will always at least complete the next 192 frame
+-		  * burst - this gives an audible delay between an analogue and digital
+-		  * pause, so here we want to flush out that buffer, the only way to do this
+-		  * is throw a reset.*/
+-		 reset_spdif_on(chip);
+-		 reset_spdif_off(chip);
+-	}
+-	spin_lock(&chip->lock);
+-	writel((chip->pcmplayer_control|chip->iec61937.pause_mode),
+-		chip->pcm_player+STM_PCMP_CONTROL);
+-	spin_unlock(&chip->lock);
+-
+-}
+-
+-
+-static inline void stb7100_spdif_unpause_playback(struct snd_pcm_substream *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	/*we are doing pause burst, must count %frame_size*/
+-	if(chip->iec_encoding_mode != ENCODING_IEC60958){
+-		/*first we need to check if pause burst are enable,
+-		 * otherwise we will deadlock here
+-		 * */
+-		if(readl(chip->pcm_player+STM_PCMP_IRQ_ENABLE) & ENABLE_INT_EODBURST){
+-			chip->iec61937.unpause_flag=1;
+-			return;
+-		}
+-	}
+-
+-	spin_lock(&chip->lock);
+-	writel((chip->pcmplayer_control|chip->spdif_player_mode),
+-		chip->pcm_player+STM_PCMP_CONTROL);
+-	spin_unlock(&chip->lock);
+-}
+-
+-
+-static inline void stb7100_spdif_start_playback(struct snd_pcm_substream *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-
+-	dma_xfer_list(chip->fdma_channel,&chip->dmap);
+-	spin_lock(&chip->lock);
+-	reset_spdif_off(chip);
+-	writel((chip->pcmplayer_control|chip->spdif_player_mode),chip->pcm_player + STM_PCMP_CONTROL);
+-	spin_unlock(&chip->lock);
+-}
+-
+-
+-static inline void stb7100_spdif_stop_playback(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	spin_lock(&chip->lock);
+-	writel(0,chip->pcm_player+STM_PCMP_CONTROL);
+-	reset_spdif_on(chip);
+-	spin_unlock(&chip->lock);
+-	dma_stop_channel(chip->fdma_channel);
+-	dma_params_free(&chip->dmap);
+-}
+-
+-
+-static void stb7100_spdif_set_iec_mode(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned int decode_lat=0;
+-	unsigned int rate =substream->runtime->rate;
+-
+-	switch(	chip->iec_encoding_mode){
+-
+-		case ENCODING_IEC61937_AC3:
+-			chip->iec61937.pause_mode=SPDIF_MUTE_BURST;
+-			chip->iec61937.mute_rep =3;
+-			chip->iec61937.latency=256;
+-			chip->iec61937.frame_size=1536;
+-			break;
+-		case ENCODING_IEC61937_DTS_1:
+-			chip->iec61937.pause_mode=SPDIF_MUTE_BURST;
+-			chip->iec61937.mute_rep = 3;
+-			chip->iec61937.latency=768;
+-			chip->iec61937.frame_size=512;
+-			break;
+-		case ENCODING_IEC61937_DTS_2:
+-			chip->iec61937.pause_mode=SPDIF_MUTE_BURST;
+-			chip->iec61937.mute_rep = 3;
+-			chip->iec61937.latency=1280;
+-			chip->iec61937.frame_size=1024;
+-			break;
+-		case ENCODING_IEC61937_DTS_3:
+-			chip->iec61937.pause_mode=SPDIF_MUTE_BURST;
+-			chip->iec61937.mute_rep = 3;
+-			chip->iec61937.latency=2304;
+-			chip->iec61937.frame_size=2048;
+-			break;
+-			{
+-		case ENCODING_IEC61937_MPEG_384_FRAME:
+-			chip->iec61937.frame_size = 384;
+-			goto generic_mpeg_encoding;
+-		case ENCODING_IEC61937_MPEG_1152_FRAME:
+-			chip->iec61937.frame_size = 1152;
+-			goto generic_mpeg_encoding;
+-		case ENCODING_IEC61937_MPEG_1024_FRAME:
+-			chip->iec61937.frame_size = 1024;
+-			goto generic_mpeg_encoding;
+-		case ENCODING_IEC61937_MPEG_2304_FRAME:
+-			chip->iec61937.frame_size = 2304;
+-			goto generic_mpeg_encoding;
+-		case ENCODING_IEC61937_MPEG_768_FRAME:
+-			chip->iec61937.frame_size = 768;
+-			/*fallthrough*/
+-generic_mpeg_encoding:
+-			chip->iec61937.pause_mode=SPDIF_MUTE_BURST;
+-			chip->iec61937.mute_rep = 32;
+-			switch(rate){
+-				case 32000:
+-					decode_lat = MPEG_DECODE_LAT_32KHZ;
+-					break;
+-				case 44100:
+-					decode_lat = MPEG_DECODE_LAT_441KHZ;
+-					break;
+-				case 48000:
+-					decode_lat = MPEG_DECODE_LAT_48KHZ;
+-					break;
+-				default:
+-					printk("%s Unsupported Sample Freq\n",__FUNCTION__);
+-					break;
+-			}
+-			chip->iec61937.latency=TIME_TO_FRAMES(rate,decode_lat);
+-			break;
+-			}
+-		case ENCODING_IEC61937_MPEG_2304_FRAME_LSF:
+-			chip->iec61937.frame_size=2304;
+-			chip->iec61937.pause_mode=SPDIF_MUTE_BURST;
+-			chip->iec61937.mute_rep = 64;
+-			chip->iec61937.latency=TIME_TO_FRAMES(rate,decode_lat);
+-			break;
+-		case ENCODING_IEC61937_MPEG_768_FRAME_LSF:
+-			chip->iec61937.frame_size=768;
+-			chip->iec61937.pause_mode=SPDIF_MUTE_BURST;
+-			chip->iec61937.mute_rep = 64;
+-			chip->iec61937.latency=TIME_TO_FRAMES(rate,decode_lat);
+-			break;
+-		default:
+-			printk("%s unrecognised IEC61937 mode\n",__FUNCTION__);
+-			/*fallthorugh*/
+-		case ENCODING_IEC60958:
+-			chip->iec61937.pause_mode=SPDIF_MUTE_NULL_DATA;
+-			chip->iec61937.mute_rep =1;
+-			chip->iec61937.latency=256;
+-			break;
+-	}
+-}
+-
+-
+-static int stb7100_program_spdifplayer(struct snd_pcm_substream *substream){
+-
+-	unsigned long reg;
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+-	u32 val=0;
+-	unsigned long flags=0;
+-	u32 irq_enable = ENABLE_INT_NSAMPLE;
+-
+-	reg =(runtime->period_size * runtime->channels) << SPDIF_SAMPLES_SHIFT;
+-	reg |= SPDIF_SW_STUFFING | SPDIF_BIT16_DATA_NOROUND;
+-
+-	if(chip->fifo_check_mode)
+-		irq_enable |= SPDIF_INT_STATUS_UNF;
+-
+-	spin_lock_irqsave(&chip->lock,flags);
+-	switch(chip->oversampling_frequency)
+-	{
+-		case 128:
+-			reg |= SPDIF_FSYNTH_DIVIDE32_128;
+-			break;
+-		case 256:
+-			reg |= SPDIF_FSYNTH_DIVIDE32_256;
+-			break;
+-		default:
+-			printk("stb7100_program_spdifplayer: unsupported oversampling frequency %d\n",chip->oversampling_frequency);
+-			break;
+-	}
+-
+-	reset_spdif_on(chip);
+-	reset_spdif_off(chip);
+-
+-	/*
+-	 * Setup channel status bits for the hardware mode and prepare for
+-	 * starting a new data burst. Also setup the hardware pause burst
+-	 * registers with the channel status as well.
+-	 */
+-	chip->pending_spdif_control = chip->default_spdif_control;
+-	iec60958_set_runtime_status(substream);
+-	chip->iec60958_output_count = 0;
+-	stb7100_spdif_set_iec_mode(substream);
+-
+-	val = chip->pending_spdif_control.channel.status[0]	   |
+-	      (chip->pending_spdif_control.channel.status[1] <<8)  |
+-	      (chip->pending_spdif_control.channel.status[2] <<16) |
+-	      (chip->pending_spdif_control.channel.status[3] <<24);
+-
+-	writel(val, chip->pcm_player + AUD_SPDIF_CL1);
+-	writel(val, chip->pcm_player + AUD_SPDIF_CR1);
+-
+-	val = chip->pending_spdif_control.channel.status[4];
+-	val |= (val << 8); /* Right channel status always = left channel status */
+-	writel(val, chip->pcm_player + AUD_SPDIF_CL2_CR2_UV);
+-
+-	/*enable the latency irq*/
+-	if(get_spdif_syncing_status()){
+-		irq_enable |= ENABLE_INT_EOLATENCY;
+-		chip->spdif_player_mode = SPDIF_ENCODED_ON;
+-	}
+-	if(chip->iec_encoding_mode != ENCODING_IEC60958){
+-
+-		int pause_data_type=-0;
+-		reg |= SPDIF_HW_STUFFING;
+-		switch(chip->iec_encoding_mode){
+-			case ENCODING_IEC61937_AC3:
+-				pause_data_type	= IEC61937_AC3_STREAM;
+-				break;
+-			case ENCODING_IEC61937_DTS_1:
+-				pause_data_type	= IEC61937_DTS_TYPE_1;
+-				break;
+-			case ENCODING_IEC61937_DTS_2:
+-				pause_data_type= IEC61937_DTS_TYPE_2;
+-				break;
+-			case ENCODING_IEC61937_DTS_3:
+-				pause_data_type= IEC61937_DTS_TYPE_3;
+-				break;
+-			default:
+-				printk("%s Uncrecognised Encoded Data Stream %d\n",
+-					__FUNCTION__,chip->iec_encoding_mode);
+-				break;
+-		}
+-		val =( 1 <<16)  | (chip->iec61937.mute_rep & 0x0000ffff);
+-		writel(val,chip->pcm_player + AUD_SPDIF_FRA_LEN_BST);
+-
+-		val = (IEC61937_PA <<16)| IEC61937_PB ;
+-		writel(val ,chip->pcm_player +AUD_SPDIF_PA_PB );
+-
+-		val = 	(pause_data_type <<16) | chip->iec61937.mute_rep;
+-		writel(val,chip->pcm_player +AUD_SPDIF_PC_PD);
+-
+-		chip->spdif_player_mode = SPDIF_ENCODED_ON;
+-	}
+-	else{
+-		reg |= SPDIF_SW_STUFFING;
+-		chip->spdif_player_mode =SPDIF_ENCODED_ON;
+-	}
+-
+-	val =((chip->iec61937.mute_rep <<16) |
+-			(chip->iec61937.latency & 0x0000ffff)) ;
+-	writel(val,chip->pcm_player + AUD_SPDIF_PAU_LAT);
+-
+-	chip->pcmplayer_control = reg;
+-	chip->irq_mask = irq_enable;
+-	writel(0,chip->pcm_player +STM_PCMP_IRQ_EN_SET);
+-	writel(chip->irq_mask,chip->pcm_player +STM_PCMP_IRQ_EN_SET);
+-	spin_unlock_irqrestore(&chip->lock,flags);
+-
+-	return 0;
+-}
+-
+-
+-static int stb7100_spdif_program_hw(struct snd_pcm_substream *substream)
+-{
+-	int err;
+-	if((err = stb7100_program_fsynth(substream)) < 0)
+-		return err;
+-
+-	if((err = stb7100_program_spdifplayer(substream)) < 0)
+-		return err;
+-
+-	if((err = stb7100_program_fdma(substream)) < 0)
+-		return err;
+-
+-	return 0;
+-}
+-
+-
+-static int stb7100_spdif_open(struct snd_pcm_substream *substream)
+-{
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+-	int err=0;
+-	const char * dmac_id =STM_DMAC_ID;
+-	const char * lb_cap_channel = STM_DMA_CAP_LOW_BW;
+-	const char * hb_cap_channel = STM_DMA_CAP_HIGH_BW;
+-
+-	if(chip->iec60958_rawmode){
+-		runtime->hw.info   |= SNDRV_PCM_INFO_MMAP;
+-		runtime->hw.formats = SNDRV_PCM_FMTBIT_S32_LE; /* Only 32bit in RAW mode */
+-	}
+-
+-	if(chip->fdma_channel <0){
+-		err=request_dma_bycap(&dmac_id,&hb_cap_channel,"STB710x_SPDIF_DMA");
+-		if(err <0){
+-			err=request_dma_bycap(&dmac_id,&lb_cap_channel,	"STB710x_SPDIF_DMA");
+-			if(err <0){
+-				printk(" %s error in DMA request %d\n",__FUNCTION__,err);
+-				return err;
+-			}
+-		}
+-		chip->fdma_channel= err;
+-	}
+-	return 0;
+-}
+-
+-
+-static stm_playback_ops_t stb7100_spdif_ops = {
+-	.free_device      = stb7100_pcm_free,
+-	.open_device      = stb7100_spdif_open,
+-	.program_hw       = stb7100_spdif_program_hw,
+-	.playback_pointer = stb7100_fdma_playback_pointer,
+-	.start_playback   = stb7100_spdif_start_playback,
+-	.stop_playback    = stb7100_spdif_stop_playback,
+-	.pause_playback   = stb7100_spdif_pause_playback,
+-	.unpause_playback = stb7100_spdif_unpause_playback
+-};
+-
+-static struct platform_device *spdif_platform_device;
+-
+-static int __init stb710x_alsa_spdif_probe(struct device *dev)
+-{
+-	spdif_platform_device = to_platform_device(dev);
+-	return 0;
+-}
+-
+-static struct device_driver alsa_spdif_driver = {
+-	.name  = "710x_ALSA_SPD",
+-	.owner = THIS_MODULE,
+-	.bus   = &platform_bus_type,
+-	.probe = stb710x_alsa_spdif_probe,
+-};
+-
+-static struct device alsa_spdif_device = {
+-	.bus_id="alsa_710x_spdif",
+-	.driver = &alsa_spdif_driver,
+-	.parent   = &platform_bus ,
+-	.bus      = &platform_bus_type,
+-};
+-
+-
+-
+-int snd_spdif_stb710x_probe(pcm_hw_t **in_chip, struct snd_card **card,int dev)
+-{
+-
+-	int err=0;
+-	pcm_hw_t *chip={0};
+-	static struct snd_device_ops ops = {
+-		.dev_free = snd_pcm_dev_free,
+-	};
+-
+-	if(driver_register(&alsa_spdif_driver)==0){
+-		if(device_register(&alsa_spdif_device)!=0)
+-			return -ENOSYS;
+-	}
+-	else return -ENOSYS;
+-
+-	if((chip = kcalloc(1,sizeof(pcm_hw_t), GFP_KERNEL)) == NULL)
+-        	return -ENOMEM;
+-
+-	*card = snd_card_new(index[card_list[dev].major],id[card_list[dev].major], THIS_MODULE, 0);
+-        if (card == NULL){
+-      		printk(" cant allocate new card of %d\n",card_list[dev].major);
+-      		return -ENOMEM;
+-        }
+-
+-	sprintf((*card)->driver,   "%d",card_list[dev].major);
+-	strcpy((*card)->shortname, "STb7100_SPDIF");
+-	sprintf((*card)->longname, "STb7100_SPDIF");
+-
+-	spin_lock_init(&chip->lock);
+-	chip->irq          = -1;
+-	chip->fdma_channel = -1;
+-
+-	chip->card         = *card;
+-	chip->card_data = &card_list[dev];
+-
+-	chip->hw           = stb7100_spdif_hw;
+-	chip->playback_ops  = &stb7100_spdif_ops;
+-
+-	chip->oversampling_frequency = 128; /* This is for HDMI compatibility */
+-	chip->pcm_clock_reg = ioremap(AUD_CFG_BASE, 0);
+-	chip->out_pipe      = ioremap(FDMA2_BASE_ADDRESS, 0);
+-	chip->pcm_player    = ioremap(SPDIF_BASE,0);
+-
+-
+-
+-	iec60958_default_channel_status(chip);
+-	chip->iec_encoding_mode = ENCODING_IEC60958;
+-
+-	if(request_irq(LINUX_SPDIFPLAYER_ALLREAD_IRQ,
+-                       stb7100_spdif_interrupt, IRQF_SHARED,
+-                       "STB7100 SPDIF Player",(void*)chip))
+-	{
+-		printk((">>> failed to get IRQ\n"));
+-		stb7100_pcm_free(chip);
+-		return -EBUSY;
+-	}
+-	else
+-		chip->irq = LINUX_SPDIFPLAYER_ALLREAD_IRQ;
+-
+-	if(register_platform_driver(spdif_platform_device,chip,card_list[dev].major)!=0)
+-		return -ENODEV;
+-
+-	if ((err = snd_card_pcm_allocate(chip, chip->card_data->minor, (*card)->longname)) < 0){
+-		printk(">>> failed to create PCM stream\n");
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-
+-	if ((err = snd_iec60958_create_controls(chip)) < 0){
+-		printk(">>> failed to create SPDIF ctls\n");
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-	if((err = snd_generic_create_controls(chip)) < 0){
+-		printk(">>> failed to create generic ctls\n");
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-
+-	if ((err = snd_device_new((*card), SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0){
+-		printk(">>> creating sound device failed\n");
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-
+-	if ((err = snd_card_register((*card))) < 0) {
+-		printk(">>> cant register card\n");
+-		snd_card_free(*card);
+-		return err;
+-	}
+-	*in_chip = chip;
+-	return 0;
+-}
+Index: linux-2.6.23-stm/sound/stm/stm7100_pcm.c
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/stm7100_pcm.c
++++ /dev/null
+@@ -1,1147 +0,0 @@
+-/*
+- *  STb710x PCM Player Sound Driver
+- *  Copyright (c)   (c) 2005 STMicroelectronics Limited
+- *
+- *  *  Authors:  Mark Glaisher <Mark.Glaisher@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-#include <linux/delay.h>
+-#include <linux/device.h>
+-#include <linux/platform_device.h>
+-
+-static unsigned long pcm_base_addr[SND_DRV_CARDS] =
+-{
+-	PCMP0_BASE,
+-	PCMP1_BASE,
+-	SPDIF_BASE,
+-	PCM0_CONVERTER_BASE,
+-	PCMIN_BASE
+-};
+-
+-static unsigned long linux_pcm_irq[SND_DRV_CARDS] =
+-{
+-	LINUX_PCMPLAYER0_ALLREAD_IRQ,
+-	LINUX_PCMPLAYER1_ALLREAD_IRQ,
+-    	LINUX_SPDIFPLAYER_ALLREAD_IRQ,
+-    	LINUX_SPDIFCONVERTER_ALLREAD_IRQ,
+-    	LINUX_PCMREADER_ALLREAD_IRQ,
+-};
+-/*
+- * Extra PCM Player format regsiter define for 7100 Cut2/3
+- */
+-#define PCMP_CHANNELS_SHIFT     (8)
+-/*
+- * On Cut2/3 7100 DMA requests can be triggered when 2,4,6,8 or 10 cells
+- * are available in the PCMP Player FIFO. For the moment pick the middle
+- * value.
+- */
+-#define PCMP_DREQ_TRIGGER       (6L)
+-#define PCMP_DREQ_TRIGGER_SHIFT (12)
+-
+-#define AUD_ADAC_CTL_REG		0x100
+-#define AUD_IO_CTL_REG			0x200
+-
+-/*
+- * AUD_ FSYNTH_CFG control vals
+- */
+-#define AUD_FSYNTH_SATA_PHY_30MHZ_REF		(0<<23)
+-#define AUD_FSYNTH_SYSBCLKINALT_REF		(1<<23)
+-#define AUD_FSYNTH_VGOOD_REF_SOURCE		(0<<16)
+-#define AUD_FSYNTH_GOOD_REF_SOURCE		(1<<16)
+-#define AUD_FSYNTH_BAD_REF_SOURCE		(2<<16)
+-#define AUD_FSYNTH_VBAD_REF_SOURCE		(3<<16)
+-#define AUD_FSYNTH_FS_REF_CLK_27_30MHZ		(0<<15)
+-#define AUD_FSYNTH_FS_REF_CLK_54_60MHZ		(1<<15)
+-#define AUD_FSYNTH_NPDA_POWER_DOWN		(0<<14)
+-#define AUD_FSYNTH_NPDA_POWER_UP		(1<<14)
+-
+-#define AUD_FSYNTH_UNKNOWN_STANDBY		(0<<13)
+-#define AUD_FSYNTH_UNKNOWN_ACTIVE		(1<<13)
+-#define AUD_FSYNTH_FSYNTH2_STANDBY		(0<<12)
+-#define AUD_FSYNTH_FSYNTH2_ACTIVE		(1<<12)
+-#define AUD_FSYNTH_FSYNTH1_STANDBY		(0<<11)
+-#define AUD_FSYNTH_FSYNTH1_ACTIVE		(1<<11)
+-#define AUD_FSYNTH_FSYNTH0_STANDBY		(0<<10)
+-#define AUD_FSYNTH_FSYNTH0_ACTIVE		(1<<10)
+-
+-#define AUD_FSYNTH_RESERVED_9			(1<<9)
+-#define AUD_FSYNTH_RESERVED_8			(1<<8)
+-#define AUD_FSYNTH_RESERVED_7			(1<<7)
+-#define AUD_FSYNTH_RESERVED_6			(1<<6)
+-#define AUD_FSYNTH_RESERVED_5			(1<<5)
+-
+-#define AUD_FSYNTH_FSYNTH2_BYPASS		(0<<4)
+-#define AUD_FSYNTH_FSYNTH2_ENABLE		(1<<4)
+-#define AUD_FSYNTH_FSYNTH1_BYPASS		(0<<3)
+-#define AUD_FSYNTH_FSYNTH1_ENABLE		(1<<3)
+-#define AUD_FSYNTH_FSYNTH0_BYPASS		(0<<2)
+-#define AUD_FSYNTH_FSYNTH0_ENABLE		(1<<2)
+-#define AUD_FSYNTH_RESERVED_1			(1<<1)
+-#define AUD_FSYNTH_RESET_ON			(1<<0)
+-
+-
+-/*AUD_IO_CTL reg vals*/
+-#define PCM_DATA_IN	0
+-#define PCM_DATA_OUT	1
+-
+-#define PCM_CLK_OUT	0
+-#define PCM0_OUT	1
+-#define PCM1_OUT	2
+-#define SPDIF_ENABLE	3
+-
+-/*AUD_ADAC_CTL vals*/
+-
+-#define DAC_NRST     0x1
+-#define DAC_SOFTMUTE 0x10
+-/* here we bring the dac sub-blocks out of powerdown these are
+- * -DAC BANDGAP  (bit 6)
+- * -ANALOUG PART (bit 5)
+- * -DIGITAL PART (bit 3)
+- * then we reset with bit 1
+- */
+-#define DAC_POWERUP_VAL (1 << 3 | 1 <<5 | 1 <<6)
+-
+-
+-/*here we define the block offsets for both pcm players that is fysnth0 & 1
+- * We must specify the pe/md/ and sdiv offsets
+- * */
+- typedef enum {
+- 	SDIV=0x0,
+- 	PE,
+- 	MD,
+- 	PROG_EN
+- }clk_offsets;
+-
+-
+- /*unfortunatley for pcm0/1 the reg offsets for the fsynth programming are different
+-  * hence we select from the table according to the current output*/
+-static unsigned long dev_fsynth_regs[4][SND_DRV_CARDS]= {
+-			/*PCM0*/		/*PCM1*/	/*spdif*/
+-/*SDIV*/	{AUD_FSYN0_SDIV,	AUD_FSYN1_SDIV,		AUD_FSYN2_SDIV},
+-/*PE*/		{AUD_FSYN0_PE,		AUD_FSYN1_PE,		AUD_FSYN2_PE},
+-/*MD*/		{AUD_FSYN0_MD,		AUD_FSYN1_MD,		AUD_FSYN2_MD},
+-/*PROG_EN*/	{AUD_FSYN0_PROG_EN,	AUD_FSYN1_PROG_EN,	AUD_FSYN2_PROG_EN}};
+-
+-
+-#define MEM_FULL_READIRQ	0x02
+-#define SELECT_PROG_FSYN	0x01
+-#define SELECT_RSTP		0x01
+-#define SELECT_PCM_FSYN_CLK	(0x01 << 2)
+-#define SELECT_SYSBCLKINALT	(0x01 << 23)
+-
+-
+-static struct snd_pcm_hardware stb7100_pcm_hw =
+-{
+-	.info =		(SNDRV_PCM_INFO_MMAP           |
+-			 SNDRV_PCM_INFO_INTERLEAVED    |
+-			 SNDRV_PCM_INFO_BLOCK_TRANSFER |
+-			 SNDRV_PCM_INFO_MMAP_VALID     |
+-			 SNDRV_PCM_INFO_PAUSE),
+-
+-	/*.formats   now defined at runtime on card - card basis due
+-	to reliability problems when switching between modes on cards utilising an external DAC*/	
+-	
+-
+-	.rates =	(SNDRV_PCM_RATE_32000 |
+-			 SNDRV_PCM_RATE_44100 |
+-			 SNDRV_PCM_RATE_48000 |
+-			 SNDRV_PCM_RATE_96000 |
+-			 SNDRV_PCM_RATE_192000 ),
+-
+-	.rate_min	  = 32000,
+-	.rate_max	  = 192000,
+-	.channels_min	  = 10,/*vals now taken from setup.c for platform*/
+-	.channels_max	  = 10,/*specific channel availability -but we must still provide a default*/
+-	.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
+-	.period_bytes_min = FRAMES_TO_BYTES(1,10),
+-	.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,10),
+-	.periods_min	  = 1,
+-	.periods_max	  = PCM_MAX_FRAMES
+-};
+-
+-
+-/*
+- * The following FSynth programming has been provided by ST validation
+- * teams for STb7100 Cut1.3. They are for an oversampling frequency of 256*Fs.
+- *
+- *  peq is the value for a 0.001 % adjustment of the current output freq
+- *  which is defined by the forumlae in the manual.
+- */
+-
+-static struct stm_freq_s gClockSettings[NUM_CLOCK_SETTINGS] =
+-{
+-     	/*             freq(Fs) sdiv  pe      md   peq */
+-	/*8.1920 == */{ 32000,  0x4, 0x5a00, 0xfd, 0xa},
+-	/*11.2895Mhz*/{ 44100,  0x4, 0x5EE9, 0xF5 ,0x7},
+-	/*12.2880MHz*/{ 48000,  0x4, 0x3C00, 0xF3 ,0x7},
+-	/*24.5760MHz*/{ 96000,  0x3, 0x3C00, 0xF3 ,0x6},
+-	/*36.8640MHz*/{ 192000, 0x2, 0x7AAB ,0xFA, 0x8}
+-};
+-
+-
+-/*Here we can  dynamically adjust the sampling frequencies of playback on the
+- * pcm0/1 players and the SPDIF. The function allows a +/- 10 % adjustment of
+- * frequency in 0.001% increments of current playback frequency.
+- *
+- * The adjusts parm indicates the number of .001% adjustments to apply,
+- *  up to a maximum of 10000, or 10%
+- *
+- * There is an error  in the order of 1 % due to relying on integer
+- * approximations of float values, not available in the kernel.
+- * Additionally the PE solutions of the equation do not offer a linear response,
+- * here we assume a linear response and discard the remainder as error.
+- * We can never calculate the exact output frequency from this driver,
+- * so we utilise a quanta value which represents a % adjustment of each frequency
+- * */
+-int adjust_audio_clock(struct snd_pcm_substream *substream,int adjusts,int dir)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-
+-	int i=0,total_shift=0;
+-	unsigned long new_pe=0, peq=0,new_md=0,new_sdiv=0;
+-
+-	unsigned long pg_en_offset = dev_fsynth_regs[PROG_EN][chip->card_data->major];
+-	unsigned long pe_offset    = dev_fsynth_regs[PE][chip->card_data->major];
+-	unsigned long md_offset    = dev_fsynth_regs[MD][chip->card_data->major];
+- 	unsigned long sdiv_offset  = dev_fsynth_regs[SDIV][chip->card_data->major];
+-
+-	unsigned long cur_pe   = readl(chip->pcm_clock_reg + pe_offset);
+-	unsigned long cur_md   = readl(chip->pcm_clock_reg + md_offset);
+-	unsigned long cur_sdiv = readl(chip->pcm_clock_reg + sdiv_offset);
+-
+-	if( ((adjusts <=0) || (adjusts >10000)) || !substream)
+-		return -EINVAL;
+-
+-	/*get the correct fsynth settings for FS*/
+-	while(i < NUM_CLOCK_SETTINGS && runtime->rate != gClockSettings[i].freq)
+-		i++;
+-
+-	if(!(i<=NUM_CLOCK_SETTINGS))
+-		return -ENODEV;
+-
+-	peq = 	gClockSettings[i].pe_quantum;
+-	new_md = cur_md;
+-	new_pe = cur_pe;
+-	new_sdiv = cur_sdiv;
+-
+-	if(INCR_FSYNTH == dir){
+-		if(((adjusts*peq )+cur_pe) > 0xffff){
+-			while(total_shift<=adjusts){
+-				while(new_pe < 0xffff){
+-					if(total_shift>=adjusts)
+-						goto write_fsynth;
+-					new_pe+=peq;
+-					total_shift++;
+-				}
+-				/*overflow- incr the md and set the
+-				 * pe down to maintain current FS*/
+-				new_md--;
+-				/*now we have crossed the sdiv
+-				 *md is a 5 bit signed term, leaving
+-				 * 1-16 available*/
+-				if(new_md  < 0x10){
+-					new_sdiv--;
+-					new_md = 0x1f;
+-					new_pe +=SDIV_SHIFT_VAL;
+-				}
+-				else new_pe -= MD_SHIFT_VAL;
+-			}
+-		}
+-		else new_pe += adjusts *peq;
+-
+-	}
+-	else if(DECR_FSYNTH == dir){
+-		if( (int)(cur_pe-(adjusts*peq )) < (int)0x000){
+-			while(total_shift <=adjusts){
+-				while((int)new_pe > (int)0){
+-					if(total_shift >= adjusts)
+-						goto write_fsynth;
+-					new_pe -= peq;
+-					total_shift++;
+-				}
+-				new_md++;
+-
+-				if(new_md  >0x1f) {
+-					new_sdiv++;
+-					new_md =0x10;
+-					new_pe +=SDIV_SHIFT_VAL;
+-				}
+-				else new_pe+=MD_SHIFT_VAL;
+-			}
+-		}
+-		else new_pe -= adjusts * peq;
+-	}
+-	else return -EINVAL;
+-
+-
+-
+-write_fsynth:
+-	writel(0,chip->pcm_clock_reg+pg_en_offset);
+-	writel(new_pe,chip->pcm_clock_reg + pe_offset);
+-	writel(new_md,chip->pcm_clock_reg + md_offset);
+-	writel(new_sdiv,chip->pcm_clock_reg + sdiv_offset);
+-	writel(1,chip->pcm_clock_reg+pg_en_offset);
+-	return 0;
+-}
+-
+-
+-void stb7100_reset_pcm_player(pcm_hw_t  *chip)
+-{
+-	/* Give the pcm player a soft reset */
+-	writel(1,chip->pcm_player );
+-	writel(0,chip->pcm_player );
+-}
+-
+-
+-static void stb7100_reset_internal_DAC(pcm_hw_t *chip)
+-{
+-	writel(0,chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-	writel((DAC_POWERUP_VAL|DAC_SOFTMUTE),chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-}
+-
+-
+-static void stb7100_pcm_stop_playback(struct snd_pcm_substream *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
+-
+-	spin_lock(&chip->lock);
+-
+-	/*if we have fifo checking turned on we must also stop this interrupt first to
+-	 * prevent an error condition being generated as the player is disabled*/
+-	if(chip->fifo_check_mode)
+-		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_CLR);
+-
+-	if(chip->card_data->major == PCM1_DEVICE){
+-		reg = readl(chip->pcm_clock_reg+AUD_ADAC_CTL_REG) | DAC_SOFTMUTE;
+-		writel(reg, chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-		udelay(100);
+-		reg = reg & ~DAC_NRST; /* Reset active low */
+-		writel(reg, chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-	}
+-
+-	/*
+-	 * Disable PCM Player IRQ, this is important when switching
+-	 * between PCM0 and the protocol converter as there is
+-	 * nowhere else to turn the interrupts off, and the
+-	 * PCM0 interrupt will fire with the wrong card structure!
+-	 */
+-	writel(MEM_FULL_READIRQ, chip->pcm_player + STM_PCMP_IRQ_EN_CLR);
+-
+-	/*
+-	 * We use "mute" to stop the PCM player, which in fact is implemented
+-	 * as a pause, rather than "off" becuase it keeps the L/R clocks
+-	 * running to the DACs. This avoids noise on the analogue output
+-	 * and occasional DAC failures, due to the DACs being intolerant of
+-	 * losing their clocks unless in reset or powerdown modes. At the
+-	 * moment we have no control over external DACs in this code.
+-	 *
+-	 * Note: the internal DAC doesn't absolutely need this (as it
+-	 * can be reset).
+-	 */
+-	 /* It is  possible for us to effect a mute at the internal DAC
+-	 * rather than in the player.  For the externally connected DAC, this is not
+-	 * possible.
+-	 */
+-	if( chip->card_data->major == PCM1_DEVICE){
+-		writel((chip->pcmplayer_control|PCMP_OFF),chip->pcm_player+STM_PCMP_CONTROL);
+-	}
+-	else writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+-
+-	spin_unlock(&chip->lock);
+-
+-	dma_stop_channel(chip->fdma_channel);
+-	dma_params_free(&chip->dmap);
+-	chip->dma_req = NULL; /* free'd by the above call to dma_params_free() */
+-}
+-
+-
+-static void stb7100_pcm_start_playback(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t     *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
+-	int res = dma_xfer_list(chip->fdma_channel,&chip->dmap);
+-	if(res !=0)
+-		printk("%s FDMA_CH %d failed to start %d\n",__FUNCTION__,chip->fdma_channel,res);
+-
+-	spin_lock(&chip->lock);
+-
+-	/*
+-	 * We appear to need to reset the PCM player otherwise we end up
+-	 * with channel data sent to the wrong channels when starting up for
+-	 * the second time.
+-	 */
+-	stb7100_reset_pcm_player(chip);
+-
+-	writel((chip->pcmplayer_control | PCMP_ON), chip->pcm_player + STM_PCMP_CONTROL);
+-
+-	if(chip->card_data->major == PCM1_DEVICE){
+-		reg = readl(chip->pcm_clock_reg+AUD_ADAC_CTL_REG) | DAC_NRST; /* Bring DAC out of Reset */
+-		writel(reg, chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-		udelay(100);
+-		writel((reg & ~DAC_SOFTMUTE),chip->pcm_clock_reg+AUD_ADAC_CTL_REG); /* Unmute */
+-	}
+-	/*again we enable this err-checking interrput last to prevent an err condiftion
+-	 * as the device is programmed */
+-	if(chip->fifo_check_mode)
+-		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
+-
+-	
+-
+-	spin_unlock(&chip->lock);
+-}
+-
+-
+-static void stb7100_pcm_unpause_playback(struct snd_pcm_substream *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
+-
+-        spin_lock(&chip->lock);
+-	if(chip->card_data->major == PCM1_DEVICE){
+-		reg = readl(chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-		writel((reg & ~DAC_SOFTMUTE),chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-        }
+-	if(chip->fifo_check_mode)
+-		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
+-
+-	writel((chip->pcmplayer_control|PCMP_ON),chip->pcm_player+STM_PCMP_CONTROL);
+-	spin_unlock(&chip->lock);
+-}
+-
+-
+-static void stb7100_pcm_pause_playback(struct snd_pcm_substream *substream)
+-{
+-        pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
+-
+-	spin_lock(&chip->lock);
+-	if(chip->card_data->major == PCM1_DEVICE){
+-	        reg = readl(chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-	        writel((reg | DAC_SOFTMUTE),chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+-	}
+-	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+-
+-	if(chip->fifo_check_mode)
+-		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_CLR);
+-
+-	spin_unlock(&chip->lock);
+-}
+-
+-static snd_pcm_uframes_t stb7100_fdma_playback_pointer(struct snd_pcm_substream * substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	/*
+-	 * Calculate our current playback position, using the number of bytes
+-	 * left for the DMA engine needs to transfer to complete a full
+-	 * iteration of the buffer. This is common to all STb7100 audio players
+-	 * using the FDMA (including SPDIF).
+-	 */
+-	u32 pos = substream->runtime->dma_bytes - get_dma_residue(chip->fdma_channel);
+-	return bytes_to_frames(substream->runtime,pos);
+-}
+-
+-
+-static irqreturn_t stb7100_pcm_interrupt(int irq, void *dev_id)
+-{
+-	unsigned long val;
+-	pcm_hw_t *stb7100 = dev_id;
+-	irqreturn_t res =IRQ_NONE;
+-
+-	/* Read and clear interrupt status */
+-	spin_lock(&stb7100->lock);
+-	val = readl(stb7100->pcm_player + STM_PCMP_IRQ_STATUS);
+-	writel(val,stb7100->pcm_player + STM_PCMP_ITS_CLR);
+-	spin_unlock(&stb7100->lock);
+-
+-	if(unlikely((val & ENABLE_INT_UNDERFLOW ) == ENABLE_INT_UNDERFLOW)){
+-		printk("%s PCM PLayer #%d FIFO Underflow detected\n",
+-			__FUNCTION__,
+-			stb7100->current_substream->pcm->card->number);
+-		res = IRQ_HANDLED;
+-	}
+-	if(likely(val & PCMP_INT_STATUS_ALLREAD)){
+-		/*Inform higher layer that we have completed a period */
+-		snd_pcm_period_elapsed(stb7100->current_substream);
+-		res=  IRQ_HANDLED;
+-	}
+-	return  res;
+-}
+-
+-static struct stm_dma_req_config req_config = {
+-	.rw		= REQ_CONFIG_WRITE,
+-	.opcode		= REQ_CONFIG_OPCODE_4,
+-	.count		= 1,
+-	.increment	= 0,
+-	.hold_off	= 0,
+-	.initiator	= 0, /* This was 1 for 7100, do we need to fix? */
+-};
+-
+-static int stb7100_program_fdma(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t          *chip    = snd_pcm_substream_chip(substream);
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	unsigned long irqflags=0;
+-	int err=0;
+-
+-	if(!chip->out_pipe || ! chip->pcm_player)
+-		return -EINVAL;
+-
+-	spin_lock_irqsave(&chip->lock,irqflags);
+-
+-	if (chip->dma_req == NULL) {
+-		chip->dma_req = dma_req_config(chip->fdma_channel, chip->fdma_req, &req_config);
+-		if (chip->dma_req == NULL) {
+-			spin_unlock_irqrestore(&chip->lock,irqflags);
+-			return -EBUSY;
+-		}
+-	}
+-
+-	dma_params_init(&chip->dmap,
+-			MODE_PACED,
+-			STM_DMA_LIST_CIRC);
+-
+-	chip->buffer_start_addr = (unsigned long)runtime->dma_addr;
+-
+-	dma_params_DIM_1_x_0(&chip->dmap);
+-
+-	dma_params_req(&chip->dmap, chip->dma_req);
+-
+-	dma_params_addrs(&chip->dmap,runtime->dma_addr,
+-			virt_to_phys(chip->pcm_player+STM_PCMP_DATA_FIFO),
+-			snd_pcm_lib_buffer_bytes(substream));
+-
+-	dma_compile_list(chip->fdma_channel, &chip->dmap, GFP_ATOMIC);
+-
+-	spin_unlock_irqrestore(&chip->lock,irqflags);
+-	return err;
+-}
+-
+-
+-static int stb7100_program_fsynth(struct snd_pcm_substream *substream)
+-{
+-	int i;
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-        unsigned long flags=0;
+-        int err=0, dev_num=0,sdiv=0;
+-
+-	spin_lock_irqsave(&chip->lock,flags);
+-        dev_num = chip->card_data->major == PROTOCOL_CONVERTER_DEVICE ?
+-        			0:
+-        			chip->card_data->major;
+-
+-	if(! runtime->rate  || ! chip->pcm_clock_reg){
+-		err= -EINVAL;
+-		goto exit;
+-	}
+-
+-	else for(i=0; i < NUM_CLOCK_SETTINGS; i++) {
+-		if (runtime->rate == gClockSettings[i].freq){
+-
+-			writel(0,chip->pcm_clock_reg +dev_fsynth_regs[PROG_EN][dev_num]);
+-
+-                        /*if we are using the PCM converter we require a divisor of 128 not 256
+-                           therefore our SDIV must be incremented to account for this
+-                         */
+-			switch(chip->oversampling_frequency){
+-				case 128:
+-					/*
+-					 * FSynth setting are for 256xFs, adding
+-					 * one to sdiv changes this to 128xFs
+-					 */
+-					sdiv = gClockSettings[i].sdiv_val +1;
+-					break;
+-				case 256:
+-					sdiv = gClockSettings[i].sdiv_val;
+-					break;
+-				default:
+-					printk("snd_pcm_program_freq: unsupported oversampling frequency %d\n",chip->oversampling_frequency);
+-					err= -EINVAL;
+-					goto exit;
+-			}
+-
+-                        writel(sdiv,chip->pcm_clock_reg +dev_fsynth_regs[SDIV][dev_num]);
+-
+-			writel(gClockSettings[i].md_val ,
+-				chip->pcm_clock_reg + dev_fsynth_regs[MD][dev_num]);
+-
+-			writel(gClockSettings[i].pe_val,
+-				chip->pcm_clock_reg + dev_fsynth_regs[PE][dev_num]);
+-
+-			writel(SELECT_PROG_FSYN,chip->pcm_clock_reg +dev_fsynth_regs[PROG_EN][dev_num]);
+-			writel(0,chip->pcm_clock_reg +dev_fsynth_regs[PROG_EN][dev_num]);
+-			err = 0;
+-			goto exit;
+-		}
+-	}
+-	err =  -1;
+-exit:
+-	spin_unlock_irqrestore(&chip->lock,flags);
+-	return err;
+-
+-}
+-
+-
+-static int stb7100_program_pcmplayer(struct snd_pcm_substream *substream)
+-{
+-	unsigned long ctrlreg, fmtreg;
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+-	unsigned long irqmask = MEM_FULL_READIRQ;
+-	unsigned long flags=0;
+-
+-	fmtreg = PCMP_FORMAT_32  | PCMP_ALIGN_START  | PCMP_MSB_FIRST  |
+-		 chip->i2s_sampling_edge |PCMP_PADDING_ON;
+-
+-	ctrlreg = (runtime->period_size * runtime->channels) << PCMP_SAMPLES_SHIFT;
+-
+-	/*
+-	 * The PCM data format is set to be I2S.
+-	 * External DACs must be configured to expect this format and
+-	 * an oversampling frequency of 256*Fs. Please see the documentation
+-	 * on http://www.stlinux.com for board configuration information.
+-	 *
+-         * Except when we are running the PCM0 with the spdif converter, in
+-         * which case the HDMI expects an oversampling frequency of 128*FS,
+-         * as defined in the spec.
+-         */
+-
+-        ctrlreg |= PCMP_NO_ROUNDING;
+-	
+-	/*We will always clock out I2s from the DAC's, however, when in 16bit
+-	 * mode we can flip the L/R ordering bit to give the correct LR ordering for
+-	 * 16 bit packed into I2s.  With the caviat that */
+-        if(runtime->format == SNDRV_PCM_FORMAT_S16_LE) {
+-		ctrlreg |= PCMP_MEM_FMT_16_16;
+-		fmtreg  |= PCMP_LENGTH_16 | PCMP_LRLEVEL_LEFT_HIGH;
+-        } else {
+-		ctrlreg |= PCMP_MEM_FMT_16_0;
+-		fmtreg  |= PCMP_LENGTH_24| PCMP_LRLEVEL_LEFT_LOW;
+-        }
+-
+-
+-	/*
+-	 * Note that the frequency divide is the same for both 32bit and 16bit
+-	 * data input, because the number of _output_ bits per subframe is
+-	 * always 32.
+-	 */
+-	spin_lock_irqsave(&chip->lock,flags);
+-	switch(chip->oversampling_frequency){
+-		case 128:
+-			ctrlreg |= PCMP_FSYNTH_DIVIDE32_128;
+-			break;
+-		case 256:
+-			ctrlreg |= PCMP_FSYNTH_DIVIDE32_256;
+-			break;
+-		default:
+-			printk("snd_pcm_program_pcmplayer: unsupported oversampling frequency %d\n",chip->oversampling_frequency);
+-			break;
+-	}
+-
+-	if(PROTOCOL_CONVERTER_DEVICE==chip->card_data->major){
+-		/*this call will result in a reset and sleep of the
+-		 * converter, so we abandon locks now.*/
+-	 	spin_unlock_irqrestore(&chip->lock,flags);
+-		stb7100_converter_program_player(substream);
+-		spin_lock_irqsave(&chip->lock,flags);
+-	}
+-
+-	if(get_spdif_syncing_status()==SPDIF_SYNC_MODE_ON)
+-		ctrlreg |= PCMP_WAIT_SPDIF_LATENCY;
+-	else
+-		ctrlreg |= PCMP_IGNORE_SPDIF_LATENCY;
+-
+-	chip->pcmplayer_control = ctrlreg;
+-        /*
+-         * The 7100 cut >=3 can use 2-10 channels, cut < 3 is like the
+-         * stm8000 and is fixed to 5 stereo channels. 7109 is always dynamic
+-         * channel programmable.
+-         */
+-
+-	fmtreg |= (runtime->channels/2) << PCMP_CHANNELS_SHIFT;
+-	fmtreg |= PCMP_DREQ_TRIGGER << PCMP_DREQ_TRIGGER_SHIFT;
+-	writel(fmtreg, chip->pcm_player + STM_PCMP_FORMAT);
+-
+-	/*enable the allread irq - but only for the pcm players, the pcm
+-	 * converter takes this interrupt during I2s->IEC60958 mode*/
+-	if(PROTOCOL_CONVERTER_DEVICE != chip->card_data->major){
+-		writel(irqmask,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
+-	}
+-	spin_unlock_irqrestore(&chip->lock,flags);
+-	return 0;
+-}
+-
+-
+-static int stb7100_pcm_program_hw(struct snd_pcm_substream *substream)
+-{
+-	int err=0;
+-	if((err = stb7100_program_fsynth(substream)) < 0)
+-		return err;
+-
+-	if((err = stb7100_program_pcmplayer(substream)) < 0)
+-		return err;
+-
+-	if((err = stb7100_program_fdma(substream)) < 0)
+-		return err;
+-
+-	return 0;
+-}
+-
+-
+-static int stb7100_pcm_free(pcm_hw_t *card)
+-{
+-	writel(PCMP_OFF, card->pcm_player + STM_PCMP_CONTROL);
+-	iounmap(card->pcm_clock_reg);
+-	iounmap(card->out_pipe);
+-	iounmap(card->pcm_player);
+-
+-	if(card->irq > 0)
+-		free_irq(card->irq,(void *)card);
+-
+-	if(card->fdma_channel>=0)
+-		free_dma(card->fdma_channel);
+-
+-	kfree(card);
+-
+-	return 0;
+-}
+-
+-
+-static void set_default_device_clock(pcm_hw_t * chip)
+-{
+-/*
+- * Set a default clock frequency running for each device. Not doing this
+- * can lead to clocks not starting correctly later, for reasons that
+- * cannot be explained at this time.
+- */
+-
+- /*the protocol converter clocks from the pcm0 clock(fsynth0)*/
+- 	int dev = (PROTOCOL_CONVERTER_DEVICE == chip->card_data->major) ?
+- 					0:
+- 					chip->card_data->major;
+-
+-	writel(0,chip->pcm_clock_reg +dev_fsynth_regs[PROG_EN][dev]);
+-
+-        writel(gClockSettings[0].sdiv_val ,
+-               chip->pcm_clock_reg +dev_fsynth_regs[SDIV][dev]);
+-
+-        writel(gClockSettings[0].md_val ,
+-               chip->pcm_clock_reg + dev_fsynth_regs[MD][dev]);
+-
+-        writel(gClockSettings[0].pe_val,
+-               chip->pcm_clock_reg + dev_fsynth_regs[PE][dev]);
+-
+-        writel(SELECT_PROG_FSYN,chip->pcm_clock_reg +
+-               dev_fsynth_regs[PROG_EN][dev]);
+-
+-        writel(0,chip->pcm_clock_reg +
+-               dev_fsynth_regs[PROG_EN][dev]);
+-        writel(0,chip->pcm_player + STM_PCMP_CONTROL);
+-}
+-
+-
+-static void stb7100_pcm0_create(pcm_hw_t *stb7100)
+-{
+-	unsigned long reg;
+-	/*
+-	 * Do a one time setup of the audio clock system
+-	 *
+-	 * First put the audio FSynth block into reset
+-	 */
+-	reg =	AUD_FSYNTH_SATA_PHY_30MHZ_REF	|
+-		AUD_FSYNTH_VGOOD_REF_SOURCE	|
+-		AUD_FSYNTH_FS_REF_CLK_27_30MHZ	|
+-		AUD_FSYNTH_NPDA_POWER_UP	|
+-		AUD_FSYNTH_FSYNTH2_ACTIVE	|
+-		AUD_FSYNTH_FSYNTH1_ACTIVE	|
+-		AUD_FSYNTH_FSYNTH0_ACTIVE	|
+-		/*
+-		 * Each of these reserved bits relates to one of the
+-		 * Fsynth's (6-0 7-1 8-2).  However at the present time
+-		 * they are not documented.  The datasheets
+-		 * are currently being updated.  Each must be set to
+-		 * enable correct playback at 256Khz DAC freq */
+-		AUD_FSYNTH_RESERVED_6		|
+-		AUD_FSYNTH_RESERVED_7		|
+-		AUD_FSYNTH_RESERVED_8		|
+-		AUD_FSYNTH_FSYNTH2_ENABLE	|
+-		AUD_FSYNTH_FSYNTH1_ENABLE	|
+-		AUD_FSYNTH_FSYNTH0_ENABLE;
+-
+-	writel((reg | AUD_FSYNTH_RESET_ON),stb7100->pcm_clock_reg);
+-	/*
+-	 * Now bring it out of reset, powering up the analogue
+-	 * part and bringing the digital parts out of standby.
+-	 */
+-	writel(reg,stb7100->pcm_clock_reg);
+-
+-	/*
+-	 * Set all the audio pins to be outputs
+-	 */
+-	reg =	PCM_DATA_OUT << PCM_CLK_OUT |
+-		PCM_DATA_OUT << PCM0_OUT    |
+-		PCM_DATA_OUT << PCM1_OUT    |
+-		PCM_DATA_OUT << SPDIF_ENABLE;
+-
+-	writel(reg,stb7100->pcm_clock_reg+AUD_IO_CTL_REG);
+-}
+-
+-
+-static unsigned int stb7100_pcm_channels[] = { 2,4,6,8,10 };
+-
+-
+-static struct snd_pcm_hw_constraint_list stb7100_constraints_channels = {
+-		.count = ARRAY_SIZE(stb7100_pcm_channels),
+-		.list = stb7100_pcm_channels,
+-		.mask = 0
+-};
+-
+-static int stb7100_pcm_open(struct snd_pcm_substream *substream)
+-{
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-    	int                err=0;
+-	pcm_hw_t          *chip = snd_pcm_substream_chip(substream);
+-	const char * dmac_id =STM_DMAC_ID;
+-	const char * lb_cap_channel = STM_DMA_CAP_LOW_BW;
+-	const char * hb_cap_channel = STM_DMA_CAP_HIGH_BW;
+-
+-	if(chip->fdma_channel <0){
+-		if((err=request_dma_bycap(
+-					&dmac_id,
+-					&hb_cap_channel,
+-					"STB7100_PCM_DMA"))<0){
+-			if((err=request_dma_bycap(
+-						&dmac_id,
+-						&lb_cap_channel,
+-						"STB7100_PCM_DMA"))<0){
+-				return -ENODEV;
+-			}
+-		}
+-		chip->fdma_channel= err;
+-	}
+-	BUG_ON(chip->fdma_channel <0);
+-	/*PCMP IP's prior to 7100C3 are fixed to 10 channels, later
+-	 * revisions and 7109's can program for 2-10 channels - here we
+-	 * expose the number of programmable channels*/
+-
+-	runtime->hw.channels_min = chip->min_ch;
+-	runtime->hw.channels_max = chip->max_ch;
+-	
+-	/*
+-	 *Here we disable 16b mode for PCM0/PCM_CNV.
+-	 * There is a catch 22 in that both protocol converter & PCM0 will fail to
+-	 * reinitialise correctly if their clock source is removed, and we cannot
+-	 * guarantee correct L/R ordering after a 16/32 - 32/16b mode switch
+-	 * unless we remove the clocks after playback*/
+-	if(	(chip->card_data->major == PCM0_DEVICE) || 
+-		(chip->card_data->major == PROTOCOL_CONVERTER_DEVICE))
+-	
+-		runtime->hw.formats = SNDRV_PCM_FMTBIT_S32_LE;
+-	else
+-		runtime->hw.formats = (SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S16_LE);
+-	
+-	runtime->hw.buffer_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,chip->max_ch),
+-	runtime->hw.period_bytes_min = FRAMES_TO_BYTES(1,chip->min_ch),
+-	runtime->hw.period_bytes_max = FRAMES_TO_BYTES(PCM_MAX_FRAMES,chip->max_ch),
+-
+-	err = snd_pcm_hw_constraint_list(substream->runtime, 0,
+-					 SNDRV_PCM_HW_PARAM_CHANNELS,
+-					 &stb7100_constraints_channels);
+-	return err;
+-}
+-
+-
+-static stm_playback_ops_t stb7100_pcm_ops = {
+-	.free_device      = stb7100_pcm_free,
+-	.open_device      = stb7100_pcm_open,
+-	.program_hw       = stb7100_pcm_program_hw,
+-	.playback_pointer = stb7100_fdma_playback_pointer,
+-	.start_playback   = stb7100_pcm_start_playback,
+-	.stop_playback    = stb7100_pcm_stop_playback,
+-	.pause_playback   = stb7100_pcm_pause_playback,
+-	.unpause_playback = stb7100_pcm_unpause_playback
+-};
+-
+-static struct snd_device_ops ops = {
+-    .dev_free = snd_pcm_dev_free,
+-};
+-
+-
+-static int stb7100_create_lpcm_device(pcm_hw_t *in_chip, struct snd_card **this_card,int dev)
+-{
+-	int err = 0;
+-	int irq = linux_pcm_irq[dev];
+-
+-	pcm_hw_t * chip  = in_chip;
+-	struct snd_card *card={0};
+-
+-	card = snd_card_new(index[card_list[dev].major],id[card_list[dev].major], THIS_MODULE, 0);
+-        if (this_card == NULL){
+-      		printk(" cant allocate new card of %d\n",card_list[dev].major);
+-      		return -ENOMEM;
+-        }
+-
+-	chip->fdma_channel =-1;
+-	chip->card_data = &card_list[dev];
+-	spin_lock_init(&chip->lock);
+-
+-
+-
+-        chip->card          = card;
+-	chip->irq           = -1;
+-	chip->pcm_clock_reg = ioremap(AUD_CFG_BASE, 0);
+-	chip->out_pipe      = ioremap(FDMA2_BASE_ADDRESS,0);
+-	chip->pcm_converter = 0;
+-	chip->pcm_player    = ioremap(pcm_base_addr[chip->card_data->major],0);
+-        chip->hw            = stb7100_pcm_hw;
+-	chip->oversampling_frequency = 256;
+-
+-	chip->playback_ops  = &stb7100_pcm_ops;
+-
+-	sprintf(card->shortname, "STb7100_PCM%d",chip->card_data->major);
+-	sprintf(card->longname,  "STb7100_PCM%d",chip->card_data->major );
+-	sprintf(card->driver,    "%d",chip->card_data->major);
+-
+-	if(request_irq(irq, stb7100_pcm_interrupt, IRQF_SHARED, "STB7100_PCM", (void*)chip)){
+-               		printk(">>> failed to get IRQ %d\n",irq);
+-	                stb7100_pcm_free(chip);
+-        	        return -EBUSY;
+-        }
+-	chip->irq = irq;
+-
+-    	switch(chip->card_data->major){
+-	        case PCM0_DEVICE:
+-        	    	stb7100_pcm0_create(chip);
+-			break;
+-		case PCM1_DEVICE:
+-			stb7100_reset_internal_DAC(chip);
+-			break;
+-    	}
+-
+-	set_default_device_clock(chip);
+-	stb7100_reset_pcm_player(chip);
+-
+-	if((err = snd_card_pcm_allocate(chip,chip->card_data->minor,card->longname)) < 0){
+-        	printk(">>> Failed to create PCM stream \n");
+-	        stb7100_pcm_free(chip);
+-    	}
+-    	if((err = snd_generic_create_controls(chip)) < 0){
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-
+-	if((err = snd_device_new(card, SNDRV_DEV_LOWLEVEL,chip, &ops)) < 0){
+-		printk(">>> creating sound device :%d,%d failed\n",chip->card_data->major,chip->card_data->minor);
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-
+-	if ((err = snd_card_register(card)) < 0) {
+-		printk("%s snd_card_registration() failed !\n",__FUNCTION__);
+-		stb7100_pcm_free(chip);
+-		return err;
+-	}
+-	*this_card = card;
+-	return 0;
+-}
+-static struct platform_device *pcm0_platform_device;
+-static struct platform_device *pcm1_platform_device;
+-static struct platform_device *cnv_platform_device;
+-
+-static int stb710x_platform_alsa_probe(struct device *dev);
+-
+-static struct device_driver alsa_cnv_driver = {
+-	.name  = "710x_ALSA_CNV",
+-	.owner = THIS_MODULE,
+-	.bus   = &platform_bus_type,
+-	.probe = stb710x_platform_alsa_probe,
+-};
+-
+-static struct device_driver alsa_pcm0_driver = {
+-	.name  = "710x_ALSA_PCM0",
+-	.owner = THIS_MODULE,
+-	.bus   = &platform_bus_type,
+-	.probe = stb710x_platform_alsa_probe,
+-};
+-
+-static struct device_driver alsa_pcm1_driver = {
+-	.name  = "710x_ALSA_PCM1",
+-	.owner = THIS_MODULE,
+-	.bus   = &platform_bus_type,
+-	.probe = stb710x_platform_alsa_probe,
+-};
+-static struct device alsa_pcm1_device = {
+-	.bus_id="alsa_710x_pcm1",
+-	.driver = &alsa_pcm1_driver,
+-	.parent   = &platform_bus ,
+-	.bus      = &platform_bus_type,
+-};
+-
+-static struct device alsa_pcm0_device = {
+-	.bus_id="alsa_710x_pcm0",
+-	.driver = &alsa_pcm0_driver,
+-	.parent   = &platform_bus ,
+-	.bus      = &platform_bus_type,
+-};
+-static struct device alsa_cnv_device = {
+-	.bus_id="alsa_710x_cnv",
+-	.driver = &alsa_cnv_driver,
+-	.parent   = &platform_bus ,
+-	.bus      = &platform_bus_type,
+-};
+-
+-
+-static int __init stb710x_platform_alsa_probe(struct device *dev)
+-{
+-	if(strcmp(dev->bus_id,alsa_pcm0_driver.name)==0)
+-	        pcm0_platform_device = to_platform_device(dev);
+-
+-	else if(strcmp(dev->bus_id,alsa_pcm1_driver.name)==0)
+-	        pcm1_platform_device = to_platform_device(dev);
+-
+-	else if(strcmp(dev->bus_id,alsa_cnv_driver.name)==0)
+-	        cnv_platform_device = to_platform_device(dev);
+-
+-	else return -EINVAL;
+-
+-        return 0;
+-}
+-
+-static int snd_pcm_card_generic_probe( int dev)
+-{
+-	struct device_driver *  dev_driver;
+-	struct device * device;
+-
+-	switch(dev){
+-		case PCM0_DEVICE:
+-			dev_driver= 	&alsa_pcm0_driver;
+-			device =  	&alsa_pcm0_device;
+-			break;
+-		case PCM1_DEVICE:
+-			dev_driver= 	&alsa_pcm1_driver;
+-			device =  	&alsa_pcm1_device;
+-			break;
+-		case PROTOCOL_CONVERTER_DEVICE:
+-			dev_driver= 	&alsa_cnv_driver;
+-			device =  	&alsa_cnv_device;
+-			break;
+-		default:
+-			return -EINVAL;
+-	}
+-	if(driver_register(dev_driver)==0){
+-		if(device_register(device)!=0)
+-			return -ENOSYS;
+-	}
+-	else return -ENOSYS;
+-	return 0;
+-}
+-
+-
+-static int snd_pcm_stb710x_probe(pcm_hw_t **chip, struct snd_card **card,int dev)
+-{
+-	unsigned long err=0;
+-	if( (err= snd_pcm_card_generic_probe(dev))<0){
+-               	snd_card_free(*card);
+-               	return -ENOSYS;
+-	}
+-
+-	if((*chip =(pcm_hw_t *) kcalloc(1,sizeof(pcm_hw_t), GFP_KERNEL)) == NULL)
+-        	return -ENOMEM;
+-
+-	switch(card_list[dev].major){
+-       		case PROTOCOL_CONVERTER_DEVICE:
+-			if(register_platform_driver(cnv_platform_device,*chip,card_list[dev].major)!=0){
+-				printk("%s Error Registering Protocol Converter\n",__FUNCTION__);
+-				return -ENODEV;
+-			}
+-	      		if((err=  stb7100_create_converter_device(*chip,card,dev))<0){
+-	       		 	printk("%s Error Creating protocol Converter\n",__FUNCTION__);
+-	       		       	snd_card_free(*card);
+-	      		}
+-			return err;
+-	        case PCM0_DEVICE:
+-	        	{
+-			pcm_hw_t *ip_chip={0};
+-
+-			if(register_platform_driver(pcm0_platform_device,*chip,card_list[dev].major)!=0){
+-				printk("%s Error Registering PCM0 player\n",__FUNCTION__);
+-				return -ENODEV;
+-			}
+-	        	if((err = stb7100_create_lpcm_device(*chip,card,PCM0_DEVICE)) <0){
+-				printk("%s Error Creating PCM0 player\n",__FUNCTION__);
+-	                       	snd_card_free(*card);
+-	        	}
+-
+-	 		if((err = snd_pcmin_stb710x_probe(ip_chip,*card,PCMIN_DEVICE))<0)
+-				return -ENODEV;
+-
+-	              	return err;
+-	        	}
+-	        case PCM1_DEVICE:
+-
+-	        	if(register_platform_driver(pcm1_platform_device,*chip,card_list[dev].major)!=0){
+-				printk("%s Error Registering PCM1 player\n",__FUNCTION__);
+-				return -ENODEV;
+-	        	}
+-	               	if((err = stb7100_create_lpcm_device(*chip,card,PCM1_DEVICE)) <0){
+-	               		printk("%s Error Creating PCM1 player\n",__FUNCTION__);
+-	                      	snd_card_free(*card);
+-	               	}
+-	                return err;
+-	        default:
+-	        	printk("%s Cant Recognise Alsa Card %d\n",__FUNCTION__,dev);
+-	              	return -ENODEV;
+-	        }
+-	return 0;
+-}
+-
+-static int __init snd_pcm_card_probe(int dev)
+-{
+-	struct snd_card card={0};
+-	struct snd_card * ptr  = &card;
+-	pcm_hw_t *chip={0};
+-	int err=0;
+-
+-	if(SPDIF_DEVICE == dev){
+-		if((err = snd_spdif_stb710x_probe(&chip,&ptr,dev))<0)
+-			goto err_exit;
+-	}
+-	else switch(dev){
+-		case PCM0_DEVICE:
+-		case PCM1_DEVICE:
+-		case PROTOCOL_CONVERTER_DEVICE:
+-	 		err = snd_pcm_stb710x_probe(&chip,&ptr,dev);
+-	 		if(err < 0)
+-	 			goto err_exit;
+-	 		break;
+-	 	default:
+-	 		printk("%s Bad Alsa Card vector- %d\n",__FUNCTION__,dev);
+-	 		goto err_exit;
+-	}
+-#if defined(CONFIG_STB7100_FIFO_DEBUG)
+-	chip->fifo_check_mode=1;
+-#else
+-	chip->fifo_check_mode=0;
+-#endif
+-        return 0;
+-err_exit:
+-	printk("%s Error Initialising Audio Device %d - err %d\n",__FUNCTION__,dev,err);
+-	return err;
+-}
+Index: linux-2.6.23-stm/sound/stm/st_pcm_core.c
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/st_pcm_core.c
++++ /dev/null
+@@ -1,1317 +0,0 @@
+-/*
+- *  STPCM Player Sound Driver
+- *  Copyright (c) 2005 STMicroelectronics Limited
+- *  Authors: Stephen Gallimore <Stephen.Gallimore@st.com> and
+- *  Mark Glaisher <Mark.Glaisher@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-#include <sound/driver.h>
+-#include <asm/cpu/cacheflush.h>
+-#include <asm/cacheflush.h>
+-#include <asm/io.h>
+-#include <asm/irq.h>
+-
+-#include <linux/types.h>
+-#include <linux/init.h>
+-#include <linux/jiffies.h>
+-#include <linux/interrupt.h>
+-#include <linux/slab.h>
+-#include <linux/time.h>
+-#include <linux/wait.h>
+-#include <linux/proc_fs.h>
+-
+-
+-#include <sound/core.h>
+-#include <sound/control.h>
+-#include <sound/pcm.h>
+-#define SNDRV_GET_ID
+-#include <sound/initval.h>
+-
+-#include <sound/asoundef.h>
+-
+-#if defined(CONFIG_BIGPHYS_AREA)
+-
+-#include <linux/bigphysarea.h>
+-#define STM_USE_BIGPHYS_AREA 1
+-
+-#elif defined(CONFIG_BPA2)
+-
+-#include <linux/bpa2.h>
+-#define STM_USE_BIGPHYS_AREA 1
+-
+-#else
+-
+-/* Private dummy defines so we do not have to ifdef the code */
+-static caddr_t  bigphysarea_alloc(int size) { return NULL; }
+-static void     bigphysarea_free(caddr_t addr, int size) {}
+-#define STM_USE_BIGPHYS_AREA 0
+-
+-#endif /* CONFIG_BIGPHYS_AREA */
+-
+-
+-#include <asm/dma.h>
+-#include "st_pcm.h"
+-
+-static int index[SNDRV_CARDS] = {SNDRV_DEFAULT_IDX1,SNDRV_DEFAULT_IDX1,SNDRV_DEFAULT_IDX1,SNDRV_DEFAULT_IDX1,SNDRV_DEFAULT_IDX1};
+-        	/* Index 0-MAX */
+-static char *id[SNDRV_CARDS] = {SNDRV_DEFAULT_STR1,SNDRV_DEFAULT_STR1,SNDRV_DEFAULT_STR1,SNDRV_DEFAULT_STR1,SNDRV_DEFAULT_STR1};	/* ID for this card */
+-
+-static u8 global_spdif_sync_status=0;
+-
+-static int get_spdif_syncing_status(void)
+-{
+-	return global_spdif_sync_status;
+-}
+-
+-
+-void set_spdif_syncing_status(int enable)
+-{
+-	global_spdif_sync_status = enable;
+-}
+-
+-
+-#if defined (CONFIG_CPU_SUBTYPE_STB7100)
+-
+-#define SND_DRV_CARDS  5
+-
+-static stm_snd_output_device_t  card_list[SND_DRV_CARDS]= {
+-        /*major                      minor             input type          output type          */
+-        {PCM0_DEVICE,               MAIN_DEVICE, STM_DATA_TYPE_LPCM,     STM_DATA_TYPE_LPCM},
+-        {PCM1_DEVICE,               MAIN_DEVICE, STM_DATA_TYPE_LPCM,     STM_DATA_TYPE_LPCM},
+-        {SPDIF_DEVICE,              MAIN_DEVICE, STM_DATA_TYPE_IEC60958, STM_DATA_TYPE_IEC60958},
+-        {PROTOCOL_CONVERTER_DEVICE, MAIN_DEVICE, STM_DATA_TYPE_LPCM,     STM_DATA_TYPE_IEC60958},
+-        {PCM0_DEVICE,	   	    SUB_DEVICE1, STM_DATA_TYPE_I2S,	 STM_DATA_TYPE_LPCM}
+-};
+-
+-#include "stb7100_snd.h"
+-#include "stm7100_pcm.c"
+-#include "stb7100_i2s_spdif.c"
+-#include "stb7100_spdif.c"
+-#include "stb7100_pcmin.c"
+-#define DEVICE_NAME "STb7100"
+-
+-#else
+-	#error "BAD cpu arhitecture defined - PCM player is not supported"
+-#endif
+-
+-MODULE_AUTHOR("Mark Glaisher <mark.glaisher@st.com>");
+-MODULE_LICENSE("GPL");
+-MODULE_DESCRIPTION(DEVICE_NAME " ALSA driver");
+-MODULE_SUPPORTED_DEVICE("{{STM," DEVICE_NAME "}}");
+-
+-static int snd_pcm_playback_hwfree(struct snd_pcm_substream * substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-
+-        chip->card_data->in_use = 0;
+-
+-	if(runtime->dma_area == NULL)
+-		return 0;
+-
+-        if(STM_USE_BIGPHYS_AREA &&
+-           runtime->dma_bytes > PCM_BIGALLOC_SIZE) {
+-
+-		bigphysarea_free(runtime->dma_area,
+-				 runtime->dma_bytes);
+-
+-		runtime->dma_area    = 0;
+-		runtime->dma_addr    = 0;
+-		runtime->dma_bytes   = 0;
+-
+-		return 0;
+-	}
+-	else
+-		return snd_pcm_lib_free_pages(substream);
+-}
+-
+-
+-static snd_pcm_uframes_t snd_pcm_playback_pointer(struct snd_pcm_substream * substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	return chip->playback_ops->playback_pointer(substream);
+-}
+-
+-
+-static int snd_pcm_playback_prepare(struct snd_pcm_substream * substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long flags=0;
+-	/* Chip isn't running at this point so we don't have to disable interrupts*/
+-	spin_lock_irqsave(&chip->lock,flags);
+-
+-#if defined (CONFIG_CPU_SUBTYPE_STB7100)
+-	/*
+-	 * On the STb7100 we can only use either the PCM0 device or the protocol
+-	 * converter as they physically use the same hardware. As we have no
+-	 * device specific hook for prepare, we do this here for the moment.
+-	 */
+-	if((card_list[PCM0_DEVICE].in_use               && (chip->card_data->major == PROTOCOL_CONVERTER_DEVICE)) ||
+-	   (card_list[PROTOCOL_CONVERTER_DEVICE].in_use && (chip->card_data->major == PCM0_DEVICE)))
+-	{
+-		int converter_enable;
+-
+-		if(chip->card_data->minor == SUB_DEVICE1)
+-			goto setup;
+-
+-		converter_enable = (chip->card_data->major==PROTOCOL_CONVERTER_DEVICE ? 1:0);
+-		printk("%s: device (%d,%d) is in use by (%d,%d)\n",
+-                	__FUNCTION__,
+-                	chip->card_data->major,
+-                	chip->card_data->minor,
+-                	(converter_enable ? 	PCM0_DEVICE:
+-                				PROTOCOL_CONVERTER_DEVICE),
+-                	(converter_enable ? 	card_list[PCM0_DEVICE].minor:
+-                				card_list[PROTOCOL_CONVERTER_DEVICE].minor));
+-
+-        	return -EBUSY;
+-        }
+-#endif
+-setup:
+-	chip->card_data->in_use = 1;
+-	spin_unlock_irqrestore(&chip->lock,flags);
+-
+-	if(chip->playback_ops->program_hw(substream) < 0)
+-		return -EIO;
+-
+-	return 0;
+-}
+-
+-
+-static int snd_pcm_dev_free(struct snd_device *dev)
+-{
+-	pcm_hw_t *snd_card = dev->device_data;
+-
+-	DEBUG_PRINT(("snd_pcm_dev_free(dev = 0x%08lx)\n",dev));
+-	DEBUG_PRINT((">>> snd_card = 0x%08lx\n",snd_card));
+-
+-	if(snd_card->playback_ops->free_device)
+-		return snd_card->playback_ops->free_device(snd_card);
+-
+-	return 0;
+-}
+-
+-
+-static int snd_playback_trigger(struct snd_pcm_substream * substream, int cmd)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	switch(cmd)
+-	{
+-		case SNDRV_PCM_TRIGGER_START:
+-			chip->playback_ops->start_playback(substream);
+-			break;
+-		case SNDRV_PCM_TRIGGER_STOP:
+-			chip->playback_ops->stop_playback(substream);
+-		        chip->card_data->in_use = 0;
+-			break;
+-		case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+-			chip->playback_ops->pause_playback(substream);
+-			break;
+-		case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+-			chip->playback_ops->unpause_playback(substream);
+-			break;
+-		default:
+-			return -EINVAL;
+-	}
+-	snd_pcm_trigger_done(substream,substream);
+-	return 0;
+-}
+-
+-
+-static int snd_pcm_playback_close(struct snd_pcm_substream * substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-
+-	DEBUG_PRINT(("snd_pcm_playback_close(substream = 0x%08lx)\n",substream));
+-	DEBUG_PRINT((">>> chip = 0x%08lx\n",chip));
+-
+-	/*
+-	 * If the PCM clocks are programmed then ensure the playback is
+-	 * stopped. If not do nothing otherwise we can end up with the
+-	 * DAC in a bad state.
+-	 */
+-	if(chip->are_clocks_active)
+-		chip->playback_ops->stop_playback(substream);
+-
+-	spin_lock(&chip->lock);
+-	chip->current_substream = 0;
+-	spin_unlock(&chip->lock);
+-
+-	return 0;
+-}
+-
+-
+-static int snd_pcm_playback_hwparams(struct snd_pcm_substream* substream,
+-					 struct snd_pcm_hw_params* hw_params)
+-{
+-	int   err  = 0;
+-	int   size = 0;
+-	char* addr = 0;
+-
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	size = params_buffer_bytes(hw_params);
+-
+-	if (STM_USE_BIGPHYS_AREA && size > PCM_BIGALLOC_SIZE){
+-		/*
+-		 * This routine can be called multiple times without a free
+-		 * in between, so we need to make sure we don't overallocate.
+-		 */
+-		if(runtime->dma_area) {
+-			if(runtime->dma_bytes >= size) {
+-				err = 0; /* Not changed */
+-				goto exit;
+-			}
+-			else {
+-				/* Use this to make sure we do the right free */
+-				snd_pcm_playback_hwfree(substream);
+-			}
+-		}
+-
+-		addr = bigphysarea_alloc(size);
+-
+-		if(addr == 0) {
+-			printk(KERN_WARNING "ALSA driver: sound buffer allocation from bigphysmem failed.\n");
+-			printk(KERN_WARNING "ALSA driver: either increase bigphysmem pages with 'bigphyspages=xxxx' on the kernel command line\n");
+-			printk(KERN_WARNING "ALSA driver: or reduce the requested buffer size to <=128k (3276 audio frames)\n");
+-			err = -ENOMEM;
+-			goto exit;
+-		}
+-		else{
+-			dma_cache_wback(&addr, size);
+-			runtime->dma_area    = addr;
+-			runtime->dma_addr    = virt_to_phys(addr);
+-			runtime->dma_bytes   = size;
+-			err = 1; /* Changed buffer */
+-		}
+-	}
+-	else {
+-		err = snd_pcm_lib_malloc_pages(substream, size);
+-		if(err >= 0) {
+-			runtime->dma_addr = virt_to_phys(runtime->dma_area);
+-		}
+-	}
+-
+-exit:
+-	DEBUG_PRINT((">>> dma_area = 0x%08lx err = %d\n",substream->runtime->dma_area, err));
+-
+-	return err;
+-}
+-
+-
+-/*
+- * This is a constraint rule which limits the period size to the capabilities
+- * of the ST PCM Players. These only have a 19bit count register which
+- * counts individual samples, i.e. for a 10-channel player it will count 10
+- * for each alsa 10 channel frame. This means we also need to ensure that
+- * the number of samples is an exact multiple of the number of channels.
+- */
+-static int snd_pcm_period_size_rule(struct snd_pcm_hw_params *params,
+-				     struct snd_pcm_hw_rule *rule)
+-{
+-	struct snd_interval *periodsize;
+-	struct snd_interval *channels;
+-	struct snd_interval  newperiodsize;
+-
+-	int refine = 0;
+-
+-	periodsize    = hw_param_interval(params, SNDRV_PCM_HW_PARAM_PERIOD_SIZE);
+-	newperiodsize = *periodsize;
+-	channels      = hw_param_interval(params, SNDRV_PCM_HW_PARAM_CHANNELS);
+-
+-	if((periodsize->max * channels->min) > PCMP_MAX_SAMPLES) {
+-		newperiodsize.max = PCMP_MAX_SAMPLES / channels->min;
+-		refine = 1;
+-	}
+-
+-	if((periodsize->min * channels->min) > PCMP_MAX_SAMPLES) {
+-		newperiodsize.min = PCMP_MAX_SAMPLES / channels->min;
+-		refine = 1;
+-	}
+-
+-	if(refine) {
+-		DEBUG_PRINT(("snd_pcm_period_size_rule: refining (%d,%d) to (%d,%d)\n",periodsize->min,periodsize->max,newperiodsize.min,newperiodsize.max));
+-		return snd_interval_refine(periodsize, &newperiodsize);
+-	}
+-
+-	return 0;
+-}
+-
+-
+-static int snd_pcm_playback_open(struct snd_pcm_substream * substream)
+-{
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	int err = 0;
+-
+-	DEBUG_PRINT(("snd_pcm_playback_open(substream = 0x%08lx)\n",substream));
+-	DEBUG_PRINT((">>> chip = 0x%08lx\n",chip));
+-
+-	snd_pcm_set_sync(substream);
+-
+-	snd_pcm_hw_rule_add(substream->runtime,
+-			    0, SNDRV_PCM_HW_PARAM_CHANNELS,
+-			    snd_pcm_period_size_rule,
+-			    0, SNDRV_PCM_HW_PARAM_PERIOD_SIZE,
+-			    -1);
+-
+-	snd_pcm_hw_rule_add(substream->runtime,
+-			    0, SNDRV_PCM_HW_PARAM_PERIOD_TIME,
+-			    snd_pcm_period_size_rule,
+-			    0, SNDRV_PCM_HW_PARAM_PERIOD_SIZE,
+-			    -1);
+-
+-	snd_pcm_hw_rule_add(substream->runtime,
+-			    0, SNDRV_PCM_HW_PARAM_PERIOD_SIZE,
+-			    snd_pcm_period_size_rule,
+-			    0, SNDRV_PCM_HW_PARAM_PERIOD_SIZE,
+-			    -1);
+-
+-	spin_lock(&chip->lock);
+-
+-	chip->current_substream = substream;
+-        runtime->hw = chip->hw;
+-
+-        if(chip->playback_ops->open_device)
+-		err = chip->playback_ops->open_device(substream);
+-
+-	spin_unlock(&chip->lock);
+-
+-	return err;
+-}
+-
+-/*
+- * nopage callback for mmapping a RAM page
+- */
+-
+-static struct page *snd_pcm_mmap_data_nopage(struct vm_area_struct *area, unsigned long address, int *type)
+-{
+-        struct snd_pcm_substream *substream = (struct snd_pcm_substream *)area->vm_private_data;
+-        struct snd_pcm_runtime *runtime;
+-        unsigned long offset;
+-        struct page * page;
+-        void *vaddr;
+-        size_t dma_bytes;
+-
+-        if (substream == NULL)
+-                return NOPAGE_OOM;
+-        runtime = substream->runtime;
+-        offset = area->vm_pgoff << PAGE_SHIFT;
+-        offset += address - area->vm_start;
+-        snd_assert((offset % PAGE_SIZE) == 0, return NOPAGE_OOM);
+-        dma_bytes = PAGE_ALIGN(runtime->dma_bytes);
+-        if (offset > dma_bytes - PAGE_SIZE)
+-                return NOPAGE_SIGBUS;
+-
+-        if (substream->ops->page) {
+-                page = substream->ops->page(substream, offset);
+-                if (! page)
+-                        return NOPAGE_OOM;
+-        } else {
+-                vaddr = runtime->dma_area + offset;
+-                page = virt_to_page(vaddr);
+-        }
+-        get_page(page);
+-        if (type)
+-                *type = VM_FAULT_MINOR;
+-        return page;
+-}
+-
+-
+-static struct vm_operations_struct snd_pcm_vm_ops_data =
+-{
+-        .open =         snd_pcm_mmap_data_open,
+-        .close =        snd_pcm_mmap_data_close,
+-        .nopage =       snd_pcm_mmap_data_nopage,
+-};
+-
+-/*
+- * mmap the DMA buffer on RAM
+- */
+-
+-static int snd_pcm_mmap(struct snd_pcm_substream *substream, struct vm_area_struct *area)
+-{
+-        area->vm_ops = &snd_pcm_vm_ops_data;
+-        area->vm_private_data = substream;
+-        area->vm_flags |= VM_RESERVED;
+-
+-        area->vm_page_prot = pgprot_noncached(area->vm_page_prot);
+-
+-        atomic_inc(&substream->mmap_count);
+-        return 0;
+-}
+-
+-
+-static int snd_pcm_silence(struct snd_pcm_substream *substream, int channel,
+-                            snd_pcm_uframes_t    pos,       snd_pcm_uframes_t count)
+-{
+-        struct snd_pcm_runtime *runtime = substream->runtime;
+-        char *hwbuf;
+-	int   totalbytes;
+-
+-        if(channel != -1)
+-                return -EINVAL;
+-
+-        hwbuf = runtime->dma_area + frames_to_bytes(runtime, pos);
+-
+-	totalbytes = frames_to_bytes(runtime, count);
+-
+-        snd_pcm_format_set_silence(runtime->format, hwbuf, totalbytes);
+-        dma_cache_wback(hwbuf, totalbytes);
+-        return 0;
+-}
+-
+-
+-static int snd_pcm_copy(struct snd_pcm_substream	*substream,
+-			 int			 channel,
+-			 snd_pcm_uframes_t	 pos,
+-			 void __user		*buf,
+-			 snd_pcm_uframes_t	 count)
+-{
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	char		  *hwbuf;
+-	int                totalbytes;
+-
+-	if(channel != -1)
+-		return -EINVAL;
+-
+-	hwbuf = runtime->dma_area + frames_to_bytes(runtime, pos);
+-
+-	totalbytes = frames_to_bytes(runtime, count);
+-
+-	if(substream->stream == SNDRV_PCM_STREAM_PLAYBACK){
+-
+-		if(copy_from_user(hwbuf, buf, totalbytes))
+-			return -EFAULT;
+-
+-		dma_cache_wback(hwbuf, totalbytes);
+-	}
+-	else{
+-		dma_cache_inv(hwbuf,totalbytes);
+-
+-		if(copy_to_user(buf,hwbuf,totalbytes))
+-			return -EFAULT;
+-	}
+-	return 0;
+-}
+-
+-/*
+- * IEC60958 channel status and format handling for SPDIF and I2S->SPDIF
+- * protocol converters
+- */
+-void iec60958_default_channel_status(pcm_hw_t *chip)
+-{
+-	chip->default_spdif_control.channel.status[0]  = (IEC958_AES0_CON_NOT_COPYRIGHT |
+-							  IEC958_AES0_CON_EMPHASIS_NONE);
+-
+-	chip->default_spdif_control.channel.status[1] |= (IEC958_AES1_CON_NON_IEC908_DVD |
+-							  IEC958_AES1_CON_ORIGINAL) ;
+-
+-
+-	chip->default_spdif_control.channel.status[2] |= (IEC958_AES2_CON_SOURCE_UNSPEC |
+-							  IEC958_AES2_CON_CHANNEL_UNSPEC);
+-
+-	chip->default_spdif_control.channel.status[3] |= (IEC958_AES3_CON_FS_44100 |
+-							  IEC958_AES3_CON_CLOCK_VARIABLE);
+-
+-	chip->default_spdif_control.channel.status[4]  = (IEC958_AES4_CON_WORDLEN_MAX_24 |
+-							  IEC958_AES4_CON_WORDLEN_24_20);
+-
+-	memset(chip->default_spdif_control.user,      0x0,sizeof(u8)*48);
+-	memset(chip->default_spdif_control.validity_l,0x0,sizeof(u8)*24);
+-	memset(chip->default_spdif_control.validity_r,0x0,sizeof(u8)*24);
+-}
+-
+-
+-void iec60958_set_runtime_status(struct snd_pcm_substream *substream)
+-{
+-	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-
+-	if(chip->pending_spdif_control.channel.status[0] & IEC958_AES0_PROFESSIONAL) {
+-		chip->pending_spdif_control.channel.status[0] &= ~IEC958_AES0_PRO_FS;
+-		switch(substream->runtime->rate){
+-			case 32000:
+-				chip->pending_spdif_control.channel.status[0]
+-					 |= IEC958_AES0_PRO_FS_32000;
+-				break;
+-			case 48000:
+-				chip->pending_spdif_control.channel.status[0]
+-					 |= IEC958_AES0_PRO_FS_48000;
+-				break;
+-			default:
+-				chip->pending_spdif_control.channel.status[0]
+-					 |= IEC958_AES0_PRO_FS_44100;
+-				break;
+-		}
+-
+-		chip->pending_spdif_control.channel.status[2]
+-			&= ~((IEC958_AES2_PRO_SBITS | IEC958_AES2_PRO_WORDLEN));
+-
+-		chip->pending_spdif_control.channel.status[2]
+-			|= (IEC958_AES2_PRO_SBITS_24 | IEC958_AES2_PRO_WORDLEN_24_20);
+-
+-		chip->pending_spdif_control.channel.status[4] = 0;
+-
+-	} else {
+-		chip->pending_spdif_control.channel.status[3] &=
+-				 ~((IEC958_AES3_CON_FS|IEC958_AES3_CON_CLOCK));
+-		switch(substream->runtime->rate){
+-			case 32000:
+-				chip->pending_spdif_control.channel.status[3]
+-					|= IEC958_AES3_CON_FS_32000;
+-				break;
+-			case 48000:
+-				chip->pending_spdif_control.channel.status[3]
+-					 |= IEC958_AES3_CON_FS_48000;
+-				break;
+-			default:
+-				chip->pending_spdif_control.channel.status[3]
+-					 |= IEC958_AES3_CON_FS_44100;
+-				break;
+-		}
+-
+-		chip->pending_spdif_control.channel.status[3] |= IEC958_AES3_CON_CLOCK_VARIABLE;
+-
+-		if(chip->pending_spdif_control.channel.status[0] & IEC958_AES0_NONAUDIO) {
+-			DEBUG_PRINT(("iec60958_set_runtime_status: NON LPCM Setup\n",dev));
+-			chip->pending_spdif_control.channel.status[4] = 0;
+-			/*
+-			 * Force all validity bits to 1 as specified in the spec
+-			 * to prevent accidental interpretation as LPCM.
+-			 */
+-			memset(chip->default_spdif_control.validity_l,0xff,sizeof(u8)*24);
+-			memset(chip->default_spdif_control.validity_r,0xff,sizeof(u8)*24);
+-		} else {
+-			DEBUG_PRINT(("iec60958_set_runtime_status: 24bit LPCM Setup\n",dev));
+-			chip->pending_spdif_control.channel.status[4]  = (IEC958_AES4_CON_WORDLEN_MAX_24 |
+-									  IEC958_AES4_CON_WORDLEN_24_20);
+-		}
+-	}
+-
+-}
+-
+-
+-static int snd_iec60958_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info *uinfo)
+-{
+-	uinfo->type = SNDRV_CTL_ELEM_TYPE_IEC958;
+-	uinfo->count = 1;
+-	return 0;
+-}
+-
+-
+-static int snd_iec60958_default_get(struct snd_kcontrol *kcontrol,
+-				    struct snd_ctl_elem_value *ucontrol)
+-{
+-	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+-
+-	ucontrol->value.iec958.status[0] = chip->default_spdif_control.channel.status[0];
+-	ucontrol->value.iec958.status[1] = chip->default_spdif_control.channel.status[1];
+-	ucontrol->value.iec958.status[2] = chip->default_spdif_control.channel.status[2];
+-	ucontrol->value.iec958.status[3] = chip->default_spdif_control.channel.status[3];
+-
+-	return 0;
+-}
+-
+-
+-static int snd_iec60958_default_put(struct snd_kcontrol *kcontrol,
+-				    struct snd_ctl_elem_value *ucontrol)
+-{
+-	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+-	u32 val, old;
+-
+-	val =  ucontrol->value.iec958.status[0]        |
+-	      (ucontrol->value.iec958.status[1] << 8)  |
+-	      (ucontrol->value.iec958.status[2] << 16) |
+-	      (ucontrol->value.iec958.status[3] << 24);
+-
+-	old =  chip->default_spdif_control.channel.status[0] 	    |
+-	      (chip->default_spdif_control.channel.status[1] << 8)  |
+-	      (chip->default_spdif_control.channel.status[2] << 16) |
+-	      (chip->default_spdif_control.channel.status[3] << 24);
+-
+-	if(val == old)
+-		return 0;
+-
+-	spin_lock_irq(&chip->lock);
+-	chip->default_spdif_control.channel = ucontrol->value.iec958;
+-	spin_unlock_irq(&chip->lock);
+-	return (val != old);
+-}
+-
+-
+-static struct snd_kcontrol_new snd_iec60958_default __devinitdata =
+-{
+-	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
+-	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,DEFAULT),
+-	.info =		snd_iec60958_info,
+-	.get =		snd_iec60958_default_get,
+-	.put =		snd_iec60958_default_put
+-};
+-
+-
+-static struct snd_kcontrol_new snd_iec60958_stream __devinitdata =
+-{
+-	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
+-	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,PCM_STREAM),
+-	.info =		snd_iec60958_info,
+-	.get =		snd_iec60958_default_get,
+-	.put =		snd_iec60958_default_put
+-};
+-
+-static int snd_iec60958_maskc_get(struct snd_kcontrol * kcontrol,
+-				  struct snd_ctl_elem_value * ucontrol)
+-{
+-	ucontrol->value.iec958.status[0] = IEC958_AES0_NONAUDIO          |
+-					   IEC958_AES0_PROFESSIONAL      |
+-					   IEC958_AES0_CON_NOT_COPYRIGHT |
+-					   IEC958_AES0_CON_EMPHASIS;
+-
+-	ucontrol->value.iec958.status[1] = IEC958_AES1_CON_ORIGINAL |
+-					   IEC958_AES1_CON_CATEGORY;
+-
+-	ucontrol->value.iec958.status[2] = 0;
+-
+-	ucontrol->value.iec958.status[3] = 0;
+-	return 0;
+-}
+-
+-
+-static int snd_iec60958_maskp_get(struct snd_kcontrol *kcontrol,
+-				       struct snd_ctl_elem_value *ucontrol)
+-{
+-	ucontrol->value.iec958.status[0] = IEC958_AES0_NONAUDIO     |
+-					   IEC958_AES0_PROFESSIONAL |
+-					   IEC958_AES0_PRO_EMPHASIS;
+-
+-	ucontrol->value.iec958.status[1] = IEC958_AES1_PRO_MODE |
+-					   IEC958_AES1_PRO_USERBITS;
+-
+-	return 0;
+-}
+-
+-
+-static struct snd_kcontrol_new snd_iec60958_maskc __devinitdata =
+-{
+-	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
+-	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,CON_MASK),
+-	.info =		snd_iec60958_info,
+-	.get =		snd_iec60958_maskc_get,
+-};
+-
+-
+-static struct snd_kcontrol_new snd_iec60958_mask __devinitdata =
+-{
+-	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
+-	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,MASK),
+-	.info =		snd_iec60958_info,
+-	.get =		snd_iec60958_maskc_get,
+-};
+-
+-
+-static struct snd_kcontrol_new snd_iec60958_maskp __devinitdata =
+-{
+-	.access =	SNDRV_CTL_ELEM_ACCESS_READ,
+-	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name =         SNDRV_CTL_NAME_IEC958("",PLAYBACK,PRO_MASK),
+-	.info =		snd_iec60958_info,
+-	.get =		snd_iec60958_maskp_get,
+-};
+-
+-
+-static int snd_iec60958_raw_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info * uinfo)
+-{
+-	uinfo->type = SNDRV_CTL_ELEM_TYPE_BOOLEAN;
+-	uinfo->count = 1;
+-	uinfo->value.integer.min = 0;
+-	uinfo->value.integer.max = 1;
+-	return 0;
+-}
+-
+-
+-static int snd_iec60958_raw_get(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+-{
+-	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+-	ucontrol->value.integer.value[0] = chip->iec60958_rawmode;
+-	return 0;
+-}
+-
+-
+-static int snd_iec60958_raw_put(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+-{
+-	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+-	unsigned char old, val;
+-
+-	spin_lock_irq(&chip->lock);
+-	old = chip->iec60958_rawmode;
+-	val = ucontrol->value.integer.value[0];
+-	chip->iec60958_rawmode = val;
+-	spin_unlock_irq(&chip->lock);
+-	return old != val;
+-}
+-
+-
+-static struct snd_kcontrol_new snd_iec60958_raw __devinitdata = {
+-	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,NONE) "RAW",
+-	.info =		snd_iec60958_raw_info,
+-	.get =		snd_iec60958_raw_get,
+-	.put =		snd_iec60958_raw_put
+-};
+-
+-
+-static int snd_iec60958_sync_get(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+-{
+-	ucontrol->value.integer.value[0] = global_spdif_sync_status;
+-	return 0;
+-}
+-
+-
+-static int snd_iec60958_sync_put(struct snd_kcontrol * kcontrol, struct snd_ctl_elem_value * ucontrol)
+-{
+-
+-	unsigned char old, val;
+-
+-	old = get_spdif_syncing_status();
+-	val = ucontrol->value.integer.value[0];
+-	set_spdif_syncing_status(val);
+-	return old != val;
+-}
+-
+-
+-static struct snd_kcontrol_new snd_iec60958_sync __devinitdata = {
+-	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,NONE) "PCM Sync",
+-	.info =		snd_iec60958_raw_info, /* Reuse from the RAW switch */
+-	.get =		snd_iec60958_sync_get,
+-	.put =		snd_iec60958_sync_put
+-};
+-
+-
+-/*IEC61937 encoding mode status -  when transmitting a surround encoded data
+- * stream the repitition period of iec61937 pause bursts and external decode latency
+- *  are dependant on stream type*/
+-
+-
+-typedef struct iec_encoding_mode_tbl {
+-	char name[30];
+-	iec_encodings_t id_flag;
+-}iec_encoding_mode_tbl_t;
+-
+-static iec_encoding_mode_tbl_t iec_xfer_modes[12]=
+-	{
+-		{"IEC60958"	,ENCODING_IEC60958},
+-		{"IEC61937_AC3"	,ENCODING_IEC61937_AC3},
+-		{"IEC61937_DTS1",ENCODING_IEC61937_DTS_1},
+-		{"IEC61937_DTS2",ENCODING_IEC61937_DTS_2},
+-		{"IEC61937_DTS3",ENCODING_IEC61937_DTS_3},
+-		{"IEC61937_MPEG_384",ENCODING_IEC61937_MPEG_384_FRAME},
+-		{"IEC61937_MPEG_1152",ENCODING_IEC61937_MPEG_1152_FRAME},
+-		{"IEC61937_MPEG_1024",ENCODING_IEC61937_MPEG_1024_FRAME},
+-		{"IEC61937_MPEG_2304",ENCODING_IEC61937_MPEG_2304_FRAME},
+-		{"IEC61937_MPEG_768",ENCODING_IEC61937_MPEG_768_FRAME},
+-		{"IEC61937_MPEG_2304_LSF",ENCODING_IEC61937_MPEG_2304_FRAME_LSF},
+-		{"IEC61937_MPEG_768_LSF",ENCODING_IEC61937_MPEG_768_FRAME_LSF},
+-	};
+-
+-
+-
+-static int snd_iec_encoding_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info * uinfo)
+-{
+-	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
+-	uinfo->count = 1;
+-	uinfo->value.enumerated.items = ENCODED_STREAM_TYPES;
+-	if (uinfo->value.enumerated.item > (ENCODED_STREAM_TYPES-1))
+-		uinfo->value.enumerated.item = (ENCODED_STREAM_TYPES);
+-	strcpy(uinfo->value.enumerated.name,iec_xfer_modes[uinfo->value.enumerated.item].name);
+-
+-	return 0;
+-}
+-
+-static int snd_iec_encoding_get(struct snd_kcontrol* kcontrol,struct snd_ctl_elem_value* ucontrol)
+-{
+-	int i;
+-
+-	for(i=0; i< ENCODED_STREAM_TYPES; i++)
+-		ucontrol->value.integer.value[i] = iec_xfer_modes[i].id_flag;
+-
+-	return 0;
+-}
+-
+-static int snd_iec_encoding_put(	 struct snd_kcontrol * kcontrol,
+-					 struct snd_ctl_elem_value * ucontrol)
+-{
+-	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+-	spin_lock_irq(&chip->lock);
+-	chip->iec_encoding_mode = ucontrol->value.integer.value[0];
+-	spin_unlock_irq(&chip->lock);
+-
+-	return 0;
+-}
+-
+-static struct snd_kcontrol_new snd_iec_encoding __devinitdata = {
+-	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name =		SNDRV_CTL_NAME_IEC958("",PLAYBACK,NONE)"Encoding",
+-	.info =		snd_iec_encoding_info,
+-	.get =		snd_iec_encoding_get,
+-	.put =		snd_iec_encoding_put,
+-};
+-
+-static int snd_clock_put(struct snd_kcontrol * kcontrol,struct snd_ctl_elem_value * ucontrol)
+-{
+-
+-	pcm_hw_t *chip = snd_kcontrol_chip(kcontrol);
+-
+-	int direction = (((int)ucontrol->value.integer.value[1]) > 0) ? 1:0;
+-	int adjusts=ucontrol->value.integer.value[0];
+-
+-	spin_lock_irq(&chip->lock);
+-	adjust_audio_clock(chip->current_substream,adjusts,direction);
+-
+-	spin_unlock_irq(&chip->lock);
+-
+-	return 0;
+-}
+-
+-
+-
+-static int snd_clock_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info * uinfo)
+-{
+-	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+-	uinfo->value.integer.min = -10000;
+-	uinfo->value.integer.max = 10000;
+-
+-	return 0;
+-}
+-
+-static struct snd_kcontrol_new snd_clock_adjust  __devinitdata = {
+-	.iface =	SNDRV_CTL_ELEM_IFACE_PCM,
+-	.name =		"PLAYBACK Clock Adjust",
+-	.info =		snd_clock_info,
+-	.put =		snd_clock_put,
+-};
+-
+-/*now three controls to specify the available encoding modes */
+-
+-static int __devinit snd_generic_create_controls(pcm_hw_t *chip)
+-{
+-	int err;
+-	struct snd_kcontrol *kctl;
+-
+-	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_clock_adjust,chip));
+-	if(err < 0)
+-		return err;
+-
+-	return 0;
+-}
+-
+-
+-static int __devinit snd_iec60958_create_controls(pcm_hw_t *chip)
+-{
+-	int err;
+-	struct snd_kcontrol *kctl;
+-
+-	if(chip->card_data->input_type == STM_DATA_TYPE_IEC60958)
+-	{
+-		err = snd_ctl_add(chip->card, snd_ctl_new1(&snd_iec60958_raw, chip));
+-		if (err < 0)
+-			return err;
+-
+-		err = snd_ctl_add(chip->card, snd_ctl_new1(&snd_iec60958_sync, chip));
+-		if (err < 0)
+-			return err;
+-	}
+-
+-	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_iec60958_default, chip));
+-	if (err < 0)
+-		return err;
+-
+-	/*
+-	 * stream is a copy of default for the moment for application
+-	 * compatibility, more investigation required
+-	 */
+-	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_iec60958_stream, chip));
+-	if (err < 0)
+-		return err;
+-
+-	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_iec60958_maskc, chip));
+-	if (err < 0)
+-		return err;
+-
+-	/*
+-	 * Mask is a copy of the consumer mask.
+-	 */
+-	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_iec60958_mask, chip));
+-	if (err < 0)
+-		return err;
+-
+-	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_iec60958_maskp, chip));
+-	if (err < 0)
+-		return err;
+-
+-	err = snd_ctl_add(chip->card, kctl = snd_ctl_new1(&snd_iec_encoding,chip));
+-	if(err < 0)
+-		return err;
+-
+-	return 0;
+-}
+-
+-
+-static void format_iec60958_frame(struct snd_pcm_substream *substream,
+-				  u32                 *left_subframe,
+-				  u32                 *right_subframe)
+-{
+-	/*
+-	 * Format for the SPDIF player. Note that the ordering of CUV is
+-	 * the reverse of that specified in the SPDIF player specification,
+-	 * but is correct with regards to the ST reference driver documentation.
+-	 *
+-     	 * 31 ..16 bit data16| 15 ext data 8 | 7 zero  4 | 3 ctrl bits 0
+-    	 * |xxxxxxxxxxxxxxxx | ????????        0000      | VUC0
+-    	 */
+-	static const u32 channel_status_bit = (1 << 1);
+-	static const u32 user_bit           = (1 << 2);
+-	static const u32 validity_bit       = (1 << 3);
+-
+-        pcm_hw_t   *chip       = snd_pcm_substream_chip(substream);
+-
+-        u8 *channel_status = &chip->current_spdif_control.channel.status[0];
+-	u8 *user           = &chip->current_spdif_control.user[0];
+-        u8 *validity_l     = &chip->current_spdif_control.validity_l[0];
+-        u8 *validity_r     = &chip->current_spdif_control.validity_r[0];
+-	/*
+-	 * Index and test bit for channel status and validity
+-	 */
+-        int word_index      = chip->iec60958_output_count/8;
+-        u32 test_bit        = 1 << (chip->iec60958_output_count%8);
+-        /*
+-         * Index and test bits for the user bits, which are contiguous across
+-         * L/R subframes.
+-         */
+-        int user_word_index = (chip->iec60958_output_count*2)/8;
+-	u32 u_test_bit_l    = 1 << (chip->iec60958_output_count*2)%8;
+-	u32 u_test_bit_r    = u_test_bit_l << 1;
+-	u32 format_word_l   = 0;
+-	u32 format_word_r   = 0;
+-
+-	if(chip->iec60958_output_count == 0) {
+-		/*
+-		 * Start of a new burst, so update the control bits
+-		 */
+-		chip->current_spdif_control = chip->pending_spdif_control;
+-	}
+-
+-#if defined(CONFIG_STB7100_IEC_DEBUG)
+-	static int print_debug;
+-	if(chip->iec60958_output_count == 0){
+-		if(*left_subframe == 0xf8720000 && *right_subframe == 0x4e1f0000)
+-			print_debug = 1;
+-	}
+-
+-	if(chip->iec60958_output_count == 8) {
+-		print_debug = 0;
+-	}
+-
+-	if(print_debug) {
+-	  	printk("%03d: in(0x%08x,0x%08x) ",chip->iec60958_output_count,*left_subframe,*right_subframe);
+-	}
+-#endif
+-    	/*
+-    	 * channel status is only ever 35 bits long , so we can ingnore the
+-	 * remaining 157 frames
+-	 */
+-    	if((word_index <5) && (channel_status[word_index] & test_bit))
+-    	{
+-    		format_word_l |= channel_status_bit;
+-    		format_word_r |= channel_status_bit;
+-    	}
+-
+-	if(user[user_word_index] & u_test_bit_l)
+-		format_word_l |= user_bit;
+-
+-	if(user[user_word_index] & u_test_bit_r)
+-		format_word_r |= user_bit;
+-
+-	if(validity_l[word_index] & test_bit)
+-		format_word_l |= validity_bit;
+-
+-	if(validity_r[word_index] & test_bit)
+-		format_word_r |= validity_bit;
+-
+-	*left_subframe  = (*left_subframe  & 0xffffff00) | format_word_l;
+-	*right_subframe = (*right_subframe & 0xffffff00) | format_word_r;
+-
+-#if defined(CONFIG_STB7100_IEC_DEBUG)
+-	if(print_debug) {
+-		printk("%03d: out(0x%08x,0x%08x)\n",chip->iec60958_output_count,*left_subframe,*right_subframe);
+-	}
+-#endif
+-	chip->iec60958_output_count = (chip->iec60958_output_count+1)%192;
+-}
+-
+-/*
+- * Internal function which can be called independently by other modules
+- * to get IEC60958 formatting. Note the interface is slightly manipulated
+- * to allow channels to be skipped in the buffer.
+- */
+-int snd_pcm_format_iec60958_copy(struct snd_pcm_substream	*substream,
+-				 int			data_channels,
+-			 	 snd_pcm_uframes_t	pos,
+-			 	 void	__user		*buffer,
+-			 	 snd_pcm_uframes_t	count)
+-{
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	u32 __user        *buf32   = (u32 __user *) buffer;
+-	int i;
+-
+-	/*
+-	 * Note that runtime->channels must be 2 for an SPDIF device
+-	 * which maps to the two subframes in an SPDIF frame. Each subframe
+-	 * is 32bits, so each "output frame" is 8 bytes (2x4).
+-	 */
+-	int dstwidth  = sizeof(u32)*2;
+-	int srcwidth  = samples_to_bytes(runtime, data_channels);
+-	int bit_width = snd_pcm_format_physical_width(substream->runtime->format);
+-
+-        u32 *hwbuf    = (u32*)(runtime->dma_area + (pos*dstwidth));
+-
+-	if(!access_ok(VERIFY_READ, buffer, (count * srcwidth)))
+-		return -EFAULT;
+-
+-
+-	for(i=0;i<count;i++)
+-	{
+-		u32 left_subframe;
+-		u32 right_subframe;
+-
+-		__get_user(left_subframe, buf32);
+-		__get_user(right_subframe, buf32+1);
+-
+-		if(bit_width == 24)
+-		{
+-		  /*
+-		   * We can support S24_LE (24bits in the bottom 3bytes of
+-		   * a 32bit word) by shifting the audio bits into position
+-		   */
+-		  left_subframe  <<= 8;
+-		  right_subframe <<= 8;
+-		}
+-
+-		format_iec60958_frame(substream, &left_subframe, &right_subframe);
+-
+-		*hwbuf     = left_subframe;
+-		*(hwbuf+1) = right_subframe;
+-
+-		buf32  += data_channels;
+-	    	hwbuf  += 2;
+-	}
+-
+-	dma_cache_wback((void*)(runtime->dma_area + (pos*dstwidth)), (count*dstwidth));
+-
+-	return 0;
+-}
+-
+-
+-/*
+- * This is the ALSA interface for the card "ops" structure
+- */
+-static int snd_iec60958_silence(struct snd_pcm_substream *substream,
+-				int                  channel,
+-				snd_pcm_uframes_t    pos,
+-				snd_pcm_uframes_t    count)
+-{
+-	struct snd_pcm_runtime *runtime = substream->runtime;
+-	u32               *hwbuf;
+-	static const int dstwidth  = sizeof(u32)*2;
+-	int i;
+-
+-        if(channel != -1)
+-                return -EINVAL;
+-
+-        hwbuf = (u32*)(runtime->dma_area + (pos*dstwidth));
+-
+-	for(i=0;i<count;i++)
+-	{
+-		u32 left_subframe  = 0;
+-		u32 right_subframe = 0;
+-
+-		format_iec60958_frame(substream, &left_subframe, &right_subframe);
+-
+-		*hwbuf     = left_subframe;
+-		*(hwbuf+1) = right_subframe;
+-
+-	    	hwbuf += 2;
+-	}
+-
+-	dma_cache_wback((void*)(runtime->dma_area + (pos*dstwidth)), (count*dstwidth));
+-
+-        return 0;
+-}
+-
+-
+-static int snd_iec60958_copy(struct snd_pcm_substream  *substream,
+-			     int                   channel,
+-			     snd_pcm_uframes_t     pos,
+-			     void __user          *buf,
+-			     snd_pcm_uframes_t     count)
+-{
+-        pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-
+-	if(channel != -1)
+-		return -EINVAL;
+-
+-	if(chip->iec60958_rawmode)
+-		return snd_pcm_copy(substream,channel,pos,buf,count);
+-	else
+-		return snd_pcm_format_iec60958_copy(substream,substream->runtime->channels,pos,buf,count);
+-}
+-
+-
+-static void snd_card_pcm_free(struct snd_pcm *pcm)
+-{
+-	DEBUG_PRINT(("snd_card_pcm_free(pcm = 0x%08lx)\n",pcm));
+-
+-	snd_pcm_lib_preallocate_free_for_all(pcm);
+-}
+-
+-
+-static struct snd_pcm_ops  snd_card_playback_ops_pcm = {
+-	.open      =            snd_pcm_playback_open,
+-        .close     =            snd_pcm_playback_close,
+-        .mmap      =            snd_pcm_mmap,
+-        .silence   =            snd_pcm_silence,
+-	.copy      =            snd_pcm_copy,
+-        .ioctl     =            snd_pcm_lib_ioctl,
+-        .hw_params =            snd_pcm_playback_hwparams,
+-        .hw_free   =            snd_pcm_playback_hwfree,
+-        .prepare   =            snd_pcm_playback_prepare,
+-        .trigger   =            snd_playback_trigger,
+-        .pointer   =            snd_pcm_playback_pointer,
+-};
+-
+-
+-static struct snd_pcm_ops  snd_card_playback_ops_iec60958 = {
+-	.open      =            snd_pcm_playback_open,
+-        .close     =            snd_pcm_playback_close,
+-        .mmap      =            snd_pcm_mmap,
+-        .silence   =            snd_iec60958_silence,
+-	.copy      =            snd_iec60958_copy,
+-        .ioctl     =            snd_pcm_lib_ioctl,
+-        .hw_params =            snd_pcm_playback_hwparams,
+-        .hw_free   =            snd_pcm_playback_hwfree,
+-        .prepare   =            snd_pcm_playback_prepare,
+-        .trigger   =            snd_playback_trigger,
+-        .pointer   =            snd_pcm_playback_pointer,
+-};
+-
+-
+-static int __devinit snd_card_pcm_allocate(pcm_hw_t *snd_card, int device,char* name)
+-{
+-	int err;
+-	struct snd_pcm *pcm;
+-
+-	if(snd_card->card_data->input_type == STM_DATA_TYPE_IEC60958){
+-
+-		err = snd_pcm_new(snd_card->card,name, snd_card->card_data->minor,1, 0, &pcm);
+-		snd_pcm_set_ops(pcm,SNDRV_PCM_STREAM_PLAYBACK,&snd_card_playback_ops_iec60958);
+-	}
+-	else if(snd_card->card_data->major == PCM0_DEVICE &&
+-		snd_card->card_data->minor == SUB_DEVICE1){
+-			err = snd_pcm_new(snd_card->card,name,snd_card->card_data->minor,0,1 , &pcm);
+-			snd_pcm_set_ops(pcm,SNDRV_PCM_STREAM_CAPTURE,&snd_card_playback_ops_pcm);
+-	}
+-	else{
+-		err = snd_pcm_new(snd_card->card,name, snd_card->card_data->minor,1, 0, &pcm);
+-		snd_pcm_set_ops(pcm,SNDRV_PCM_STREAM_PLAYBACK,&snd_card_playback_ops_pcm);
+-	}
+-
+-	if (err < 0)
+-		return err;
+-
+-	pcm->private_data = snd_card;
+-	pcm->private_free = snd_card_pcm_free;
+-	pcm->info_flags   = 0;
+-	strcpy(pcm->name, name);
+-
+-	snd_pcm_lib_preallocate_pages_for_all(pcm,
+-					SNDRV_DMA_TYPE_CONTINUOUS,
+-					snd_dma_continuous_data(GFP_KERNEL),
+-					PCM_PREALLOC_SIZE,
+-					PCM_PREALLOC_MAX);
+-	return 0;
+-}
+-
+-static int register_platform_driver(struct platform_device *platform_dev,pcm_hw_t *chip, int dev_nr)
+-{
+-	static struct resource *res;
+-	if (!platform_dev){
+-       		printk("%s Failed. Check your kernel SoC config\n",__FUNCTION__);
+-         	return -EINVAL;
+-       	}
+-
+-	res = platform_get_resource(platform_dev, IORESOURCE_IRQ,0);    /*resource 0 */
+-	if(res!=NULL){
+-		chip->min_ch = res->start;
+-		chip->max_ch = res->end;
+-	}
+-	else return -ENOSYS;
+-
+-	res = platform_get_resource(platform_dev, IORESOURCE_IRQ,1);
+-	if(res!=NULL)
+-		chip->fdma_req = res->start;
+-	else return -ENOSYS;
+-
+-	/*we only care about this var for the analogue devices*/
+-	if(dev_nr < SPDIF_DEVICE  || dev_nr == PCMIN_DEVICE)  {
+-		res = platform_get_resource(platform_dev, IORESOURCE_IRQ,2);
+-		if(res!=NULL)
+-			chip->i2s_sampling_edge =
+-				(res->start ==1 ? PCMP_CLK_FALLING:PCMP_CLK_RISING);
+-		else return -ENOSYS;
+-	}
+-	return 0;
+-}
+-
+-static int __init alsa_card_init(void)
+-{
+-	int i=0;
+-	for(;i<SND_DRV_CARDS-1;i++){
+-		if (snd_pcm_card_probe(i) < 0){
+-			DEBUG_PRINT(("STm PCM Player not found or device busy\n"));
+-			return -ENODEV;
+-		}
+-	}
+-	return 0;
+-}
+-
+-static void __exit alsa_card_exit(void)
+-{
+-	int i=0;
+-
+-	for(i=0;i<SND_DRV_CARDS-1;i++){
+-		if(card_list[i].device)
+-			snd_card_free(card_list[i].device);
+-	}
+-}
+-
+-EXPORT_SYMBOL(format_iec60958_frame);
+-EXPORT_SYMBOL(snd_pcm_format_iec60958_copy);
+-
+-module_init(alsa_card_init)
+-module_exit(alsa_card_exit)
+-
+Index: linux-2.6.23-stm/sound/stm/st_pcm.h
+===================================================================
+--- linux-2.6.23-stm.orig/sound/stm/st_pcm.h
++++ /dev/null
+@@ -1,313 +0,0 @@
+-/*
+- *  Definitions for ST PCM Player Sound Driver
+- *  Copyright (c) 2005 STMicroelectronics Limited
+- *  Authors: Stephen Gallimore <Stephen.Gallimore@st.com> and
+- *  Mark Glaisher <Mark.Glaisher@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-#ifndef _PCM_PLAYER_HW_H
+-#define _PCM_PLAYER_HW_H
+-
+-#include <sound/asound.h>
+-#include <linux/stm/stm-dma.h>
+-
+-#ifdef __cplusplus
+-extern "C" {
+-#endif
+-
+-#define INCR_FSYNTH    0x1
+-#define DECR_FSYNTH    0x2
+-#define SDIV_SHIFT_VAL 0x4000
+-#define MD_SHIFT_VAL   0x8000
+-
+-/*make some named definitions to refer to each output device so we dont need to rely on the card number*/
+-/*card majors*/
+-#define PCM0_DEVICE			0
+-#define PCM1_DEVICE			1
+-#define SPDIF_DEVICE			2
+-#define PROTOCOL_CONVERTER_DEVICE	3
+-#define PCMIN_DEVICE			4
+-/*card minors*/
+-#define MAIN_DEVICE			0
+-#define SUB_DEVICE1			1
+-struct pcm_hw_t;
+-
+-typedef enum {
+-	STM_DATA_TYPE_LPCM,
+-	STM_DATA_TYPE_IEC60958,
+-	STM_DATA_TYPE_I2S
+-} stm_snd_data_type_t;
+-
+-
+-typedef struct {
+-        int                  major;
+-        int                  minor;
+-        stm_snd_data_type_t  input_type;
+-        stm_snd_data_type_t  output_type;
+-        struct snd_card      *device;
+-        int                  in_use;
+-} stm_snd_output_device_t;
+-
+-#define PCM_SAMPLE_SIZE_BYTES		4
+-
+-#if (STM_USE_BIGPHYS_AREA == 0)
+-#define PCM_MAX_FRAMES			3276  /* <128k, max slab allocation */
+-#define PCM_PREALLOC_SIZE		(128*1024)
+-#define PCM_PREALLOC_MAX		(128*1024)
+-#else
+-#define PCM_MAX_FRAMES			48000 /* 1s @ 48KHz */
+-/* Note: we cannot preallocate a buffer from ALSA if we want to
+- * use bigphysmem for large buffers and the standard page
+- * alocation for small buffers. The preallocation is spotted by
+- * the generic ALSA driver layer and the size is used to limit
+- * the buffer size requests before they even get to this driver.
+- * This overrides the buffer_bytes_max value in the hardware
+- * capabilities structure we set up.
+- */
+-#define PCM_PREALLOC_SIZE		0
+-#define PCM_PREALLOC_MAX		0
+-#endif
+-
+-/*
+- * Buffers larger than 128k should come from bigphysmem to avoid
+- * page fragmentation and random resource starvation in the rest of
+- * the system. Buffers <=128k come from the ALSA dma memory allocation
+- * system, which uses get_free_pages directly, not a slab memory cache.
+- */
+-#define PCM_BIGALLOC_SIZE		(128*1024)
+-
+-#define FRAMES_TO_BYTES(x,channels) (( (x) * (channels) ) * PCM_SAMPLE_SIZE_BYTES)
+-#define BYTES_TO_FRAMES(x,channels) (( (x) / (channels) ) / PCM_SAMPLE_SIZE_BYTES)
+-
+-/*
+- * Common PCM Player Control register definitions
+- */
+-#define PCMP_OPERATION_MASK		0x3
+-#define PCMP_OFF			0x0
+-#define PCMP_MUTE			0x1
+-#define PCMP_ON				0x2
+-
+-#define PCMP_MEM_FMT_16_0		0
+-#define PCMP_MEM_FMT_16_16		(1L<<2)
+-#define PCMP_NO_ROUNDING		0
+-#define PCMP_ROUNDING			(1L<<3)
+-
+-#define PCMP_DIV_MASK			0x00000ff0
+-#define PCMP_FSYNTH_DIVIDE32_1		(0L<<4)
+-#define PCMP_FSYNTH_DIVIDE32_128	(1L<<4)
+-#define PCMP_FSYNTH_DIVIDE32_192	(6L<<4)
+-#define PCMP_FSYNTH_DIVIDE32_256	(2L<<4)
+-#define PCMP_FSYNTH_DIVIDE32_384	(3L<<4)
+-#define PCMP_FSYNTH_DIVIDE32_512	(4L<<4)
+-#define PCMP_FSYNTH_DIVIDE32_784	(6L<<4)
+-
+-#define PCMP_IGNORE_SPDIF_LATENCY	0
+-#define PCMP_WAIT_SPDIF_LATENCY		(1L<<12)
+-
+-#define PCMP_SAMPLES_SHIFT		13
+-/*
+- * The sample count field is 19bits wide, so the maximum size
+- * is 2^20-1 = 104,857. However becuase we count a sample for every
+- * channel and we usually have 10 channel PCM Players it is helpful
+- * to make this a nice round number that is a multiple of 10.
+- */
+-#define PCMP_MAX_SAMPLES		(104000)
+-
+-/*
+- * PCM Player Format register definitions
+- */
+-#define PCMP_FORMAT_16			1
+-#define PCMP_FORMAT_32			0
+-#define PCMP_LENGTH_24			0
+-#define PCMP_LENGTH_20			(1L<<1)
+-#define PCMP_LENGTH_18			(2L<<1)
+-#define PCMP_LENGTH_16			(3L<<1)
+-
+-#define PCMP_LRLEVEL_LEFT_LOW		0
+-#define PCMP_LRLEVEL_LEFT_HIGH		(1L<<3)
+-#define PCMP_CLK_RISING			0
+-#define PCMP_CLK_FALLING		(1L<<4)
+-
+-/* Danger Will Robinson Danger Danger!!!
+- * the data delay by one bit logic is inverted
+- */
+-#define PCMP_PADDING_ON			0
+-#define PCMP_PADDING_OFF		(1L<<5)
+-
+-#define PCMP_ALIGN_START		0
+-#define PCMP_ALIGN_END			(1L<<6)
+-#define PCMP_LSB_FIRST			0
+-#define PCMP_MSB_FIRST			(1L<<7)
+-
+-#define PCMP_STATUS_RUNNING		(1L<<0)
+-#define PCMP_STATUS_UNDERFLOW		(1L<<1)
+-#define PCMP_STATUS_ALLREAD		(1L<<2)
+-
+-/*
+- * DVD category code definition for convenience.
+- */
+-#define IEC958_AES1_CON_NON_IEC908_DVD (IEC958_AES1_CON_LASEROPT_ID|0x018)
+-
+-/*
+- * Extension to the ALSA channel status definitions for consumer mode 24bit
+- * wordlength.
+- */
+-#define IEC958_AES4_CON_WORDLEN_MAX_24 (1<<0)
+-#define IEC958_AES4_CON_WORDLEN_24_20  (5<<1)
+-
+-typedef enum iec_encodings {
+-	ENCODING_IEC60958 = 0,
+-	ENCODING_IEC61937_AC3,
+-	ENCODING_IEC61937_DTS_1,
+-	ENCODING_IEC61937_DTS_2,
+-	ENCODING_IEC61937_DTS_3,
+-	ENCODING_IEC61937_MPEG_384_FRAME,
+-	ENCODING_IEC61937_MPEG_1152_FRAME,
+-	ENCODING_IEC61937_MPEG_1024_FRAME,
+-	ENCODING_IEC61937_MPEG_2304_FRAME,
+-	ENCODING_IEC61937_MPEG_768_FRAME,
+-	ENCODING_IEC61937_MPEG_2304_FRAME_LSF,
+-	ENCODING_IEC61937_MPEG_768_FRAME_LSF,
+-}iec_encodings_t;
+-
+-#define ENCODED_STREAM_TYPES  12
+-
+-typedef struct IEC60958 {
+-	/* Channel status bits are the same for L/R subframes */
+-       	struct snd_aes_iec958    channel;
+-
+-        /* Validity bits can be different on L and R e.g. in
+-         * professional applications
+-         */
+-        u8                validity_l[24];
+-        u8                validity_r[24];
+-        /* User bits are considered contiguous across L/R subframes */
+-        u8                user[48];
+-}IEC60958_t;
+-
+-
+-typedef struct {
+-	int			(*free_device)     (struct pcm_hw_t *card);
+-	int			(*open_device)     (struct snd_pcm_substream *substream);
+-	int			(*program_hw)      (struct snd_pcm_substream *substream);
+-	snd_pcm_uframes_t	(*playback_pointer)(struct snd_pcm_substream *substream);
+-
+-	void			(*start_playback)  (struct snd_pcm_substream *substream);
+-	void			(*stop_playback)   (struct snd_pcm_substream *substream);
+-	void			(*pause_playback)  (struct snd_pcm_substream *substream);
+-	void			(*unpause_playback)(struct snd_pcm_substream *substream);
+-} stm_playback_ops_t;
+-
+-typedef struct _IEC61937 {
+-	int pause_mode; /*do we attmept a pause burst of mute with null ? */
+-	int mute_rep;	/**/
+-	int pause_count;
+-	int frame_size;/*frames per burst*/
+-	int latency;/*61937 defined maximum decode latency*/
+-	int unpause_flag;
+-}IEC61937_t;
+-
+-typedef struct pcmin_ctx{
+-	struct 	timer_list period_timer;
+-	int 	timer_halt;
+-	int 	fr_delta;
+-	int 	last_fr;
+-}pcmin_ctx;
+-
+-typedef struct pcm_hw_t {
+-	struct snd_card		*card;
+-
+-	spinlock_t		lock;
+-	int			irq;
+-        stm_snd_output_device_t *card_data;
+-	unsigned long		buffer_start_addr;
+-	unsigned long		pcmplayer_control;
+-	unsigned long		irq_mask;
+-	struct snd_pcm_hardware hw;
+-
+-	snd_pcm_uframes_t    	hwbuf_current_addr;
+-	struct snd_pcm_substream *current_substream;
+-	char		   	*out_pipe;
+-	char		    	*pcm_clock_reg;
+-	char 			*pcm_player;
+-	char                    *pcm_converter;
+-	int		     	are_clocks_active;
+-	int                     oversampling_frequency;
+-
+-	stm_playback_ops_t	*playback_ops;
+-
+-        IEC60958_t              current_spdif_control;
+-        IEC60958_t              pending_spdif_control;
+-        IEC60958_t              default_spdif_control;
+-
+-	int                     iec60958_output_count;
+-	char			iec60958_rawmode;
+-	char 			iec_encoding_mode;
+-
+-	IEC61937_t 		iec61937;
+-	int  			min_ch;
+-	int 			max_ch;
+-	int 			fdma_req;
+-	struct 	stm_dma_params  dmap;
+-	struct  stm_dma_req     *dma_req;
+-	int 			i2s_sampling_edge;
+-	int			fifo_check_mode;
+-	struct 	pcmin_ctx	pcmin;
+-#if defined(CONFIG_CPU_SUBTYPE_STB7100)
+-	int 			spdif_player_mode;
+-	int			fdma_channel;
+-#endif
+-} pcm_hw_t;
+-
+-struct stm_freq_s {
+-	u32 freq;
+-	u32 sdiv_val;
+-	u32 pe_val;
+-	u32 md_val;
+-	u32 pe_quantum;
+-};
+-
+-#define NUM_CLOCK_SETTINGS	5
+-
+-#define PCM0_SYNC_ID		2
+-#define PCM1_SYNC_ID		4
+-#define SPDIF_SYNC_MODE_ON	1
+-
+-#define chip_t pcm_hw_t
+-
+-static int snd_pcm_dev_free(struct snd_device *dev);
+-
+-static int __devinit snd_card_pcm_allocate(pcm_hw_t *stm8000, int device,char* name);
+-static int __devinit snd_iec60958_create_controls(pcm_hw_t *chip);
+-static int __devinit snd_generic_create_controls(pcm_hw_t *chip);
+-static int __devinit register_platform_driver(	struct platform_device *platform_dev,
+-						pcm_hw_t *chip,
+-						int dev_nr);
+-void set_spdif_syncing_status(int enable);
+-
+-extern void iec60958_default_channel_status(pcm_hw_t *chip);
+-extern void iec60958_set_runtime_status(struct snd_pcm_substream *substream);
+-
+-
+-#define DEBUG_PRINT(_x)
+-
+-#ifdef __cplusplus
+-}
+-#endif
+-
+-#endif  /* _ST_PCM_H */

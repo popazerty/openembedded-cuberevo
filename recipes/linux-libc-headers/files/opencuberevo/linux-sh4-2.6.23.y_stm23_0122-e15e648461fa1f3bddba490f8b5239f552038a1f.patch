@@ -1,0 +1,64 @@
+From e15e648461fa1f3bddba490f8b5239f552038a1f Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Thu, 3 Sep 2009 08:05:03 +0200
+Subject: [PATCH] stmmac: fix the PM while resuming from another device
+
+This patch fixes a problem reported into the BUG #6902:
+"as soon as the WOL capability is turned-on the network
+doesn't come up if the system resumes from another device
+(e.g. serial console)."
+
+In fact, the Power Down bit, into the PM register, is cleared
+automatically as soon as a magic packet or a Wake-up frame
+is received.
+With this patch we manually clear this bit into the stmmac_resume
+function otherwise the stmmac will continue to drop all the incoming
+frames if the system resumes from another device.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/gmac.c        |    4 ++--
+ drivers/net/stmmac/stmmac_main.c |    9 +++++++++
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/stmmac/gmac.c b/drivers/net/stmmac/gmac.c
+index f45047a..2a8c57b 100644
+--- a/drivers/net/stmmac/gmac.c
++++ b/drivers/net/stmmac/gmac.c
+@@ -542,11 +542,11 @@ static void gmac_flow_ctrl(unsigned long ioaddr, unsigned int duplex,
+ 
+ static void gmac_pmt(unsigned long ioaddr, unsigned long mode)
+ {
+-	unsigned int pmt = power_down;
++	unsigned int pmt = 0;
+ 
+ 	if (mode == WAKE_MAGIC) {
+ 		DBG(KERN_DEBUG "GMAC: WOL Magic frame\n");
+-		pmt |= magic_pkt_en;
++		pmt |= power_down | magic_pkt_en;
+ 	} else if (mode == WAKE_UCAST) {
+ 		DBG(KERN_DEBUG "GMAC: WOL on global unicast\n");
+ 		pmt |= global_unicast;
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 9a94f23..3321d96 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -2220,6 +2220,15 @@ static int stmmac_resume(struct platform_device *pdev)
+ 		goto out_resume;
+ 	}
+ 
++	/* Power Down bit, into the PM register, is cleared
++	 * automatically as soon as a magic packet or a Wake-up frame
++	 * is received. Anyway, it's better to manually clear
++	 * this bit because it can generate problems while resuming
++	 * from another devices (e.g. serial console). */
++	if (device_may_wakeup(&(pdev->dev)))
++		if (priv->wolenabled == PMT_SUPPORTED)
++			priv->mac_type->ops->pmt(dev->base_addr, 0);
++
+ 	netif_device_attach(dev);
+ 
+ 	/* Enable the MAC and DMA */
+-- 
+1.6.0.6
+

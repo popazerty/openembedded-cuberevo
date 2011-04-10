@@ -1,0 +1,29 @@
+
+This patch modifies the bus initiator for SPDIF paced FDMA transfers from 0-1 for 7100 CPU's to restore correct audio playback.
+This is essential for all coco / validation boards which run Stlinux2.2 audio  with 7100 CPU's.
+
+Signed off by Mark Glaisher <mark.glaisher@st.com>
+
+ 
+--- linux-2.6.17.14_stm22_0037.cleans/arch/sh/boards/st/stb7100mboard/setup.c	2006-12-21 14:58:04.328508000 +0000
++++ linux-2.6.17.14_stm22_0037/arch/sh/boards/st/stb7100mboard/setup.c	2007-01-03 14:38:46.271584000 +0000
+@@ -572,7 +572,7 @@
+ /*26*/{STB7100_FDMA_REQ_PCM_0,  		WRITE,  OPCODE_4,  1,     DISABLE_FLG, 0,     1 },  /* Audio PCM Player 0 */
+ /*27*/{STB7100_FDMA_REQ_PCM_1,  		WRITE,  OPCODE_4,  1,     DISABLE_FLG, 0,     1 },  /* Audio PCM Player 1 */
+ /*28*/{STB7100_FDMA_REQ_PCM_READ,  		READ,   OPCODE_4,  1,     DISABLE_FLG, 1,     1 },  /* Audio PCM Reader */
+-/*29*/{STB7100_FDMA_REQ_SPDIF,  		WRITE,  OPCODE_4,  2,     DISABLE_FLG, 0,     0 },  /* Audio SPDIF - 2xST4*/
++/*29*/{STB7100_FDMA_REQ_SPDIF,  		WRITE,  OPCODE_4,  2,     DISABLE_FLG, 0,     1 },  /* Audio SPDIF - 2xST4*/
+ /*30*/{STB7100_FDMA_REQ_SWTS,  			WRITE,  OPCODE_16, 1,     DISABLE_FLG, 0,     1 },   /* SWTS */
+ /*31*/{STB7100_FDMA_REQ_UNUSED,  		UNUSED, UNUSED,    1,     UNUSED,      0,     1 }, /* Reserved */
+ 
+--- linux-2.6.17.14_stm22_0037.cleans/arch/sh/boards/st/stb7100ref/setup.c	2006-12-21 14:58:04.338507000 +0000
++++ linux-2.6.17.14_stm22_0037/arch/sh/boards/st/stb7100ref/setup.c	2007-01-03 14:14:39.612479000 +0000
+@@ -570,7 +570,7 @@
+ /*26*/{STB7100_FDMA_REQ_PCM_0,  		WRITE,  OPCODE_4,  1,     DISABLE_FLG, 0,     1 },  /* Audio PCM Player 0 */
+ /*27*/{STB7100_FDMA_REQ_PCM_1,  		WRITE,  OPCODE_4,  1,     DISABLE_FLG, 0,     1 },  /* Audio PCM Player 1 */
+ /*28*/{STB7100_FDMA_REQ_PCM_READ,  		READ,   OPCODE_4,  1,     DISABLE_FLG, 1,     1 },  /* Audio PCM Reader */
+-/*29*/{STB7100_FDMA_REQ_SPDIF,  		WRITE,  OPCODE_4,  2,     DISABLE_FLG, 0,     0 },  /* Audio SPDIF - 2xST4*/
++/*29*/{STB7100_FDMA_REQ_SPDIF,  		WRITE,  OPCODE_4,  2,     DISABLE_FLG, 0,     1 },  /* Audio SPDIF - 2xST4*/
+ /*30*/{STB7100_FDMA_REQ_SWTS,  			WRITE,  OPCODE_16, 1,     DISABLE_FLG, 0,     1 },   /* SWTS */
+ /*31*/{STB7100_FDMA_REQ_UNUSED,  		UNUSED, UNUSED,    1,     UNUSED,      0,     1 }, /* Reserved */
+ 

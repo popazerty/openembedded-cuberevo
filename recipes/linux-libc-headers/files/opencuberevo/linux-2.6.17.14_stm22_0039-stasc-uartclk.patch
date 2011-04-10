@@ -1,0 +1,23 @@
+In the stasc serial port driver, rather than re-reading the clock rate
+each time we set the baud rate, use the uart clock field which is already
+available to us and set up correctly. As well as being more efficient, this
+solves a problem with reading the clock with interrupts disabled
+(see bugzilla 960 for further details).
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/drivers/serial/stasc.c
+===================================================================
+--- linux.orig/drivers/serial/stasc.c
++++ linux/drivers/serial/stasc.c
+@@ -437,10 +437,7 @@ static int asc_set_baud (struct uart_por
+ 	struct clk *clk;
+ 	unsigned long rate;
+ 
+-	clk = clk_get("comms_clk");
+-	if (IS_ERR(clk)) clk = clk_get("bus_clk");
+-	rate = clk_get_rate(clk);
+-	clk_put(clk);
++	rate = port->uartclk;
+ 
+ 	if (baud < 19200) {
+ 		t = BAUDRATE_VAL_M0(baud, rate);

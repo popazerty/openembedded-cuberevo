@@ -1,0 +1,52 @@
+commit ec6f03f84bf7f2a4664e654addd093fff006a56f
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Thu Jul 24 16:48:17 2008 +0100
+
+    sound_stm: Players name unification for 7100/9 and 7111.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/sound/stm/stx710x.c b/sound/stm/stx710x.c
+index 460409d..8826332 100644
+--- a/sound/stm/stx710x.c
++++ b/sound/stm/stx710x.c
+@@ -113,7 +113,7 @@ static struct platform_device conv_int_dac = {
+ /* PCM players */
+ 
+ struct snd_stm_pcm_player_info pcm_player_0_info = {
+-	.name = "PCM player #0",
++	.name = "PCM player #0 (HDMI)",
+ 	/* .ver = see snd_stm_stx710x_init() */
+ 	.card_device = 0,
+ 	.fsynth_bus_id = "snd_fsynth",
+@@ -175,7 +175,7 @@ static struct platform_device pcm_player_1 = {
+ /* SPDIF player */
+ 
+ struct snd_stm_spdif_player_info spdif_player_info = {
+-	.name = "SPDIF player",
++	.name = "SPDIF player (HDMI)",
+ 	/* .ver = see snd_stm_stx710x_init() */
+ 	.card_device = 2,
+ 	.fsynth_bus_id = "snd_fsynth",
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index 8611a7f..31a3e44 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -127,7 +127,7 @@ static struct platform_device pcm_player_0 = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_pcm_player_info) {
+-		.name = "PCM player #0",
++		.name = "PCM player #0 (HDMI)",
+ 		.ver = 6,
+ 		.card_device = 0,
+ 		.fsynth_bus_id = "snd_fsynth",
+@@ -187,7 +187,7 @@ static struct platform_device spdif_player = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_spdif_player_info) {
+-		.name = "SPDIF player",
++		.name = "SPDIF player (HDMI)",
+ 		.ver = 4,
+ 		.card_device = 2,
+ 		.fsynth_bus_id = "snd_fsynth",

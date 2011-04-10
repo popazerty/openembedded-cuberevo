@@ -1,0 +1,3204 @@
+Index: linux-2.6.23-stm/arch/sh/boards/st/cb101/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/cb101/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/cb101/setup.c
+@@ -32,11 +32,12 @@ void __init cb101_setup(char** cmdline_p
+ 
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  =
+-		((SSC_I2C_CAPABILITY                     ) << (0*2)) |
+-		((SSC_I2C_CAPABILITY | SSC_SPI_CAPABILITY) << (1*2)) |
+-		((SSC_I2C_CAPABILITY                     ) << (2*2)) |
+-		((SSC_I2C_CAPABILITY | SSC_SPI_CAPABILITY) << (3*2)) |
+-		((SSC_I2C_CAPABILITY                     ) << (4*2)),
++		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc1_has(SSC_I2C_CAPABILITY) |
++		ssc2_has(SSC_SPI_CAPABILITY) |
++		ssc3_has(SSC_I2C_CAPABILITY) |
++		ssc4_has(SSC_SPI_CAPABILITY) |
++		ssc5_has(SSC_I2C_CAPABILITY) ,
+ };
+ 
+ static struct mtd_partition mtd_parts_table[3] = {
+Index: linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/hms1/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+@@ -37,9 +37,9 @@ static struct plat_stm_pwm_data pwm_priv
+ 
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  =
+-		(SSC_I2C_CAPABILITY << (0*2)) |
+-		((SSC_SPI_CAPABILITY | SSC_I2C_CAPABILITY) << (1*2)) |
+-		(SSC_I2C_CAPABILITY << (2*2)),
++		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc1_has(SSC_SPI_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY),
+ };
+ 
+ static void set_vpp(struct map_info * info, int enable)
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb411/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb411/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb411/setup.c
+@@ -40,9 +40,9 @@ static struct plat_stm_pwm_data pwm_priv
+ 
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  =
+-		(SSC_I2C_CAPABILITY << (0*2)) |
+-		((SSC_SPI_CAPABILITY | SSC_I2C_CAPABILITY) << (1*2)) |
+-		(SSC_I2C_CAPABILITY << (2*2)),
++		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc1_has(SSC_SPI_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY),
+ };
+ 
+ static struct resource smc91x_resources[] = {
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb442/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb442/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb442/setup.c
+@@ -37,9 +37,9 @@ static struct plat_stm_pwm_data pwm_priv
+ 
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  =
+-		(SSC_I2C_CAPABILITY << (0*2)) |
+-		(SSC_SPI_CAPABILITY << (1*2)) |
+-		(SSC_I2C_CAPABILITY << (2*2)),
++		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc1_has(SSC_SPI_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY),
+ };
+ 
+ static struct resource smc91x_resources[] = {
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb448/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb448/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb448/setup.c
+@@ -35,9 +35,9 @@ void __init mb448_setup(char** cmdline_p
+ 
+ static struct plat_ssc_data ssc_private_info = {
+ 	.capability  =
+-		(SSC_I2C_CAPABILITY << (0*2)) |
+-		((SSC_SPI_CAPABILITY | SSC_I2C_CAPABILITY) << (1*2)) |
+-		(SSC_I2C_CAPABILITY << (2*2)),
++		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc1_has(SSC_SPI_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY),
+ };
+ 
+ static struct resource smc91x_resources[] = {
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb519/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb519/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb519/setup.c
+@@ -39,12 +39,12 @@ static struct plat_stm_pwm_data pwm_priv
+ };
+ 
+ static struct plat_ssc_data ssc_private_info = {
+-	.capability  =
+-		((SSC_I2C_CAPABILITY                     ) << (0*2)) |
+-		((SSC_I2C_CAPABILITY | SSC_SPI_CAPABILITY) << (1*2)) |
+-		((SSC_I2C_CAPABILITY                     ) << (2*2)) |
+-		((SSC_I2C_CAPABILITY | SSC_SPI_CAPABILITY) << (3*2)) |
+-		((SSC_I2C_CAPABILITY                     ) << (4*2)),
++	.capability  = (
++		ssc0_has(SSC_I2C_CAPABILITY) |
++		ssc1_has(SSC_SPI_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY) |
++		ssc3_has(SSC_SPI_CAPABILITY) |
++		ssc4_has(SSC_I2C_CAPABILITY)),
+ };
+ 
+ static struct mtd_partition mtd_parts_table[3] = {
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -366,81 +366,44 @@ static void fdma_setup(int chip_7109, in
+ }
+ 
+ /* SSC resources ----------------------------------------------------------- */
+-
+-static struct resource ssc_resource[] = {
+-        [0] = {
+-		.start	= 0x18040000,
+-		.end	= 0x18040000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-        [1] = {
+-		.start	= 0x18041000,
+-		.end	= 0x18041000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-        [2] = {
+-		.start	= 0x18042000,
+-		.end	= 0x18042000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-        [3] = {
+-		.start	= 119,
+-		.end	= 119,
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-        [4] = {
+-		.start	= 118,
+-		.end	= 118,
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-        [5] = {
+-		.start	= 117,
+-		.end	= 117,
+-               .flags	= IORESOURCE_IRQ,
+-	},
+-};
+-
+-static struct plat_ssc_pio_t ssc_pio[] = {
+-	{2, 0, 2, 1, 2, 2},
+-	{3, 0, 3, 1, 3, 2},
+-	{4, 0, 4, 1, 0xff, 0xff},
+-};
+-
+-struct platform_device ssc_device = {
+-        .name = "ssc",
+-        .id = -1,
+-        .num_resources = ARRAY_SIZE(ssc_resource),
+-        .resource = ssc_resource,
++static char i2c_st[] = "i2c_st";
++static char spi_st[] = "spi_st";
++static struct platform_device stssc_devices[] = {
++	STSSC_DEVICE(0x18040000, 119, 2, 0, 1, 2),
++	STSSC_DEVICE(0x18041000, 118, 3, 0, 1, 2),
++	STSSC_DEVICE(0x18042000, 117, 4, 0, 1, 0xff),
+ };
+ 
++static int __initdata num_i2c;
++static int __initdata num_spi;
+ void __init stx7100_configure_ssc(struct plat_ssc_data *data)
+ {
+ 	int i;
+-	int capability;
++	int capability = data->capability;
+ 	struct sysconf_field* ssc_sc;
+ 
+-	data->pio = ssc_pio;
+-	ssc_device.dev.platform_data = data;
+-
+-	for (i=0, capability = data->capability;
+-	     i<3;
+-	     i++, capability >>= 2) {
+-		if (! (capability & (SSC_SPI_CAPABILITY|SSC_I2C_CAPABILITY)))
++	for (i=0; i<ARRAY_SIZE(stssc_devices); i++, capability >>= 2) {
++		if(capability & SSC_UNCONFIGURED)
+ 			continue;
+-
+-		if (i== 0) {
+-			ssc_sc = sysconf_claim(SYS_CFG, 7, 10, 10, "ssc");
++		if(!i){
++			ssc_sc = sysconf_claim(SYS_CFG, 7, 10, 10, "stssc");
+ 			sysconf_write(ssc_sc, 0);
+ 		}
+ 
+-		ssc_sc = sysconf_claim(SYS_CFG, 7, i+1, i+1, "ssc");
+-		sysconf_write(ssc_sc,
+-			      capability & SSC_I2C_CAPABILITY ? 0 : 1);
++		ssc_sc = sysconf_claim(SYS_CFG, 7, i+1, i+1, "stssc");
++		if(capability & SSC_SPI_CAPABILITY){
++			stssc_devices[i].name = spi_st;
++			sysconf_write(ssc_sc, 1);
++			stssc_devices[i].id = num_spi++;
++		} else {
++			stssc_devices[i].name = i2c_st;
++			sysconf_write(ssc_sc, 0);
++			stssc_devices[i].id = num_i2c++;
++		}
++		platform_device_register(&stssc_devices[i]);
+ 	}
+ 
+-	platform_device_register(&ssc_device);
+ }
+-
+ /* SATA resources ---------------------------------------------------------- */
+ 
+ static struct resource sata_resource[]= {
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -495,98 +495,42 @@ static struct platform_device fdma_xbar_
+ };
+ 
+ /* SSC resources ----------------------------------------------------------- */
+-
+-static struct resource ssc_resource[] = {
+-	[0] = {
+-		.start	= 0xfd040000,
+-		.end	= 0xfd040000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[1] = {
+-		.start	= 0xfd041000,
+-		.end	= 0xfd041000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[2] = {
+-		.start	= 0xfd042000,
+-		.end	= 0xfd042000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[3] = {
+-		.start	= 0xfd043000,
+-		.end	= 0xfd043000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[4] = {
+-		.start	= 0xfd044000,
+-		.end	= 0xfd044000 + 0x108,
+-		.flags	= IORESOURCE_MEM,
+-	},
+-	[5] = {
+-		.start	= ILC_IRQ(108),
+-		.end	= ILC_IRQ(108),
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-	[6] = {
+-		.start	= ILC_IRQ(109),
+-		.end	= ILC_IRQ(109),
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-	[7] = {
+-		.start	= ILC_IRQ(110),
+-		.end	= ILC_IRQ(110),
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-	[8] = {
+-		.start	= ILC_IRQ(111),
+-		.end	= ILC_IRQ(111),
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-	[9] = {
+-		.start	= ILC_IRQ(112),
+-		.end	= ILC_IRQ(112),
+-		.flags	= IORESOURCE_IRQ,
+-	},
+-};
+-
+-static struct plat_ssc_pio_t ssc_pio[] = {
+-	{2, 0, 2, 1, 2, 2},
+-	{3, 0, 3, 1, 3, 2},
+-	{4, 0, 4, 1, 0xff, 0xff},
+-	{5, 0, 5, 1, 5, 2},
+-	{7, 6, 7, 7, 0xff, 0xff},
+-};
+-
+-struct platform_device ssc_device = {
+-	.name = "ssc",
+-	.id = -1,
+-	.num_resources = ARRAY_SIZE(ssc_resource),
+-	.resource = ssc_resource,
++static char i2c_st[] = "i2c_st";
++static char spi_st[] = "spi_st";
++static struct platform_device stssc_devices[] = {
++	STSSC_DEVICE(0xfd040000, ILC_IRQ(108), 2, 0, 1, 2),
++	STSSC_DEVICE(0xfd041000, ILC_IRQ(109), 3, 0, 1, 2),
++	STSSC_DEVICE(0xfd042000, ILC_IRQ(110), 4, 0, 1, 0xff),
++	STSSC_DEVICE(0xfd043000, ILC_IRQ(111), 5, 0, 1, 2),
++	STSSC_DEVICE(0xfd044000, ILC_IRQ(112), 7, 6, 7, 0xff),
+ };
+ 
++static int __initdata num_i2c;
++static int __initdata num_spi;
+ void __init stx7200_configure_ssc(struct plat_ssc_data *data)
+ {
+ 	int i;
+-	int capability;
++	int capability = data->capability;
+ 	struct sysconf_field* ssc_sc;
+ 
+-	data->pio = ssc_pio;
+-	ssc_device.dev.platform_data = data;
+-
+-	for (i=0, capability = data->capability;
+-	     i<5;
+-	     i++, capability >>= 2) {
+-		if (! (capability & (SSC_SPI_CAPABILITY|SSC_I2C_CAPABILITY)))
++	for (i=0; i<ARRAY_SIZE(stssc_devices); i++, capability >>= 2){
++		if(capability & SSC_UNCONFIGURED)
+ 			continue;
+-
+ 		/* We only support SSC as master, so always set up as such.
+ 		 * ssc<x>_mux_sel = 0 */
+ 		ssc_sc = sysconf_claim(SYS_CFG, 7, i, i, "ssc");
+-		sysconf_write(ssc_sc,
+-			      capability & SSC_I2C_CAPABILITY ? 0 : 1);
+-	}
++		if(capability & SSC_SPI_CAPABILITY){
++			stssc_devices[i].name = spi_st;
++			sysconf_write(ssc_sc, 1);
++			stssc_devices[i].id = num_spi++;
++		} else {
++			stssc_devices[i].name = i2c_st;
++			sysconf_write(ssc_sc, 0);
++			stssc_devices[i].id = num_i2c++;
++		}
++		platform_device_register(&stssc_devices[i]);
++        }
+ 
+-	platform_device_register(&ssc_device);
+ }
+ 
+ /* Ethernet MAC resources -------------------------------------------------- */
+Index: linux-2.6.23-stm/drivers/i2c/busses/i2c-st40-pio.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/i2c/busses/i2c-st40-pio.c
++++ linux-2.6.23-stm/drivers/i2c/busses/i2c-st40-pio.c
+@@ -25,259 +25,144 @@
+ 
+ #include <linux/kernel.h>
+ #include <linux/module.h>
++#include <linux/platform_device.h>
+ #include <linux/errno.h>
+ #include <linux/init.h>
+ #include <linux/i2c.h>
+ #include <linux/i2c-algo-bit.h>
+ #include <linux/stm/pio.h>
++#include <linux/stm/soc.h>
+ #include <asm/io.h>
+ #include <asm/param.h> /* for HZ */
+ 
+ #define NAME "i2c_st40_pio"
+ 
+-typedef struct {
+-	int sclbank;
+-	int sclpin;
+-	int sdabank;
+-	int sdapin;
+-} pio_address;
+-
+-typedef struct {
+-	struct stpio_pin* scl;
+-	struct stpio_pin* sda;
+-} pio_pins;
+-
+-
+-#if defined(CONFIG_CPU_SUBTYPE_STI5528)
+-
+-#define NR_I2C_BUSSES 1
+-static pio_address i2c_address[NR_I2C_BUSSES] = {{3,1,3,0}};
+-
+-#elif defined(CONFIG_CPU_SUBTYPE_STM8000)
+-
+-#if defined(CONFIG_SH_STM8000_DEMO)
+-#define NR_I2C_BUSSES 2
+-static pio_address i2c_address[NR_I2C_BUSSES] = {
+-	{6,0,6,1},
+-	{6,2,6,3}  // This isn't strictly speaking I2C but some boards use it as such
+-};
+-#elif defined(CONFIG_SH_ST220_EVAL)
+-#define NR_I2C_BUSSES 1
+-static pio_address i2c_address[NR_I2C_BUSSES] = {
+-	{6,0,6,1}
+-	//  The "second" bus on the eval board is unconnected and hence floating
+-	//  this causes a temporary hang on probe
+-};
+-#endif
+-
+-#elif defined(CONFIG_CPU_SUBTYPE_STB7100)
+-
+-#if defined(CONFIG_SH_ST_MB442)
+-
+-#define NR_I2C_BUSSES 2
+-static pio_address i2c_address[NR_I2C_BUSSES] = {
+-	{2,0,2,1},
+-	{4,0,4,1}
+-};
+-
+-#else
+-
+-#define NR_I2C_BUSSES 3
+-static pio_address i2c_address[NR_I2C_BUSSES] = {
+-	{2,0,2,1},
+-	{3,0,3,1},
+-	{4,0,4,1}
+-};
+-
+-#endif
+-
+-#elif defined(CONFIG_CPU_SUBTYPE_STX7200)
+-
+-#define NR_I2C_BUSSES 5
+-static pio_address i2c_address[NR_I2C_BUSSES] = {
+-       {2,0,2,1},
+-       {3,0,3,1},
+-       {4,0,4,1},
+-       {5,0,5,1},
+-       {7,6,7,7},
+-};
+-
+-#else
+-#error Need to configure the default I2C pins for this chip
+-#endif
+-
+-static pio_pins i2c_busses[NR_I2C_BUSSES] = {{0}};
+-
+ static void bit_st40_pio_setscl(void *data, int state)
+ {
+-	stpio_set_pin(((pio_pins*)data)->scl, state);
++	struct platform_device *pdev = (struct platform_device *)data;
++	struct ssc_pio_t *pio_info = (struct ssc_pio_t *)pdev->dev.platform_data;
++	stpio_set_pin(pio_info->clk, state);
+ }
+ 
+ static void bit_st40_pio_setsda(void *data, int state)
+ {
+-	stpio_set_pin(((pio_pins*)data)->sda, state);
++	struct platform_device *pdev = (struct platform_device *)data;
++	struct ssc_pio_t *pio_info = (struct ssc_pio_t *)pdev->dev.platform_data;
++	stpio_set_pin(pio_info->sdout, state);
+ }
+ 
+ static int bit_st40_pio_getscl(void *data)
+ {
+-	return stpio_get_pin(((pio_pins*)data)->scl);
++	struct platform_device *pdev = (struct platform_device *)data;
++	struct ssc_pio_t *pio_info = (struct ssc_pio_t *)pdev->dev.platform_data;
++	return stpio_get_pin(pio_info->clk);
+ }
+ 
+ static int bit_st40_pio_getsda(void *data)
+ {
+-	return stpio_get_pin(((pio_pins*)data)->sda);
++	struct platform_device *pdev = (struct platform_device *)data;
++	struct ssc_pio_t *pio_info = (struct ssc_pio_t *)pdev->dev.platform_data;
++	return stpio_get_pin(pio_info->sdout);
+ }
+ 
+-static int bit_st40_pio_init(void)
++static int __init i2c_st40_probe(struct platform_device *pdev)
+ {
+-	int i;
+-	for(i = 0; i<NR_I2C_BUSSES; i++) {
+-		i2c_busses[i].scl = stpio_request_pin(i2c_address[i].sclbank,
+-						      i2c_address[i].sclpin,
+-						      "I2C Clock",
+-						      STPIO_BIDIR);
+-
+-		printk(KERN_INFO NAME ": allocated pin (%d,%d) for scl (0x%p)\n",i2c_address[i].sclbank, i2c_address[i].sclpin, i2c_busses[i].scl);
+-
+-		i2c_busses[i].sda = stpio_request_pin(i2c_address[i].sdabank,
+-						      i2c_address[i].sdapin,
+-						      "I2C Data",
+-						      STPIO_BIDIR);
+-
+-		printk(KERN_INFO NAME ": allocated pin (%d,%d) for sda (0x%p)\n",i2c_address[i].sdabank, i2c_address[i].sdapin, i2c_busses[i].sda);
+-
+-		if(i2c_busses[i].scl == NULL || i2c_busses[i].sda == NULL)
+-		{
+-			printk(KERN_INFO NAME ": failed to allocate bus pins\n");
+-			return -1;
+-		}
++	struct ssc_pio_t *pio_info =
++			(struct ssc_pio_t *)pdev->dev.platform_data;
+ 
++	struct i2c_adapter 	 *i2c_bus;
++	struct i2c_algo_bit_data *algo;
+ 
+-		stpio_set_pin(i2c_busses[i].sda, 1);
+-		stpio_set_pin(i2c_busses[i].scl, 1);
+-	}
++	i2c_bus = devm_kzalloc(&pdev->dev,sizeof(struct i2c_adapter),GFP_KERNEL);
++	if (!i2c_bus)
++		return -1;
+ 
+-	return 0;
+-}
++	algo    = devm_kzalloc(&pdev->dev,sizeof(struct i2c_algo_bit_data),GFP_KERNEL);
++	if (!algo)
++		return -1;
+ 
+-static void bit_st40_pio_free(void)
+-{
+-	int i;
+-	for(i=0; i<NR_I2C_BUSSES; i++) {
+-		if(i2c_busses[i].scl)
+-		{
+-			stpio_free_pin(i2c_busses[i].scl);
+-			i2c_busses[i].scl = NULL;
+-		}
+-
+-		if(i2c_busses[i].sda)
+-		{
+-			stpio_free_pin(i2c_busses[i].sda);
+-			i2c_busses[i].sda = NULL;
+-		}
++	pio_info->clk = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[0],
++				"I2C Clock", STPIO_BIDIR);
++
++	if (!pio_info->clk){
++		printk(KERN_ERR NAME"Faild to clk pin allocation\n");
++		return -1;
++	}
++	pio_info->sdout = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[1],
++				"I2C Data", STPIO_BIDIR);
++	if (!pio_info->sdout){
++		printk(KERN_ERR NAME"Faild to sda pin allocation\n");
++		return -1;
+ 	}
+-}
+ 
+-static struct i2c_algo_bit_data bit_st40_pio_data[NR_I2C_BUSSES] = {
+-{
+-	.data		= &i2c_busses[0],
+-	.setsda		= bit_st40_pio_setsda,
+-	.setscl		= bit_st40_pio_setscl,
+-	.getsda		= bit_st40_pio_getsda,
+-	.getscl		= bit_st40_pio_getscl,
+-	.udelay		= 5,
+-	.timeout	= HZ
+-},
+-#if NR_I2C_BUSSES > 1
+-{
+-	.data		= &i2c_busses[1],
+-	.setsda		= bit_st40_pio_setsda,
+-	.setscl		= bit_st40_pio_setscl,
+-	.getsda		= bit_st40_pio_getsda,
+-	.getscl		= bit_st40_pio_getscl,
+-	.udelay		= 5,
+-	.timeout	= HZ
+-},
+-#if NR_I2C_BUSSES > 2
+-{
+-        .data           = &i2c_busses[2],
+-        .setsda         = bit_st40_pio_setsda,
+-        .setscl         = bit_st40_pio_setscl,
+-        .getsda         = bit_st40_pio_getsda,
+-        .getscl         = bit_st40_pio_getscl,
+-        .udelay         = 5,
+-        .timeout        = HZ
+-},
+-#endif
+-#endif
+-};
++	stpio_set_pin(pio_info->clk, 1);
++        stpio_set_pin(pio_info->sdout, 1);
+ 
+-static struct i2c_adapter bit_st40_pio_ops[NR_I2C_BUSSES] = {
+-{
+-	.owner		= THIS_MODULE,
+-	.name		= "ST40_PIO_0",
+-	.id		= I2C_HW_B_ST40_PIO,
+-	.algo_data	= &bit_st40_pio_data[0],
+-},
+-#if NR_I2C_BUSSES > 1
+-{
+-	.owner		= THIS_MODULE,
+-	.name		= "ST40_PIO_1",
+-	.id		= I2C_HW_B_ST40_PIO,
+-	.algo_data	= &bit_st40_pio_data[1],
+-},
+-#if NR_I2C_BUSSES > 2
+-{
+-	.owner		= THIS_MODULE,
+-	.name		= "ST40_PIO_2",
+-	.id		= I2C_HW_B_ST40_PIO,
+-	.algo_data	= &bit_st40_pio_data[2],
++	printk(KERN_INFO NAME ": allocated pin (%d,%d) for scl (0x%p)\n",
++		pio_info->pio_port, pio_info->pio_pin[0], pio_info->clk );
++	printk(KERN_INFO NAME ": allocated pin (%d,%d) for sda (0x%p)\n",
++		pio_info->pio_port, pio_info->pio_pin[1], pio_info->sdout);
++
++	sprintf(i2c_bus->name,"i2c_pio_%d",pdev->id);;
++	i2c_bus->id    = I2C_HW_B_ST40_PIO;
++	i2c_bus->algo_data = algo;
++	i2c_bus->dev.parent = &pdev->dev;
++
++	algo->data   = pdev;
++        algo->setsda = bit_st40_pio_setsda;
++        algo->setscl = bit_st40_pio_setscl;
++        algo->getsda = bit_st40_pio_getsda;
++        algo->getscl = bit_st40_pio_getscl;
++        algo->udelay = 5;
++        algo->timeout= HZ;
++
++	pdev->dev.driver_data = (void*)i2c_bus;
++	if (i2c_bit_add_bus(i2c_bus)<0){
++		printk(KERN_ERR NAME "The I2C Core refuses the i2c-pio adapter\n");
++		return -1;
++	}
++
++        return 0;
+ }
+-#endif
+-#endif
+-};
+ 
+-static void bit_st40_pio_unregister(void)
++static int i2c_st40_remove(struct platform_device *pdev)
+ {
+-	int i;
++	struct ssc_pio_t *pio_info =
++			(struct ssc_pio_t *)pdev->dev.platform_data;
+ 
+-	for(i=0;i<NR_I2C_BUSSES;i++)
+-	{
+-		i2c_del_adapter(&bit_st40_pio_ops[i]);
+-	}
++	struct i2c_adapter *i2c_bus = (struct i2c_adapter*)pdev->dev.driver_data;;
++	struct i2c_algo_bit_data *algo = i2c_bus->algo_data;
++
++	i2c_del_adapter(i2c_bus);
+ 
+-	bit_st40_pio_free();
++	stpio_free_pin(pio_info->clk);
++	stpio_free_pin(pio_info->sdout);
++	devm_kfree(&pdev->dev,algo);
++	devm_kfree(&pdev->dev,i2c_bus);
++	return 0;
+ }
+ 
++static struct platform_driver i2c_sw_driver = {
++        .driver.name = "i2c_st",
++        .driver.owner = THIS_MODULE,
++        .probe = i2c_st40_probe,
++	.remove= i2c_st40_remove,
++};
++
+ static int __init i2c_st40_pio_init(void)
+ {
+ 	int i;
+ 
+ 	printk(KERN_INFO NAME ": ST40 PIO based I2C Driver\n");
+ 
+-	if (bit_st40_pio_init() < 0) {
+-		printk(KERN_INFO NAME ": initialization failed\n");
+-		bit_st40_pio_free();
+-	}
++	platform_driver_register(&i2c_sw_driver);
+ 
+-	for(i=0;i<NR_I2C_BUSSES;i++)
+-	{
+-		printk(KERN_INFO NAME " bus %d: SCL=PIO%u[%u], SDA=PIO%u[%u]\n", i,
+-			i2c_address[i].sclbank, i2c_address[i].sclpin,
+-			i2c_address[i].sdabank, i2c_address[i].sdapin);
+-
+-		if (i2c_bit_add_bus(&bit_st40_pio_ops[i]) < 0) {
+-			printk(KERN_ERR NAME ": adapter registration failed\n");
+-			bit_st40_pio_unregister();
+-			return -ENODEV;
+-		}
+-	}
+ 	return 0;
+ }
+ 
+ static void __exit i2c_st40_pio_exit(void)
+ {
+-	bit_st40_pio_unregister();
++	platform_driver_unregister(&i2c_sw_driver);
+ }
+ 
+ MODULE_AUTHOR("Stuart Menefy <stuart.menefy@st.com>");
+Index: linux-2.6.23-stm/drivers/i2c/busses/i2c-stm.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/i2c/busses/i2c-stm.c
++++ linux-2.6.23-stm/drivers/i2c/busses/i2c-stm.c
+@@ -2,37 +2,40 @@
+  * --------------------------------------------------------------------
+  *
+  * i2c-stm.c
+- * i2c algorithms for STMicroelectronics SSC device
++ * i2c algorithms for STMicroelectronics device
+  * Version: 2.0 (1 April 2007)
++ * Version: 2.0.1 (20 Dec 2007)
++ *   + Removed the ssc layer.
++ * Version: 2.1 (3 Jan 2008)
++ *   + Added the glitch suppression support
+  *
+  * --------------------------------------------------------------------
+  *
+- *  Copyright (C) 2006  Virlinzi Francesco
+- *                   <francesco.virlinzi@st.com>
+- *
+- * 23 August 2006 - Modified to support the 2.6.17 kernel version
+- *	Virlinzi Francesco <francesco.virlinzi@st.com>
++ *  Copyright (C) 2006: STMicroelectronics
++ *  Copyright (C) 2007: STMicroelectronics
++ *  Copyright (C) 2008: STMicroelectronics
++ *  Author: Francesco Virlinzi     <francesco.virlinzi@st.com>
+  *
+  * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
++ * License version 2.0 ONLY.  See linux/COPYING for more information.
+  *
+  */
+ 
+ #include <linux/i2c.h>
+ #include <linux/stm/pio.h>
+-#include <linux/spinlock.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/soc_init.h>
++#include <linux/platform_device.h>
++#include <linux/clk.h>
+ #include <asm/io.h>
+ #include <linux/module.h>
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
+-#include <linux/mutex.h>
+ #include <linux/wait.h>
+ #include <linux/errno.h>
+-#include <linux/preempt.h>
+-#include <asm/processor.h>
+ #include <asm/delay.h>
+ #include "./i2c-stm.h"
+-#include "../../stm/stm_ssc.h"
++#include <linux/stm/stssc.h>
+ 
+ #undef dgb_print
+ 
+@@ -56,25 +59,57 @@
+ #define I2C_RATE_FASTMODE          400000
+ #define NANOSEC_PER_SEC            1000000000
+ 
+-#define REP_START_HOLD_TIME_NORMAL   4000	/* standard */
+-#define REP_START_HOLD_TIME_FAST      600	/* it was 3500 but 600 is standard*/
+-#define START_HOLD_TIME_NORMAL       4000	/* standard */
+-#define START_HOLD_TIME_FAST          600	/* standard */
+-#define REP_START_SETUP_TIME_NORMAL  4700	/* standard */
+-#define REP_START_SETUP_TIME_FAST     600	/* standard */
+-#define DATA_SETUP_TIME_NORMAL        250	/* standard */
+-#define DATA_SETUP_TIME_FAST          100	/* standard */
+-#define STOP_SETUP_TIME_NORMAL       4000	/* standard */
+-#define STOP_SETUP_TIME_FAST          600	/* standard */
+-#define BUS_FREE_TIME_NORMAL         4700	/* standard */
+-#define BUS_FREE_TIME_FAST           1300	/* standard */
++#if 0
++#define REP_START_HOLD_TIME_NORMAL	4000	/* standard */
++#define REP_START_HOLD_TIME_FAST	 600	/* standard*/
++#define START_HOLD_TIME_NORMAL		4000	/* standard */
++#define START_HOLD_TIME_FAST		 600	/* standard */
++#define REP_START_SETUP_TIME_NORMAL	4700	/* standard */
++#define REP_START_SETUP_TIME_FAST	 600	/* standard */
++#define DATA_SETUP_TIME_NORMAL		 250	/* standard */
++#define DATA_SETUP_TIME_FAST		 100	/* standard */
++#define STOP_SETUP_TIME_NORMAL		4000	/* standard */
++#define STOP_SETUP_TIME_FAST		 600	/* standard */
++#define BUS_FREE_TIME_NORMAL		4700	/* standard */
++#define BUS_FREE_TIME_FAST		1300	/* standard */
++#else
++/* These valus cames directly from hw boys... */
++#define REP_START_HOLD_TIME_NORMAL	4000
++#define REP_START_HOLD_TIME_FAST	6500
++#define START_HOLD_TIME_NORMAL		4500
++#define START_HOLD_TIME_FAST		800
++#define REP_START_SETUP_TIME_NORMAL	4700
++#define REP_START_SETUP_TIME_FAST	800
++#define DATA_SETUP_TIME_NORMAL		300
++#define DATA_SETUP_TIME_FAST		300
++#define STOP_SETUP_TIME_NORMAL		4200
++#define STOP_SETUP_TIME_FAST		800
++#define BUS_FREE_TIME_NORMAL		5700
++#define BUS_FREE_TIME_FAST		1500
++#endif
++
++/* Define for glitch suppression support */
++#ifdef CONFIG_I2C_STM_GLITCH_SUPPORT
++  #if CONFIG_GLITCH_CLK_WIDTH > 0
++    #define GLITCH_WIDTH_CLOCK			CONFIG_GLITCH_CLK_WIDTH
++  #else
++    #define GLITCH_WIDTH_CLOCK			500 /* in nanosecs */
++  #endif
++  #if CONFIG_GLITCH_DATA_WIDTH > 0
++    #define GLITCH_WIDTH_DATA			CONFIG_GLITCH_DATA_WIDTH
++  #else
++    #define GLITCH_WIDTH_DATA			500 /* in nanosecs */
++  #endif
++#else
++    #define GLITCH_WIDTH_DATA			0
++    #define GLITCH_WIDTH_CLOCK			0
++#endif
+ 
+ /* To manage normal vs fast mode */
+ #define IIC_STM_CONFIG_SPEED_MASK          0x1
+-#define IIC_STM_CONFIG_SPEED_NORMAL        0x0
+ #define IIC_STM_CONFIG_SPEED_FAST          0x1
+-
+-#define IIC_STM_CONFIG_BAUDRATE_MASK       0xffff0000
++#define IIC_STM_READY_SPEED_MASK	   0x2
++#define IIC_STM_READY_SPEED_FAST	   0x2
+ 
+ typedef enum _iic_state_machine_e {
+ 	IIC_FSM_VOID = 0,
+@@ -96,20 +131,12 @@ typedef enum _iic_fsm_error_e {
+ 	IIC_E_NOTACK = 0x2
+ } iic_fsm_error_e;
+ 
+-struct iic_ssc {
+-	unsigned int iic_idx;
+-	struct i2c_adapter adapter;
+-	unsigned long config;
+-	struct list_head list;
+-};
+-
+ /*
+  * With the struct iic_transaction more information
+  * on the required transaction are moved on
+  * the thread stack instead of (iic_ssc) adapter descriptor...
+  */
+ struct iic_transaction {
+-	struct iic_ssc *adapter;
+ 	iic_state_machine_e start_state;
+ 	iic_state_machine_e state;
+ 	iic_state_machine_e next_state;
+@@ -122,6 +149,14 @@ struct iic_transaction {
+ 	int waitcondition;
+ };
+ 
++struct iic_ssc {
++	unsigned long base;
++	struct iic_transaction *trns;
++	struct i2c_adapter adapter;
++	unsigned long config;
++	wait_queue_head_t wait_queue;
++};
++
+ #define jump_on_fsm_start(x)	{ (x)->state = IIC_FSM_START;	\
+ 				goto be_fsm_start;	}
+ 
+@@ -140,14 +175,18 @@ struct iic_transaction {
+ #define check_fastmode(adap)	(((adap)->config & \
+                                  IIC_STM_CONFIG_SPEED_MASK ) ? 1 : 0 )
+ 
++#define check_ready_fastmode(adap)	(((adap)->config & \
++				IIC_STM_READY_SPEED_FAST ) ? 1 : 0 )
++
++#define set_ready_fastmode(adap) ((adap)->config |= IIC_STM_READY_SPEED_FAST)
+ 
+-static void iic_stm_setup_timing(struct iic_ssc *adap);
++#define clear_ready_fastmode(adap) ((adap)->config &= ~IIC_STM_READY_SPEED_FAST)
+ 
+-static void iic_state_machine(struct iic_transaction *trsc)
++static void iic_stm_setup_timing(struct iic_ssc *adap,unsigned long rate);
++
++static irqreturn_t iic_state_machine(int this_irq, struct iic_ssc* adap)
+ {
+-	struct iic_ssc* adap = trsc->adapter;
+-	struct ssc_t *ssc_bus =
+-		(struct ssc_t *)container_of(adap->adapter.dev.parent,struct ssc_t, pdev.dev);
++	struct iic_transaction *trsc = adap->trns;
+ 	unsigned short status;
+ 	short tx_fifo_status;
+ 	unsigned int idx;
+@@ -171,33 +210,25 @@ static void iic_state_machine(struct iic
+ 	case IIC_FSM_PREPARE:
+ 		dgb_print2("-Prepare\n");
+ 		/*
+-		 * Here we set the right Pio configuration
+-		 * because in the future SPI could change them
+-		 */
+-		stpio_set_pin(ssc_bus->pio_clk,  STPIO_ALT_BIDIR);
+-		stpio_set_pin(ssc_bus->pio_data, STPIO_ALT_BIDIR);
+-		/*
+ 		 * check if the i2c timing register
+ 		 * of ssc are ready to use
+ 		 */
+-		if (check_fastmode(adap) && ssc_bus->i2c_timing != SSC_I2C_READY_FAST ||
+-		   !check_fastmode(adap) && ssc_bus->i2c_timing != SSC_I2C_READY_NORMAL )
+-			iic_stm_setup_timing(adap);
++		if (check_fastmode(adap) && !check_ready_fastmode(adap) ||
++		    !check_fastmode(adap) && check_ready_fastmode(adap))
++			iic_stm_setup_timing(adap,
++				clk_get_rate(clk_get(NULL,"comms_clk")));
+ 		jump_on_fsm_start(trsc);
+ 		break;
+ 
+ 	case IIC_FSM_START:
+ 	      be_fsm_start:
+ 		dgb_print2("-Start address 0x%x\n", pmsg->addr);
+-		ssc_store16(ssc_bus, SSC_CTL, SSC_CTL_SR | SSC_CTL_EN | 0x1);
+-		ssc_store16(ssc_bus, SSC_BRG,
+-			    (adap->config &
+-			     IIC_STM_CONFIG_BAUDRATE_MASK) >> 16);
+-		ssc_store16(ssc_bus, SSC_CTL,
++		ssc_store32(adap, SSC_CTL, SSC_CTL_SR | SSC_CTL_EN | 0x1);
++		ssc_store32(adap, SSC_CTL,
+ 			    SSC_CTL_EN | SSC_CTL_MS |
+ 			    SSC_CTL_PO | SSC_CTL_PH | SSC_CTL_HB | 0x8);
+-		ssc_store16(ssc_bus, SSC_CLR, 0xdc0);
+-		ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++		ssc_store32(adap, SSC_CLR, 0xdc0);
++		ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 			    (SSC_I2C_I2CFSMODE * fast_mode));
+ 		address = (pmsg->addr << 2) | 0x1;
+ 		trsc->start_state = IIC_FSM_START;
+@@ -207,16 +238,16 @@ static void iic_state_machine(struct iic
+ 			trsc->next_state = IIC_FSM_PREPARE_2_READ;
+ 		}
+ 		trsc->idx_current_msg = 0;
+-		ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_NACKEN | SSC_IEN_TEEN);
+-		ssc_store16(ssc_bus, SSC_TBUF, address);
+-		ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++		ssc_store32(adap, SSC_IEN, SSC_IEN_NACKEN | SSC_IEN_TEEN);
++		ssc_store32(adap, SSC_TBUF, address);
++		ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 			    SSC_I2C_STRTG | SSC_I2C_TXENB |
+ 			    (SSC_I2C_I2CFSMODE * fast_mode));
+ 		break;
+ 	case IIC_FSM_PREPARE_2_READ:
+ 		/* Just to clear th RBUF */
+-		ssc_load16(ssc_bus, SSC_RBUF);
+-		status = ssc_load16(ssc_bus, SSC_STA);
++		ssc_load32(adap, SSC_RBUF);
++		status = ssc_load32(adap, SSC_STA);
+ 		dgb_print2(" Prepare to Read... Status=0x%x\n", status);
+ 		if (status & SSC_STA_NACK)
+ 			jump_on_fsm_abort(trsc);
+@@ -226,16 +257,16 @@ static void iic_state_machine(struct iic
+ 			dgb_print("Zero Read\n");
+ 			jump_on_fsm_stop(trsc);
+ 		}
+-		ssc_store16(ssc_bus, SSC_TBUF, 0x1ff);
++		ssc_store32(adap, SSC_TBUF, 0x1ff);
+ 		if (pmsg->len == 1) {
+-			ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_NACKEN);
+-			ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++			ssc_store32(adap, SSC_IEN, SSC_IEN_NACKEN);
++			ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 				    (SSC_I2C_I2CFSMODE * fast_mode));
+ 		} else {
+-			ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++			ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 				    SSC_I2C_ACKG |
+ 				    (SSC_I2C_I2CFSMODE * fast_mode));
+-			ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_RIEN);
++			ssc_store32(adap, SSC_IEN, SSC_IEN_RIEN);
+ 		}
+                 break;
+ #else
+@@ -243,35 +274,35 @@ static void iic_state_machine(struct iic
+ 		case 0: dgb_print2("Zero Read\n");
+ 			jump_on_fsm_stop(trsc);
+ 
+-		case 1: ssc_store16(ssc_bus, SSC_TBUF, 0x1ff);
+-			ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++		case 1: ssc_store32(adap, SSC_TBUF, 0x1ff);
++			ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 				(SSC_I2C_I2CFSMODE * fast_mode));
+-			ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_NACKEN);
++			ssc_store32(adap, SSC_IEN, SSC_IEN_NACKEN);
+ 		   break;
+ 		default:
+ 			/* enable the fifos */
+-			ssc_store16(ssc_bus, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
++			ssc_store32(adap, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
+ 				SSC_CTL_PO | SSC_CTL_PH | SSC_CTL_HB | 0x8 |
+ 				SSC_CTL_EN_TX_FIFO | SSC_CTL_EN_RX_FIFO );
+-			ssc_store16(ssc_bus, SSC_CLR, 0xdc0);
+-			ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_ACKG |
++			ssc_store32(adap, SSC_CLR, 0xdc0);
++			ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_ACKG |
+ 				(SSC_I2C_I2CFSMODE * fast_mode));
+ 			/* P.S.: in any case the last byte has to be
+ 			 *       managed in a different manner
+ 			 */
+ 			for ( idx = 0;  idx < SSC_RXFIFO_SIZE &&
+ 					idx < pmsg->len-1 ;  ++idx )
+-				ssc_store16(ssc_bus, SSC_TBUF, 0x1ff);
+-			ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_RIEN | SSC_IEN_TIEN);
++				ssc_store32(adap, SSC_TBUF, 0x1ff);
++			ssc_store32(adap, SSC_IEN, SSC_IEN_RIEN | SSC_IEN_TIEN);
+ 		}
+ 		break;
+ #endif
+ 	case IIC_FSM_DATA_READ:
+ #if !defined(CONFIG_I2C_STM_HW_FIFO)
+-		status = ssc_load16(ssc_bus, SSC_STA);
++		status = ssc_load32(adap, SSC_STA);
+ 		if (!(status & SSC_STA_TE))
+-			return;
+-		tmp.word = ssc_load16(ssc_bus, SSC_RBUF);
++			break;
++		tmp.word = ssc_load32(adap, SSC_RBUF);
+ 		tmp.word = tmp.word >> 1;
+ 		pmsg->buf[trsc->idx_current_msg++] = tmp.bytes[0];
+ 		dgb_print2(" Data Read...Status=0x%x %d-%c\n",
+@@ -281,23 +312,23 @@ static void iic_state_machine(struct iic
+ 			status &= ~SSC_STA_NACK;
+ 			jump_on_fsm_stop(trsc);
+ 		} else {
+-			ssc_store16(ssc_bus, SSC_TBUF, 0x1ff);
++			ssc_store32(adap, SSC_TBUF, 0x1ff);
+ 			/*Is this the last byte? */
+ 			if (trsc->idx_current_msg == (pmsg->len - 1)) {
+-				ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++				ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 					 (SSC_I2C_I2CFSMODE * fast_mode));
+-				ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_NACKEN);
++				ssc_store32(adap, SSC_IEN, SSC_IEN_NACKEN);
+ 			}
+ 		}
+ 		break;
+ #else
+-		status = ssc_load16(ssc_bus, SSC_STA);
++		status = ssc_load32(adap, SSC_STA);
+ 		if (!(status & SSC_STA_TE))
+-			return;
++			break;
+ 		dgb_print2(" Data Read...Status=0x%x\n",status);
+ 		/* 1.0 Is it the last byte */
+ 		if (trsc->idx_current_msg == pmsg->len-1) {
+-			tmp.word = ssc_load16(ssc_bus, SSC_RBUF);
++			tmp.word = ssc_load32(adap, SSC_RBUF);
+ 			tmp.word = tmp.word >> 1;
+ 			pmsg->buf[trsc->idx_current_msg++] = tmp.bytes[0];
+ 			dgb_print2(" Rx Data %d-%c\n",tmp.bytes[0], tmp.bytes[0]);
+@@ -305,7 +336,7 @@ static void iic_state_machine(struct iic
+ 		/* 1.1 take the bytes from Rx fifo */
+ 		for (idx = 0 ;  idx < SSC_RXFIFO_SIZE &&
+ 			trsc->idx_current_msg < pmsg->len-1; ++idx ) {
+-				tmp.word = ssc_load16(ssc_bus, SSC_RBUF);
++				tmp.word = ssc_load32(adap, SSC_RBUF);
+ 				tmp.word = tmp.word >> 1;
+ 				pmsg->buf[trsc->idx_current_msg++] = tmp.bytes[0];
+ 				dgb_print2(" Rx Data %d-%c\n",tmp.bytes[0], tmp.bytes[0]);
+@@ -321,37 +352,37 @@ static void iic_state_machine(struct iic
+ 		 */
+ 		for (idx=0; idx<SSC_TXFIFO_SIZE &&
+ 			   (trsc->idx_current_msg+idx)<pmsg->len-1; ++idx)
+-			ssc_store16(ssc_bus, SSC_TBUF, 0x1ff);
++			ssc_store32(adap, SSC_TBUF, 0x1ff);
+ 		dgb_print2(" Asked %x bytes in fifo mode\n",idx);
+-		ssc_store16(ssc_bus,SSC_IEN,SSC_IEN_RIEN | SSC_IEN_TIEN);
++		ssc_store32(adap,SSC_IEN,SSC_IEN_RIEN | SSC_IEN_TIEN);
+ 		/*Is the next byte the last byte? */
+ 		if (trsc->idx_current_msg == (pmsg->len - 1)) {
+ 			dgb_print2(" Asked the last byte\n");
+-			ssc_store16(ssc_bus, SSC_CLR, 0xdc0);
++			ssc_store32(adap, SSC_CLR, 0xdc0);
+ 			/* disable the fifos */
+-			ssc_store16(ssc_bus, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
++			ssc_store32(adap, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
+ 				SSC_CTL_PO | SSC_CTL_PH | SSC_CTL_HB | 0x8 );
+-			ssc_store16(ssc_bus, SSC_TBUF, 0x1ff);
+-			ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++			ssc_store32(adap, SSC_TBUF, 0x1ff);
++			ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 					    (SSC_I2C_I2CFSMODE * fast_mode) );
+-			ssc_store16(ssc_bus,SSC_IEN,SSC_IEN_NACKEN);
++			ssc_store32(adap,SSC_IEN,SSC_IEN_NACKEN);
+ 		}
+ 		break;
+ #endif
+ 	case IIC_FSM_DATA_WRITE:
+ 		/* just to clear some bits in the STATUS register */
+-		ssc_load16(ssc_bus, SSC_RBUF);
++		ssc_load32(adap, SSC_RBUF);
+ /*
+  * Be careful!!!!
+  * Here I don't have to use 0xdc0 for
+  * the SSC_CLR register
+  */
+-		ssc_store16(ssc_bus, SSC_CLR, 0x9c0);
+-		status = ssc_load16(ssc_bus, SSC_STA);
++		ssc_store32(adap, SSC_CLR, 0x9c0);
++		status = ssc_load32(adap, SSC_STA);
+ 		if (status & SSC_STA_NACK)
+ 			jump_on_fsm_abort(trsc);
+ #if defined(CONFIG_I2C_STM_HW_FIFO)
+-		tx_fifo_status = ssc_load16(ssc_bus,SSC_TX_FSTAT);
++		tx_fifo_status = ssc_load32(adap,SSC_TX_FSTAT);
+ 		if ( tx_fifo_status ) {
+ 			dgb_print2(" Fifo not empty\n");
+ 			break;
+@@ -362,15 +393,15 @@ static void iic_state_machine(struct iic
+ 		dgb_print2(" Data Write...Status=0x%x 0x%x-%c\n", status,
+ 			  pmsg->buf[trsc->idx_current_msg],
+ 			  pmsg->buf[trsc->idx_current_msg]);
+-		ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_TXENB |
++		ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_TXENB |
+ 			    (SSC_I2C_I2CFSMODE * fast_mode));
+ 
+ 		trsc->next_state = IIC_FSM_DATA_WRITE;
+ #if !defined(CONFIG_I2C_STM_HW_FIFO)
+-		ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_TEEN | SSC_IEN_NACKEN);
++		ssc_store32(adap, SSC_IEN, SSC_IEN_TEEN | SSC_IEN_NACKEN);
+ #else
+-		ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_TIEN | SSC_IEN_NACKEN);
+-		ssc_store16(ssc_bus, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
++		ssc_store32(adap, SSC_IEN, SSC_IEN_TEEN | SSC_IEN_NACKEN);
++		ssc_store32(adap, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
+                             SSC_CTL_PO | SSC_CTL_PH | SSC_CTL_HB | 0x8 |
+ 			    SSC_CTL_EN_TX_FIFO);
+ 		for (; tx_fifo_status < SSC_TXFIFO_SIZE &&
+@@ -378,7 +409,7 @@ static void iic_state_machine(struct iic
+ #endif
+ 		{
+ 		tmp.bytes[0] = pmsg->buf[trsc->idx_current_msg++];
+-		ssc_store16(ssc_bus, SSC_TBUF, tmp.word << 1 | 0x1);
++		ssc_store32(adap, SSC_TBUF, tmp.word << 1 | 0x1);
+ 		}
+ 		break;
+ 
+@@ -395,18 +426,18 @@ static void iic_state_machine(struct iic
+ 			jump_on_fsm_repstart(trsc);
+ 		}
+ 		dgb_print2(" Stop\n");
+-		ssc_store16(ssc_bus, SSC_CLR, 0xdc0);
+-		ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++		ssc_store32(adap, SSC_CLR, 0xdc0);
++		ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 			    SSC_I2C_TXENB | SSC_I2C_STOPG |
+ 			    (SSC_I2C_I2CFSMODE * fast_mode));
+ 		trsc->next_state = IIC_FSM_COMPLETE;
+-		ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_STOPEN);
++		ssc_store32(adap, SSC_IEN, SSC_IEN_STOPEN);
+ 		break;
+ 
+ 	case IIC_FSM_COMPLETE:
+ 		be_fsm_complete:
+ 		dgb_print2(" Complete\n");
+-		ssc_store16(ssc_bus, SSC_IEN, 0x0);
++		ssc_store32(adap, SSC_IEN, 0x0);
+ /*
+  *  If there was some problem i can try again for adap->adapter.retries time...
+  */
+@@ -420,7 +451,7 @@ static void iic_state_machine(struct iic
+ 		if (!(trsc->status_error & IIC_E_NOTACK))
+ 			trsc->status_error = IIC_E_NO_ERROR;
+ 		trsc->waitcondition = 0;
+-		wake_up(&(ssc_bus->wait_queue));
++		wake_up(&(adap->wait_queue));
+ 		break;
+ 	case IIC_FSM_REPSTART:
+ 	      be_fsm_repstart:
+@@ -429,16 +460,16 @@ static void iic_state_machine(struct iic
+ 		trsc->start_state = IIC_FSM_REPSTART;
+ 		trsc->idx_current_msg = 0;
+ 		trsc->next_state = IIC_FSM_REPSTART_ADDR;
+-		ssc_store16(ssc_bus, SSC_CLR, 0xdc0);
+-		ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_TXENB
++		ssc_store32(adap, SSC_CLR, 0xdc0);
++		ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_TXENB
+ 			    | SSC_I2C_REPSTRTG | (SSC_I2C_I2CFSMODE *
+ 						  fast_mode));
+-		ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_REPSTRTEN);
++		ssc_store32(adap, SSC_IEN, SSC_IEN_REPSTRTEN);
+ 		break;
+ 	case IIC_FSM_REPSTART_ADDR:
+ 		dgb_print2("-Rep Start addr 0x%x\n", pmsg->addr);
+-		ssc_store16(ssc_bus, SSC_CLR, 0xdc0);
+-		ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_TXENB |
++		ssc_store32(adap, SSC_CLR, 0xdc0);
++		ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM | SSC_I2C_TXENB |
+ 			    (SSC_I2C_I2CFSMODE * fast_mode));
+ 		address = (pmsg->addr << 2) | 0x1;
+ 		trsc->next_state = IIC_FSM_DATA_WRITE;
+@@ -446,17 +477,17 @@ static void iic_state_machine(struct iic
+ 			address |= 0x2;
+ 			trsc->next_state = IIC_FSM_PREPARE_2_READ;
+ 		}
+-		ssc_store16(ssc_bus, SSC_TBUF, address);
+-		ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_NACKEN | SSC_IEN_TEEN);
++		ssc_store32(adap, SSC_TBUF, address);
++		ssc_store32(adap, SSC_IEN, SSC_IEN_NACKEN | SSC_IEN_TEEN);
+ 		break;
+ 	default:
+ 		printk(KERN_ERR " Error in the FSM\n");
+ 		;
+ 	}
+-	return;
++	return IRQ_HANDLED;
+ }
+ 
+-static void iic_wait_stop_condition(struct ssc_t *ssc_bus)
++static void iic_wait_stop_condition(struct iic_ssc *adap)
+ {
+   unsigned int idx;
+ /*
+@@ -464,7 +495,7 @@ static void iic_wait_stop_condition(stru
+  */
+   dgb_print("\n");
+   for ( idx = 0; idx < 5 ; ++idx )
+-    if ((ssc_load16(ssc_bus,SSC_STA) & SSC_STA_STOP) == 0)
++    if ((ssc_load32(adap,SSC_STA) & SSC_STA_STOP) == 0)
+         mdelay(2);
+ /*
+  * At this point I hope I detected a stop condition
+@@ -472,20 +503,18 @@ static void iic_wait_stop_condition(stru
+  */
+ }
+ 
+-static void iic_wait_free_bus(struct ssc_t *ssc_bus)
++static void iic_wait_free_bus(struct iic_ssc *adap)
+ {
+-#if 1
+   unsigned int idx;
+ /*
+  * Look for a free condition on the bus
+  */
+   dgb_print("\n");
+   for ( idx = 0; idx < 5 ; ++idx ) {
+-    if (!(ssc_load16(ssc_bus,SSC_STA) & SSC_STA_BUSY) )
++    if (!(ssc_load32(adap,SSC_STA) & SSC_STA_BUSY) )
+ 	return ;
+     mdelay(2);
+   }
+-#endif
+ /*
+  * At this point I hope I detected a free bus
+  * but in any case I return and I will tour off the ssc....
+@@ -503,10 +532,7 @@ static int iic_stm_xfer(struct i2c_adapt
+ 	int timeout;
+ 	struct iic_ssc *adap =
+ 			(struct iic_ssc *)container_of(i2c_adap, struct iic_ssc, adapter);
+-	struct ssc_t *ssc_bus =
+-			(struct ssc_t *)container_of(i2c_adap->dev.parent,struct ssc_t, pdev.dev);
+ 	struct iic_transaction transaction = {
+-			.adapter      = adap,
+ 			.msgs_queue   = msgs,
+ 			.queue_length = num,
+ 			.current_msg  = 0x0,
+@@ -517,12 +543,14 @@ static int iic_stm_xfer(struct i2c_adapt
+ 		};
+ 
+ 	dgb_print("\n");
+-	ssc_request_bus(ssc_bus, iic_state_machine, &transaction);
+-	iic_wait_free_bus(ssc_bus);
+ 
+-	iic_state_machine(&transaction);
++	iic_wait_free_bus(adap);
++
++	adap->trns = &transaction;
++
++	iic_state_machine(NULL,adap);
+ 
+-	timeout = wait_event_interruptible_timeout(ssc_bus->wait_queue,
++	timeout = wait_event_interruptible_timeout(adap->wait_queue,
+ 					(transaction.waitcondition==0),
+ 					i2c_adap->timeout *HZ );
+ 
+@@ -538,24 +566,15 @@ static int iic_stm_xfer(struct i2c_adapt
+ 			   - generate a stop condition on the bus
+ 			   all this task are done without interrupt....
+ 			 */
+-			ssc_store16(ssc_bus, SSC_IEN, 0x0);
+-			ssc_store16(ssc_bus, SSC_I2C, SSC_I2C_I2CM |
++			ssc_store32(adap, SSC_IEN, 0x0);
++			ssc_store32(adap, SSC_I2C, SSC_I2C_I2CM |
+ 				    SSC_I2C_STOPG | SSC_I2C_TXENB |
+ 				    (SSC_I2C_I2CFSMODE * check_fastmode(adap)));
+ 			/* wait until the ssc detects a Stop condition on the bus */
+ 			/* but before we do that we enable all the interrupts     */
+ 			local_irq_restore(flag);
+ 
+-			iic_wait_stop_condition(ssc_bus);
+-
+-			/* turn off the ssc */
+-/*
+- * Don't disable the SSC as this causes the SDA to go low, causing problems
+- * for some slave devices.
+- *			ssc_store16(ssc_bus, SSC_I2C, 0 );
+- *			ssc_store16(ssc_bus, SSC_CTL, SSC_CTL_SR);
+- *			ssc_store16(ssc_bus, SSC_CTL, 0 );
+- */
++			iic_wait_stop_condition(adap);
+ 		} else
+ 			local_irq_restore(flag);
+ 
+@@ -571,83 +590,99 @@ static int iic_stm_xfer(struct i2c_adapt
+ 	} else
+ 		local_irq_restore(flag);
+ 
+-	ssc_release_bus(ssc_bus);
+-
+ 	return result;
+ }
+ 
+ static void iic_stm_timing_trace(struct iic_ssc *adap)
+ {
+-	struct ssc_t *ssc_bus =
+-			container_of(adap->adapter.dev.parent, struct ssc_t, pdev.dev);
+-	dgb_print("SSC_BRG  %d\n", adap->config >> 16);
++	dgb_print("SSC_BRG  %d\n",ssc_load32(adap, SSC_BRG));
+ 	dgb_print("SSC_REP_START_HOLD %d\n",
+-		  ssc_load16(ssc_bus, SSC_REP_START_HOLD));
++		  ssc_load32(adap, SSC_REP_START_HOLD));
+ 	dgb_print("SSC_REP_START_SETUP %d\n",
+-		  ssc_load16(ssc_bus, SSC_REP_START_SETUP));
+-	dgb_print("SSC_START_HOLD %d\n", ssc_load16(ssc_bus, SSC_START_HOLD));
+-	dgb_print("SSC_DATA_SETUP %d\n", ssc_load16(ssc_bus, SSC_DATA_SETUP));
+-	dgb_print("SSC_STOP_SETUP %d\n", ssc_load16(ssc_bus, SSC_STOP_SETUP));
+-	dgb_print("SSC_BUS_FREE %d\n", ssc_load16(ssc_bus, SSC_BUS_FREE));
++		  ssc_load32(adap, SSC_REP_START_SETUP));
++	dgb_print("SSC_START_HOLD %d\n", ssc_load32(adap, SSC_START_HOLD));
++	dgb_print("SSC_DATA_SETUP %d\n", ssc_load32(adap, SSC_DATA_SETUP));
++	dgb_print("SSC_STOP_SETUP %d\n", ssc_load32(adap, SSC_STOP_SETUP));
++	dgb_print("SSC_BUS_FREE %d\n", ssc_load32(adap, SSC_BUS_FREE));
+ 	dgb_print("SSC_PRE_SCALER_BRG %d\n",
+-		  ssc_load16(ssc_bus, SSC_PRE_SCALER_BRG));
+-	dgb_print("SSC_AGFR 0x%x\n", ssc_load8(ssc_bus, SSC_AGFR));
+-	dgb_print("SSC_PRSC %d\n", ssc_load8(ssc_bus, SSC_PRSC));
++		  ssc_load32(adap, SSC_PRE_SCALER_BRG));
++	dgb_print("SSC_NOISE_SUPP_WIDTH %d\n",
++			ssc_load32(adap, SSC_NOISE_SUPP_WIDTH));
++	dgb_print("SSC_PRSCALER %d\n",
++			ssc_load32(adap, SSC_PRSCALER));
++	dgb_print("SSC_NOISE_SUPP_WIDTH_DATAOUT %d\n",
++			ssc_load32(adap, SSC_NOISE_SUPP_WIDTH_DATAOUT));
++	dgb_print("SSC_PRSCALER_DATAOUT %d\n",
++			ssc_load32(adap, SSC_PRSCALER_DATAOUT));
+ }
+ 
+-static void iic_stm_setup_timing(struct iic_ssc *adap)
++static void iic_stm_setup_timing(struct iic_ssc *adap, unsigned long clock)
+ {
+-	struct ssc_t *ssc_bus =
+-			container_of(adap->adapter.dev.parent, struct ssc_t, pdev.dev);
+-	unsigned long iic_baudrate;
++	unsigned long  iic_baudrate;
+ 	unsigned short iic_rep_start_hold;
+-	unsigned short iic_start_hold, iic_rep_start_setup;
+-	unsigned short iic_data_setup, iic_stop_setup;
+-	unsigned short iic_bus_free, iic_pre_scale_baudrate;
+-	unsigned char iic_agfr, iic_prsc;
+-	unsigned long clock = ssc_get_clock();
+-	unsigned long NSPerCyc = NANOSEC_PER_SEC / clock;
+-
+-	NSPerCyc = NANOSEC_PER_SEC /clock;
+-	dgb_print("Assuming %d MHz for the Timing Setup %d\n",
+-		  clock / 1000000,NSPerCyc);
+-
+-	iic_agfr = 0x0;
+-	iic_prsc = (int)clock / 10000000;
+-	iic_pre_scale_baudrate = 0x1;
++	unsigned short iic_start_hold;
++	unsigned short iic_rep_start_setup;
++	unsigned short iic_data_setup;
++	unsigned short iic_stop_setup;
++	unsigned short iic_bus_free;
++	unsigned short iic_pre_scale_baudrate = 1;
++	unsigned short iic_glitch_width;
++	unsigned short iic_glitch_width_dataout;
++	unsigned char  iic_prescaler;
++	unsigned short iic_prescaler_dataout ;
++	unsigned long  ns_per_clk;
++
++	dgb_print("Assuming %d MHz for the Timing Setup\n",
++		  clock / 1000000);
++
++	clock += 5000000; /* +5000000 for rounding */
++	ns_per_clk = NANOSEC_PER_SEC / clock;
++
++	iic_prescaler		= clock / 10000000;
++	iic_prescaler_dataout	= clock / 10000000;
++	iic_glitch_width_dataout = GLITCH_WIDTH_DATA/100;
+ 
+ 	if (check_fastmode(adap)) {
+-		ssc_bus->i2c_timing = SSC_I2C_READY_FAST;
++		set_ready_fastmode(adap);
+ 		iic_baudrate = clock / (2 * I2C_RATE_FASTMODE);
+-		iic_rep_start_hold = REP_START_HOLD_TIME_FAST / NSPerCyc;
+-		iic_start_hold = START_HOLD_TIME_FAST / NSPerCyc;
+-		iic_rep_start_setup = REP_START_SETUP_TIME_FAST / NSPerCyc;
+-		iic_data_setup = DATA_SETUP_TIME_FAST / NSPerCyc;
+-		iic_stop_setup = STOP_SETUP_TIME_FAST / NSPerCyc;
+-		iic_bus_free = BUS_FREE_TIME_FAST / NSPerCyc;
++		iic_glitch_width = 0;
++		iic_rep_start_hold  =(REP_START_HOLD_TIME_FAST +GLITCH_WIDTH_DATA) /ns_per_clk;
++		iic_rep_start_setup =(REP_START_SETUP_TIME_FAST+GLITCH_WIDTH_CLOCK) /ns_per_clk;
++		if(GLITCH_WIDTH_DATA<200)
++			iic_start_hold =(START_HOLD_TIME_FAST+GLITCH_WIDTH_DATA) /ns_per_clk;
++		else
++			iic_start_hold =(5*GLITCH_WIDTH_DATA) /ns_per_clk;
++		iic_data_setup =(DATA_SETUP_TIME_FAST+GLITCH_WIDTH_DATA) /ns_per_clk;
++		iic_stop_setup =(STOP_SETUP_TIME_FAST+GLITCH_WIDTH_CLOCK) /ns_per_clk;
++		iic_bus_free =(BUS_FREE_TIME_FAST+GLITCH_WIDTH_DATA) /ns_per_clk;
+ 	} else {
+-		ssc_bus->i2c_timing = SSC_I2C_READY_NORMAL;
++		clear_ready_fastmode(adap);
+ 		iic_baudrate = clock  / (2 * I2C_RATE_NORMAL);
+-		iic_rep_start_hold = REP_START_HOLD_TIME_NORMAL / NSPerCyc;
+-		iic_start_hold = START_HOLD_TIME_NORMAL / NSPerCyc;
+-		iic_rep_start_setup = REP_START_SETUP_TIME_NORMAL / NSPerCyc;
+-		iic_data_setup = DATA_SETUP_TIME_NORMAL / NSPerCyc;
+-		iic_stop_setup = STOP_SETUP_TIME_NORMAL / NSPerCyc;
+-		iic_bus_free = BUS_FREE_TIME_NORMAL / NSPerCyc;
++		iic_glitch_width = (GLITCH_WIDTH_DATA*(clock/10000000))/(iic_prescaler*1000);
++		iic_rep_start_hold =( REP_START_HOLD_TIME_NORMAL+GLITCH_WIDTH_DATA) / ns_per_clk;
++		iic_rep_start_setup =( REP_START_SETUP_TIME_NORMAL+GLITCH_WIDTH_CLOCK) / ns_per_clk;
++		if(GLITCH_WIDTH_DATA<1200)
++			iic_start_hold =( START_HOLD_TIME_NORMAL+GLITCH_WIDTH_DATA) / ns_per_clk;
++		else
++			iic_start_hold =( 5*GLITCH_WIDTH_DATA) / ns_per_clk;
++		iic_data_setup =( DATA_SETUP_TIME_NORMAL+GLITCH_WIDTH_DATA) / ns_per_clk;
++		iic_stop_setup =( STOP_SETUP_TIME_NORMAL+GLITCH_WIDTH_CLOCK) / ns_per_clk;
++		iic_bus_free =( BUS_FREE_TIME_NORMAL+GLITCH_WIDTH_DATA) / ns_per_clk;
+ 	}
+ 
+-	adap->config &= ~IIC_STM_CONFIG_BAUDRATE_MASK;
+-	adap->config |= iic_baudrate << 16;
++	ssc_store32(adap, SSC_BRG,iic_baudrate);
++	ssc_store32(adap, SSC_REP_START_HOLD, iic_rep_start_hold);
++	ssc_store32(adap, SSC_START_HOLD, iic_start_hold);
++	ssc_store32(adap, SSC_REP_START_SETUP, iic_rep_start_setup);
++	ssc_store32(adap, SSC_DATA_SETUP, iic_data_setup);
++	ssc_store32(adap, SSC_STOP_SETUP, iic_stop_setup);
++	ssc_store32(adap, SSC_BUS_FREE, iic_bus_free);
++	ssc_store32(adap, SSC_PRE_SCALER_BRG, iic_pre_scale_baudrate);
++	ssc_store32(adap, SSC_PRSCALER, iic_prescaler);
++	ssc_store32(adap, SSC_NOISE_SUPP_WIDTH, iic_glitch_width);
++	ssc_store32(adap, SSC_NOISE_SUPP_WIDTH_DATAOUT, iic_glitch_width_dataout);
++	ssc_store32(adap, SSC_PRSCALER_DATAOUT, iic_prescaler_dataout);
+ 
+-	ssc_store16(ssc_bus, SSC_REP_START_HOLD, iic_rep_start_hold);
+-	ssc_store16(ssc_bus, SSC_START_HOLD, iic_start_hold);
+-	ssc_store16(ssc_bus, SSC_REP_START_SETUP, iic_rep_start_setup);
+-	ssc_store16(ssc_bus, SSC_DATA_SETUP, iic_data_setup);
+-	ssc_store16(ssc_bus, SSC_STOP_SETUP, iic_stop_setup);
+-	ssc_store16(ssc_bus, SSC_BUS_FREE, iic_bus_free);
+-	ssc_store8(ssc_bus, SSC_AGFR, iic_agfr);
+-	ssc_store8(ssc_bus, SSC_PRSC, iic_prsc);
+-	ssc_store16(ssc_bus, SSC_PRE_SCALER_BRG, iic_pre_scale_baudrate);
+ 	iic_stm_timing_trace(adap);
+ 	return;
+ }
+@@ -659,19 +694,15 @@ static int iic_stm_control(struct i2c_ad
+ 	    container_of(adapter, struct iic_ssc, adapter);
+ 	switch (cmd) {
+ 	case I2C_STM_IOCTL_FAST:
+-		dgb_print("ioctl fast\n");
++		dgb_print("ioctl fast 0x%x\n",arg);
+ 		iic_adap->config &= ~IIC_STM_CONFIG_SPEED_MASK;
+ 		if (arg)
+ 			iic_adap->config |=
+ 			    IIC_STM_CONFIG_SPEED_FAST;
+ 		break;
+ 	default:
+-		printk(KERN_WARNING" i2c-ioctl not managed\n");
++		printk(KERN_WARNING" %s: i2c-ioctl not managed\n",__FUNCTION__);
+ 	}
+-/*
+- * the timeout and the retries ioctl
+- * are managed by i2c core system
+- */
+ 	return 0;
+ }
+ 
+@@ -708,76 +739,136 @@ static ssize_t iic_bus_store_fastmode(st
+ static DEVICE_ATTR(fastmode, S_IRUGO | S_IWUSR, iic_bus_show_fastmode,
+ 			iic_bus_store_fastmode);
+ 
+-static LIST_HEAD(stm_busses);
+-
+-static int __init iic_stm_bus_init(void)
++static int __init iic_stm_probe(struct platform_device *pdev)
+ {
+-	unsigned int ssc_number = ssc_device_available();
+-	unsigned int idx;
+-	unsigned int adapnr = 0;
+-	struct iic_ssc *iic_stm;
+-
+-	for (idx = 0; idx < ssc_number; ++idx) {
+-		if (!(ssc_capability(idx) & SSC_I2C_CAPABILITY))
+-			continue;
+-		iic_stm =
+-		    (struct iic_ssc *)kzalloc(sizeof(struct iic_ssc), GFP_KERNEL);
+-		if (!iic_stm) {
+-			printk(KERN_EMERG
+-			       "Error on initialization of  ssc-i2c adapter module\n");
+-			return -ENODEV;
+-		}
+-/*
+- * P.S.: with the "kzalloc" the iic_stm->config is zero
+- *       this means:
+- *       - i2c speed  = normal
+- */
+-		iic_stm->adapter.owner = THIS_MODULE;
+-		iic_stm->adapter.id = I2C_HW_STM_SSC;
+-		iic_stm->adapter.timeout = 4;
+-		iic_stm->adapter.class   = I2C_CLASS_ALL;
+-		sprintf(iic_stm->adapter.name,"i2c-ssc-%d",adapnr);
+-		iic_stm->adapter.algo = &iic_stm_algo;
+-//		iic_stm->adapter.dev.bus = &i2c_bus_type;
+-		iic_stm->adapter.dev.parent = &(ssc_device_request(idx)->pdev.dev);
+-/*
+-		iic_stm->adapter.dev.release
+-*/
+-		iic_stm_setup_timing(iic_stm);
++	struct ssc_pio_t *pio_info =
++			(struct ssc_pio_t *)pdev->dev.platform_data;
++	struct iic_ssc *i2c_stm;
++	struct resource *res;
++
++	i2c_stm = devm_kzalloc(&pdev->dev,sizeof(struct iic_ssc), GFP_KERNEL);
++
++	if (!i2c_stm)
++		return -ENOMEM;
++
++	if (!(res=platform_get_resource(pdev, IORESOURCE_MEM, 0)))
++		return -ENODEV;
++	if (!devm_request_mem_region(&pdev->dev, res->start, res->end - res->start, "i2c")){
++		printk(KERN_ERR "%s: Request mem 0x%x region not done\n",__FUNCTION__,res->start);
++		return -ENOMEM;
++	}
++	if (!(i2c_stm->base =
++		devm_ioremap_nocache(&pdev->dev, res->start, res->end - res->start))){
++		printk(KERN_ERR "%s: Request iomem 0x%x region not done\n",__FUNCTION__,res->start);
++		return -ENOMEM;
++	}
++	if (!(res=platform_get_resource(pdev, IORESOURCE_IRQ, 0))){
++		printk(KERN_ERR "%s Request irq %d not done\n",__FUNCTION__,res->start);
++		return -ENODEV;
++	}
++	if(devm_request_irq(&pdev->dev,res->start, iic_state_machine,
++		IRQF_DISABLED, "i2c", i2c_stm)<0){
++		printk(KERN_ERR "%s: Request irq not done\n",__FUNCTION__);
++		return -ENODEV;
++	}
++	pio_info->clk = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[0],
++				"I2C Clock", STPIO_ALT_BIDIR);
++	if(!pio_info->clk){
++		printk(KERN_ERR "%s: Faild to clk pin allocation\n",__FUNCTION__);
++		return -ENODEV;
++	}
+ 
+-		if (i2c_add_adapter(&(iic_stm->adapter)) < 0) {
+-			printk(KERN_ERR
+-			       "i2c/stm: The I2C Core refuses the i2c/stm adapter\n");
+-			kfree(iic_stm);
+-			return -ENODEV;
+-		} else {
+-			device_create_file(&(iic_stm->adapter.dev), &dev_attr_fastmode);
+-		}
+-		list_add(&(iic_stm->list), &(stm_busses));
+-		adapnr ++;
++	pio_info->sdout = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[1],
++				"I2C Data", STPIO_ALT_BIDIR);
++	if(!pio_info->sdout){
++		printk(KERN_ERR "%s: Faild to sda pin allocation\n",__FUNCTION__);
++		return -ENODEV;
++		}
++	pdev->dev.driver_data = i2c_stm;
++	i2c_stm->adapter.id = I2C_HW_STM_SSC;
++	i2c_stm->adapter.timeout = 2;
++	i2c_stm->adapter.class   = I2C_CLASS_ALL;
++	sprintf(i2c_stm->adapter.name,"i2c-hw-%d",pdev->id);
++	i2c_stm->adapter.algo = &iic_stm_algo;
++	i2c_stm->adapter.dev.parent = &(pdev->dev);
++	iic_stm_setup_timing(i2c_stm,clk_get_rate(clk_get(NULL,"comms_clk")));
++	init_waitqueue_head(&(i2c_stm->wait_queue));
++	if (i2c_add_adapter(&(i2c_stm->adapter)) < 0) {
++		printk(KERN_ERR
++		       "%s: The I2C Core refuses the i2c/stm adapter\n",__FUNCTION__);
++		return -ENODEV;
++	} else {
++		device_create_file(&(i2c_stm->adapter.dev), &dev_attr_fastmode);
+ 	}
+ 	return 0;
++
+ }
+ 
+-static void __exit iic_stm_bus_exit(void)
++static int iic_stm_remove(struct platform_device *pdev)
+ {
+-	struct iic_ssc *iic_stm;
+-	struct i2c_adapter *iic_adapter;
+-	struct list_head *item;
+-	dgb_print("\n");
+-	list_for_each(item, &(stm_busses)) {
+-		iic_stm = container_of(item, struct iic_ssc, list);
+-		list_del(&iic_stm->list);
+-		iic_adapter = &(iic_stm->adapter);
+-		i2c_del_adapter(iic_adapter);
+-		kfree(iic_stm);
+-	}
++	struct resource *res;
++	struct iic_ssc *iic_stm = pdev->dev.driver_data ;
++	struct ssc_pio_t *pio_info =
++			(struct ssc_pio_t *)pdev->dev.platform_data;
++
++	i2c_del_adapter(&iic_stm->adapter);
++	/* irq */
++	res=platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++	devm_free_irq(&pdev->dev,res->start,iic_stm);
++	/* mem */
++	res=platform_get_resource(pdev, IORESOURCE_MEM,0);
++	devm_iounmap(&pdev->dev,res->start);
++	/* pio */
++	stpio_free_pin(pio_info->clk);
++	stpio_free_pin(pio_info->sdout);
++	/* kmem */
++	devm_kfree(&pdev->dev,iic_stm);
++	return 0;
+ }
+ 
+-late_initcall(iic_stm_bus_init);
++#ifdef CONFIG_PM
++static int iic_stm_suspend(struct platform_device *pdev,pm_message_t state)
++{
++	struct iic_ssc *i2c_bus = pdev->dev.driver_data;
++	ssc_store32(i2c_bus, SSC_IEN,0);
++	ssc_store32(i2c_bus, SSC_CTL,0);
++	return 0;
++}
++static int iic_stm_resume(struct platform_device *pdev)
++{
++	struct iic_ssc *i2c_bus =pdev->dev.driver_data;
++	iic_stm_setup_timing(i2c_bus, clk_get_rate(clk_get(NULL,"comms_clk")));
++	return 0;
++}
++#else
++#define iic_stm_suspend		NULL
++#define	iic_stm_resume		NULL
++#endif
++
++static struct platform_driver i2c_stm_driver = {
++        .driver.name = "i2c_st",
++        .driver.owner = THIS_MODULE,
++        .probe = iic_stm_probe,
++	.remove = iic_stm_remove,
++	.suspend = iic_stm_suspend,
++	.resume  = iic_stm_resume,
++};
++
++
++static int __init iic_stm_init(void)
++{
++	platform_driver_register(&i2c_stm_driver);
++	return 0;
++}
++
++static void __exit iic_stm_exit(void)
++{
++	platform_driver_unregister(&i2c_stm_driver);
++}
+ 
+-module_exit(iic_stm_bus_exit);
++module_init(iic_stm_init);
++module_exit(iic_stm_exit);
+ 
+ MODULE_AUTHOR("STMicroelectronics  <www.st.com>");
+-MODULE_DESCRIPTION("i2c-stm algorithm for ssc device");
++MODULE_DESCRIPTION("i2c-stm algorithm for STMicroelectronics devices");
+ MODULE_LICENSE("GPL");
+Index: linux-2.6.23-stm/drivers/i2c/busses/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/i2c/busses/Kconfig
++++ linux-2.6.23-stm/drivers/i2c/busses/Kconfig
+@@ -673,7 +673,6 @@ config I2C_ST40_PIO
+ 
+ config I2C_STM
+ 	tristate "I2C hardware SSC driver"
+-	select STM_SSC
+ 	help
+ 	  If you say yes to this option, support will be included for the
+ 	  SSC driven I2C.
+@@ -686,4 +685,23 @@ config I2C_STM_HW_FIFO
+ 	help
+ 	  Enable this option to print out information on STM I2C (SSC) device driver
+ 
++config I2C_STM_GLITCH_SUPPORT
++	bool "I2C hardware glitch suppression support"
++	depends on I2C_STM
++	help
++	  Enable this option to add the glitch suppression support in the
++	  STM I2C (SSC) device driver.
++	  Moreover you can set the glitch width in nanosecond (on both clock and data)
++	  or use the default value.
++
++config GLITCH_CLK_WIDTH
++	depends on I2C_STM_GLITCH_SUPPORT
++	int "Glitch clock width"
++	default "500"
++
++config GLITCH_DATA_WIDTH
++	depends on I2C_STM_GLITCH_SUPPORT
++	int "Glitch data width"
++	default "500"
++
+ endmenu
+Index: linux-2.6.23-stm/drivers/stm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Kconfig
++++ linux-2.6.23-stm/drivers/stm/Kconfig
+@@ -71,23 +71,8 @@ config STM_DMA_FW_KERNEL
+ 
+ endchoice
+ 
+-config STM_SSC
+-       bool "STM Synchronous Serial Controller"
+-       default y
+-       ---help---
+-         This driver is required to support the I2C and the SPI
+-         Protocol on STM SOCs
+-
+-config  STM_SSC_DEBUG
+-	bool "STM SSC Debug"
+-	depends on STM_SSC
+-	default n
+-	---help---
+-	  Enable this option to print out information on STM SSC device driver
+-
+ config STM_SPI
+ 	bool "STM Serial Peripheral Interface"
+-	select STM_SSC
+ 	---help---
+ 	  This driver is required to support the SPI Protocol
+ 
+Index: linux-2.6.23-stm/drivers/stm/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Makefile
++++ linux-2.6.23-stm/drivers/stm/Makefile
+@@ -5,7 +5,6 @@
+ obj-y				+= sysconf.o
+ obj-$(CONFIG_STM_DMA)		+= 710x_fdma2.o
+ obj-$(CONFIG_STM_PIO)		+= pio.o
+-obj-$(CONFIG_STM_SSC)		+= stm_ssc.o
+ obj-$(CONFIG_STM_SPI)		+= stm_spi.o
+ obj-$(CONFIG_STM_COPROCESSOR_SUPPORT)	+= copro-stb7100.o
+ obj-$(CONFIG_STM_COPROCESSOR)		+= stm-coprocessor.o
+Index: linux-2.6.23-stm/drivers/stm/stm_spi.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm_spi.c
++++ linux-2.6.23-stm/drivers/stm/stm_spi.c
+@@ -6,17 +6,22 @@
+    Version: 2.0 (1 April 2007)
+    ----------------------------------------------------------------------------
+    May be copied or modified under the terms of the GNU General Public
+-   License.  See linux/COPYING for more information.
++   License V.2.  See linux/COPYING for more information.
+ 
+    ------------------------------------------------------------------------- */
+ 
+ #include "stm_spi.h"
+ #include <linux/stm/pio.h>
++#include <linux/stm/soc.h>
+ #include <asm/semaphore.h>
+ #include <linux/module.h>
++#include <linux/platform_device.h>
+ #include <linux/kernel.h>
++#include <linux/interrupt.h>
+ #include <linux/cdev.h>
+ #include <linux/fs.h>
++#include <linux/clk.h>
++#include <linux/wait.h>
+ #include <asm/uaccess.h>
+ #include <asm/param.h>		/* for HZ */
+ 
+@@ -114,11 +119,9 @@ struct spi_transaction_t {
+  *  open device file
+  */
+ struct spi_device_t *spi_busses_array[MAX_NUMBER_SPI_BUSSES];
+-//static LIST_HEAD(spi_busses);
+ /*
+  * In this way the spi bus will be available
+  * with the spi_busses_array array
+- * or the spi_busses list
+  */
+ 
+ #define jump_on_fsm_complete(trsc)	{ (trsc)->state = SPI_FSM_COMPLETE;	\
+@@ -127,10 +130,10 @@ struct spi_device_t *spi_busses_array[MA
+ #define jump_on_fsm_abort(trsc)		{ (trsc)->state = SPI_FSM_ABORT;	\
+ 					 goto be_fsm_abort;}
+ 
+-void spi_state_machine(struct spi_transaction_t *transaction)
++static int spi_state_machine(int this_irq,struct spi_device_t *ssc_bus)
+ {
++	struct spi_transaction_t *transaction = ssc_bus->trns;
+ 	struct spi_client_t *client = transaction->client;
+-	struct ssc_t *ssc_bus = container_of(client->dev->dev.parent, struct ssc_t,pdev.dev);
+ 	unsigned short status;
+ 	short tx_fifo_status;
+ 	short rx_fifo_status;
+@@ -146,6 +149,7 @@ void spi_state_machine(struct spi_transa
+ 
+ 	transaction->state = transaction->next_state;
+ 
++	dgb_print("\n");
+ 	switch (transaction->state) {
+ 	case SPI_FSM_PREPARE:
+ 		dgb_print("-SPI_FSM_PREPARE\n");
+@@ -154,16 +158,12 @@ void spi_state_machine(struct spi_transa
+ 		hb       = ((config & SPI_MSB_MASK) ? 1 : 0);
+ 		wide_frame = ((config & SPI_WIDE_MASK) ? 1 : 0) * 0x8 + 0x7;
+ 
+-		stpio_set_pin(ssc_bus->pio_clk, STPIO_OUT);
+-		stpio_set_pin(ssc_bus->pio_data, STPIO_OUT);
+-		stpio_set_pin(ssc_bus->pio_data, STPIO_IN);
+-
+-		ssc_store16(ssc_bus, SSC_BRG,
++		ssc_store32(ssc_bus, SSC_BRG,
+ 			    (config & SPI_BAUDRATE_MASK) >> SPI_BAUDRATE_SHIFT);
+ 
+-		ssc_store16(ssc_bus, SSC_CTL, SSC_CTL_SR | 0x1);
+-		ssc_store16(ssc_bus, SSC_I2C, 0x0);
+-		ssc_store16(ssc_bus, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
++		ssc_store32(ssc_bus, SSC_CTL, SSC_CTL_SR | 0x1);
++		ssc_store32(ssc_bus, SSC_I2C, 0x0);
++		ssc_store32(ssc_bus, SSC_CTL, SSC_CTL_EN | SSC_CTL_MS |
+ 			    (SSC_CTL_PO * polarity) |
+ 			    (SSC_CTL_PH * phase) | (SSC_CTL_HB * hb) |
+ #ifdef SPI_LOOP_DEBUG
+@@ -175,7 +175,7 @@ void spi_state_machine(struct spi_transa
+ 			    wide_frame);
+ 
+ 		transaction->next_state = SPI_FSM_RUNNING;
+-		ssc_load16(ssc_bus, SSC_RBUF);	/* only to clear the status register */
++		ssc_load32(ssc_bus, SSC_RBUF);	/* only to clear the status register */
+ #ifdef CONFIG_STM_SPI_HW_FIFO
+ 		for (tx_fifo_status = 0;
+ 		     tx_fifo_status < SSC_TXFIFO_SIZE - 1 &&
+@@ -202,24 +202,24 @@ void spi_state_machine(struct spi_transa
+ 				    client->wr_buf[transaction->idx_write];
+ 			}
+ 			++transaction->idx_write;
+-			ssc_store16(ssc_bus, SSC_TBUF, tmp.word);
++			ssc_store32(ssc_bus, SSC_TBUF, tmp.word);
+ 		}
+-		ssc_store16(ssc_bus, SSC_IEN, SSC_IEN_TEEN | SSC_IEN_RIEN);
++		ssc_store32(ssc_bus, SSC_IEN, SSC_IEN_TEEN | SSC_IEN_RIEN);
+ 		break;
+ 
+ 	case SPI_FSM_RUNNING:
+-		status = ssc_load16(ssc_bus, SSC_STA);
++		status = ssc_load32(ssc_bus, SSC_STA);
+ 		dgb_print(" SPI_FSM_RUNNING 0x%x\n", status);
+ #ifndef CONFIG_STM_SPI_HW_FIFO
+ 		if ((status & SSC_STA_RIR) &&
+ 		    transaction->idx_read < transaction->msg_length) {
+ #else
+-		for (rx_fifo_status = ssc_load16(ssc_bus, SSC_RX_FSTAT);
++		for (rx_fifo_status = ssc_load32(ssc_bus, SSC_RX_FSTAT);
+ 		     rx_fifo_status &&
+ 		     transaction->idx_read < transaction->msg_length;
+ 		     --rx_fifo_status) {
+ #endif
+-			tmp.word = ssc_load16(ssc_bus, SSC_RBUF);
++			tmp.word = ssc_load32(ssc_bus, SSC_RBUF);
+ 			if (wide_frame) {
+ 				client->rd_buf[transaction->idx_read * 2] =
+ 				    tmp.bytes[1];
+@@ -238,7 +238,7 @@ void spi_state_machine(struct spi_transa
+ 		if ((status & SSC_STA_TIR)
+ 		    && transaction->idx_write < transaction->msg_length) {
+ #else
+-		for (tx_fifo_status = ssc_load16(ssc_bus, SSC_TX_FSTAT);
++		for (tx_fifo_status = ssc_load32(ssc_bus, SSC_TX_FSTAT);
+ 		     tx_fifo_status < SSC_TXFIFO_SIZE - 1 &&
+ 		     transaction->idx_write < transaction->msg_length;
+ 		     ++tx_fifo_status) {
+@@ -262,7 +262,7 @@ void spi_state_machine(struct spi_transa
+ 				    client->wr_buf[transaction->idx_write];
+ 			}
+ 			++transaction->idx_write;
+-			ssc_store16(ssc_bus, SSC_TBUF, tmp.word);
++			ssc_store32(ssc_bus, SSC_TBUF, tmp.word);
+ 		}
+ 
+ 		if (transaction->idx_write >= transaction->msg_length &&
+@@ -272,7 +272,7 @@ void spi_state_machine(struct spi_transa
+ 	case SPI_FSM_COMPLETE:
+ 	      be_fsm_complete:
+ 		dgb_print(" SPI_FSM_COMPLETE\n");
+-		ssc_store16(ssc_bus, SSC_IEN, 0x0);
++		ssc_store32(ssc_bus, SSC_IEN, 0x0);
+ 		wake_up(&(ssc_bus->wait_queue));
+ 		break;
+ 
+@@ -280,7 +280,7 @@ void spi_state_machine(struct spi_transa
+ 	default:
+ 		;
+ 	}
+-	return;
++	return IRQ_HANDLED;
+ }
+ 
+ #define chip_asserted(client) if ((client)->config & SPI_CSACTIVE_MASK )	\
+@@ -296,9 +296,9 @@ int spi_write(struct spi_client_t *clien
+ 	unsigned long flag;
+ 	int timeout;
+ 	int result = (int)count;
+-	struct ssc_t *ssc_bus =
+-		container_of(client->dev->dev.parent, struct ssc_t, pdev.dev);
++	struct spi_device_t *spi_bus =client->dev;
+ 	struct spi_transaction_t transaction = {.client = client,
++
+ 		.msg_length = count,
+ 		.next_state = SPI_FSM_PREPARE,
+ 		.idx_write = 0,
+@@ -309,7 +309,7 @@ int spi_write(struct spi_client_t *clien
+ 	if (client->pio_chip == NULL)
+ 		return -ENODATA;
+ 
+-	ssc_request_bus(ssc_bus, spi_state_machine, (void *)&transaction);
++	mutex_lock(&spi_bus->mutex_bus);
+ 	chip_asserted(client);
+ 
+ 	client->rd_buf = kmalloc(count, GFP_KERNEL);
+@@ -317,15 +317,16 @@ int spi_write(struct spi_client_t *clien
+ 	if (client->config & SPI_WIDE_MASK)
+ 		transaction.msg_length >>= 1;
+ 
+-	spi_state_machine(&transaction);
+-	timeout = wait_event_interruptible_timeout(ssc_bus->wait_queue,
++	spi_bus->trns = &transaction;
++	spi_state_machine(NULL,spi_bus);
++	timeout = wait_event_interruptible_timeout(spi_bus->wait_queue,
+ 						   (transaction.state == SPI_FSM_COMPLETE),
+ 						   client->timeout * HZ);
+ 	if (timeout <= 0) {
+ 		/* Terminate transaction */
+ 		local_irq_save(flag);
+ 		transaction.next_state = SPI_FSM_COMPLETE;
+-		spi_state_machine(&transaction);
++		spi_state_machine(NULL,spi_bus);
+ 		local_irq_restore(flag);
+ 
+ 		if (!timeout) {
+@@ -339,7 +340,7 @@ int spi_write(struct spi_client_t *clien
+ 	}
+ 
+ 	chip_deasserted(client);
+-	ssc_release_bus(ssc_bus);
++	mutex_unlock(&spi_bus->mutex_bus);
+ 	kfree(client->rd_buf);
+ 	client->rd_buf = NULL;
+ 	client->wr_buf = NULL;
+@@ -351,8 +352,7 @@ int spi_read(struct spi_client_t *client
+ 	unsigned long flag;
+ 	int timeout;
+ 	int result = (int)count;
+-	struct ssc_t *ssc_bus =
+-		container_of(client->dev->dev.parent, struct ssc_t, pdev.dev);
++	struct spi_device_t *spi_bus =client->dev;
+ 	unsigned int wide_frame =
+ 	    (client->config & SPI_WIDE_MASK) ? 1 : 0;
+ 	struct spi_transaction_t transaction = {.client = client,
+@@ -364,7 +364,7 @@ int spi_read(struct spi_client_t *client
+ 	/*
+ 	 * the first step is request the bus access
+ 	 */
+-	ssc_request_bus(ssc_bus, spi_state_machine, (void *)&transaction);
++	mutex_lock(&spi_bus->mutex_bus);
+ 
+ 	chip_asserted(client);
+ 
+@@ -387,9 +387,9 @@ int spi_read(struct spi_client_t *client
+  */
+ 	if (wide_frame)
+ 		transaction.msg_length >>= 1;	// frame oriented
+-
+-	spi_state_machine(&transaction);
+-	timeout = wait_event_interruptible_timeout(ssc_bus->wait_queue,
++	spi_bus->trns=&transaction;
++	spi_state_machine(NULL,spi_bus);
++	timeout = wait_event_interruptible_timeout(spi_bus->wait_queue,
+ 						   (transaction.state == SPI_FSM_COMPLETE),
+ 						   client->timeout * HZ);
+ 
+@@ -397,7 +397,7 @@ int spi_read(struct spi_client_t *client
+ 		/* Terminate transaction */
+ 		local_irq_save(flag);
+ 		transaction.next_state = SPI_FSM_COMPLETE;
+-		spi_state_machine(&transaction);
++		spi_state_machine(NULL,spi_bus);
+ 		local_irq_restore(flag);
+ 
+ 		if (!timeout) {
+@@ -412,7 +412,7 @@ int spi_read(struct spi_client_t *client
+ 
+ 	chip_deasserted(client);
+ 
+-	ssc_release_bus(ssc_bus);
++	mutex_unlock(&spi_bus->mutex_bus);
+ 	kfree(client->wr_buf);
+ 	client->rd_buf = NULL;
+ 	client->wr_buf = NULL;
+@@ -425,8 +425,7 @@ int spi_write_then_read(struct spi_clien
+ 	unsigned long flag;
+ 	int timeout;
+ 	int result = (int)count;
+-	struct ssc_t *ssc_bus =
+-		container_of(client->dev->dev.parent, struct ssc_t, pdev.dev);
++	struct spi_device_t *spi_bus =client->dev;
+ 	struct spi_transaction_t transaction = {.client = client,
+ 		.msg_length = count,
+ 		.next_state = SPI_FSM_PREPARE,
+@@ -438,7 +437,7 @@ int spi_write_then_read(struct spi_clien
+ 	if (client->pio_chip == NULL)
+ 		return -ENODATA;
+ 
+-	ssc_request_bus(ssc_bus, spi_state_machine, (void *)&transaction);
++	mutex_lock(&spi_bus->mutex_bus);
+ 
+ 	chip_asserted(client);
+ 
+@@ -448,15 +447,16 @@ int spi_write_then_read(struct spi_clien
+ 	if (client->config & SPI_WIDE_MASK)
+ 		transaction.msg_length >>= 1;	// frame oriented...
+ 
+-	spi_state_machine(&transaction);
+-	timeout = wait_event_interruptible_timeout(ssc_bus->wait_queue,
++	spi_bus->trns=&transaction;
++	spi_state_machine(NULL,spi_bus);
++	timeout = wait_event_interruptible_timeout(spi_bus->wait_queue,
+ 						  (transaction.state == SPI_FSM_COMPLETE),
+ 						  client->timeout * HZ);
+ 	if (timeout <= 0) {
+ 		/* Terminate transaction */
+ 		local_irq_save(flag);
+ 		transaction.next_state = SPI_FSM_COMPLETE;
+-		spi_state_machine(&transaction);
++		spi_state_machine(NULL,spi_bus);
+ 		local_irq_restore(flag);
+ 
+ 		if (!timeout) {
+@@ -470,7 +470,7 @@ int spi_write_then_read(struct spi_clien
+ 	}
+ 
+ 	chip_deasserted(client);
+-	ssc_release_bus(ssc_bus);
++	mutex_unlock(&spi_bus->mutex_bus);
+ 
+ 	return count;
+ }
+@@ -594,7 +594,7 @@ int spi_client_control(struct spi_client
+ 	case SPI_IOCTL_BUADRATE:
+ 		{
+ 			unsigned long baudrate;
+-			baudrate = ssc_get_clock() / (2 * arg);
++			baudrate = clk_get_rate(clk_get(NULL,"comms_clk")) / (2 * arg);
+ 			client->config &= ~SPI_BAUDRATE_MASK;
+ 			client->config |= (baudrate << SPI_BAUDRATE_SHIFT);
+ 		}
+@@ -685,7 +685,13 @@ static ssize_t spi_cdev_write(struct fil
+ 	dgb_print("\n");
+ 
+ 	wr_buffer = kmalloc(count, GFP_KERNEL);
++	if (!wr_buffer)
++		return -ENOMEM;
+ 	rd_buffer = kmalloc(count, GFP_KERNEL);
++	if (!rd_buffer){
++		kfree(wr_buffer);
++		return -ENOMEM;
++	}
+ 
+ 	copy_from_user(wr_buffer, buff, count);
+ 
+@@ -782,15 +788,6 @@ static int spi_bus_driver_probe(struct d
+ 	return spi_dev->dev_type == SPI_DEV_BUS_ADAPTER;
+ };
+ 
+-static void spi_bus_driver_remove(struct device *dev)
+-{
+-	struct spi_device_t *spi_dev;
+-	spi_dev = container_of(dev, struct spi_device_t, dev);
+-	dgb_print("\n");
+-//   spi_del_adapter(spi_dev);
+-//   dgb_print("..\n");
+-	return;
+-}
+ static void spi_bus_driver_shutdown(struct device *dev)
+ {
+ 	struct spi_device_t *spi_dev;
+@@ -805,7 +802,6 @@ static struct device_driver spi_bus_drv 
+ 	.bus = &spi_bus_type,
+ 	.probe = spi_bus_driver_probe,
+ 	.shutdown = spi_bus_driver_shutdown,
+-	.remove = spi_bus_driver_remove,
+ };
+ 
+ int spi_add_adapter(struct spi_device_t *spi_dev)
+@@ -818,7 +814,6 @@ int spi_add_adapter(struct spi_device_t 
+ 	spi_dev->dev_type = SPI_DEV_BUS_ADAPTER;
+ 	spi_dev->dev.bus = &(spi_bus_type);
+ 	sprintf(spi_dev->dev.bus_id, "spi-%d", idx_dev);
+-	spi_dev->dev.release = spi_del_adapter;
+ 	spi_dev->dev.driver = &spi_bus_drv;
+ 	ret = device_register(&spi_dev->dev);
+ 	if (ret) {
+@@ -837,45 +832,15 @@ int spi_add_adapter(struct spi_device_t 
+ 	return ret;
+ }
+ 
+-static int spi_adapter_detect()
+-{
+-	unsigned int idx;
+-	unsigned int num_ssc_bus = ssc_device_available();
+-	unsigned int num_spi_bus;
+-	struct spi_device_t *spi_dev;
+-	struct ssc_t **ssc_busses;
+-	dgb_print("\n");
+-/*
+- *  Check the ssc on the platform
+- */
+-	ssc_busses = (struct ssc_t **)kmalloc(num_ssc_bus *
+-					      sizeof(struct ssc_t *),
+-					      GFP_KERNEL);
+-	for (idx = 0, num_spi_bus = 0; idx < num_ssc_bus; ++idx)
+-		if ((ssc_capability(idx) & SSC_SPI_CAPABILITY))
+-			ssc_busses[num_spi_bus++] = ssc_device_request(idx);
+-
+-	for (idx = 0; idx < num_spi_bus; ++idx) {
+-		spi_dev = (struct spi_device_t *)
+-		    kmalloc(sizeof(struct spi_device_t), GFP_KERNEL);
+-		memset(&spi_dev->dev, 0, sizeof(struct device));
+-		spi_dev->dev.parent = &(ssc_busses[idx]->pdev.dev);
+-		spi_dev->idx_dev = idx;
+-		spi_add_adapter(spi_dev);
+-	};
+-	kfree(ssc_busses);
+-	return 0;
+-}
+-
+ static void __init spi_core_init(void)
+ {
+ 	unsigned int ret;
+ 	dgb_print("\n");
+ 	ret = bus_register(&spi_bus_type);
+-	if (ret) {
++	if(ret){
+ 		printk(KERN_WARNING "Unable to register spi bus\n");
+ 		return ;
+-	}
++		}
+ 	ret = driver_register(&spi_bus_drv);
+ 	if (ret) {
+ 		printk(KERN_WARNING "Unable to register spi driver\n");
+@@ -901,15 +866,125 @@ static void __init spi_cdev_init(void)
+ 	printk(KERN_INFO "spi /dev layer initialized\n");
+ 	return 0;
+ }
+-device_initcall(spi_cdev_init);
++fs_initcall(spi_cdev_init);
+ #endif
++#define NAME "spi_stm_probe"
++static int __init spi_stm_probe(struct platform_device *pdev)
++{
++	struct ssc_pio_t *pio_info =
++			(struct ssc_pio_t *)pdev->dev.platform_data;
++        struct resource *res;
++	struct spi_device_t *dev;
++
++	dev = devm_kzalloc(&pdev->dev,sizeof(struct spi_device_t), GFP_KERNEL);
++
++	if(!dev)
++		return -ENOMEM;
++
++	if (!(res=platform_get_resource(pdev, IORESOURCE_MEM, 0)))
++		return -ENODEV;
++	if (!devm_request_mem_region(&pdev->dev, res->start, res->end - res->start, "spi")){
++		printk(KERN_ERR NAME " Request mem 0x%x region not done\n",res->start);
++		return -ENOMEM;
++	}
++	if (!(dev->base =
++		devm_ioremap_nocache(&pdev->dev, res->start, res->end - res->start))){
++		printk(KERN_ERR NAME " Request iomem 0x%x region not done\n",res->start);
++		return -ENOMEM;
++	}
++	if (!(res=platform_get_resource(pdev, IORESOURCE_IRQ, 0))){
++		printk(KERN_ERR NAME " Request irq %d not done\n",res->start);
++		return -ENODEV;
++	}
++	if(devm_request_irq(&pdev->dev,res->start, spi_state_machine,
++		IRQF_DISABLED, "spi", dev)<0){
++		printk(KERN_ERR NAME " Request irq not done\n");
++		return -ENODEV;
++	}
++	pio_info->clk = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[0],
++                                "SPI Clock", STPIO_OUT);
++	if(!pio_info->clk){
++		printk(KERN_ERR "Faild to clk pin allocation\n");
++		return -ENODEV;
++	}
++	pio_info->sdout = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[1],
++				"SPI Data out", STPIO_OUT);
++	if(!pio_info->sdout){
++		printk(KERN_ERR "Faild to sda pin allocation\n");
++		stpio_free_pin(pio_info->clk);
++		return -ENODEV;
++		}
++	pio_info->sdin = stpio_request_pin(pio_info->pio_port,pio_info->pio_pin[2],
++				"SPI Data in", STPIO_IN);
++	if(!pio_info->sdin){
++		printk(KERN_ERR "Faild to sdo pin allocation\n");
++		stpio_free_pin(pio_info->sdout);
++		stpio_free_pin(pio_info->clk);
++		return -ENODEV;
++		}
+ 
+-static int __init spi_late_init(void)
++	init_waitqueue_head(&dev->wait_queue);
++        mutex_init(&dev->mutex_bus);
++	dev->idx_dev = pdev->id;
++	dev->dev.parent = &pdev->dev;
++	pdev->dev.driver_data = dev;
++	if (spi_add_adapter(dev) < 0) {
++		printk(KERN_ERR
++			"spi/stm: The SPI Core refuses the spi/stm adapter\n");
++		return -ENODEV;
++	}
++	return 0;
++}
++
++static int  spi_stm_remove(struct platform_device *pdev)
+ {
+-	dgb_print("\n");
+-	spi_adapter_detect();
++	struct ssc_pio_t *pio_info =
++			(struct ssc_pio_t *)pdev->dev.platform_data;
++        struct resource *res;
++        struct spi_device_t *dev = pdev->dev.driver_data;
++
++	spi_del_adapter(dev);
++	devm_iounmap(&pdev->dev,dev->base);
++	devm_free_irq(&pdev->dev,res->start, dev);
++	devm_kfree(&pdev->dev,dev);
++	stpio_free_pin(pio_info->sdin);
++	stpio_free_pin(pio_info->clk);
++	stpio_free_pin(pio_info->sdout);
++        return 0;
++}
++
++#ifdef CONFIG_PM
++static int spi_stm_suspend(struct platform_device *pdev,pm_message_t state)
++{
++	struct spi_device_t *dev = pdev->dev.driver_data;
++	return 0;
++}
++
++static int spi_stm_resume(struct platform_device *pdev)
++{
++	struct spi_device_t *dev = pdev->dev.driver_data;
+ 	return 0;
+ }
++#else
++#define spi_stm_suspend		NULL
++#define spi_stm_resume		NULL
++#endif
++
++static struct platform_driver spi_hw_driver = {
++        .driver.name = "spi_st",
++        .driver.owner = THIS_MODULE,
++        .probe = spi_stm_probe,
++        .remove = spi_stm_remove,
++	.suspend = spi_stm_suspend,
++	.resume = spi_stm_resume,
++};
++
++
++static int __init spi_init(void)
++{
++        platform_driver_register(&spi_hw_driver);
++        return 0;
++}
+ 
+ static int __exit spi_exit(void)
+ {
+@@ -928,7 +1003,7 @@ static int __exit spi_exit(void)
+ }
+ 
+ subsys_initcall(spi_core_init);
+-late_initcall(spi_late_init);
++module_init(spi_init);
+ module_exit(spi_exit);
+ 
+ MODULE_AUTHOR("STMicroelectronics  <www.st.com>");
+Index: linux-2.6.23-stm/drivers/stm/stm_spi.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm_spi.h
++++ linux-2.6.23-stm/drivers/stm/stm_spi.h
+@@ -61,19 +61,27 @@
+ 
+ 
+ #ifdef __KERNEL__
+-#include "stm_ssc.h"
++#include <linux/stm/stssc.h>
+ #include <linux/device.h>
++#include <linux/wait.h>
++#include <linux/mutex.h>
+ 
+ extern struct bus_type spi_bus_type;
+ 
+ #define SPI_DEV_BUS_ADAPTER      0x01
+ #define SPI_DEV_CLIENT_ADAPTER   0x02
+ 
++struct spi_transaction_t;
++
+ struct spi_device_t {
+ 	unsigned int idx_dev;
+         unsigned int dev_type; /* SPI_DEV_BUS_ADAPTER xor SPI_DEV_CLIENT_ADAPTER*/
+ 	struct device dev;
+ 	struct class_device *class_dev;
++	unsigned long base;
++	struct mutex      mutex_bus;
++        wait_queue_head_t wait_queue;
++	struct spi_transaction_t *trns;
+ };
+ 
+ struct spi_client_t {
+Index: linux-2.6.23-stm/drivers/stm/stm_ssc.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm_ssc.c
++++ /dev/null
+@@ -1,393 +0,0 @@
+-/*
+-   -------------------------------------------------------------------------
+-   stm_ssc.c
+-   -------------------------------------------------------------------------
+-   STMicroelectronics
+-   -------------------------------------------------------------------------
+- *  Copyright (C) 2006  Virlinzi Francesco
+- *                   <francesco.virlinzi@st.com>
+- *
+- * 23 August 2006 - Modified to support the 2.6.17 kernel version
+- *      Virlinzi Francesco <francesco.virlinzi@st.com>
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License.  See linux/COPYING for more information.
+- *
+- * ------------------------------------------------------------------------- */
+-
+-#include "stm_ssc.h"
+-#include <linux/platform_device.h>
+-#include <linux/interrupt.h>
+-#include <asm/semaphore.h>
+-#include <asm/clock.h>
+-#include <linux/stm/soc.h>
+-#include <linux/wait.h>
+-#include <linux/module.h>
+-#include <linux/ioport.h>
+-#include <asm/io.h>
+-
+-#undef dgb_print
+-
+-#ifdef  CONFIG_STM_SSC_DEBUG
+-#define dgb_print(fmt, args...)  printk("%s: " fmt, __FUNCTION__ , ## args)
+-#else
+-#define dgb_print(fmt, args...)
+-#endif
+-
+-#if defined(CONFIG_CPU_SUBTYPE_STI5528) ||  defined(CONFIG_CPU_SUBTYPE_STM8000)
+-
+-#define NR_SSC_BUSSES 2
+-
+-#elif defined(CONFIG_CPU_SUBTYPE_STB7100) || defined(ARCH_ST200)
+-
+-#define NR_SSC_BUSSES 3
+-
+-#elif defined(CONFIG_CPU_SUBTYPE_STX7200)
+-
+-#define NR_SSC_BUSSES 5
+-
+-#else
+-#error Need to configure the right SSC number devices on this chip
+-#endif
+-
+-
+-/*
+- *  Here we alloc the right number of busses
+- */
+-static struct ssc_t ssc_device[NR_SSC_BUSSES];
+-
+-static struct platform_device *ssc_device_data;
+-static unsigned long nr_ssc_busses;
+-
+-unsigned int ssc_device_available()
+-{
+-	dgb_print("\n");
+-	return nr_ssc_busses;
+-}
+-
+-unsigned int ssc_get_clock()
+-{
+-	return clk_get_rate(clk_get(NULL, "comms_clk"));
+-}
+-
+-struct ssc_t *ssc_device_request(unsigned int device_id)
+-{
+-	dgb_print("\n");
+-	if (device_id >= nr_ssc_busses)
+-		return NULL;
+-
+-	return &(ssc_device[device_id]);
+-}
+-
+-unsigned int ssc_capability(unsigned int ssc_id)
+-{
+-	struct plat_ssc_data *info;
+-	dgb_print("\n");
+-
+-	if (ssc_id >= nr_ssc_busses)
+-		return 0;
+-
+-	info = (struct plat_ssc_data *)
+-	    (ssc_device_data->dev.platform_data);
+-	return (info->capability >> (2 * ssc_id)) &
+-	    (SSC_I2C_CAPABILITY | SSC_SPI_CAPABILITY);
+-}
+-
+-void ssc_request_bus(struct ssc_t *ssc_bus, void (*irq_function) (void *),
+-		     void *irq_data)
+-{
+-	dgb_print("\n");
+-	mutex_lock(&(ssc_bus->mutex_bus));
+-	ssc_bus->irq_function = irq_function;
+-	ssc_bus->irq_private_data = irq_data;
+-}
+-
+-void ssc_release_bus(struct ssc_t *ssc_bus)
+-{
+-   dgb_print("\n");
+-	ssc_bus->irq_function = NULL;
+-	ssc_bus->irq_private_data = NULL;
+-	mutex_unlock(&(ssc_bus->mutex_bus));
+-}
+-
+-static irqreturn_t ssc_handler(int this_irq, void *dev_id, struct pt_regs *regs)
+-{
+-	struct ssc_t *ssc_bus = (struct ssc *)dev_id;
+-	if (ssc_bus->irq_function != NULL)
+-		ssc_bus->irq_function(ssc_bus->irq_private_data);
+-	return IRQ_HANDLED;
+-}
+-
+-static int __init stm_ssc_probe(struct platform_device *dev)
+-{
+-	dgb_print("\n");
+-	ssc_device_data = dev;
+-	if (!ssc_device_data){
+-		printk(KERN_ERR
+-		       "Device probe failed.  Check your kernel SoC config!!\n");
+-		}
+-	return 0;
+-}
+-
+-static void stm_ssc_shutdown(struct platform_device *dev)
+-{
+-    dgb_print("\n");
+-    return;
+-}
+-
+-#ifdef CONFIG_PM
+-static unsigned long pm_ssc_ctl[NR_SSC_BUSSES];
+-static int stm_ssc_suspend(struct platform_device *dev, pm_message_t state)
+-{
+-	struct ssc_t *ssc=container_of(dev,struct ssc_t,pdev);
+-	dgb_print("%s.%u\n",dev->name,dev->id);
+-	ssc_request_bus(ssc,NULL,NULL);
+-	pm_ssc_ctl[ssc->pdev.id]=ssc_load16(ssc,SSC_CTL);
+-	ssc_store16(ssc,SSC_CTL,0);
+-	return 0;
+-}
+-
+-static int stm_ssc_resume(struct platform_device *dev)
+-{
+-	struct ssc_t *ssc=container_of(dev,struct ssc_t,pdev);
+-	dgb_print("%s.%u\n",dev->name,dev->id);
+-	ssc_store16(ssc,SSC_CTL,pm_ssc_ctl[ssc->pdev.id]);
+-	ssc_release_bus(ssc);
+-	return 0;
+-}
+-#endif
+-
+-static struct platform_driver ssc_driver = {
+-	.driver.name = "ssc",
+-	.driver.owner = THIS_MODULE,
+-	.probe = stm_ssc_probe,
+-	.shutdown = stm_ssc_shutdown,
+-#ifdef CONFIG_PM
+-	.suspend = stm_ssc_suspend,
+-	.resume  = stm_ssc_resume,
+-#endif
+-};
+-
+-/*
+- * Request the IO memory
+- * Remap   the IO memory
+- * Request the right PIO pins
+- * Request the interrupt line.
+- */
+-static int ssc_hw_resrc_init(struct ssc_t *ssc_data)
+-{
+-	struct resource *res;
+-	struct plat_ssc_data *info;
+-	struct plat_ssc_pio_t *pio_info;
+-	unsigned char pio_bank;
+-	unsigned char pio_line;
+-
+-	dgb_print("\n");
+-
+-	info = (struct plat_ssc_data *)
+-	    (ssc_device_data->dev.platform_data);
+-	pio_info = info->pio;
+-/*1.    IO Mem*/
+-	res =
+-	    platform_get_resource(ssc_device_data, IORESOURCE_MEM,
+-				  ssc_data->pdev.id);
+-	if (!res) {
+-		printk(KERN_ERR
+-		       "Error on platform_get_resource mem settings\n");
+-		return -ENODEV;
+-	}
+-	if (!request_mem_region(res->start, res->end - res->start, "ssc")) {
+-		printk(KERN_ERR "ERROR: ssc %d Request MEM Region NOT Done\n",
+-		       ssc_data->pdev.id);
+-		return -ENODEV;
+-	}
+-	dgb_print("ssc bus %d Request MEM Region Done\n", ssc_data->pdev.id);
+-	ssc_data->base = ioremap(res->start, res->end - res->start);
+-
+-	dgb_print("ssc bus %d Request MEM Region Remapping Done\n",
+-		ssc_data->pdev.id);
+-/* 2.   Request of PIO pins */
+-
+-/* 2.1  Pio clock */
+-	pio_bank = pio_info[ssc_data->pdev.id].sclbank;
+-	pio_line = pio_info[ssc_data->pdev.id].sclpin;
+-
+-	ssc_data->pio_clk = stpio_request_pin(pio_bank, pio_line,
+-					      "ssc clock", STPIO_ALT_BIDIR);
+-	if (!ssc_data->pio_clk) {
+-		printk(KERN_ERR
+-		       "ERROR: ssc bus %d Request PIO clock pins not Done\n",
+-		       ssc_data->pdev.id);
+-		goto release_mem_region;
+-	}
+-	dgb_print("ssc bus %d Request Clock: Pin%d[%d] Done\n", ssc_data->pdev.id,
+-		pio_bank, pio_line);
+-/* 2.2  Pio Data out */
+-	pio_bank = pio_info[ssc_data->pdev.id].sdoutbank;
+-	pio_line = pio_info[ssc_data->pdev.id].sdoutpin;
+-
+-	ssc_data->pio_data = stpio_request_pin(pio_bank, pio_line,
+-					       "ssc data", STPIO_ALT_BIDIR);
+-	if (!ssc_data->pio_data) {
+-		printk(KERN_ERR
+-		       "ERROR: ssc bus %d Request PIO Data pins not Done\n",
+-		       ssc_data->pdev.id);
+-		goto release_pio_clk;
+-	}
+-	dgb_print("ssc bus %d Request Data: Pin%d[%d] Done\n",
+-		ssc_data->pdev.id, pio_bank, pio_line);
+-
+-/* 2.3 Pio Data in */
+-	ssc_data->pio_data_in = NULL;
+-
+-	pio_bank = pio_info[ssc_data->pdev.id].sdinbank;
+-	pio_line = pio_info[ssc_data->pdev.id].sdinpin;
+-
+-	if (pio_bank != 0xff) {
+-		ssc_data->pio_data_in =
+-		    stpio_request_pin(pio_bank,
+-				      pio_line, "ssc data in", STPIO_ALT_BIDIR);
+-		if (ssc_data->pio_data_in == NULL) {
+-			printk(KERN_ERR
+-			       "ERROR: ssc %d Request PIO DataIN pins not Done\n",
+-			       ssc_data->pdev.id);
+-			goto release_pio_data;
+-		}
+-		dgb_print("ssc bus %d Request DataIN Pin%d[%d] Done\n",
+-			ssc_data->pdev.id, pio_bank, pio_line);
+-	}
+-	/* 3.  Request of IRQ */
+-	res =
+-	    platform_get_resource(ssc_device_data, IORESOURCE_IRQ,
+-				  ssc_data->pdev.id);
+-	if (!res) {
+-		printk(KERN_ERR
+-		       "Error on platform_get_resource irq settings\n");
+-		goto release_pio_data_in;
+-	}
+-	if (request_irq(res->start, ssc_handler, SA_INTERRUPT, "ssc",
+-			ssc_data) < 0) {
+-		printk(KERN_ERR "ERROR: ssc bus %d Request IRQ NOT Done\n",
+-		       ssc_data->pdev.id);
+-		goto release_pio_data_in;
+-	}
+-	dgb_print("ssc bus %d Request IRQ %d Done\n",
+-		ssc_data->pdev.id, res->start);
+-/*
+- *	Already done in the platform_device_register(..) ... 
+- *	ssc_data->pdev.dev.parent = &platform_bus ;
+- *	ssc_data->pdev.dev.bus    = &platform_bus_type ;
+- */
+-	
+-	ssc_data->pdev.name = ssc_device_data->name;
+-        ssc_data->pdev.dev.driver = &ssc_driver.driver;
+- 
+-	if ( platform_device_register(&ssc_data->pdev)<0){
+-           printk(KERN_ERR "ERROR: Incapable to register ssc device\n");
+-           goto release_irq;
+-        }
+-	return 0;
+-      release_irq:
+-        free_irq(res->start, ssc_handler);
+-      release_pio_data_in:
+-	if (ssc_data->pio_data_in != NULL)
+-		stpio_free_pin(ssc_data->pio_data_in);
+-      release_pio_data:
+-	stpio_free_pin(ssc_data->pio_data);
+-      release_pio_clk:
+-	stpio_free_pin(ssc_data->pio_clk);
+-      release_mem_region:
+-	res =
+-	    platform_get_resource(ssc_device_data, IORESOURCE_MEM,
+-				  ssc_data->pdev.id);
+-
+-	release_mem_region(res->start, res->end - res->start);
+-
+-	return -ENODEV;
+-}
+-
+-static void ssc_hw_release(struct ssc_t *ssc_data)
+-{
+-	struct resource *res;
+-	dgb_print("\n");
+-	res =
+-	    platform_get_resource(ssc_device_data, IORESOURCE_MEM,
+-				  ssc_data->pdev.id);
+-
+-	release_mem_region(res->start, res->end - res->start);
+-
+-	res =
+-	    platform_get_resource(ssc_device_data, IORESOURCE_IRQ,
+-				  ssc_data->pdev.id);
+-	free_irq(res->start, ssc_data);
+-
+-	stpio_free_pin(ssc_data->pio_data);
+-	stpio_free_pin(ssc_data->pio_clk);
+-	if (!(ssc_data->pio_data_in))
+-		stpio_free_pin(ssc_data->pio_data_in);
+-}
+-
+-static int __init ssc_bus_init(void)
+-{
+-	unsigned int index;
+-	struct ssc_t *pssc_bus;
+-        dgb_print("\n");
+-	platform_driver_register(&ssc_driver);
+-	dgb_print("ssc driver registered\n");
+-	if (!ssc_device_data) {
+-		printk(KERN_ERR "Error on ssc platform settings\n");
+-		return -ENODEV;
+-	}
+-/*
+- *      The ssc_device_data is removed from platform devices
+- *      to avoid problem with suspend/resume...
+- *      in any case it will be used as data base...
+- */
+-	platform_device_del(ssc_device_data);
+-
+-	nr_ssc_busses=ssc_device_data->num_resources/2;
+-
+-	for (index = 0; index < nr_ssc_busses; ++index) {
+-		pssc_bus = &(ssc_device[index]);
+-		pssc_bus->pdev.id = index;
+-		mutex_init(&(pssc_bus->mutex_bus));
+-		init_waitqueue_head(&(pssc_bus->wait_queue));
+-		ssc_hw_resrc_init(pssc_bus);
+-	}
+-
+-	printk(KERN_INFO "stssc layer initialized\n");
+-	return 0;
+-}
+-
+-static void __exit ssc_bus_exit(void)
+-{
+-	unsigned int index;
+-
+-	dgb_print("\n");
+-
+-	if (!ssc_device_data)
+-		return;
+-	for (index = 0; index < NR_SSC_BUSSES; ++index) {
+-		ssc_hw_release(&(ssc_device[index]));
+-	}
+-}
+-
+-/*
+- * If modules is NOT defined when this file is compiled, then the MODULE_*
+- * macros will resolve to nothing
+- */
+-
+-MODULE_AUTHOR("STMicroelectronics  <www.st.com>");
+-MODULE_DESCRIPTION("stssc bus adapter routines for ssc device");
+-MODULE_LICENSE("GPL");
+-
+-/* Called when module is loaded or when kernel is initialized.
+- * If MODULES is defined when this file is compiled, then this function will
+- * resolve to init_module (the function called when insmod is invoked for a
+- * module).  Otherwise, this function is called early in the boot, when the
+- * kernel is intialized
+- */
+-
+-module_init(ssc_bus_init);
+-
+-module_exit(ssc_bus_exit);
+Index: linux-2.6.23-stm/drivers/stm/stm_ssc.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm_ssc.h
++++ /dev/null
+@@ -1,229 +0,0 @@
+-/*
+-   --------------------------------------------------------------------
+-
+-   stm_ssc.h
+-   define and struct for STMicroelectronics SSC device
+-
+-   --------------------------------------------------------------------
+-
+- *  This program is free software; you can redistribute  it and/or modify it
+- *  under  the terms of  the GNU General  Public License as published by the
+- *  Free Software Foundation;  either version 2 of the  License, or (at your
+- *  option) any later version.
+- *
+- *  THIS  SOFTWARE  IS PROVIDED   ``AS  IS'' AND   ANY  EXPRESS OR IMPLIED
+- *  WARRANTIES,   INCLUDING, BUT NOT  LIMITED  TO, THE IMPLIED WARRANTIES OF
+- *  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+- *  NO  EVENT  SHALL   THE AUTHOR  BE    LIABLE FOR ANY   DIRECT, INDIRECT,
+- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+- *  NOT LIMITED   TO, PROCUREMENT OF  SUBSTITUTE GOODS  OR SERVICES; LOSS OF
+- *  USE, DATA,  OR PROFITS; OR  BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+- *  ANY THEORY OF LIABILITY, WHETHER IN  CONTRACT, STRICT LIABILITY, OR TORT
+- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+- *
+- *  You should have received a copy of the  GNU General Public License along
+- *  with this program; if not, write  to the Free Software Foundation, Inc.,
+- *  675 Mass Ave, Cambridge, MA 02139, USA.
+-
+-*/
+-
+-#ifndef STM_SSC_H
+-#define STM_SSC_H 1
+-
+-#include <linux/platform_device.h>
+-#include <linux/wait.h>
+-#include <linux/stm/pio.h>
+-#include <linux/mutex.h>
+-#include <asm/io.h>
+-
+-
+-/* SSC Baud Rate generator */
+-#define SSC_BRG                  0x0
+-/* SSC Transmitter Buffer  */
+-#define SSC_TBUF                 0x4
+-/* SSC Receive Buffer      */
+-#define SSC_RBUF                 0x8
+-/*SSC Control              */
+-#define SSC_CTL                  0xC
+-#define SSC_CTL_DATA_WIDTH_9     0x8
+-#define SSC_CTL_BM               0xf
+-#define SSC_CTL_HB               0x10
+-#define SSC_CTL_PH               0x20
+-#define SSC_CTL_PO		 0x40
+-#define SSC_CTL_SR		 0x80
+-#define SSC_CTL_MS		 0x100
+-#define SSC_CTL_EN		 0x200
+-#define SSC_CTL_LPB		 0x400
+-#define SSC_CTL_EN_TX_FIFO       0x800
+-#define SSC_CTL_EN_RX_FIFO       0x1000
+-#define SSC_CTL_EN_CLST_RX       0x2000
+-
+-/* SSC Interrupt Enable */
+-#define SSC_IEN               	0x10
+-#define SSC_IEN_RIEN		0x1
+-#define SSC_IEN_TIEN		0x2
+-#define SSC_IEN_TEEN		0x4
+-#define SSC_IEN_REEN		0x8
+-#define SSC_IEN_PEEN		0x10
+-#define SSC_IEN_AASEN		0x40
+-#define SSC_IEN_STOPEN		0x80
+-#define SSC_IEN_ARBLEN		0x100
+-#define SSC_IEN_NACKEN		0x400
+-#define SSC_IEN_REPSTRTEN	0x800
+-#define SSC_IEN_TX_FIFO_HALF	0x1000
+-#define SSC_IEN_RX_FIFO_HALF_FULL	0x4000
+-
+-/* SSC Status */
+-#define SSC_STA                   0x14
+-#define SSC_STA_RIR		  0x1
+-#define SSC_STA_TIR		  0x2
+-#define SSC_STA_TE		  0x4
+-#define SSC_STA_RE		  0x8
+-#define SSC_STA_PE		 0x10
+-#define SSC_STA_CLST		 0x20
+-#define SSC_STA_AAS		 0x40
+-#define SSC_STA_STOP		 0x80
+-#define SSC_STA_ARBL		0x100
+-#define SSC_STA_BUSY		0x200
+-#define SSC_STA_NACK		0x400
+-#define SSC_STA_REPSTRT		0x800
+-#define SSC_STA_TX_FIFO_HALF	0x1000
+-#define SSC_STA_TX_FIFO_FULL    0x2000
+-#define SSC_STA_RX_FIFO_HALF    0x4000
+-
+-/*SSC I2C Control */
+-#define SSC_I2C               	0x18
+-#define SSC_I2C_I2CM		0x1
+-#define SSC_I2C_STRTG		0x2
+-#define SSC_I2C_STOPG		0x4
+-#define SSC_I2C_ACKG		0x8
+-#define SSC_I2C_AD10		0x10
+-#define SSC_I2C_TXENB		0x20
+-#define SSC_I2C_REPSTRTG	0x800
+-#define SSC_I2C_I2CFSMODE	0x1000
+-/* SSC Slave Address */
+-#define SSC_SLAD              	0x1C
+-/* SSC I2C bus repeated start hold time */
+-#define SSC_REP_START_HOLD    	0x20
+-/* SSC I2C bus start hold time */
+-#define SSC_START_HOLD        	0x24
+-/* SSC I2C bus repeated start setup time */
+-#define SSC_REP_START_SETUP   	 0x28
+-/* SSC I2C bus repeated stop setup time */
+-#define SSC_DATA_SETUP		0x2C
+-/* SSC I2C bus stop setup time */
+-#define SSC_STOP_SETUP		0x30
+-/* SSC I2C bus free time */
+-#define SSC_BUS_FREE		0x34
+-
+-/* SSC Tx FIFO Status */
+-#define SSC_TX_FSTAT            0x38
+-#define SSC_TX_FSTAT_STATUS     0x07
+-
+-/* SSC Rx FIFO Status */
+-#define SSC_RX_FSTAT            0x3C
+-#define SSC_RX_FSTAT_STATUS     0x07
+-
+-/* SSC Prescaler value value for clock */
+-#define SSC_PRE_SCALER_BRG      0x40
+-
+-/* SSC Clear bit operation */
+-#define SSC_CLR			0x80
+-#define SSC_CLR_SSCAAS 		0x40
+-#define SSC_CLR_SSCSTOP 	0x80
+-#define SSC_CLR_SSCARBL 	0x100
+-#define SSC_CLR_NACK    	0x400
+-#define SSC_CLR_REPSTRT     	0x800
+-
+-/* SSC Noise suppression Width */
+-#define SSC_AGFR		0x100
+-/* SSC Clock Prescaler */
+-#define SSC_PRSC		0x104
+-#define SSC_PRSC_VALUE          0x0f
+-
+-/* SSC Max delay width*/
+-#define SSC_MAX_DELAY		0x108
+-
+-/* SSC Prescaler for delay in dataout */
+-#define SSC_PRSC_DATAOUT	0x10c
+-
+-#define SSC_TXFIFO_SIZE         0x8
+-#define SSC_RXFIFO_SIZE         0x8
+-/*
+- * The I2C timing register could be ready
+- * for normal or fast rate
+- */
+-#define SSC_I2C_READY_NORMAL    0x0
+-#define SSC_I2C_READY_FAST      0x1
+-struct ssc_t {
+-	struct stpio_pin *pio_clk;
+-	struct stpio_pin *pio_data;
+-	struct stpio_pin *pio_data_in;
+-	wait_queue_head_t wait_queue;
+-	struct mutex	  mutex_bus;
+-	void *base;
+-	void (*irq_function) (void *);
+-	void *irq_private_data;
+-        unsigned char    i2c_timing;
+-        struct platform_device pdev;
+-};
+-
+-struct ssc_t *ssc_device_request(unsigned int ssc_id);
+-
+-/*
+- *  How many ssc device are available on this platform
+- */
+-unsigned int ssc_device_available(void);
+-
+-/*
+- *  The input clock for each SSC device
+- */
+-
+-unsigned int ssc_get_clock(void);
+-
+-/*
+- *  To say if the ssc_is ssc can support I2C and/or SPI protocol
+- */
+-
+-#define SSC_I2C_CAPABILITY  0x1
+-#define SSC_SPI_CAPABILITY  0x2
+-
+-unsigned int ssc_capability(unsigned int ssc_id);
+-/*
+- *   To request the bus access
+- *   The user registers also the function and the data that
+- *   they want use in the IRQ_Function
+- */
+-void ssc_request_bus(struct ssc_t *, void (*irq_function) (void *),
+-		     void *irq_data);
+-
+-/*
+- *   To release the bus
+- */
+-void ssc_release_bus(struct ssc_t *);
+-
+-/*
+-   we have to use the following macro
+-   to access the SSC I/O Memory
+-*/
+-#define ssc_store16(ssc , offset, value) iowrite16(value,ssc->base+offset)
+-#define ssc_store8( ssc , offset, value) iowrite8( value,ssc->base+offset)
+-
+-#define ssc_load16( ssc,offset)          ioread16(ssc->base+offset)
+-#define ssc_load8(  ssc,offset)	         ioread8( ssc->base+offset)
+-
+-/*
+- *   This macro could be used to built the capability field
+- *   of struct plat_ssc_data for each SoC
+- */
+-#define ssc_ability(idx_ssc, cap)  \
+-         ( cap & (SSC_I2C_CAPABILITY | SSC_SPI_CAPABILITY ) ) << (idx_ssc*2)
+-
+-#define ssc0_ability(cap)  ssc_ability(0,cap)
+-#define ssc1_ability(cap)  ssc_ability(1,cap)
+-#define ssc2_ability(cap)  ssc_ability(2,cap)
+-#define ssc3_ability(cap)  ssc_ability(3,cap)
+-#define ssc4_ability(cap)  ssc_ability(4,cap)
+-
+-#endif				/* STM_SSC_H */
+Index: linux-2.6.23-stm/include/linux/stm/soc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc.h
++++ linux-2.6.23-stm/include/linux/stm/soc.h
+@@ -2,23 +2,40 @@
+ #define __LINUX_ST_SOC_H
+ 
+ /* This is the private platform data for the ssc driver */
+-struct plat_ssc_pio_t {
+-	unsigned char sclbank;
+-	unsigned char sclpin;
+-	unsigned char sdoutbank;
+-	unsigned char sdoutpin;
+-	unsigned char sdinbank;
+-	unsigned char sdinpin;
+-};
+-
+-#define SSC_I2C_CAPABILITY  0x1
+-#define SSC_SPI_CAPABILITY  0x2
++struct ssc_pio_t {
++	unsigned char pio_port;
++	unsigned char pio_pin[3];
++	struct stpio_pin* clk;
++	struct stpio_pin* sdout;
++	struct stpio_pin* sdin;
++};
++
++#define SSC_I2C_CAPABILITY  0x0
++#define SSC_SPI_CAPABILITY  0x1
++#define SSC_UNCONFIGURED    0x2
++/*
++ *   This macro could be used to build the capability field
++ *   of struct plat_ssc_data for each SoC
++ */
++#define ssc_capability(idx_ssc, cap)  \
++         ( (cap) & (SSC_I2C_CAPABILITY | SSC_SPI_CAPABILITY | SSC_UNCONFIGURED) ) << ((idx_ssc)*2)
++
++#define ssc0_has(cap)  ssc_capability(0,cap)
++#define ssc1_has(cap)  ssc_capability(1,cap)
++#define ssc2_has(cap)  ssc_capability(2,cap)
++#define ssc3_has(cap)  ssc_capability(3,cap)
++#define ssc4_has(cap)  ssc_capability(4,cap)
++#define ssc5_has(cap)  ssc_capability(5,cap)
++#define ssc6_has(cap)  ssc_capability(6,cap)
++#define ssc7_has(cap)  ssc_capability(7,cap)
++#define ssc8_has(cap)  ssc_capability(8,cap)
++#define ssc9_has(cap)  ssc_capability(9,cap)
+ 
+ struct plat_ssc_data {
+ 	unsigned short		capability;	/* bitmask on the ssc capability */
+-	struct plat_ssc_pio_t	*pio;		/* the PIO map */
+ };
+ 
++
+ /* Private data for the SATA driver */
+ struct plat_sata_data {
+ 	unsigned long phy_init;
+Index: linux-2.6.23-stm/include/linux/stm/soc_init.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc_init.h
++++ linux-2.6.23-stm/include/linux/stm/soc_init.h
+@@ -39,6 +39,27 @@
+ 	}								\
+ }
+ 
++#define STSSC_DEVICE(_base, _irq, _pio_port, _pclk, _pdin, _pdout)	\
++{									\
++	.num_resources  = 2,						\
++	.resource       = (struct resource[]) {				\
++		{							\
++			.start  = _base,				\
++			.end    = _base + 0x10C,			\
++			.flags  = IORESOURCE_MEM			\
++		}, {							\
++			.start  = _irq,					\
++			.flags  = IORESOURCE_IRQ			\
++		}							\
++	},								\
++	.dev = {							\
++		.platform_data = &(struct ssc_pio_t ) {			\
++			.pio_port       = _pio_port,			\
++			.pio_pin        = { _pclk, _pdin, _pdout },	\
++		}                                                       \
++	}								\
++}
++
+ #define USB_WRAPPER(_port, _wrapper_base, _protocol_base)	\
+ {								\
+ 	.ahb2stbus_wrapper_glue_base = _wrapper_base,		\
+Index: linux-2.6.23-stm/include/linux/stm/stssc.h
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/include/linux/stm/stssc.h
+@@ -0,0 +1,141 @@
++/*
++   --------------------------------------------------------------------
++
++   stssc.h
++   define and struct for STMicroelectronics SSC device
++
++   --------------------------------------------------------------------
++
++ *  This program is free software; you can redistribute  it and/or modify it
++ *  under  the terms of  the GNU General  Public License as published by the
++ *  Free Software Foundation;  either version 2 of the  License.
++ *
++ *  You should have received a copy of the  GNU General Public License along
++ *  with this program; if not, write  to the Free Software Foundation, Inc.,
++ *  675 Mass Ave, Cambridge, MA 02139, USA.
++
++*/
++
++#ifndef STM_SSC_H
++#define STM_SSC_H 1
++
++/* SSC Baud Rate generator */
++#define SSC_BRG                  0x0
++/* SSC Transmitter Buffer  */
++#define SSC_TBUF                 0x4
++/* SSC Receive Buffer      */
++#define SSC_RBUF                 0x8
++/*SSC Control              */
++#define SSC_CTL                  0xC
++#define SSC_CTL_DATA_WIDTH_9     0x8
++#define SSC_CTL_BM               0xf
++#define SSC_CTL_HB               0x10
++#define SSC_CTL_PH               0x20
++#define SSC_CTL_PO		 0x40
++#define SSC_CTL_SR		 0x80
++#define SSC_CTL_MS		 0x100
++#define SSC_CTL_EN		 0x200
++#define SSC_CTL_LPB		 0x400
++#define SSC_CTL_EN_TX_FIFO       0x800
++#define SSC_CTL_EN_RX_FIFO       0x1000
++#define SSC_CTL_EN_CLST_RX       0x2000
++
++/* SSC Interrupt Enable */
++#define SSC_IEN               	0x10
++#define SSC_IEN_RIEN		0x1
++#define SSC_IEN_TIEN		0x2
++#define SSC_IEN_TEEN		0x4
++#define SSC_IEN_REEN		0x8
++#define SSC_IEN_PEEN		0x10
++#define SSC_IEN_AASEN		0x40
++#define SSC_IEN_STOPEN		0x80
++#define SSC_IEN_ARBLEN		0x100
++#define SSC_IEN_NACKEN		0x400
++#define SSC_IEN_REPSTRTEN	0x800
++#define SSC_IEN_TX_FIFO_HALF	0x1000
++#define SSC_IEN_RX_FIFO_HALF_FULL	0x4000
++
++/* SSC Status */
++#define SSC_STA                   0x14
++#define SSC_STA_RIR		  0x1
++#define SSC_STA_TIR		  0x2
++#define SSC_STA_TE		  0x4
++#define SSC_STA_RE		  0x8
++#define SSC_STA_PE		 0x10
++#define SSC_STA_CLST		 0x20
++#define SSC_STA_AAS		 0x40
++#define SSC_STA_STOP		 0x80
++#define SSC_STA_ARBL		0x100
++#define SSC_STA_BUSY		0x200
++#define SSC_STA_NACK		0x400
++#define SSC_STA_REPSTRT		0x800
++#define SSC_STA_TX_FIFO_HALF	0x1000
++#define SSC_STA_TX_FIFO_FULL    0x2000
++#define SSC_STA_RX_FIFO_HALF    0x4000
++
++/*SSC I2C Control */
++#define SSC_I2C               	0x18
++#define SSC_I2C_I2CM		0x1
++#define SSC_I2C_STRTG		0x2
++#define SSC_I2C_STOPG		0x4
++#define SSC_I2C_ACKG		0x8
++#define SSC_I2C_AD10		0x10
++#define SSC_I2C_TXENB		0x20
++#define SSC_I2C_REPSTRTG	0x800
++#define SSC_I2C_I2CFSMODE	0x1000
++/* SSC Slave Address */
++#define SSC_SLAD              	0x1C
++/* SSC I2C bus repeated start hold time */
++#define SSC_REP_START_HOLD    	0x20
++/* SSC I2C bus start hold time */
++#define SSC_START_HOLD        	0x24
++/* SSC I2C bus repeated start setup time */
++#define SSC_REP_START_SETUP   	 0x28
++/* SSC I2C bus repeated stop setup time */
++#define SSC_DATA_SETUP		0x2C
++/* SSC I2C bus stop setup time */
++#define SSC_STOP_SETUP		0x30
++/* SSC I2C bus free time */
++#define SSC_BUS_FREE		0x34
++
++/* SSC Tx FIFO Status */
++#define SSC_TX_FSTAT            0x38
++#define SSC_TX_FSTAT_STATUS     0x07
++
++/* SSC Rx FIFO Status */
++#define SSC_RX_FSTAT            0x3C
++#define SSC_RX_FSTAT_STATUS     0x07
++
++/* SSC Prescaler value value for clock */
++#define SSC_PRE_SCALER_BRG      0x40
++
++/* SSC Clear bit operation */
++#define SSC_CLR			0x80
++#define SSC_CLR_SSCAAS 		0x40
++#define SSC_CLR_SSCSTOP 	0x80
++#define SSC_CLR_SSCARBL 	0x100
++#define SSC_CLR_NACK    	0x400
++#define SSC_CLR_REPSTRT     	0x800
++
++/* SSC Noise suppression Width */
++#define SSC_NOISE_SUPP_WIDTH	0x100
++/* SSC Clock Prescaler */
++#define SSC_PRSCALER		0x104
++#define SSC_PRSC_VALUE          0x0f
++
++/* SSC Noise suppression Width dataout */
++#define SSC_NOISE_SUPP_WIDTH_DATAOUT	0x108
++
++/* SSC Prescaler for delay in dataout */
++#define SSC_PRSCALER_DATAOUT	0x10c
++
++#define SSC_TXFIFO_SIZE         0x8
++#define SSC_RXFIFO_SIZE         0x8
++/*
++   we have to use the following macro
++   to access the SSC I/O Memory
++*/
++#define ssc_store32(ssc , offset, value) iowrite32(value,ssc->base+offset)
++#define ssc_load32( ssc,offset)	         ioread32( ssc->base+offset)
++
++#endif				/* STM_SSC_H */

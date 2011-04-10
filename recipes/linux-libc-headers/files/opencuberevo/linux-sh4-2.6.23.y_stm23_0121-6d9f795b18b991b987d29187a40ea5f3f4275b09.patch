@@ -1,0 +1,31 @@
+From 6d9f795b18b991b987d29187a40ea5f3f4275b09 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Tue, 23 Jun 2009 15:09:41 +0200
+Subject: [PATCH] sh_stm: Extended ssc capability field
+
+This patch extends the ssc_capability field (from short to long)
+to satisfy the space required in the stx7141 where there are 7 SSCs
+and 21 bits are required.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ include/linux/stm/soc.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 3af155f..06149ce 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -49,7 +49,7 @@ struct ssc_pio_t {
+ #define SSC_NO_PIO	0xff
+ 
+ struct plat_ssc_data {
+-	unsigned short		capability;	/* bitmask on the ssc capability */
++	unsigned long		capability;	/* SSC bitmap capability */
+ 	unsigned long		routing;
+ 	/* chip-select for SPI bus (struct spi_device *spi) -> (void *)*/
+ 	void (*spi_chipselects[])(void *spi, int is_on);
+-- 
+1.6.0.6
+

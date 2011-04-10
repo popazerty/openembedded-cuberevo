@@ -1,0 +1,45 @@
+From f10519a37c6a8d1041077ec1cc0a8eb49f81b543 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Tue, 3 Mar 2009 14:34:16 +0000
+Subject: [PATCH] sound_stm: 7105 fsynth reference clock issue fix
+
+This patch uses 7200c2 version of AUFCFG_FSYN_CFG register for 7105,
+which apparently is much closer to the truth then 7111 one...
+
+To be confirmed with some reliable documentation in future.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/reg_audcfg_fsyn.h |    2 +-
+ sound/stm/stx7105.c         |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/stm/reg_audcfg_fsyn.h b/sound/stm/reg_audcfg_fsyn.h
+index 9eb2f78..86b03d9 100644
+--- a/sound/stm/reg_audcfg_fsyn.h
++++ b/sound/stm/reg_audcfg_fsyn.h
+@@ -276,7 +276,7 @@
+ 
+ #define shift__AUDCFG_FSYN_CFG__REF_CLK_IN(ip) (ip->ver < \
+ 	ver__AUDCFG_FSYN__65_2_1_2 ? 23 : (ip->ver < ver__AUDCFG_FSYN__65_3_1 \
+-	? 24 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 ? 22 : 24)))
++	? 24 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 ? 23 : 24)))
+ #define mask__AUDCFG_FSYN_CFG__REF_CLK_IN(ip) (ip->ver < \
+ 	ver__AUDCFG_FSYN__65_2_1_2 ? 0x1 : (ip->ver < ver__AUDCFG_FSYN__65_3_1 \
+ 	? 0x1 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 ? 0x3 : 0x1)))
+diff --git a/sound/stm/stx7105.c b/sound/stm/stx7105.c
+index 0c4b99d..be5f4b7 100644
+--- a/sound/stm/stx7105.c
++++ b/sound/stm/stx7105.c
+@@ -81,7 +81,7 @@ static struct platform_device fsynth = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_fsynth_info) {
+-		.ver = 4,
++		.ver = 5,
+ 		.channels_from = 0,
+ 		.channels_to = 2,
+ 	},
+-- 
+1.6.0.6
+

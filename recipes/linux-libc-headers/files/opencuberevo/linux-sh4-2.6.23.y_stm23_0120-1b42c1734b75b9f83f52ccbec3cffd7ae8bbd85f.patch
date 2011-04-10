@@ -1,0 +1,28 @@
+From 1b42c1734b75b9f83f52ccbec3cffd7ae8bbd85f Mon Sep 17 00:00:00 2001
+From: Carl Shaw <car.shaw@st.com>
+Date: Wed, 10 Jun 2009 10:07:49 +0100
+Subject: [PATCH] sh_stm: Fix CB102 build
+
+Trivial typo fix.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+---
+ arch/sh/boards/st/cb102/setup.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/boards/st/cb102/setup.c b/arch/sh/boards/st/cb102/setup.c
+index e50b8d2..3340918 100644
+--- a/arch/sh/boards/st/cb102/setup.c
++++ b/arch/sh/boards/st/cb102/setup.c
+@@ -30,7 +30,7 @@ static int ascs[2] __initdata = {
+ 	3 | (STASC_FLAG_NORTSCTS << 8), /* J8001 (3.5mm jack) */
+ };
+ 
+-static void __init cb103_setup(char **cmdline_p)
++static void __init cb102_setup(char **cmdline_p)
+ {
+ 	stx7200_early_device_init();
+ 	stx7200_configure_asc(ascs, 2, 1);
+-- 
+1.6.0.6
+

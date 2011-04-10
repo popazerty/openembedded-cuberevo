@@ -1,0 +1,26 @@
+From 02c632cb481bb885c20299ef39d54ec991f2f8ce Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Fri, 10 Oct 2008 19:49:29 +0100
+Subject: [PATCH] ssc_stm: Fixed undeclared ssc_pio variable.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 0e8c261..51a385d 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -219,6 +219,8 @@ void __init stx7111_configure_ssc(struct plat_ssc_data *data)
+ 	struct sysconf_field* ssc_sc;
+ 
+ 	for (i=0; i < ARRAY_SIZE(stssc_devices); i++, capability >>= SSC_BITS_SIZE){
++		struct ssc_pio_t *ssc_pio = stssc_devices[i].dev.platform_data;
++
+ 		if(capability & SSC_UNCONFIGURED)
+ 			continue;
+ 
+-- 
+1.5.3.6
+

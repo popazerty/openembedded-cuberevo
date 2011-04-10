@@ -1,0 +1,261 @@
+This patch fixes a number of minor problems with the FDMA code:
+
+ - all internal functions are made static
+ - transfer DIM definitions are explicitly initialised so that
+   it is possible to easily extract the src and dest dimension.
+   Added a couple of macros to do this easily.
+ - some incorrect comments are removed
+ - an extra flag is created which indicates to the extrapolation
+   functions that they need to set the line length field of the nodes
+   to the length in bytes. This is needed for all non-2D transfers.
+ - Fix a couple of variable types to remove some unnecessary casts.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux/drivers/stm/710x_fdma2.c
+===================================================================
+--- linux.orig/drivers/stm/710x_fdma2.c
++++ linux/drivers/stm/710x_fdma2.c
+@@ -23,7 +23,7 @@
+ #include <linux/platform_device.h>
+ static fdma_chip chip;
+ 
+-int setup_freerunning_node(struct stm_dma_params *params)
++static int setup_freerunning_node(struct stm_dma_params *params)
+ {
+ 	fdma_llu_entry* llu = params->priv.node->virt_addr;
+ 	memset(llu, 0, sizeof(*llu));
+@@ -34,12 +34,15 @@ int setup_freerunning_node(struct stm_dm
+ 	if (params->node_interrupt)
+ 		llu->control |= SET_NODE_COMP_IRQ;
+ 
+-	if (params->dim & DIM_1_x_0 ){
++	if (DIM_SRC(params->dim) == 0) {
++		llu->control |= NODE_ADDR_STATIC <<SOURCE_ADDR;
++	} else {
+ 		llu->control |= NODE_ADDR_INCR <<SOURCE_ADDR;
+-		llu->control |= NODE_ADDR_STATIC <<DEST_ADDR;
+ 	}
+-	else if (params->dim & DIM_0_x_1){
+-		llu->control |= NODE_ADDR_STATIC <<SOURCE_ADDR;
++
++	if (DIM_DST(params->dim) == 0) {
++		llu->control |= NODE_ADDR_STATIC <<DEST_ADDR;
++	} else {
+ 		llu->control |= NODE_ADDR_INCR <<DEST_ADDR;
+ 	}
+ 
+@@ -50,7 +53,7 @@ int setup_freerunning_node(struct stm_dm
+ 	return 0;
+ }
+ 
+-int setup_paced_node(struct stm_dma_params *params)
++static int setup_paced_node(struct stm_dma_params *params)
+ {
+ 	fdma_llu_entry* llu = params->priv.node->virt_addr;
+ 
+@@ -80,7 +83,8 @@ int setup_paced_node(struct stm_dma_para
+ 
+ 	return 0;
+ }
+-int stb710x_get_engine_status(int channel)
++
++static int stb710x_get_engine_status(int channel)
+ {
+ 	return readl(CMD_STAT_REG(channel))&3;
+ }
+@@ -88,10 +92,11 @@ int stb710x_get_engine_status(int channe
+ static void extrapolate_simple(struct stm_dma_params *xfer)
+ {
+ 	struct fdma_llu_entry* dest_llu =xfer->priv.node->virt_addr;
+-	/* next_item is filled in create_llu_list */
+ 	dest_llu->size_bytes = xfer->node_bytes;
+ 	dest_llu->saddr = xfer->sar;
+ 	dest_llu->daddr = xfer->dar;
++	if (xfer->priv.extrapolate_line_len)
++		dest_llu->line_len = xfer->node_bytes;
+ }
+ 
+ static void extrapolate_sg_src(struct stm_dma_params *xfer)
+@@ -103,14 +108,16 @@ static void extrapolate_sg_src(struct st
+ 	unsigned long control =xfer->priv.node->virt_addr->control;
+ 
+ 	for (i=0; i<xfer->priv.sublist_nents; i++) {
+-		/* next_item is filled in in create_llu_list */
+ 		dest_llu = cur_node->virt_addr;
+ 		dest_llu->control = control;
+ 		dest_llu->size_bytes = sg_dma_len(sg);
+ 		dest_llu->saddr = sg_dma_address(sg);
+ 		dest_llu->daddr = xfer->dar;
+ 		dest_llu->sstride = xfer->sstride;
+-		dest_llu->line_len = xfer->line_len;
++		if (xfer->priv.extrapolate_line_len)
++			dest_llu->line_len = sg_dma_len(sg);
++		else
++			dest_llu->line_len = xfer->line_len;
+ 		dest_llu->dstride=0;
+ 		cur_node++;
+ 		dest_llu->next_item = cur_node->dma_addr;
+@@ -126,20 +133,20 @@ static void extrapolate_sg_dst(struct st
+ 	struct llu_node * cur_node = xfer->priv.node;
+ 	unsigned long control =xfer->priv.node->virt_addr->control;
+ 
+-	/*always >=1 iter through here*/
+ 	for (i=0; i<xfer->priv.sublist_nents; i++) {
+ 		dest_llu= cur_node->virt_addr;
+-		/* next_item is filled in in create_llu_list */
+ 		dest_llu->control = control;
+ 		dest_llu->size_bytes = sg_dma_len(sg);
+ 		dest_llu->saddr = xfer->sar;
+ 		dest_llu->daddr = sg_dma_address(sg);
+ 		dest_llu->sstride = 0;
+-		dest_llu->line_len =xfer->line_len;
++		if (xfer->priv.extrapolate_line_len)
++			dest_llu->line_len = sg_dma_len(sg);
++		else
++			dest_llu->line_len = xfer->line_len;
+ 		dest_llu->dstride=xfer->dstride;
+ 		cur_node++;
+ 		dest_llu->next_item = cur_node->dma_addr;
+-
+ 		sg++;
+ 	}
+ 	dest_llu->next_item=0;
+@@ -182,13 +189,13 @@ static int alloc_nodelist_mem(struct stm
+ 	int res=0;
+ 	int i=0;
+ 	int list_size = sizeof(struct llu_node)*nents;
+-	unsigned long first=0;
++	struct llu_node* first=0;
+ 	struct llu_node* new_node = kmalloc(list_size,transfer->context);
+ 
+ 	if (new_node == NULL)
+ 		return -ENOMEM;
+ 
+-	first = (unsigned long )new_node;
++	first = new_node;
+ 
+ 	for(;i<nents;i++){
+ 		new_node->virt_addr = dma_pool_alloc(
+@@ -197,13 +204,14 @@ static int alloc_nodelist_mem(struct stm
+ 					&new_node->dma_addr);
+ 
+ 		if (new_node->virt_addr == NULL){
+-			kfree(new_node);
++			/* SIM need to free nodes as well */
++			kfree(first);
+ 			return -ENOMEM;
+ 		}
+ 		new_node++;
+ 	}
+-	transfer->priv.node =(struct llu_node*) first;
+-	transfer->priv.alloced_nents = transfer->priv.sublist_nents;
++	transfer->priv.node = first;
++	transfer->priv.alloced_nents = nents;
+ 	return res;
+ }
+ 
+@@ -283,7 +291,7 @@ static void completion_err(int channel)
+ 		err_cb(err_cb_parm);
+ }
+ 
+-void handle_completion(int channel,int comp_code)
++static void handle_completion(int channel,int comp_code)
+ {
+ 	struct channel_status *chan = &chip.channel[channel];
+ 
+@@ -346,7 +354,7 @@ static void fdma_cb_continue(int channel
+ 
+ static inline void __handle_fdma_err_irq(int channel)
+ {
+-	fdma_log("%s ERROR CH_%d err %d\n",
++	printk("%s ERROR CH_%d err %d\n",
+ 		__FUNCTION__,
+ 		channel,
+ 		(int)( readl(CMD_STAT_REG(channel))& 0x1c) >>2);
+@@ -640,7 +648,7 @@ static int fdma_check_firmware_state(voi
+  *---------------------------------------------------------------------*/
+ 
+ /*returns the number of bytes left to transfer for the current node*/
+-extern int stb710x_fdma_get_residue(struct dma_channel *chan)
++static  int stb710x_fdma_get_residue(struct dma_channel *chan)
+ {
+ 	unsigned long irqflags;
+ 	u32 chan_base = chip.io_base + (chan->chan * NODE_DATA_OFFSET);
+@@ -799,9 +807,9 @@ static int stb710x_fdma_compile_params(s
+ 			}
+ 			if(IS_TRANSFER_SG(this)){
+ 
+-				if(this->srcsg)
++				if(MODE_SRC_SCATTER==this->mode)
+ 					this->priv.extrapolate_fn = extrapolate_sg_src;
+-				else if(this->dstsg)
++				else if(MODE_DST_SCATTER==this->mode)
+ 					this->priv.extrapolate_fn = extrapolate_sg_dst;
+ 				else return -EINVAL;
+ 			}
+@@ -810,6 +818,10 @@ static int stb710x_fdma_compile_params(s
+ 			this->priv.nodelist_setup =(this->mode == MODE_PACED) ?
+ 					setup_paced_node:
+ 					setup_freerunning_node;
++
++			/* For any 1D transfers, line_len = nbytes */
++			this->priv.extrapolate_line_len =
++				!((DIM_SRC(this->dim) == 2) || (DIM_DST(this->dim) == 2));
+ 		}
+ 		this->priv.nodelist_setup(this);
+ 		this->priv.extrapolate_fn(this);
+Index: linux/include/linux/stm/stm-dma.h
+===================================================================
+--- linux.orig/include/linux/stm/stm-dma.h
++++ linux/include/linux/stm/stm-dma.h
+@@ -43,19 +43,23 @@
+ #define MODE_SH_COMPATIBILITY		0x03
+ #define MODE_SRC_SCATTER		0x04
+ #define MODE_DST_SCATTER		0x05
+-/* DMA dimensions */
+ 
++/* DMA dimensions */
++#define DIM_SRC_SHIFT 0
++#define DIM_DST_SHIFT 2
++#define DIM_SRC(x) (((x) >> DIM_SRC_SHIFT) & 3)
++#define DIM_DST(x) (((x) >> DIM_DST_SHIFT) & 3)
+ enum stm_dma_dimensions {
+-	DIM_0_x_0 =0x10,
+-	DIM_0_x_1,
+-	DIM_0_x_2,
+-	DIM_1_x_0,
+-	DIM_1_x_1,
+-	DIM_1_x_2,
+-	DIM_2_x_0,
+-	DIM_2_x_1,
+-	DIM_2_x_2,
+-	DIM_REQ_SEL
++	DIM_0_x_0 = (0 << DIM_SRC_SHIFT) | (0 << DIM_DST_SHIFT),
++	DIM_0_x_1 = (0 << DIM_SRC_SHIFT) | (1 << DIM_DST_SHIFT),
++	DIM_0_x_2 = (0 << DIM_SRC_SHIFT) | (2 << DIM_DST_SHIFT),
++	DIM_1_x_0 = (1 << DIM_SRC_SHIFT) | (0 << DIM_DST_SHIFT),
++	DIM_1_x_1 = (1 << DIM_SRC_SHIFT) | (1 << DIM_DST_SHIFT),
++	DIM_1_x_2 = (1 << DIM_SRC_SHIFT) | (2 << DIM_DST_SHIFT),
++	DIM_2_x_0 = (2 << DIM_SRC_SHIFT) | (0 << DIM_DST_SHIFT),
++	DIM_2_x_1 = (2 << DIM_SRC_SHIFT) | (1 << DIM_DST_SHIFT),
++	DIM_2_x_2 = (2 << DIM_SRC_SHIFT) | (2 << DIM_DST_SHIFT),
++	DIM_REQ_SEL = 0x10,
+ };
+ 
+ enum stm_dma_flags {
+@@ -116,12 +120,13 @@ typedef struct dma_xfer_descriptor {
+ 	int 	alloced_nents;
+ 	int    	(*nodelist_setup) (struct stm_dma_params *xfer);
+ 	void    (*extrapolate_fn)(struct stm_dma_params *xfer);
++	int	extrapolate_line_len;
+ 	int 	sublist_nents;
+ }dma_xfer_descriptor;
+ 
+ typedef struct stm_dma_params {
+ 
+-	void * next;
++	struct stm_dma_params *next;
+ 	char  dmac_name[30];
+ 	unsigned long mode;  /*For STMicro DMA API modes see /include/linux/7100_fdma2.h*/
+ 	/* a pointer to a callback function of type void foo(void*)

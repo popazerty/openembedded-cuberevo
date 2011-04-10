@@ -1,0 +1,15 @@
+This patch is a fudge to cope with the conversion from CVS patches to git.
+Previously localversion-stm was created by the .spec file. However now we have
+it in git as a real file, tagged with the appropriate release. As this
+history in git goes back to before we switched the distribution builds
+from CVS to git, we need to create it to allow the patches generated out
+of git to work correctly.
+
+A second fudge is that we forgot to do this for the 0117 release, so this
+has to be created as 0116!
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+--- /dev/null
++++ b/localversion-stm
+@@ -0,0 +1,1 @@
++_stm23_0116

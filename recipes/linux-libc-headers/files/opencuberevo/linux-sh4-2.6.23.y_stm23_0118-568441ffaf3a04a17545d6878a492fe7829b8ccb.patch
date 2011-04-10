@@ -1,0 +1,186 @@
+From 568441ffaf3a04a17545d6878a492fe7829b8ccb Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Fri, 13 Feb 2009 08:11:33 +0100
+Subject: [PATCH] sh_stm: Add PIO PM support and WakeUp from PIO
+
+Add stpio_set_wakeup function
+Add PM functions support
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/stm/pio.c       |   86 +++++++++++++++++++++++++++++++++++++++++++++-
+ include/linux/stm/pio.h |    6 +++
+ 2 files changed, 90 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index 86bf74c..427df0c 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -117,6 +117,11 @@ struct stpio_port {
+ 	struct gpio_chip gpio_chip;
+ #endif
+ 	unsigned int level_mask;
++	struct platform_device *pdev;
++	unsigned int irq_comp;
++	unsigned char flags;
++#define PORT_IRQ_ENABLED		0x1
++#define PORT_IRQ_DISABLED_ON_SUSPEND	0x2
+ };
+ 
+ 
+@@ -348,9 +353,11 @@ void stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
+ 	set_irq_type(irq, comp ? IRQ_TYPE_LEVEL_LOW : IRQ_TYPE_LEVEL_HIGH);
+ 	ret = request_irq(irq, stpio_irq_wrapper, 0, pin->name, pin);
+ 	BUG_ON(ret);
+-
+-	if (flags & IRQ_DISABLED)
++	pin->port->flags |= PORT_IRQ_ENABLED;
++	if (flags & IRQ_DISABLED) {
+ 		disable_irq(irq);
++		pin->port->flags &= ~PORT_IRQ_ENABLED;
++	}
+ }
+ EXPORT_SYMBOL(stpio_flagged_request_irq);
+ 
+@@ -363,6 +370,7 @@ void stpio_free_irq(struct stpio_pin *pin)
+ 
+ 	pin->func = 0;
+ 	pin->dev = 0;
++	pin->port->flags &= ~PORT_IRQ_ENABLED;
+ }
+ EXPORT_SYMBOL(stpio_free_irq);
+ 
+@@ -372,6 +380,8 @@ void stpio_enable_irq(struct stpio_pin *pin, int comp)
+ 	set_irq_type(irq, comp ? IRQ_TYPE_LEVEL_LOW : IRQ_TYPE_LEVEL_HIGH);
+ 	DPRINTK("calling enable_irq for pin %s\n", pin->name);
+ 	enable_irq(irq);
++	pin->port->flags |= PORT_IRQ_ENABLED;
++	pin->port->irq_comp = comp;
+ }
+ EXPORT_SYMBOL(stpio_enable_irq);
+ 
+@@ -382,6 +392,7 @@ void stpio_disable_irq(struct stpio_pin *pin)
+ 	int irq = pin_to_irq(pin);
+ 	DPRINTK("calling disable_irq for irq %d\n", irq);
+ 	disable_irq(irq);
++	pin->port->flags &= ~PORT_IRQ_ENABLED;
+ }
+ EXPORT_SYMBOL(stpio_disable_irq);
+ 
+@@ -391,6 +402,7 @@ void stpio_disable_irq_nosync(struct stpio_pin *pin)
+ 	int irq = pin_to_irq(pin);
+ 	DPRINTK("calling disable_irq_nosync for irq %d\n", irq);
+ 	disable_irq_nosync(irq);
++	pin->port->flags &= ~PORT_IRQ_ENABLED;
+ }
+ EXPORT_SYMBOL(stpio_disable_irq_nosync);
+ 
+@@ -637,6 +649,7 @@ static int stpio_init_port(struct platform_device *pdev, int early)
+ 	size = memory->end - memory->start + 1;
+ 
+ 	if (!early) {
++		port->pdev = pdev; /* link port to pdev */
+ 		if (!request_mem_region(memory->start, size, pdev->name)) {
+ 			result = -EBUSY;
+ 			goto error_request_mem_region;
+@@ -759,6 +772,73 @@ static int __devexit stpio_remove(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PM
++static int stpio_suspend_late(struct platform_device *pdev, pm_message_t state)
++{
++	int port = pdev->id;
++	int pin;
++	if (device_may_wakeup(&(pdev->dev))) {
++		if (stpio_ports[port].flags & PORT_IRQ_ENABLED) {
++			DPRINTK("Pio[%d] as wakeup device\n", port);
++			return 0; /* OK ! */
++		} else
++			/* required wakeup with irq disable ! */
++			return -EINVAL;
++	} else
++		/* disable the interrupt if required*/
++		if (stpio_ports[port].flags & PORT_IRQ_ENABLED) {
++			for (pin = 0; pin < STPIO_PINS_IN_PORT; ++pin)
++				if (stpio_ports[port].pins[pin].func)
++					break;
++			stpio_ports[port].flags |= PORT_IRQ_DISABLED_ON_SUSPEND;
++			stpio_disable_irq(&stpio_ports[port].pins[pin]);
++			}
++	return 0;
++}
++static int stpio_resume_early(struct platform_device *pdev)
++{
++	int port = pdev->id;
++	int pin;
++	if (device_may_wakeup(&(pdev->dev)))
++		return 0; /* no jobs !*/
++
++	/* restore the irq if disabled on suspend */
++	for (pin = 0; pin < STPIO_PINS_IN_PORT; ++pin)
++	if (stpio_ports[port].pins[pin].flags & PORT_IRQ_DISABLED_ON_SUSPEND) {
++		stpio_enable_irq(&stpio_ports[port].pins[pin],
++			stpio_ports[port].irq_comp);
++		DPRINTK("Restored irq setting for pin[%d][%d]\n",
++			port, pin);
++		stpio_ports[port].pins[pin].flags &=
++			~PORT_IRQ_DISABLED_ON_SUSPEND;
++	}
++
++	return 0;
++}
++
++int stpio_set_wakeup(struct stpio_pin *pin, int enabled)
++{
++	struct platform_device *pdev = pin->port->pdev;
++	if (!enabled) {
++		device_set_wakeup_enable(&pdev->dev, 0);
++		return 0;
++	}
++
++	if (!device_can_wakeup(&pdev->dev)) /* this port has no irq */
++		return -EINVAL;
++
++	if (pin->port->flags & PORT_IRQ_ENABLED) {
++		device_set_wakeup_enable(&pdev->dev, 1);
++		return 0;
++	} else
++		return -EINVAL;
++}
++EXPORT_SYMBOL(stpio_set_wakeup);
++#else
++#define stpio_suspend_late	NULL
++#define stpio_resume_early	NULL
++#endif
++
+ static struct platform_driver stpio_driver = {
+ 	.driver	= {
+ 		.name	= "stpio",
+@@ -766,6 +846,8 @@ static struct platform_driver stpio_driver = {
+ 	},
+ 	.probe		= stpio_probe,
+ 	.remove		= __devexit_p(stpio_remove),
++	.suspend_late = stpio_suspend_late,
++	.resume_early = stpio_resume_early,
+ };
+ 
+ static int __init stpio_init(void)
+diff --git a/include/linux/stm/pio.h b/include/linux/stm/pio.h
+index a89b406..09af59d 100644
+--- a/include/linux/stm/pio.h
++++ b/include/linux/stm/pio.h
+@@ -71,4 +71,10 @@ void stpio_set_irq_type(struct stpio_pin* pin, int triggertype);
+ /* Calculate gpio number of a given stpio pin... */
+ #define stpio_to_gpio(portno, pinno) ((portno) * STPIO_PINS_IN_PORT + (pinno))
+ 
++#ifdef CONFIG_PM
++int stpio_set_wakeup(struct stpio_pin *pin, int enabled);
++#else
++#define stpio_set_wakeup(pin, enabled)	do {} while(0)
++#endif
++
+ #endif /* __LINUX_STM_PIO_H */
+-- 
+1.5.6.3
+

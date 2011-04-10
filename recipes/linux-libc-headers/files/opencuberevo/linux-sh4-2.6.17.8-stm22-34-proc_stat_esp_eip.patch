@@ -1,0 +1,32 @@
+Two of the fields in /proc/[number]/stat are documented in proc(5) as:
+
+              kstkesp %lu
+                     The current value of esp (stack pointer), as found in the
+                     kernel stack page for the process.
+
+              kstkeip %lu
+                     The current EIP (instruction pointer).
+
+The SH currently prints the the last SP and PC of the process inside the
+kernel, while most other archs use the last user space values.
+
+This patch modifes the SH to display the user space values.
+
+This resolves: https://bugzilla.stlinux.com/show_bug.cgi?id=912
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/include/asm-sh/processor.h
+===================================================================
+--- linux.orig/include/asm-sh/processor.h
++++ linux/include/asm-sh/processor.h
+@@ -265,8 +265,8 @@ extern void save_fpu(struct task_struct 
+ 
+ extern unsigned long get_wchan(struct task_struct *p);
+ 
+-#define KSTK_EIP(tsk)  ((tsk)->thread.pc)
+-#define KSTK_ESP(tsk)  ((tsk)->thread.sp)
++#define KSTK_EIP(tsk)  (task_pt_regs(tsk)->pc)
++#define KSTK_ESP(tsk)  (task_pt_regs(tsk)->regs[15])
+ 
+ #define cpu_sleep()	__asm__ __volatile__ ("sleep" : : : "memory")
+ #define cpu_relax()	do { } while (0)

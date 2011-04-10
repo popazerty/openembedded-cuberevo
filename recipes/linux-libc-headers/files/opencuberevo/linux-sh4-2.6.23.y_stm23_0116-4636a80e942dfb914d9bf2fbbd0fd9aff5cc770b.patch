@@ -1,0 +1,32 @@
+From 4636a80e942dfb914d9bf2fbbd0fd9aff5cc770b Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Mon, 6 Oct 2008 12:46:18 +0100
+Subject: [PATCH] sh: Only reserve memory under CONFIG_ZERO_PAGE_OFFSET when it != 0.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/setup.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/sh/kernel/setup.c b/arch/sh/kernel/setup.c
+index 4202ed2..55358e1 100644
+--- a/arch/sh/kernel/setup.c
++++ b/arch/sh/kernel/setup.c
+@@ -176,10 +176,10 @@ void __init setup_bootmem_allocator(unsigned long free_pfn)
+ 			(__MEMORY_START + CONFIG_ZERO_PAGE_OFFSET));
+ 
+ 	/*
+-	 * reserve physical page 0 - it's a special BIOS page on many boxes,
+-	 * enabling clean reboots, SMP operation, laptop functions.
++	 * Reserve physical pages below CONFIG_ZERO_PAGE_OFFSET.
+ 	 */
+-	reserve_bootmem(__MEMORY_START, CONFIG_ZERO_PAGE_OFFSET);
++	if (CONFIG_ZERO_PAGE_OFFSET != 0)
++		reserve_bootmem(__MEMORY_START, CONFIG_ZERO_PAGE_OFFSET);
+ 
+ 	sparse_memory_present_with_active_regions(0);
+ 
+-- 
+1.5.3.6
+

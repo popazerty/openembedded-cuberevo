@@ -1,0 +1,60 @@
+A couple of minor bug fixes the the stasc code:
+
+STASC always configures handshaking PIO pins even if hardware
+handshaking is not called up. This becomes important if the port is
+not used with ASC hardware handshaking and the PIO pins are used for
+some other purpose. This change makes the code honour the RTSCTS
+field in the termios cflags field.
+
+This resolves https://bugzilla.stlinux.com/show_bug.cgi?id=909
+
+
+The ASC UART driver ignores the termios request to enable hardware 
+handshaking. This enables it.
+
+This resolves https://bugzilla.stlinux.com/show_bug.cgi?id=522
+and https://bugzilla.stlinux.com/show_bug.cgi?id=904
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux-2.6.17/drivers/serial/stasc.c
+===================================================================
+--- linux-2.6.17.orig/drivers/serial/stasc.c
++++ linux-2.6.17/drivers/serial/stasc.c
+@@ -142,7 +142,7 @@ static unsigned int asc_get_mctrl(struct
+ {
+ 	/* This routine is used for geting signals of: DTR, DCD, DSR, RI,
+ 	   and CTS/RTS */
+-	return TIOCM_DTR | TIOCM_RTS | TIOCM_DSR;
++	return TIOCM_CAR | TIOCM_DSR | TIOCM_CTS;
+ }
+ 
+ /* There are probably characters waiting to be transmitted.
+@@ -452,10 +452,12 @@ asc_set_termios_cflag (struct asc_port *
+ 			  "ASC", STPIO_ALT_OUT); /* Tx */
+ 	stpio_request_pin(ascport->pio_port, ascport->pio_pin[1],
+ 			  "ASC", STPIO_IN);      /* Rx */
+-	stpio_request_pin(ascport->pio_port, ascport->pio_pin[2],
+-			  "ASC", STPIO_IN);      /* CTS */
+-	stpio_request_pin(ascport->pio_port, ascport->pio_pin[3],
+-			  "ASC", STPIO_ALT_OUT); /* RTS */
++	if (cflag & CRTSCTS) {
++		stpio_request_pin(ascport->pio_port, ascport->pio_pin[2],
++				  "ASC", STPIO_IN);      /* CTS */
++		stpio_request_pin(ascport->pio_port, ascport->pio_pin[3],
++				  "ASC", STPIO_ALT_OUT); /* RTS */
++	}
+ 
+ 	/* set character length */
+ 	if ((cflag & CSIZE) == CS7)
+@@ -477,6 +479,10 @@ asc_set_termios_cflag (struct asc_port *
+ 	if (cflag & PARODD)
+ 		ctrl_val |= ASC_CTL_PARITYODD;
+ 
++	/* hardware flow control */
++	if (cflag & CRTSCTS)
++		ctrl_val |= ASC_CTL_CTSENABLE;
++
+ 	/* set speed and baud generator mode */
+ 	ctrl_val |= asc_set_baud (port, baud);
+ 	uart_update_timeout(port, cflag, baud);

@@ -1,0 +1,29 @@
+From: Manuel Lauss <mano@roarinelk.homelinux.net>
+Date: Tue, 30 Oct 2007 00:54:12 +0000 (+0900)
+Subject: sh: fix zImage build with >=binutils-2.18
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Flethal%2Fsh-2.6.git;a=commitdiff_plain;h=4d2718d00de9896b27cec86b03c50cbfcf3afde4
+
+sh: fix zImage build with >=binutils-2.18
+
+Starting with binutils somewhere around 2.17.50.14 the vmlinux file
+contains a ".note.gnu.build-id" section which doesn't get removed when
+the zImage is built; resulting in a 2GB intermediate file and a broken
+zImage.
+
+Signed-off-by: Manuel Lauss <mano@roarinelk.homelinux.net>
+Signed-off-by: Paul Mundt <lethal@linux-sh.org>
+---
+
+diff --git a/arch/sh/Makefile b/arch/sh/Makefile
+index 408342b..e189fae 100644
+--- a/arch/sh/Makefile
++++ b/arch/sh/Makefile
+@@ -66,7 +66,7 @@ cflags-y	+= $(isaflags-y) -ffreestanding
+ cflags-$(CONFIG_MORE_COMPILE_OPTIONS)	+= \
+ 	$(shell echo $(CONFIG_COMPILE_OPTIONS) | sed -e 's/"//g')
+ 
+-OBJCOPYFLAGS	:= -O binary -R .note -R .comment -R .stab -R .stabstr -S
++OBJCOPYFLAGS	:= -O binary -R .note -R .note.gnu.build-id -R .comment -R .stab -R .stabstr -S
+ 
+ #
+ # arch/sh/defconfig doesn't reflect any real hardware, and as such should

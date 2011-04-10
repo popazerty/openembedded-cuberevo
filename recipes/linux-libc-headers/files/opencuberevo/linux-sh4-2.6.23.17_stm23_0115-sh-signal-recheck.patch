@@ -1,0 +1,22 @@
+sh: Don't miss pending signals returning to user mode after signal processing
+
+Without this patch, signals sent during architecture specific signal
+handling (typically as a result of the user's stack being inaccessible)
+are ignored.
+
+This is the SH version of commit c3ff8ec31c1249d268cd11390649768a12bec1b9.
+    
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux/arch/sh/kernel/entry-common.S
+===================================================================
+--- linux.orig/arch/sh/kernel/entry-common.S	2008-07-31 16:19:29.000000000 +0100
++++ linux/arch/sh/kernel/entry-common.S	2008-08-06 10:01:02.000000000 +0100
+@@ -195,7 +195,7 @@
+ 	.align	2
+ 1:	.long	schedule
+ 2:	.long	do_notify_resume
+-3:	.long	restore_all
++3:	.long	resume_userspace
+ #ifdef CONFIG_TRACE_IRQFLAGS
+ 4:	.long	trace_hardirqs_on
+ 5:	.long	trace_hardirqs_off

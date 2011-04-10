@@ -1,0 +1,227 @@
+From a47240626dce0af92e041b07de6d507aa9a28f47 Mon Sep 17 00:00:00 2001
+From: Christopher TOMLINSON <christopher.tomlinson@st.com>
+Date: Thu, 27 Nov 2008 12:08:17 +0000
+Subject: [PATCH] sh_stm: EMI ready not wait config patch
+
+Add field to STM EMI timings configuration to support devices which use
+an active low ready signal.
+
+- Some boards use an inverted state for the ready signal to our default,
+  add a configuration option to allow us to configure this on a per
+  device basis.
+
+Signed-off-by: Chris TOMLINSON <christopher.tomlinson@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/boards/st/cb101/setup.c  |   21 ++++++++++++---------
+ arch/sh/boards/st/common/mb588.c |   17 +++++++++--------
+ arch/sh/boards/st/common/mb705.c |   20 +++++++++++---------
+ arch/sh/boards/st/mb618/setup.c  |   20 +++++++++++---------
+ arch/sh/boards/st/mb628/setup.c  |   20 +++++++++++---------
+ drivers/stm/emi.c                |    8 +++++---
+ include/linux/stm/emi.h          |    2 ++
+ 7 files changed, 61 insertions(+), 47 deletions(-)
+
+diff --git a/arch/sh/boards/st/cb101/setup.c b/arch/sh/boards/st/cb101/setup.c
+index 169af00..e9ac5e0 100644
+--- a/arch/sh/boards/st/cb101/setup.c
++++ b/arch/sh/boards/st/cb101/setup.c
+@@ -146,15 +146,18 @@ static struct mtd_partition nand2_parts[] = {
+ 
+ /* Timing data for onboard NAND */
+ static struct emi_timing_data nand_timing_data = {
+-	.rd_cycle_time	= 40,		 /* times in ns */
+-	.rd_oee_start	= 0,
+-	.rd_oee_end	= 10,
+-	.rd_latchpoint	= 10,
+-
+-	.busreleasetime = 10,
+-	.wr_cycle_time	= 40,
+-	.wr_oee_start	= 0,
+-	.wr_oee_end	= 10,
++	.rd_cycle_time	 = 40,		 /* times in ns */
++	.rd_oee_start	 = 0,
++	.rd_oee_end	 = 10,
++	.rd_latchpoint	 = 10,
++
++	.busreleasetime  = 10,
++	.wr_cycle_time	 = 40,
++	.wr_oee_start	 = 0,
++	.wr_oee_end	 = 10,
++
++	.wait_active_low = 0,
++
+ };
+ 
+ static struct nand_config_data cb101_nand_config[] = {
+diff --git a/arch/sh/boards/st/common/mb588.c b/arch/sh/boards/st/common/mb588.c
+index 83b9d11..b1f72d4 100644
+--- a/arch/sh/boards/st/common/mb588.c
++++ b/arch/sh/boards/st/common/mb588.c
+@@ -45,15 +45,16 @@ static struct nand_config_data nand_config = {
+ 
+ 	/* Timing data for ST-NAND512W3A2C */
+ 	.emi_timing_data = &(struct emi_timing_data) {
+-		.rd_cycle_time	= 40,		 /* times in ns */
+-		.rd_oee_start	= 0,
+-		.rd_oee_end	= 10,
+-		.rd_latchpoint	= 10,
+-		.busreleasetime = 10,
++		.rd_cycle_time	 = 40,		 /* times in ns */
++		.rd_oee_start	 = 0,
++		.rd_oee_end	 = 10,
++		.rd_latchpoint	 = 10,
++		.busreleasetime  = 10,
+ 
+-		.wr_cycle_time	= 40,
+-		.wr_oee_start	= 0,
+-		.wr_oee_end	= 10,
++		.wr_cycle_time	 = 40,
++		.wr_oee_start	 = 0,
++		.wr_oee_end	 = 10,
++		.wait_active_low = 0,
+ 	},
+ 
+ 	.chip_delay		= 20,
+diff --git a/arch/sh/boards/st/common/mb705.c b/arch/sh/boards/st/common/mb705.c
+index 9e4c192..5a6b851 100644
+--- a/arch/sh/boards/st/common/mb705.c
++++ b/arch/sh/boards/st/common/mb705.c
+@@ -228,15 +228,17 @@ static struct nand_config_data nand_config = {
+ 
+ 	/* Timings for NAND512W3A */
+ 	.emi_timing_data = &(struct emi_timing_data) {
+-		.rd_cycle_time	= 40,		 /* times in ns */
+-		.rd_oee_start	= 0,
+-		.rd_oee_end	= 10,
+-		.rd_latchpoint	= 10,
+-		.busreleasetime = 0,
+-
+-		.wr_cycle_time	= 40,
+-		.wr_oee_start	= 0,
+-		.wr_oee_end	= 10,
++		.rd_cycle_time	 = 40,		 /* times in ns */
++		.rd_oee_start	 = 0,
++		.rd_oee_end	 = 10,
++		.rd_latchpoint	 = 10,
++		.busreleasetime  = 0,
++
++		.wr_cycle_time	 = 40,
++		.wr_oee_start	 = 0,
++		.wr_oee_end	 = 10,
++
++		.wait_active_low = 0,
+ 	},
+ 
+ 	.chip_delay		= 40,		/* time in us */
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index 3904edb..7f5217a 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -235,15 +235,17 @@ static struct nand_config_data mb618_nand_config = {
+ 
+ 	/* Timings for NAND512W3A */
+ 	.emi_timing_data = &(struct emi_timing_data) {
+-		.rd_cycle_time	= 40,		 /* times in ns */
+-		.rd_oee_start	= 0,
+-		.rd_oee_end	= 10,
+-		.rd_latchpoint	= 10,
+-		.busreleasetime = 0,
+-
+-		.wr_cycle_time	= 40,
+-		.wr_oee_start	= 0,
+-		.wr_oee_end	= 10,
++		.rd_cycle_time	 = 40,		 /* times in ns */
++		.rd_oee_start	 = 0,
++		.rd_oee_end	 = 10,
++		.rd_latchpoint	 = 10,
++		.busreleasetime  = 0,
++
++		.wr_cycle_time	 = 40,
++		.wr_oee_start	 = 0,
++		.wr_oee_end	 = 10,
++
++		.wait_active_low = 0,
+ 	},
+ 
+ 	.chip_delay		= 40,		/* time in us */
+diff --git a/arch/sh/boards/st/mb628/setup.c b/arch/sh/boards/st/mb628/setup.c
+index ed42f41..a83fa8f 100644
+--- a/arch/sh/boards/st/mb628/setup.c
++++ b/arch/sh/boards/st/mb628/setup.c
+@@ -211,15 +211,17 @@ static struct nand_config_data mb628_nand_config = {
+ 
+ 	/* Timings for NAND512W3A */
+ 	.emi_timing_data = &(struct emi_timing_data) {
+-		.rd_cycle_time	= 40,		 /* times in ns */
+-		.rd_oee_start	= 0,
+-		.rd_oee_end	= 10,
+-		.rd_latchpoint	= 10,
+-		.busreleasetime = 0,
+-
+-		.wr_cycle_time	= 40,
+-		.wr_oee_start	= 0,
+-		.wr_oee_end	= 10,
++		.rd_cycle_time	 = 40,		 /* times in ns */
++		.rd_oee_start	 = 0,
++		.rd_oee_end	 = 10,
++		.rd_latchpoint	 = 10,
++		.busreleasetime  = 0,
++
++		.wr_cycle_time	 = 40,
++		.wr_oee_start	 = 0,
++		.wr_oee_end	 = 10,
++
++		.wait_active_low = 0,
+ 	},
+ 
+ 	.chip_delay		= 40,		/* time in us */
+diff --git a/drivers/stm/emi.c b/drivers/stm/emi.c
+index a8d5246..22859cd 100644
+--- a/drivers/stm/emi.c
++++ b/drivers/stm/emi.c
+@@ -169,7 +169,8 @@ void __init emi_config_pata(int bank, int pc_mode)
+ 
+ static void __init set_nand_read_timings(int bank, int cycle_time,
+ 		int IORD_start, int IORD_end,
+-		int RD_latch, int busreleasetime)
++		int RD_latch, int busreleasetime,
++		int wait_active_low )
+ {
+ 	cycle_time = cycle_time / 10;		/* cycles */
+ 	IORD_start = IORD_start / 5;		/* phases */
+@@ -177,7 +178,7 @@ static void __init set_nand_read_timings(int bank, int cycle_time,
+ 	RD_latch = RD_latch / 10;		/* cycles */
+ 	busreleasetime = busreleasetime / 10;   /* cycles */
+ 
+-	writel(0x04000699 | (busreleasetime << 11) | (RD_latch << 20),
++	writel(0x04000699 | (busreleasetime << 11) | (RD_latch << 20) | (wait_active_low << 25),
+ 			emi_control + BANK_EMICONFIGDATA(bank, 0));
+ 
+ 	writel((cycle_time << 24) | (IORD_start << 12) | (IORD_end << 8),
+@@ -204,7 +205,8 @@ void __init emi_config_nand(int bank, struct emi_timing_data *timing_data)
+ 			timing_data->rd_oee_start,
+ 			timing_data->rd_oee_end,
+ 			timing_data->rd_latchpoint,
+-			timing_data->busreleasetime);
++			timing_data->busreleasetime,
++			timing_data->wait_active_low);
+ 
+ 	set_nand_write_timings(bank,
+ 			timing_data->wr_cycle_time,
+diff --git a/include/linux/stm/emi.h b/include/linux/stm/emi.h
+index c87b8f4..a64143c 100644
+--- a/include/linux/stm/emi.h
++++ b/include/linux/stm/emi.h
+@@ -19,6 +19,8 @@ struct emi_timing_data {
+ 	int wr_cycle_time;
+ 	int wr_oee_start;
+ 	int wr_oee_end;
++
++	int wait_active_low;
+ };
+ 
+ int emi_init(unsigned long memory_base, unsigned long control_base);
+-- 
+1.5.3.6
+

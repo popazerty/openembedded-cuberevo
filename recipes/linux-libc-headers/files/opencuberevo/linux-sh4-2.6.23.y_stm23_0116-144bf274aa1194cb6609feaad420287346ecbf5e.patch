@@ -1,0 +1,161 @@
+From 144bf274aa1194cb6609feaad420287346ecbf5e Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Thu, 9 Oct 2008 14:14:15 +0200
+Subject: [PATCH] sh_stm: Fix some ST boards configuration.
+
+Some spurios defconfig have been released with VSYSCALL feature enabled.
+This cause some warning at build time, and worst, it has some side effects
+causing gdb getting confused by the vsyscall page, producing some warning messages
+like this:
+"Got object file from memory but can't read symbols: File format not recognized."
+
+Thanks to Chris Smith for explanation on this.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/configs/cb101_defconfig         |    2 +-
+ arch/sh/configs/cb101se_defconfig       |    2 +-
+ arch/sh/configs/cb102se_defconfig       |    2 +-
+ arch/sh/configs/mb411_defconfig         |    2 +-
+ arch/sh/configs/mb442_defconfig         |    2 +-
+ arch/sh/configs/mb442se_defconfig       |    2 +-
+ arch/sh/configs/mb448_defconfig         |    2 +-
+ arch/sh/configs/mb519_mb520_defconfig   |    2 +-
+ arch/sh/configs/mb519se_mb520_defconfig |    2 +-
+ arch/sh/configs/mb671se_defconfig       |    2 +-
+ 10 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/arch/sh/configs/cb101_defconfig b/arch/sh/configs/cb101_defconfig
+index 734cda7..d93cd15 100644
+--- a/arch/sh/configs/cb101_defconfig
++++ b/arch/sh/configs/cb101_defconfig
+@@ -142,7 +142,7 @@ CONFIG_MEMORY_START=0x08000000
+ CONFIG_MEMORY_SIZE=0x08000000
+ CONFIG_SUPPORTS_32BIT=y
+ # CONFIG_32BIT is not set
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/cb101se_defconfig b/arch/sh/configs/cb101se_defconfig
+index f183d49..331476a 100644
+--- a/arch/sh/configs/cb101se_defconfig
++++ b/arch/sh/configs/cb101se_defconfig
+@@ -142,7 +142,7 @@ CONFIG_MEMORY_START=0x40000000
+ CONFIG_MEMORY_SIZE=0x08000000
+ CONFIG_SUPPORTS_32BIT=y
+ CONFIG_32BIT=y
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/cb102se_defconfig b/arch/sh/configs/cb102se_defconfig
+index 7db0419..883c1c5 100644
+--- a/arch/sh/configs/cb102se_defconfig
++++ b/arch/sh/configs/cb102se_defconfig
+@@ -141,7 +141,7 @@ CONFIG_MEMORY_START=0x40000000
+ CONFIG_MEMORY_SIZE=0x10000000
+ CONFIG_SUPPORTS_32BIT=y
+ CONFIG_32BIT=y
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/mb411_defconfig b/arch/sh/configs/mb411_defconfig
+index 8abd7db..30a464c 100644
+--- a/arch/sh/configs/mb411_defconfig
++++ b/arch/sh/configs/mb411_defconfig
+@@ -142,7 +142,7 @@ CONFIG_MEMORY_START=0x04000000
+ CONFIG_MEMORY_SIZE=0x04000000
+ CONFIG_SUPPORTS_32BIT=y
+ # CONFIG_32BIT is not set
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/mb442_defconfig b/arch/sh/configs/mb442_defconfig
+index a316de5..2bb7d57 100644
+--- a/arch/sh/configs/mb442_defconfig
++++ b/arch/sh/configs/mb442_defconfig
+@@ -142,7 +142,7 @@ CONFIG_MEMORY_START=0x04000000
+ CONFIG_MEMORY_SIZE=0x04000000
+ CONFIG_SUPPORTS_32BIT=y
+ # CONFIG_32BIT is not set
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/mb442se_defconfig b/arch/sh/configs/mb442se_defconfig
+index 9e1f754..65bba4f 100644
+--- a/arch/sh/configs/mb442se_defconfig
++++ b/arch/sh/configs/mb442se_defconfig
+@@ -142,7 +142,7 @@ CONFIG_MEMORY_START=0x40000000
+ CONFIG_MEMORY_SIZE=0x04000000
+ CONFIG_SUPPORTS_32BIT=y
+ CONFIG_32BIT=y
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/mb448_defconfig b/arch/sh/configs/mb448_defconfig
+index 478bae9..0de748c 100644
+--- a/arch/sh/configs/mb448_defconfig
++++ b/arch/sh/configs/mb448_defconfig
+@@ -142,7 +142,7 @@ CONFIG_MEMORY_START=0x04000000
+ CONFIG_MEMORY_SIZE=0x04000000
+ CONFIG_SUPPORTS_32BIT=y
+ # CONFIG_32BIT is not set
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/mb519_mb520_defconfig b/arch/sh/configs/mb519_mb520_defconfig
+index 4a9b8e5..26f6732 100644
+--- a/arch/sh/configs/mb519_mb520_defconfig
++++ b/arch/sh/configs/mb519_mb520_defconfig
+@@ -141,7 +141,7 @@ CONFIG_MEMORY_START=0x08000000
+ CONFIG_MEMORY_SIZE=0x08000000
+ CONFIG_SUPPORTS_32BIT=y
+ # CONFIG_32BIT is not set
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/mb519se_mb520_defconfig b/arch/sh/configs/mb519se_mb520_defconfig
+index f5ddb53..e55179d 100644
+--- a/arch/sh/configs/mb519se_mb520_defconfig
++++ b/arch/sh/configs/mb519se_mb520_defconfig
+@@ -141,7 +141,7 @@ CONFIG_MEMORY_START=0x40000000
+ CONFIG_MEMORY_SIZE=0x08000000
+ CONFIG_SUPPORTS_32BIT=y
+ CONFIG_32BIT=y
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+diff --git a/arch/sh/configs/mb671se_defconfig b/arch/sh/configs/mb671se_defconfig
+index ef10f70..896bb11 100644
+--- a/arch/sh/configs/mb671se_defconfig
++++ b/arch/sh/configs/mb671se_defconfig
+@@ -139,7 +139,7 @@ CONFIG_MEMORY_START=0x40000000
+ CONFIG_MEMORY_SIZE=0x08000000
+ CONFIG_SUPPORTS_32BIT=y
+ CONFIG_32BIT=y
+-CONFIG_VSYSCALL=y
++# CONFIG_VSYSCALL is not set
+ CONFIG_ARCH_FLATMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_ENABLE=y
+ CONFIG_ARCH_SPARSEMEM_DEFAULT=y
+-- 
+1.5.3.6
+

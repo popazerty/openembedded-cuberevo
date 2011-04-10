@@ -1,0 +1,1088 @@
+This patch:
+o removes the sw timer optimization based on kernel timers.
+o adds the TMU2 for mitigating network interrupts.
+  It requires the new TMU 2 support in SH arch.
+  Timer interrupts is used for both claiming the tx resources 
+  (now tasklet based) and handling the reception process.
+o adds a missing break statement to clear the PS bit into the 
+  GMAC register 0 (when link is 1000).
+o reviews the stmmac Kernel configuration (moved from drivers/net 
+  to drivers/net/stmmac/ directory).
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+
+Index: linux/drivers/net/Kconfig
+===================================================================
+--- linux.orig/drivers/net/Kconfig	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/Kconfig	2008-07-24 14:50:50.000000000 +0100
+@@ -2495,57 +2495,7 @@
+ 	  To compile this driver as a module, choose M here.  The module
+ 	  will be called atl1.
+ 
+-config STMMAC_ETH
+-	tristate "STMicroelectronics 10/100/1000 Ethernet driver"
+-	select MII
+-	select PHYLIB
+-	depends on NETDEVICES && CPU_SUBTYPE_ST40
+-	---help---
+-	  This is the driver for the MAC 10/100/1000 on-chip Ethernet 
+-	  controller (Synopsys Core).
+-	  This driver also supports the old embedded on-chip Ethernet in the
+-	  Stb7109 CPU.
+-
+-config STMMAC_DA
+-	depends on STMMAC_ETH
+-	bool "STMMAC DMA arbitration scheme"
+-	default n
+-	---help---
+-	  Selecting this option, rx has priority over Tx only for Giga Ethernet device,
+-	  By default, the DMA arbitration scheme is based on Round-robin 
+-	  (rx:tx priority is 1:1).
+-
+-config STMMAC_TIMER
+-	depends on STMMAC_ETH
+-	bool "STMMAC Timer optimization (EXPERIMENTAL)"
+-	default n
+-	---help---
+-		Timers-Driven Interrupts.
+-
+-choice
+-        prompt "Select timer optimization"
+-        depends on STMMAC_ETH && STMMAC_TIMER
+-        default no
+-	---help---
+-
+-config STMMAC_RTC_TIMER
+-        bool "Real time clock to handle the reception"
+-        depends on STMMAC_TIMER && RTC_CLASS && EXPERIMENTAL
+-	---help---
+-	  Real time clock device generates an interrupt at regular 
+-	  intervals in order to notify the Ethernet driver about frame 
+-	  receptions.
+-
+-config STMMAC_SW_TIMER
+-        bool "Kernel timers to handle tx/rx processes"
+-        depends on STMMAC_TIMER
+-	---help---
+-	   Kernel timer is used for handling both the transmission
+-	   and the reception processes. This optimization can be 
+-	   used for incrementing performance and saving the CPU
+-	   utilization.
+-
+-endchoice
++source "drivers/net/stmmac/Kconfig"
+ 
+ endif # NETDEV_1000
+ 
+Index: linux/drivers/net/stmmac/Kconfig
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux/drivers/net/stmmac/Kconfig	2008-07-24 14:50:50.000000000 +0100
+@@ -0,0 +1,46 @@
++config STMMAC_ETH
++	tristate "STMicroelectronics 10/100/1000 Ethernet driver"
++	select MII
++	select PHYLIB
++	depends on NETDEVICES && CPU_SUBTYPE_ST40
++	help
++	  This is the driver for the MAC 10/100/1000 on-chip Ethernet
++	  controllers (Synopsys Core).
++
++if STMMAC_ETH
++
++config STMMAC_DA
++	bool "STMMAC DMA arbitration scheme"
++	default n
++	help
++	  Selecting this option, rx has priority over Tx only for Giga
++	  Ethernet device.
++	  By default, the DMA arbitration scheme is based on Round-robin
++	  (rx:tx priority is 1:1).
++
++config STMMAC_TIMER
++	bool "STMMAC Timer optimization (EXPERIMENTAL)"
++	default n
++	help
++	  Use an external timer to drive ethernet transmission and
++	  reception processes. It is used for mitigating the
++	  number of network interrupts.
++
++choice
++        prompt "Select Timer device"
++        depends on STMMAC_TIMER && EXPERIMENTAL
++        default no
++
++config STMMAC_TMU_TIMER
++        bool "TMU channel 2"
++        depends on CPU_SH4
++	help
++
++config STMMAC_RTC_TIMER
++        bool "Real time clock"
++        depends on RTC_CLASS
++	help
++
++endchoice
++
++endif
+Index: linux/drivers/net/stmmac/Makefile
+===================================================================
+--- linux.orig/drivers/net/stmmac/Makefile	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/stmmac/Makefile	2008-07-24 14:50:50.000000000 +0100
+@@ -1,4 +1,4 @@
+ obj-$(CONFIG_STMMAC_ETH) += stmmac.o 
+-stmmac-$(CONFIG_STMMAC_RTC_TIMER) += stmmac_timer.o 
++stmmac-$(CONFIG_STMMAC_TIMER) += stmmac_timer.o
+ stmmac-objs:= stmmac_main.o stmmac_ethtool.o stmmac_mdio.o \
+ 		mac100.o  gmac.o $(stmmac-y)
+Index: linux/drivers/net/stmmac/gmac.c
+===================================================================
+--- linux.orig/drivers/net/stmmac/gmac.c	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/stmmac/gmac.c	2008-07-24 14:50:50.000000000 +0100
+@@ -45,8 +45,8 @@
+ 		       offset, readl(ioaddr + offset));
+ 	}
+ 	printk("\tSTBus brigde: reg: 0x%x, 0x%08x\n",
+-		(unsigned int)(ioaddr + STBUS_BRIDGE_OFFSET),
+-		readl(ioaddr + STBUS_BRIDGE_OFFSET));
++	       (unsigned int)(ioaddr + STBUS_BRIDGE_OFFSET),
++	       readl(ioaddr + STBUS_BRIDGE_OFFSET));
+ 	return;
+ }
+ 
+@@ -62,9 +62,9 @@
+ 	}
+ 
+ 	/* Enable Application Access by writing to DMA CSR0 */
+-	value = /* DMA_BUS_MODE_FB | */DMA_BUS_MODE_4PBL |
+-		((pbl << DMA_BUS_MODE_PBL_SHIFT) |
+-		(pbl << DMA_BUS_MODE_RPBL_SHIFT));
++	value = /* DMA_BUS_MODE_FB | */ DMA_BUS_MODE_4PBL |
++	    ((pbl << DMA_BUS_MODE_PBL_SHIFT) |
++	     (pbl << DMA_BUS_MODE_RPBL_SHIFT));
+ 
+ #ifdef CONFIG_STMMAC_DA
+ 	value |= DMA_BUS_MODE_DA;	/* Rx has priority over tx */
+@@ -206,21 +206,18 @@
+ 		ret = -1;
+ 	}
+ 
+-		if (unlikely(p->des01.etx.payload_error)) {
+-			DBG(KERN_ERR "%s: TX Addr/Payload csum error\n",
+-			    __FUNCTION__);
+-			x->tx_payload_error++;
+-			gmac_flush_tx_fifo(ioaddr);
+-			ret = -1;
+-		}
+-
+-		if (unlikely(p->des01.etx.ip_header_error)) {
+-			DBG(KERN_ERR "%s: TX IP header csum error\n",
+-		    __FUNCTION__);
+-			x->tx_ip_header_error++;
+-			ret = -1;
+-		}
++	if (unlikely(p->des01.etx.payload_error)) {
++		DBG(KERN_ERR "%s: TX Addr/Payload csum error\n", __FUNCTION__);
++		x->tx_payload_error++;
++		gmac_flush_tx_fifo(ioaddr);
++		ret = -1;
++	}
+ 
++	if (unlikely(p->des01.etx.ip_header_error)) {
++		DBG(KERN_ERR "%s: TX IP header csum error\n", __FUNCTION__);
++		x->tx_ip_header_error++;
++		ret = -1;
++	}
+ 
+ 	if (unlikely(p->des01.etx.deferred)) {
+ 		x->tx_deferred++;
+@@ -299,24 +296,24 @@
+ {
+ 	unsigned int intr_status;
+ 
+-        intr_status = (unsigned int)readl(ioaddr + GMAC_INT_STATUS);
++	intr_status = (unsigned int)readl(ioaddr + GMAC_INT_STATUS);
+ 
+ 	/* Do not handle all the events, e.g. MMC interrupts 
+-         * (not used by default). Indeed, to "clear" these events 
++	 * (not used by default). Indeed, to "clear" these events
+ 	 * we should read the register that generated the interrupt.
+ 	 */
+ 	if ((intr_status & mmc_tx_irq)) {
+ 		DBG(KERN_DEBUG "GMAC: MMC tx interrupt: 0x%08x\n",
+-			readl(ioaddr + GMAC_MMC_TX_INTR));
++		    readl(ioaddr + GMAC_MMC_TX_INTR));
+ 	}
+ 	if (unlikely(intr_status & mmc_rx_irq)) {
+ 		DBG(KERN_DEBUG "GMAC: MMC rx interrupt: 0x%08x\n",
+-			readl(ioaddr + GMAC_MMC_RX_INTR));
++		    readl(ioaddr + GMAC_MMC_RX_INTR));
+ 	}
+ 	if (unlikely(intr_status & mmc_rx_csum_offload_irq))
+ 		DBG(KERN_DEBUG "GMAC: MMC rx csum offload: 0x%08x\n",
+-			readl(ioaddr + GMAC_MMC_RX_CSUM_OFFLOAD));
+-	if (unlikely(intr_status & pmt_irq)){
++		    readl(ioaddr + GMAC_MMC_RX_CSUM_OFFLOAD));
++	if (unlikely(intr_status & pmt_irq)) {
+ 		DBG(KERN_DEBUG "GMAC: received Magic frame\n");
+ 		/* clear the PMT bits 5 and 6 by reading the PMT
+ 		 * status register. */
+@@ -393,8 +390,8 @@
+ 		     mclist && i < dev->mc_count; i++, mclist = mclist->next) {
+ 			/* The upper 6 bits of the calculated CRC are used to index
+ 			   the contens of the hash table */
+-			int bit_nr = 
+-				bitrev32(~crc32_le(~0, mclist->dmi_addr, 6)) >> 26;
++			int bit_nr =
++			    bitrev32(~crc32_le(~0, mclist->dmi_addr, 6)) >> 26;
+ 			/* The most significant bit determines the register to use
+ 			   (H/L) while the other 5 bits determine the bit within
+ 			   the register. */
+Index: linux/drivers/net/stmmac/mac100.c
+===================================================================
+--- linux.orig/drivers/net/stmmac/mac100.c	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/stmmac/mac100.c	2008-07-24 14:50:50.000000000 +0100
+@@ -139,9 +139,9 @@
+ 		       readl(ioaddr + DMA_BUS_MODE + i * 4));
+ 	}
+ 	DBG(KERN_DEBUG "\t CSR20 (offset 0x%x): 0x%08x\n",
+-	       DMA_CUR_TX_BUF_ADDR, readl(ioaddr + DMA_CUR_TX_BUF_ADDR));
++	    DMA_CUR_TX_BUF_ADDR, readl(ioaddr + DMA_CUR_TX_BUF_ADDR));
+ 	DBG(KERN_DEBUG "\t CSR21 (offset 0x%x): 0x%08x\n",
+-	       DMA_CUR_RX_BUF_ADDR, readl(ioaddr + DMA_CUR_RX_BUF_ADDR));
++	    DMA_CUR_RX_BUF_ADDR, readl(ioaddr + DMA_CUR_RX_BUF_ADDR));
+ 	return;
+ }
+ 
+@@ -222,7 +222,6 @@
+ 	return (p->des01.tx.buffer1_size);
+ }
+ 
+-
+ /* This function verifies if the incoming frame has some errors 
+  * and, if required, updates the multicast statistics. */
+ static int mac100_get_rx_frame_status(void *data, struct stmmac_extra_stats *x,
+@@ -339,9 +338,9 @@
+ 	writel(value, ioaddr + MAC_CONTROL);
+ 
+ 	DBG(KERN_INFO "%s: CTRL reg: 0x%08x Hash regs: "
+-	       "HI 0x%08x, LO 0x%08x\n",
+-	       __FUNCTION__, readl(ioaddr + MAC_CONTROL),
+-	       readl(ioaddr + MAC_HASH_HIGH), readl(ioaddr + MAC_HASH_LOW));
++	    "HI 0x%08x, LO 0x%08x\n",
++	    __FUNCTION__, readl(ioaddr + MAC_CONTROL),
++	    readl(ioaddr + MAC_HASH_HIGH), readl(ioaddr + MAC_HASH_LOW));
+ 	return;
+ }
+ 
+@@ -424,11 +423,29 @@
+ {
+ 	int ter = p->des01.tx.end_ring;
+ 
+-	memset(p, 0, sizeof(dma_desc));
++/*	memset(p, 0, sizeof(dma_desc));*/
++	/* clean field used within the xmit */
++	p->des01.tx.first_segment = 0;
++	p->des01.tx.last_segment = 0;
++	p->des01.tx.buffer1_size = 0;
++
++	/* clean status reported */
++	p->des01.tx.error_summary = 0;
++	p->des01.tx.underflow_error = 0;
++	p->des01.tx.no_carrier = 0;
++	p->des01.tx.loss_carrier = 0;
++	p->des01.tx.excessive_deferral = 0;
++	p->des01.tx.excessive_collisions = 0;
++	p->des01.tx.late_collision = 0;
++	p->des01.tx.heartbeat_fail = 0;
++	p->des01.tx.deferred = 0;
++
++	/* set termination field */
+ 	p->des01.tx.end_ring = ter;
+ 
+ 	return;
+ }
++
+ static void mac100_prepare_tx_desc(dma_desc * p, int is_fs, int len,
+ 				   unsigned int csum_flags)
+ {
+Index: linux/drivers/net/stmmac/stmmac.h
+===================================================================
+--- linux.orig/drivers/net/stmmac/stmmac.h	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/stmmac/stmmac.h	2008-07-24 14:50:50.000000000 +0100
+@@ -1,6 +1,6 @@
+ #define ETH_RESOURCE_NAME	"stmmaceth"
+ #define PHY_RESOURCE_NAME	"stmmacphy"
+-#define DRV_MODULE_VERSION	"April_08"
++#define DRV_MODULE_VERSION	"July_08"
+ 
+ #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+ #define STMMAC_VLAN_TAG_USED
+@@ -58,4 +58,5 @@
+ 	int has_timer;
+ 	struct timer_list timer;
+ 	int shutdown;
++	struct tasklet_struct tx_task;
+ };
+Index: linux/drivers/net/stmmac/stmmac_ethtool.c
+===================================================================
+--- linux.orig/drivers/net/stmmac/stmmac_ethtool.c	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/stmmac/stmmac_ethtool.c	2008-07-24 14:50:50.000000000 +0100
+@@ -234,7 +234,7 @@
+ 	"tx_payload_error"}, {
+ 	"tx_ip_header_error"}, {
+ 	"rx_missed_cntr"}, {
+-	"rx_overflow_cntr"},};
++"rx_overflow_cntr"},};
+ 
+ static int stmmac_stats_count(struct net_device *dev)
+ {
+@@ -277,7 +277,7 @@
+ 
+ 	spin_lock_irq(&lp->lock);
+ 	if (lp->wolenabled == PMT_SUPPORTED) {
+-		wol->supported = WAKE_MAGIC /*| WAKE_UCAST*/;
++		wol->supported = WAKE_MAGIC /*| WAKE_UCAST */ ;
+ 		wol->wolopts = lp->wolopts;
+ 	}
+ 	spin_unlock_irq(&lp->lock);
+Index: linux/drivers/net/stmmac/stmmac_main.c
+===================================================================
+--- linux.orig/drivers/net/stmmac/stmmac_main.c	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/stmmac/stmmac_main.c	2008-07-24 14:50:50.000000000 +0100
+@@ -11,6 +11,9 @@
+  * ----------------------------------------------------------------------------
+  *
+  * Changelog:
++ * July 2008:
++ *	- Removed timer optimization through kernel timers.
++ *	  RTC and TMU2 timers are also used for mitigating the transmission IRQs.
+  * May 2008:
+  *	- Suspend/resume functions reviewed and tested the Wake-Up-on LAN
+  *	  on the GMAC (mb618).
+@@ -120,7 +123,7 @@
+ module_param(dma_tx_size_param, int, S_IRUGO);
+ MODULE_PARM_DESC(dma_tx_size_param, "Number of descriptors in the TX list");
+ 
+-#define DMA_RX_SIZE 128
++#define DMA_RX_SIZE 64
+ static int dma_rx_size_param = DMA_RX_SIZE;
+ module_param(dma_rx_size_param, int, S_IRUGO);
+ MODULE_PARM_DESC(dma_rx_size_param, "Number of descriptors in the RX list");
+@@ -133,50 +136,40 @@
+ module_param(pause, int, S_IRUGO);
+ MODULE_PARM_DESC(pause, "Flow Control Pause Time");
+ 
+-static int tx_aggregation = -1;	/* No mitigtion by default */
+-module_param(tx_aggregation, int, S_IRUGO | S_IWUSR);
+-MODULE_PARM_DESC(tx_aggregation, "Tx aggregation threshold");
+-
+ #define TTC_DEFAULT 0x40
+ static int threshold_ctrl = TTC_DEFAULT;
+ module_param(threshold_ctrl, int, S_IRUGO);
+ MODULE_PARM_DESC(threshold_ctrl, "tranfer threshold control");
+ 
+-#define STMMAC_NAPI
+-
+ #if defined (CONFIG_STMMAC_TIMER)
+-#define RX_IRQ_THRESHOLD 16
++#define RX_IRQ_THRESHOLD	16	/* mitigate rx irq */
++#define TX_AGGREGATION		16	/* mitigate tx irq too */
+ #else
+-#define RX_IRQ_THRESHOLD 1 /* always Interrupt on completion */
++#define RX_IRQ_THRESHOLD 1	/* always Interrupt on completion */
++#define TX_AGGREGATION	-1	/* no mitigation by default */
+ #endif
+ 
+ /* Using timer optimizations, it's worth having some interrupts on frame 
+  * reception. This makes safe the network activity especially for the TCP 
+- * traffic.
+- * Note that it is possible to tune this value passing the "rxmit" option 
+- * into the kernel command line. */
++ * traffic. */
+ static int rx_irq_mitigation = RX_IRQ_THRESHOLD;
+ module_param(rx_irq_mitigation, int, S_IRUGO);
+ MODULE_PARM_DESC(rx_irq_mitigation, "Rx irq mitigation threshold");
+ 
++static int tx_aggregation = TX_AGGREGATION;
++module_param(tx_aggregation, int, S_IRUGO | S_IWUSR);
++MODULE_PARM_DESC(tx_aggregation, "Tx aggregation value");
++
+ /* Pay attention to tune timer parameters; take care of both
+  * hardware capability and network stabitily/performance impact. 
+  * Many tests showed that ~4ms latency seems to be good enough. */
+-#ifdef CONFIG_STMMAC_RTC_TIMER
++#ifdef CONFIG_STMMAC_TIMER
+ #define DEFAULT_PERIODIC_RATE	256
+ static int periodic_rate = DEFAULT_PERIODIC_RATE;
+ module_param(periodic_rate, int, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(periodic_rate, "Timer periodic rate (default: 256Hz)");
+ #endif
+ 
+-#ifdef CONFIG_STMMAC_SW_TIMER
+-#undef STMMAC_NAPI
+-static int sw_timer_msec = 4;
+-module_param(sw_timer_msec, int, S_IRUGO | S_IWUSR);
+-MODULE_PARM_DESC(sw_timer_msec, "Expiration time in msec");
+-#define STMMAC_SW_TIMER_EXP (jiffies + msecs_to_jiffies(sw_timer_msec))
+-#endif
+-
+ static const u32 default_msg_level = (NETIF_MSG_DRV | NETIF_MSG_PROBE |
+ 				      NETIF_MSG_LINK | NETIF_MSG_IFUP |
+ 				      NETIF_MSG_IFDOWN | NETIF_MSG_TIMER);
+@@ -190,7 +183,7 @@
+ extern int stmmac_mdio_unregister(struct net_device *ndev);
+ extern int stmmac_mdio_register(struct net_device *ndev);
+ 
+-#ifdef CONFIG_STMMAC_RTC_TIMER
++#ifdef CONFIG_STMMAC_TIMER
+ extern int stmmac_timer_close(void);
+ extern int stmmac_timer_stop(void);
+ extern int stmmac_timer_start(unsigned int freq);
+@@ -218,7 +211,7 @@
+ 		pause = PAUSE_TIME;
+ 
+ 	if (tx_aggregation >= (dma_tx_size_param))
+-		tx_aggregation = -1;
++		tx_aggregation = TX_AGGREGATION;
+ 
+ 	if (rx_irq_mitigation > (dma_rx_size_param))
+ 		rx_irq_mitigation = RX_IRQ_THRESHOLD;
+@@ -284,6 +277,7 @@
+ 			case 1000:
+ 				if (likely(lp->is_gmac))
+ 					ctrl &= ~lp->mac_type->hw.link.port;
++				break;
+ 			case 100:
+ 			case 10:
+ 				if (lp->is_gmac) {
+@@ -565,8 +559,7 @@
+ 
+ 		lp->rx_skbuff[i] = skb;
+ 		lp->rx_skbuff_dma[i] = dma_map_single(lp->device, skb->data,
+-						      lp->dma_buf_sz, 
+-						      DMA_FROM_DEVICE);
++						      bfsize, DMA_FROM_DEVICE);
+ 		p->des2 = lp->rx_skbuff_dma[i];
+ 		DBG(probe, DEBUG, "[0x%08x]\t[0x%08x]\n",
+ 		    (unsigned int)lp->rx_skbuff[i],
+@@ -583,8 +576,7 @@
+ 	lp->dirty_tx = lp->cur_tx = 0;
+ 
+ 	/* Clear the Rx/Tx descriptors */
+-	lp->mac_type->ops->init_rx_desc(lp->dma_rx, rxsize, 
+-			rx_irq_mitigation);
++	lp->mac_type->ops->init_rx_desc(lp->dma_rx, rxsize, rx_irq_mitigation);
+ 	lp->mac_type->ops->init_tx_desc(lp->dma_tx, txsize);
+ 
+ 	if (netif_msg_hw(lp)) {
+@@ -631,7 +623,8 @@
+ 		if (lp->tx_skbuff[i] != NULL) {
+ 			if ((lp->dma_tx + i)->des2) {
+ 				dma_unmap_single(lp->device, p->des2,
+-						lp->mac_type->ops->get_tx_len(p),
++						 lp->mac_type->
++						 ops->get_tx_len(p),
+ 						 DMA_TO_DEVICE);
+ 			}
+ 			dev_kfree_skb_any(lp->tx_skbuff[i]);
+@@ -824,6 +817,7 @@
+ 	unsigned long ioaddr = dev->base_addr;
+ 	int entry = lp->dirty_tx % txsize;
+ 
++	spin_lock(&lp->tx_lock);
+ 	while (lp->dirty_tx != lp->cur_tx) {
+ 		int last;
+ 		dma_desc *p = lp->dma_tx + entry;
+@@ -859,7 +853,6 @@
+ 
+ 		entry = (++lp->dirty_tx) % txsize;
+ 	}
+-	spin_lock(&lp->tx_lock);
+ 	if (unlikely(netif_queue_stopped(dev) &&
+ 		     TX_BUFFS_AVAIL(lp) > (MAX_SKB_FRAGS + 1)))
+ 		netif_wake_queue(dev);
+@@ -869,72 +862,68 @@
+ }
+ 
+ /**
+- * stmmac_tx_err: 
++ * stmmac_schedule_rx:
+  * @dev: net device structure
+- * Description: clean descriptors and restart the transmission.
++ * Description: it schedules the reception process.
+  */
+-static __inline__ void stmmac_tx_err(struct net_device *dev)
++void stmmac_schedule_rx(struct net_device *dev)
+ {
+-	struct eth_driver_local *lp = netdev_priv(dev);
++	stmmac_dma_disable_irq_rx(dev->base_addr);
+ 
+-	spin_lock(&lp->tx_lock);
++	if (likely(netif_rx_schedule_prep(dev))) {
++		__netif_rx_schedule(dev);
++	}
+ 
+-	netif_stop_queue(dev);
++	return;
++}
+ 
+-	stmmac_dma_stop_tx(dev->base_addr);
+-	dma_free_tx_skbufs(dev);
+-	lp->mac_type->ops->init_tx_desc(lp->dma_tx, lp->dma_tx_size);
+-	lp->dirty_tx = lp->cur_tx = 0;
+-	stmmac_dma_start_tx(dev->base_addr);
++static void stmmac_tx_tasklet(unsigned long data)
++{
++	struct net_device *dev = (struct net_device *)data;
+ 
+-	dev->stats.tx_errors++;
+-	netif_wake_queue(dev);
++	stmmac_tx(dev);
+ 
+-	spin_unlock(&lp->tx_lock);
+ 	return;
+ }
+ 
+-/**
+- * stmmac_schedule_rx: 
+- * @dev: net device structure
+- * Description: it schedules the reception process.
+- */
+-void stmmac_schedule_rx(struct net_device *dev)
++#ifdef CONFIG_STMMAC_TIMER
++void stmmac_timer_work(struct net_device *dev)
+ {
+-	stmmac_dma_disable_irq_rx(dev->base_addr);
++	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+-	if (likely(netif_rx_schedule_prep(dev))) {
+-		__netif_rx_schedule(dev);
+-	}
++	stmmac_schedule_rx(dev);
++
++	tasklet_schedule(&lp->tx_task);
+ 
+ 	return;
+ }
++#endif
+ 
+-#ifdef CONFIG_STMMAC_SW_TIMER
+ /**
+- * stmmac_timer_handler: 
++ * stmmac_tx_err:
+  * @dev: net device structure
+- * Description: this is the software timer handler.
+- * It reclaims the transmit resources and schedules the reception process.
++ * Description: clean descriptors and restart the transmission.
+  */
+-static void stmmac_timer_handler(unsigned long data)
++static __inline__ void stmmac_tx_err(struct net_device *dev)
+ {
+-	struct net_device *dev = (struct net_device *)data;
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+-	unsigned long flags;
+ 
+-	spin_lock_irqsave(&lp->lock, flags);
++	spin_lock(&lp->tx_lock);
+ 
+-	stmmac_tx(dev);
+-	stmmac_rx(dev, lp->dma_rx_size);
++	netif_stop_queue(dev);
+ 
+-	mod_timer(&lp->timer, STMMAC_SW_TIMER_EXP);
++	stmmac_dma_stop_tx(dev->base_addr);
++	dma_free_tx_skbufs(dev);
++	lp->mac_type->ops->init_tx_desc(lp->dma_tx, lp->dma_tx_size);
++	lp->dirty_tx = lp->cur_tx = 0;
++	stmmac_dma_start_tx(dev->base_addr);
+ 
+-	spin_unlock_irqrestore(&lp->lock, flags);
++	dev->stats.tx_errors++;
++	netif_wake_queue(dev);
+ 
++	spin_unlock(&lp->tx_lock);
+ 	return;
+ }
+-#endif
+ 
+ /**
+  * stmmac_dma_interrupt - Interrupt handler for the STMMAC DMA
+@@ -1015,24 +1004,21 @@
+ 			RX_DBG("Receive irq [buf: 0x%08x]\n",
+ 			       readl(ioaddr + DMA_CUR_RX_BUF_ADDR));
+ 			lp->xstats.rx_irq_n++;
+-#ifdef STMMAC_NAPI
+ 			stmmac_schedule_rx(dev);
+-#else
+-			stmmac_rx(dev, lp->dma_rx_size);
+-#endif
+ 		}
+ 		if (unlikely(intr_status & (DMA_STATUS_TI))) {
+ 			DBG(intr, INFO, " Transmit irq [buf: 0x%08x]\n",
+ 			    readl(ioaddr + DMA_CUR_TX_BUF_ADDR));
+ 			lp->xstats.tx_irq_n++;
+-			stmmac_tx(dev);
++			tasklet_schedule(&lp->tx_task);
+ 		}
+ 	}
+ 
+ 	/* Optional hardware blocks, interrupts should be disabled */
+ 	if (unlikely(intr_status &
+-		    (DMA_STATUS_GPI | DMA_STATUS_GMI | DMA_STATUS_GLI))) {
+-		    printk("%s: unexpected status %08x\n", __FUNCTION__, intr_status);
++		     (DMA_STATUS_GPI | DMA_STATUS_GMI | DMA_STATUS_GLI))) {
++		printk("%s: unexpected status %08x\n", __FUNCTION__,
++		       intr_status);
+ 	}
+ 
+ 	DBG(intr, INFO, "\n\n");
+@@ -1081,7 +1067,7 @@
+ 		       __FUNCTION__, dev->irq, ret);
+ 		return ret;
+ 	}
+-#ifdef CONFIG_STMMAC_RTC_TIMER
++#ifdef CONFIG_STMMAC_TIMER
+ 	lp->has_timer = stmmac_timer_open(dev, periodic_rate);
+ 	if (unlikely(lp->has_timer < 0)) {
+ 		printk(KERN_WARNING "stmmac: timer opt disabled\n");
+@@ -1110,8 +1096,8 @@
+ 	lp->shutdown = 0;
+ 
+ 	/* Initialise the MMC (if present) to disable all interrupts */
+-	writel(0xffffffff, ioaddr+MMC_HIGH_INTR_MASK);
+-	writel(0xffffffff, ioaddr+MMC_LOW_INTR_MASK);
++	writel(0xffffffff, ioaddr + MMC_HIGH_INTR_MASK);
++	writel(0xffffffff, ioaddr + MMC_LOW_INTR_MASK);
+ 
+ 	/* Enable the MAC Rx/Tx */
+ 	stmmac_mac_enable_rx(dev);
+@@ -1130,19 +1116,11 @@
+ 	stmmac_dma_start_tx(ioaddr);
+ 	stmmac_dma_start_rx(ioaddr);
+ 
+-#ifdef CONFIG_STMMAC_SW_TIMER
+-	/* Use a kernel timer for handling interrupts */
+-	init_timer(&lp->timer);
+-	lp->timer.expires = STMMAC_SW_TIMER_EXP;
+-	lp->timer.data = (unsigned long)dev;
+-	lp->timer.function = stmmac_timer_handler;
+-	add_timer(&lp->timer);
+-#endif
+-
+-#ifdef CONFIG_STMMAC_RTC_TIMER
++#ifdef CONFIG_STMMAC_TIMER
+ 	if (likely(lp->has_timer == 0))
+ 		stmmac_timer_start(periodic_rate);
+ #endif
++	tasklet_init(&lp->tx_task, stmmac_tx_tasklet, (unsigned long)dev);
+ 
+ 	/* Dump DMA/MAC registers */
+ 	if (netif_msg_hw(lp)) {
+@@ -1159,10 +1137,8 @@
+ static void stmmac_tx_checksum(struct sk_buff *skb)
+ {
+ 	const int offset = skb_transport_offset(skb);
+-	unsigned int csum =
+-	    skb_checksum(skb, offset, skb->len - offset, 0);
+-	*(u16 *) (skb->data + offset + skb->csum_offset) =
+-	    csum_fold(csum);
++	unsigned int csum = skb_checksum(skb, offset, skb->len - offset, 0);
++	*(u16 *) (skb->data + offset + skb->csum_offset) = csum_fold(csum);
+ 	return;
+ }
+ 
+@@ -1181,17 +1157,16 @@
+ 	phy_disconnect(lp->phydev);
+ 	lp->phydev = NULL;
+ 
+-#ifdef CONFIG_STMMAC_SW_TIMER
+-	del_timer_sync(&lp->timer);
+-#endif
++	netif_stop_queue(dev);
++	tasklet_kill(&lp->tx_task);
+ 
+-#ifdef CONFIG_STMMAC_RTC_TIMER
++#ifdef CONFIG_STMMAC_TIMER
+ 	if (likely(lp->has_timer == 0)) {
+ 		stmmac_timer_stop();
+ 		stmmac_timer_close();
+ 	}
+ #endif
+-	netif_stop_queue(dev);
++
+ 	/* Free the IRQ lines */
+ 	free_irq(dev->irq, dev);
+ 
+@@ -1254,6 +1229,7 @@
+ 
+ 	/* Get the amount of non-paged data (skb->data). */
+ 	nopaged_len = skb_headlen(skb);
++
+ #ifdef STMMAC_XMIT_DEBUG
+ 	if (nfrags > 0) {
+ 		printk("stmmac xmit: len: %d, nopaged_len: %d n_frags: %d\n",
+@@ -1291,9 +1267,7 @@
+ 	lp->mac_type->ops->set_tx_owner(p + first);	/* to avoid raise condition */
+ 	lp->mac_type->ops->set_tx_ls(p + entry);
+ 
+-#ifndef CONFIG_STMMAC_SW_TIMER
+ 	lp->mac_type->ops->set_tx_ic(p + entry, 1);
+-#endif
+ 
+ 	lp->cur_tx++;
+ 
+@@ -1311,9 +1285,7 @@
+ 	if (TX_BUFFS_AVAIL(lp) <= (MAX_SKB_FRAGS + 1) ||
+ 	    (!(lp->mac_type->hw.link.duplex) && hwcsum)) {
+ 		netif_stop_queue(dev);
+-	}
+-#ifndef CONFIG_STMMAC_SW_TIMER
+-	else {
++	} else {
+ 		/* Aggregation of Tx interrupts */
+ 		if (lp->tx_aggregation <= tx_aggregation) {
+ 			lp->tx_aggregation++;
+@@ -1322,7 +1294,6 @@
+ 			lp->tx_aggregation = 0;
+ 		}
+ 	}
+-#endif
+ 
+ 	dev->stats.tx_bytes += skb->len;
+ 	lp->xstats.tx_bytes += skb->len;
+@@ -1415,9 +1386,8 @@
+ 
+ 				skb_reserve(skb, STMMAC_IP_ALIGN);
+ 				dma_sync_single_for_cpu(lp->device,
+-							lp->
+-							rx_skbuff_dma[entry],
+-							frame_len,
++							lp->rx_skbuff_dma
++							[entry], frame_len,
+ 							DMA_FROM_DEVICE);
+ 				skb_copy_to_linear_data(skb,
+ 							lp->rx_skbuff[entry]->
+@@ -1425,9 +1395,8 @@
+ 
+ 				skb_put(skb, frame_len);
+ 				dma_sync_single_for_device(lp->device,
+-							   lp->
+-							   rx_skbuff_dma[entry],
+-							   frame_len,
++							   lp->rx_skbuff_dma
++							   [entry], frame_len,
+ 							   DMA_FROM_DEVICE);
+ 			} else {	/* zero-copy */
+ 				skb = lp->rx_skbuff[entry];
+@@ -1457,11 +1426,8 @@
+ 				skb->ip_summed = CHECKSUM_NONE;
+ 			else
+ 				skb->ip_summed = CHECKSUM_UNNECESSARY;
+-#ifdef STMMAC_NAPI
++
+ 			netif_receive_skb(skb);
+-#else
+-			netif_rx(skb);
+-#endif
+ 
+ 			dev->stats.rx_packets++;
+ 			dev->stats.rx_bytes += frame_len;
+@@ -1477,7 +1443,6 @@
+ 	return count;
+ }
+ 
+-#ifdef STMMAC_NAPI
+ /**
+  *  stmmac_poll - stmmac poll method (NAPI)
+  *  @dev : pointer to the netdev structure.
+@@ -1490,21 +1455,19 @@
+  */
+ static int stmmac_poll(struct net_device *dev, int *budget)
+ {
+-	int work_done;
++	int work_done, limit = min(dev->quota, *budget);;
+ 
+-	work_done = stmmac_rx(dev, dev->quota);
++	work_done = stmmac_rx(dev, limit);
+ 	dev->quota -= work_done;
+ 	*budget -= work_done;
+ 
+-	if (work_done < *budget) {
+-		RX_DBG(">>> rx work completed.\n");
+-		__netif_rx_complete(dev);
++	if (work_done < limit) {
++		netif_rx_complete(dev);
+ 		stmmac_dma_enable_irq_rx(dev->base_addr);
+ 		return 0;
+ 	}
+ 	return 1;
+ }
+-#endif
+ 
+ /**
+  *  stmmac_tx_timeout
+@@ -1529,7 +1492,7 @@
+ 	display_ring(lp->dma_tx, lp->dma_tx_size);
+ #endif
+ 	/* Remove tx optmizarion */
+-	tx_aggregation = -1;
++	tx_aggregation = TX_AGGREGATION;
+ 	lp->tx_aggregation = 0;
+ 
+ 	/* Clear Tx resources and restart transmitting again */
+@@ -1729,7 +1692,7 @@
+ 
+ 	lp->msg_enable = netif_msg_init(debug, default_msg_level);
+ 
+-	if (lp->is_gmac){
++	if (lp->is_gmac) {
+ 		lp->rx_csum = 1;
+ 	}
+ 
+@@ -1742,10 +1705,9 @@
+ 		lp->flow_ctrl = FLOW_AUTO;	/* RX/TX pause on */
+ 
+ 	lp->pause = pause;
+-#ifdef STMMAC_NAPI
++
+ 	dev->poll = stmmac_poll;
+-#endif
+-	dev->weight = lp->dma_rx_size;
++	dev->weight = 64;
+ 
+ 	/* Get the MAC address */
+ 	get_mac_address(dev->base_addr, dev->dev_addr,
+@@ -2022,7 +1984,6 @@
+ 	struct net_device *dev = platform_get_drvdata(pdev);
+ 	struct eth_driver_local *lp = netdev_priv(dev);
+ 
+-
+ 	if (!dev || !netif_running(dev))
+ 		return 0;
+ 
+@@ -2033,17 +1994,19 @@
+ 		netif_stop_queue(dev);
+ 		phy_stop(lp->phydev);
+ 		netif_stop_queue(dev);
++		tasklet_disable(&lp->tx_task);
+ 
+-#ifdef CONFIG_STMMAC_RTC_TIMER
+-		if (likely(lp->has_timer == 0))
++#ifdef CONFIG_STMMAC_TIMER
++		if (likely(lp->has_timer == 0)) {
+ 			stmmac_timer_stop();
++		}
+ #endif
+ 		/* Stop TX/RX DMA */
+ 		stmmac_dma_stop_tx(dev->base_addr);
+ 		stmmac_dma_stop_rx(dev->base_addr);
+ 		/* Clear the Rx/Tx descriptors */
+-		lp->mac_type->ops->init_rx_desc(lp->dma_rx, lp->dma_rx_size, 
+-				rx_irq_mitigation);
++		lp->mac_type->ops->init_rx_desc(lp->dma_rx, lp->dma_rx_size,
++						rx_irq_mitigation);
+ 		lp->mac_type->ops->init_tx_desc(lp->dma_tx, lp->dma_tx_size);
+ 
+ 		stmmac_mac_disable_tx(dev);
+@@ -2051,7 +2014,8 @@
+ 		if (device_may_wakeup(&(pdev->dev))) {
+ 			/* Enable Power down mode by programming the PMT regs */
+ 			if (lp->wolenabled == PMT_SUPPORTED)
+-				lp->mac_type->ops->pmt(dev->base_addr, lp->wolopts);
++				lp->mac_type->ops->pmt(dev->base_addr,
++						       lp->wolopts);
+ 		} else {
+ 			stmmac_mac_disable_rx(dev);
+ 		}
+@@ -2078,7 +2042,7 @@
+ 
+ 	spin_lock(&lp->lock);
+ 
+-	if (lp->shutdown){
++	if (lp->shutdown) {
+ 		/* Re-open the interface and re-init the MAC/DMA
+ 		   and the rings. */
+ 		stmmac_open(dev);
+@@ -2093,15 +2057,18 @@
+ 	stmmac_dma_start_tx(ioaddr);
+ 	stmmac_dma_start_rx(ioaddr);
+ 
+-#ifdef CONFIG_STMMAC_RTC_TIMER
+-	if (likely(lp->has_timer == 0))
++#ifdef CONFIG_STMMAC_TIMER
++	if (likely(lp->has_timer == 0)) {
+ 		stmmac_timer_start(periodic_rate);
++	}
+ #endif
++	tasklet_enable(&lp->tx_task);
++
+ 	phy_start(lp->phydev);
+-	
++
+ 	netif_start_queue(dev);
+ 
+-out_resume:
++      out_resume:
+ 	spin_unlock(&lp->lock);
+ 	return 0;
+ }
+@@ -2173,11 +2140,7 @@
+ 			tx_aggregation = simple_strtoul(opt + 6, NULL, 0);
+ 		} else if (!strncmp(opt, "rxmit:", 6)) {
+ 			rx_irq_mitigation = simple_strtoul(opt + 6, NULL, 0);
+-#ifdef CONFIG_STMMAC_SW_TIMER
+-		} else if (!strncmp(opt, "expire:", 7)) {
+-			sw_timer_msec = simple_strtoul(opt + 7, NULL, 0);
+-#endif
+-#ifdef CONFIG_STMMAC_RTC_TIMER
++#ifdef CONFIG_STMMAC_TIMER
+ 		} else if (!strncmp(opt, "period:", 7)) {
+ 			periodic_rate = simple_strtoul(opt + 7, NULL, 0);
+ #endif
+Index: linux/drivers/net/stmmac/stmmac_timer.c
+===================================================================
+--- linux.orig/drivers/net/stmmac/stmmac_timer.c	2008-07-24 14:46:11.000000000 +0100
++++ linux/drivers/net/stmmac/stmmac_timer.c	2008-07-24 14:50:50.000000000 +0100
+@@ -1,23 +1,40 @@
+ /* 
+  * drivers/net/stmmac/stmmac_timer.c
+  *
+- * Real time clock device generates an interrupt at regular 
+- * intervals in order to notify the Ethernet driver about frame
+- * receptions.
++ * Use Timers for mitigating network interrupts.
++ * Currently it's possible to use both the SH4 RTC device
++ * and the TMU channel 2.
+  *
+- * Copyright (C) 2007 by STMicroelectronics
++ * Copyright (C) 2008 by STMicroelectronics
+  * Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+- *
+ */
+ 
+ #include <linux/kernel.h>
+ #include <linux/etherdevice.h>
+-#include <linux/rtc.h>
+ 
+-struct rtc_device *stmmac_rtc;
+-rtc_task_t stmmac_task;
++extern void stmmac_timer_work(struct net_device *dev);
++
++int stmmac_timer_open(struct net_device *dev, unsigned int freq);
++int stmmac_timer_close(void);
++int stmmac_timer_start(unsigned int freq);
++int stmmac_timer_stop(void);
++
++static void stmmac_timer_handler(void *priv)
++{
++	struct net_device *dev = (struct net_device *)priv;
++
++	stmmac_timer_work(dev);
++
++	return;
++}
++
++#define STMMAC_TIMER_MSG(timer,freq) \
++printk(KERN_INFO "stmmac_timer: %s Timer ON (freq %dHz)\n",timer,freq);
+ 
+-extern void stmmac_schedule_rx(struct net_device *dev);
++#if defined(CONFIG_STMMAC_RTC_TIMER)
++#include <linux/rtc.h>
++static struct rtc_device *stmmac_rtc;
++static rtc_task_t stmmac_task;
+ 
+ int stmmac_timer_close(void)
+ {
+@@ -25,6 +42,7 @@
+ 	rtc_class_close(stmmac_rtc);
+ 	return 0;
+ }
++
+ int stmmac_timer_start(unsigned int freq)
+ {
+ 	rtc_irq_set_freq(stmmac_rtc, &stmmac_task, freq);
+@@ -38,25 +56,13 @@
+ 	return 0;
+ }
+ 
+-/*
+- * Use periodic interrupt for handling the reception process
+- */
+-static void stmmac_rtc_handler(void *priv)
+-{
+-	struct net_device *dev = (struct net_device *)priv;
+-
+-	stmmac_schedule_rx(dev);
+-
+-	return;
+-}
+-
+ int stmmac_timer_open(struct net_device *dev, unsigned int freq)
+ {
+ 	stmmac_task.private_data = dev;
+-	stmmac_task.func = stmmac_rtc_handler;
++	stmmac_task.func = stmmac_timer_handler;
+ 
+ 	stmmac_rtc = rtc_class_open(CONFIG_RTC_HCTOSYS_DEVICE);
+-	if (stmmac_rtc == NULL){
++	if (stmmac_rtc == NULL) {
+ 		printk(KERN_ERR "open rtc device failed\n");
+ 		return -ENODEV;
+ 	}
+@@ -71,8 +77,52 @@
+ 		return -1;
+ 	}
+ 
+-	printk(KERN_INFO "stmmac_timer enabled - %s (freq %dHz)\n",
+-	       CONFIG_RTC_HCTOSYS_DEVICE, freq);
++	STMMAC_TIMER_MSG(CONFIG_RTC_HCTOSYS_DEVICE,freq);
++
++	return 0;
++}
++
++#elif defined(CONFIG_STMMAC_TMU_TIMER)
++#include <linux/clk.h>
++#define TMU_CHANNEL "tmu2_clk"
++static struct clk *timer_clock;
++extern int tmu2_register_user(void *fnt, void *data);
++extern void tmu2_unregister_user(void);
++
++int stmmac_timer_start(unsigned int freq)
++{
++	clk_set_rate(timer_clock, freq);
++	clk_enable(timer_clock);
++	return 0;
++}
++
++int stmmac_timer_stop(void)
++{
++	clk_disable(timer_clock);
++	return 0;
++}
++
++int stmmac_timer_open(struct net_device *dev, unsigned int freq)
++{
++	timer_clock = clk_get(NULL, TMU_CHANNEL);
++
++	if (timer_clock == NULL)
++		return -1;
++
++	if (tmu2_register_user(stmmac_timer_handler, (void *) dev) < 0){
++		timer_clock = NULL;
++		return -1;
++	}
++
++	STMMAC_TIMER_MSG("TMU2",freq);
++
++	return 0;
++}
+ 
++int stmmac_timer_close(void)
++{
++	tmu2_unregister_user();
++	clk_put(timer_clock);
+ 	return 0;
+ }
++#endif

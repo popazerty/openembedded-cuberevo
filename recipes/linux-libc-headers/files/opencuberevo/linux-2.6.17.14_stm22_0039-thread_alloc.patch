@@ -1,0 +1,35 @@
+This patch changes the alloc_thread_info() and the free_thread_info()
+ to use the slab support.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/include/asm-sh/thread_info.h
+===================================================================
+--- linux.orig/include/asm-sh/thread_info.h	2007-05-04 12:22:44.376509000 +0100
++++ linux/include/asm-sh/thread_info.h	2007-05-11 16:13:35.466872000 +0100
+@@ -82,22 +82,12 @@
+ 
+ /* thread information allocation */
+ #ifdef CONFIG_DEBUG_STACK_USAGE
+-#define alloc_thread_info(tsk)					\
+-	({							\
+-		struct thread_info *ret;			\
+-		int order = get_order(THREAD_SIZE);		\
+-								\
+-		ret = __get_free_pages(GFP_KERNEL, order);	\
+-		if (ret)					\
+-			memset(ret, 0, THREAD_SIZE);		\
+-		ret;						\
+-	})
++#define alloc_thread_info(tsk)	((struct thread_info *)kzalloc(THREAD_SIZE, GFP_KERNEL))
+ #else
+-#define alloc_thread_info(ti) ((struct thread_info *) \
+-	__get_free_pages(GFP_KERNEL, get_order(THREAD_SIZE)))
++#define alloc_thread_info(ti)   ((struct thread_info *)kmalloc(THREAD_SIZE, GFP_KERNEL))
+ #endif
+ 
+-#define free_thread_info(ti) free_pages((unsigned long) (ti), get_order(THREAD_SIZE))
++#define free_thread_info(ti) kfree(ti)
+ 
+ #else /* !__ASSEMBLY__ */
+ 

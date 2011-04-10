@@ -1,0 +1,128 @@
+stm: Handle stm-coprocessor memory allocations better
+
+Tidy up the handling of memory allocation for the stm-coprocessor:
+
+ - Switch to using __alloc_bootmem_nopanic() which better reflects what
+   we want, but wasn't available in older kernels.
+
+ - Try and handle the case where __alloc_bootmem_nopanic() fails better.
+   The previous code tried to prevent corrupting kernel code, but didn't
+   protect any allocated data, and didn't work well if the coprocessor
+   was being loaded into memory at the start of the kernel, reserved by
+   increasing CONFIG_ZERO_PAGE_OFFSET. So now check for the later
+   explicitly, allow allocations outside known Linux memory explicitly,
+   and everything else is an error.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/drivers/stm/copro-st_socs.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/copro-st_socs.c
++++ linux-2.6.23-stm/drivers/stm/copro-st_socs.c
+@@ -5,6 +5,7 @@
+ #include <linux/seq_file.h>
+ #include <linux/stm/coprocessor.h>
+ #include <linux/stm/sysconf.h>
++#include <linux/pfn.h>
+ #include <asm-generic/sections.h>
+ #include <asm/io.h>
+ 
+@@ -129,13 +130,36 @@ void coproc_proc_other_info(coproc_t * c
+ 
+ int coproc_check_area(u_long addr, u_long size, int i, coproc_t * coproc)
+ {
+-       if (((addr >= CONFIG_MEMORY_START) && (addr < __pa(_end))) || \
+-           (((addr + size) > CONFIG_MEMORY_START) && \
+-            (addr < CONFIG_MEMORY_START)))
+-       {
+-           coproc[i].ram_offset = coproc[i].ram_size = 0;
+-           return 1;
+-       }
+-       return 0;
++	/*
++	 * This function is called if we failed to reserve the
++	 * requested memory with the bootmem allocator.  This could be
++	 * because the memory is outside the memory known to the boot
++	 * memory allocator, or because it has been already reserved.
++	 */
++	unsigned long start_pfn = PFN_DOWN(addr);
++	unsigned long end_pfn = PFN_UP(addr + size);
++
++	if ((start_pfn >= min_low_pfn) && (end_pfn <= max_low_pfn)) {
++		/*
++		 * Region is contained entirely within Linux memory, and
++		 * so should have been allocated.
++		 *
++		 * However we need to allow the region between the start of
++		 * memory and the start of the kernel (typically
++		 * CONFIG_ZERO_PAGE_OFFSET has been raised).
++		 */
++		if (end_pfn <= PFN_DOWN(__pa(_text)))
++			return 0;
++
++		printk(KERN_ERR "st-coprocessor: Region already reserved\n");
++	} else if ((start_pfn > max_low_pfn) || (end_pfn < min_low_pfn)) {
++		/* Region is entirely outside Linux memory. */
++		return 0;
++	} else {
++		printk(KERN_ERR "st-coprocessor: Region spans memory boundary\n");
++	}
++
++	coproc[i].ram_offset = coproc[i].ram_size = 0;
++	return 1;
+ }
+ 
+Index: linux-2.6.23-stm/drivers/stm/stm-coprocessor.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm-coprocessor.c
++++ linux-2.6.23-stm/drivers/stm/stm-coprocessor.c
+@@ -42,11 +42,6 @@ static int __init proc_st_coproc_init(vo
+ static int __init parse_coproc_mem(char *from);
+ 
+ /* ---------------------------------------------------------------------------
+- *    Exported and Imported
+- * ------------------------------------------------------------------------ */
+-extern unsigned long memory_start, memory_end;
+-
+-/* ---------------------------------------------------------------------------
+  * 		Co-processor: Hardware dependent support
+  * This includes:
+  *    - per platform device and memory addresses
+@@ -632,9 +627,7 @@ static int __init parse_coproc_mem(char 
+ 			void* mem;
+ 			addr = coproc[i].ram_offset;
+ 			size = coproc[i].ram_size;
+-			/* Switch to __alloc_bootmem_nopanic or
+-			 * __alloc_bootmem_core when we update the kernel. */
+-			mem = __alloc_bootmem(size, PAGE_SIZE, addr);
++			mem = __alloc_bootmem_nopanic(size, PAGE_SIZE, addr);
+ 			if (mem != __va(addr)) {
+ 				if (mem) {
+ 					free_bootmem(virt_to_phys(mem), size);
+Index: linux-2.6.23-stm/drivers/stm/stm-coprocessor_frmw.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/stm-coprocessor_frmw.c
++++ linux-2.6.23-stm/drivers/stm/stm-coprocessor_frmw.c
+@@ -49,12 +49,6 @@ static int __init parse_coproc_mem(char 
+ #endif
+ 
+ /* ---------------------------------------------------------------------------
+- *    Exported and Imported
+- * ------------------------------------------------------------------------ */
+-
+-extern unsigned long memory_start, memory_end;
+-
+-/* ---------------------------------------------------------------------------
+  * 		Co-processor: Hardware dependent support
+  * This includes:
+  *    - per platform device and memory addresses
+@@ -356,9 +350,7 @@ static int __init parse_coproc_mem(char 
+ 			void* mem;
+ 			addr = coproc[i].ram_offset;
+ 			size = coproc[i].ram_size;
+-			/* Switch to __alloc_bootmem_nopanic or
+-			 * __alloc_bootmem_core when we update thekernel. */
+-			mem = __alloc_bootmem(size, PAGE_SIZE, addr);
++			mem = __alloc_bootmem_nopanic(size, PAGE_SIZE, addr);
+ 			if (mem != __va(addr)) {
+ 				if (mem) {
+ 					free_bootmem(virt_to_phys(mem), size);

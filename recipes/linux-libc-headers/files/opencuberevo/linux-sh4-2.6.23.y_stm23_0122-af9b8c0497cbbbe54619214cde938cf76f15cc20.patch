@@ -1,0 +1,49 @@
+From af9b8c0497cbbbe54619214cde938cf76f15cc20 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Tue, 13 Oct 2009 11:43:52 +0200
+Subject: [PATCH] stmmac: fixed the tx pending work check
+
+There was a problem behind the logic used for understanding if
+there is pending work to do in case of transmission.
+We looked at the OWN bit instead of looking at ring pointers status
+(as the clean process does).
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/stmmac/stmmac_main.c |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/stmmac/stmmac_main.c b/drivers/net/stmmac/stmmac_main.c
+index 2129254..6ca67e2 100644
+--- a/drivers/net/stmmac/stmmac_main.c
++++ b/drivers/net/stmmac/stmmac_main.c
+@@ -926,8 +926,7 @@ void stmmac_timer_work(struct net_device *dev)
+ 	struct stmmac_priv *priv = netdev_priv(dev);
+ 
+ 	unsigned int rxentry = priv->cur_rx % priv->dma_rx_size;
+-	unsigned int txentry = priv->dirty_tx % priv->dma_tx_size;
+-	int rxret, txret;
++	int rxret, txret = 0;
+ 
+ 	/* Look at if there is pending work to do; otherwise, do not spend
+ 	   any other time here. */
+@@ -935,12 +934,13 @@ void stmmac_timer_work(struct net_device *dev)
+ 	if (likely(rxret == 0))
+ 		stmmac_schedule_rx(dev);
+ 
+-	txret = priv->mac_type->ops->get_tx_owner(priv->dma_tx + txentry);
+-	if (likely(txret == 0))
++	if (priv->dirty_tx != priv->cur_tx) {
++		txret = 1;
+ 		tasklet_schedule(&priv->tx_task);
++	}
+ 
+ 	/* Timer will be re-started later. */
+-	if (likely(rxret == 0) || (txret == 0))
++	if (likely(!rxret) || (txret))
+ 		priv->tm->timer_stop();
+ 
+ 	return;
+-- 
+1.6.0.6
+

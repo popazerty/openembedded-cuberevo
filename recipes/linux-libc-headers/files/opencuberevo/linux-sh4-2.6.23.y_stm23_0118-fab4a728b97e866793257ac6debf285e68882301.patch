@@ -1,0 +1,45 @@
+From fab4a728b97e866793257ac6debf285e68882301 Mon Sep 17 00:00:00 2001
+From: Mike Frysinger <vapier@gentoo.org>
+Date: Wed, 18 Feb 2009 10:39:49 +0000
+Subject: [PATCH] sh: remove PTRACE_O_TRACESYSGOOD define from sh arch specific headers
+
+The common linux/ptrace.h already defines PTRACE_O_TRACESYSGOOD so there is no
+need to have arches do it.  This also keeps glibc-2.7 from breaking since it
+has an enum for the PTRACE_O_* flags.
+
+Signed-off-by: Mike Frysinger <vapier@gentoo.org>
+Signed-off-by: Paul Mundt <lethal@linux-sh.org>
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ include/asm-sh/ptrace.h   |    3 ---
+ include/asm-sh64/ptrace.h |    2 --
+ 2 files changed, 0 insertions(+), 5 deletions(-)
+
+diff --git a/include/asm-sh/ptrace.h b/include/asm-sh/ptrace.h
+index ed358a3..b9789c8 100644
+--- a/include/asm-sh/ptrace.h
++++ b/include/asm-sh/ptrace.h
+@@ -42,9 +42,6 @@
+ #define REG_FPSCR	55
+ #define REG_FPUL	56
+ 
+-/* options set using PTRACE_SETOPTIONS */
+-#define PTRACE_O_TRACESYSGOOD     0x00000001
+-
+ /*
+  * This struct defines the way the registers are stored on the
+  * kernel stack during a system call or other kernel entry.
+diff --git a/include/asm-sh64/ptrace.h b/include/asm-sh64/ptrace.h
+index a6d4da5..c424f80 100644
+--- a/include/asm-sh64/ptrace.h
++++ b/include/asm-sh64/ptrace.h
+@@ -32,6 +32,4 @@ struct pt_regs {
+ extern void show_regs(struct pt_regs *);
+ #endif
+ 
+-#define PTRACE_O_TRACESYSGOOD     0x00000001
+-
+ #endif /* __ASM_SH64_PTRACE_H */
+-- 
+1.5.6.3
+

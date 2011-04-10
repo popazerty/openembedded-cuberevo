@@ -1,0 +1,33 @@
+From 68eca7eeb87c9ca7dc47f366d0a8e5d5d2b1a390 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 7 Nov 2008 11:21:29 +0100
+Subject: [PATCH] stmmac: add a new header for the timer optimization
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/stmmac/stmmac_timer.h |   12 ++++++++++++
+ 1 files changed, 12 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/net/stmmac/stmmac_timer.h
+
+diff --git a/drivers/net/stmmac/stmmac_timer.h b/drivers/net/stmmac/stmmac_timer.h
+new file mode 100644
+index 0000000..c26efba
+--- /dev/null
++++ b/drivers/net/stmmac/stmmac_timer.h
+@@ -0,0 +1,12 @@
++struct stmmac_timer {
++	void (*timer_start) (unsigned int new_freq);
++	void (*timer_stop) (void);
++	unsigned int freq;
++};
++
++/* Open the HW timer device and return 0 in case of success */
++int stmmac_open_hw_timer(struct net_device *dev, struct stmmac_timer *tm);
++/* Stop the timer and release it */
++int stmmac_close_hw_timer(void);
++/* Function used for scheduling task within the stmmac */
++void stmmac_timer_work(struct net_device *dev);
+-- 
+1.5.3.6
+

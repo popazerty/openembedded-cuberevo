@@ -1,0 +1,35 @@
+From dfc3225e607b353e3cfb3bbb61f905942421537c Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Wed, 11 Mar 2009 11:06:21 +0000
+Subject: [PATCH] sh_stm: cb102 ASC configuration lined up to havana kernel
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/boards/st/cb102/setup.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/sh/boards/st/cb102/setup.c b/arch/sh/boards/st/cb102/setup.c
+index 05dcfaf..e50b8d2 100644
+--- a/arch/sh/boards/st/cb102/setup.c
++++ b/arch/sh/boards/st/cb102/setup.c
+@@ -26,14 +26,14 @@
+ #include <sound/stm.h>
+ 
+ static int ascs[2] __initdata = {
+-	3 | (STASC_FLAG_NORTSCTS << 8), /* J8001 (3.5mm jack) */
+ 	2 | (STASC_FLAG_NORTSCTS << 8), /* TTL-level test points only... */
++	3 | (STASC_FLAG_NORTSCTS << 8), /* J8001 (3.5mm jack) */
+ };
+ 
+-static void __init cb102_setup(char **cmdline_p)
++static void __init cb103_setup(char **cmdline_p)
+ {
+ 	stx7200_early_device_init();
+-	stx7200_configure_asc(ascs, 2, 0);
++	stx7200_configure_asc(ascs, 2, 1);
+ }
+ 
+ static struct plat_ssc_data cb102_ssc_private_info = {
+-- 
+1.6.0.6
+

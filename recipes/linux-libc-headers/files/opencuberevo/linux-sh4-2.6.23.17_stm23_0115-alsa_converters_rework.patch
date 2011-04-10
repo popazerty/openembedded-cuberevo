@@ -1,0 +1,3697 @@
+commit fded6f738c2fa67a87aec706e7a0f3b5eb3188e3
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Wed Jul 30 12:35:46 2008 +0100
+
+    sound_stm: Converters infrastructure rework.
+    
+    Converters are now grouped by a group name. Sources are enabling
+    whole group (or its part, basing on number of channels used).
+    Groups connected to the same source may be switched using ALSA
+    mixer ("PCM Playbask Route" control).
+    
+    This patch also fixes converters declarations for cb101, cb102,
+    mb520 and mb411.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/boards/st/cb101/setup.c b/arch/sh/boards/st/cb101/setup.c
+index f3aee8b..169af00 100644
+--- a/arch/sh/boards/st/cb101/setup.c
++++ b/arch/sh/boards/st/cb101/setup.c
+@@ -190,9 +190,10 @@ static struct platform_device cb101_snd_input = {
+ 	.name = "snd_conv_dummy",
+ 	.id = -1,
+ 	.dev.platform_data = &(struct snd_stm_conv_dummy_info) {
+-		.name = "AK4113/AK5381ET",
+-		.card_device = 0,
+-		.source_bus_id = "snd_pcm_reader",
++		.group = "SPDIF/Analog Input",
++		.source_bus_id = "snd_pcm_reader.0",
++		.channel_from = 0,
++		.channel_to = 1,
+ 		.format = SND_STM_FORMAT__LEFT_JUSTIFIED |
+ 				SND_STM_FORMAT__SUBFRAME_32_BITS,
+ 	},
+diff --git a/arch/sh/boards/st/cb102/setup.c b/arch/sh/boards/st/cb102/setup.c
+index 00177d1..121e63f 100644
+--- a/arch/sh/boards/st/cb102/setup.c
++++ b/arch/sh/boards/st/cb102/setup.c
+@@ -132,15 +132,30 @@ static struct platform_device cb102_phy_device = {
+ };
+ 
+ #ifdef CONFIG_SND
+-/* ALSA dummy converter for PCM input, to configure required
++/* ALSA dummy converters for PCM inputs, to configure required
+  * Left Justified mode */
+-static struct platform_device cb102_snd_input = {
++
++static struct platform_device cb102_snd_spdif_analog_input = {
++	.name = "snd_conv_dummy",
++	.id = 0,
++	.dev.platform_data = &(struct snd_stm_conv_dummy_info) {
++		.group = "SPDIF/Analog Input",
++		.source_bus_id = "snd_pcm_reader.0",
++		.channel_from = 0,
++		.channel_to = 1,
++		.format = SND_STM_FORMAT__LEFT_JUSTIFIED |
++				SND_STM_FORMAT__SUBFRAME_32_BITS,
++	},
++};
++
++static struct platform_device cb102_snd_hdmi_input = {
+ 	.name = "snd_conv_dummy",
+-	.id = -1,
++	.id = 1,
+ 	.dev.platform_data = &(struct snd_stm_conv_dummy_info) {
+-		.name = "AK4113/AK5381ET",
+-		.card_device = 0,
+-		.source_bus_id = "snd_pcm_reader",
++		.group = "HDMI Input",
++		.source_bus_id = "snd_pcm_reader.1",
++		.channel_from = 0,
++		.channel_to = 7,
+ 		.format = SND_STM_FORMAT__LEFT_JUSTIFIED |
+ 				SND_STM_FORMAT__SUBFRAME_32_BITS,
+ 	},
+@@ -151,7 +166,8 @@ static struct platform_device *cb102_devices[] __initdata = {
+ 	&cb102_physmap_flash,
+ 	&cb102_phy_device,
+ #ifdef CONFIG_SND
+-	&cb102_snd_input,
++	&cb102_snd_spdif_analog_input,
++	&cb102_snd_hdmi_input,
+ #endif
+ };
+ 
+diff --git a/arch/sh/boards/st/common/mb520.c b/arch/sh/boards/st/common/mb520.c
+index 814a557..95d07fe 100644
+--- a/arch/sh/boards/st/common/mb520.c
++++ b/arch/sh/boards/st/common/mb520.c
+@@ -75,10 +75,11 @@ static struct platform_device conv_external_dac = {
+ 	.name = "snd_conv_gpio",
+ 	.id = 0,
+ 	.dev.platform_data = &(struct snd_stm_conv_gpio_info) {
+-		.name = "AK4388 DAC",
++		.group = "External DAC",
+ 
+-		.card_device = 3,
+ 		.source_bus_id = "snd_pcm_player.3",
++		.channel_from = 0,
++		.channel_to = 1,
+ 		.format = SND_STM_FORMAT__I2S |
+ 				SND_STM_FORMAT__SUBFRAME_32_BITS,
+ 		.oversampling = 256,
+@@ -97,10 +98,11 @@ static struct platform_device conv_spdif_to_i2s = {
+ 	.name = "snd_conv_gpio",
+ 	.id = 1,
+ 	.dev.platform_data = &(struct snd_stm_conv_gpio_info) {
+-		.name = "CS8416 SPDIF to I2S converter",
++		.group = "SPDIF Input",
+ 
+-		.card_device = 0,
+-		.source_bus_id = "snd_pcm_reader",
++		.source_bus_id = "snd_pcm_reader.0",
++		.channel_from = 0,
++		.channel_to = 1,
+ 		.format = SND_STM_FORMAT__I2S |
+ 				SND_STM_FORMAT__SUBFRAME_32_BITS,
+ 
+diff --git a/arch/sh/boards/st/mb411/setup.c b/arch/sh/boards/st/mb411/setup.c
+index b6e8fd7..6010ab2 100644
+--- a/arch/sh/boards/st/mb411/setup.c
++++ b/arch/sh/boards/st/mb411/setup.c
+@@ -167,9 +167,10 @@ static struct platform_device mb411_snd_ext_dacs = {
+ 	.name = "snd_conv_dummy",
+ 	.id = -1,
+ 	.dev.platform_data = &(struct snd_stm_conv_dummy_info) {
+-		.name = "AK4394*2/AK4356",
+-		.card_device = 1,
++		.group = "External DACs",
+ 		.source_bus_id = "snd_pcm_player.1",
++		.channel_from = 0,
++		.channel_to = 9,
+ 		.format = SND_STM_FORMAT__LEFT_JUSTIFIED |
+ 				SND_STM_FORMAT__SUBFRAME_32_BITS,
+ 		.oversampling = 256,
+diff --git a/include/sound/stm.h b/include/sound/stm.h
+index 3c68076..3c97147 100644
+--- a/include/sound/stm.h
++++ b/include/sound/stm.h
+@@ -33,9 +33,7 @@
+  * Converters (DAC, ADC, I2S to SPDIF, SPDIF to I2S, etc.)
+  */
+ 
+-/* Link type (format) description
+- * Please note, that 0 value means I2S with 32 bits per
+- * subframe (channel) and is a default setting. */
++/* Link type (format) description */
+ #define SND_STM_FORMAT__I2S              0x00000001
+ #define SND_STM_FORMAT__LEFT_JUSTIFIED   0x00000002
+ #define SND_STM_FORMAT__RIGHT_JUSTIFIED  0x00000003
+@@ -50,28 +48,34 @@
+ #define SND_STM_FORMAT__SUBFRAME_16_BITS 0x00000020
+ #define SND_STM_FORMAT__SUBFRAME_MASK    0x000000f0
+ 
+-/* Converter handle */
+-struct snd_stm_conv {
+-	const char *name;
++/* Converter operations
++ * All converter should be disabled and muted till explicitly
++ * enabled/unmuted. */
+ 
++struct snd_stm_conv_converter;
++
++struct snd_stm_conv_ops {
+ 	/* Configuration */
+-	unsigned int (*get_format)(struct snd_stm_conv *conv);
+-	int (*get_oversampling)(struct snd_stm_conv *conv);
++	unsigned int (*get_format)(void *priv);
++	int (*get_oversampling)(void *priv);
+ 
+ 	/* Operations */
+-	int (*enable)(struct snd_stm_conv *conv);
+-	int (*disable)(struct snd_stm_conv *conv);
+-	int (*mute)(struct snd_stm_conv *conv);
+-	int (*unmute)(struct snd_stm_conv *conv);
+-
+-	/* Master (must be enabled prior to this one) */
+-	struct snd_stm_conv *master;
++	int (*set_enabled)(int enabled, void *priv);
++	int (*set_muted)(int muted, void *priv);
+ };
+ 
+-/* Returns negative value on error or unique converter index number (>=0) */
+-int snd_stm_conv_attach(struct snd_stm_conv *conv, struct bus_type *source_bus,
+-		const char *source_bus_id);
++/* Registers new converter
++ * Converters sharing the same group name shall use the same input format
++ * and oversampling value - they usually should represent one "output";
++ * when more than one group is connected to the same source, active one
++ * will be selectable using "Route" ALSA control.
++ * Returns negative value on error or unique converter index number (>=0) */
++struct snd_stm_conv_converter *snd_stm_conv_register_converter(
++		const char *group, struct snd_stm_conv_ops *ops, void *priv,
++		struct bus_type *source_bus, const char *source_bus_id,
++		int source_channel_from, int source_channel_to, int *index);
+ 
++int snd_stm_conv_unregister_converter(struct snd_stm_conv_converter *converter);
+ 
+ 
+ /*
+@@ -96,10 +100,10 @@ int snd_stm_conv_attach(struct snd_stm_conv *conv, struct bus_type *source_bus,
+  * i2c_register_board_info(<I2C bus number>, &external_dac, 1);
+  */
+ struct snd_stm_conv_i2c_info {
+-	const char *name;
++	const char *group;
+ 
+-	int card_device;
+ 	const char *source_bus_id;
++	int channel_from, channel_to;
+ 	unsigned int format;
+ 	int oversampling;
+ 
+@@ -120,10 +124,10 @@ struct snd_stm_conv_i2c_info {
+  * Define platform device named "snd_conv_gpio", pass
+  * following structure as platform_data and add it in normal way :-) */
+ struct snd_stm_conv_gpio_info {
+-	const char *name;
++	const char *group;
+ 
+-	int card_device;
+ 	const char *source_bus_id;
++	int channel_from, channel_to;
+ 	unsigned int format;
+ 	int oversampling;
+ 
+@@ -138,10 +142,10 @@ struct snd_stm_conv_gpio_info {
+ /* Dummy converter - use it (as a platform device) to define format or
+  * oversampling only */
+ struct snd_stm_conv_dummy_info {
+-	const char *name;
++	const char *group;
+ 
+-	int card_device;
+ 	const char *source_bus_id;
++	int channel_from, channel_to;
+ 	unsigned int format;
+ 	int oversampling;
+ };
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 94d92f2..0f7584c 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -44,11 +44,13 @@
+  */
+ 
+ static struct snd_card *snd_stm_card;
++static int snd_stm_card_registered;
+ 
+ struct snd_card *snd_stm_card_new(int index, const char *id,
+ 		struct module *module)
+ {
+ 	snd_assert(snd_stm_card == NULL, return NULL);
++	snd_assert(!snd_stm_card_registered, return NULL);
+ 
+ 	snd_stm_card = snd_card_new(index, id, module, 0);
+ 
+@@ -58,18 +60,36 @@ EXPORT_SYMBOL(snd_stm_card_new);
+ 
+ int snd_stm_card_register(void)
+ {
++	int result;
++
+ 	snd_assert(snd_stm_card != NULL, return -EINVAL);
++	snd_assert(!snd_stm_card_registered, return -EINVAL);
++
++	result = snd_card_register(snd_stm_card);
+ 
+-	return snd_card_register(snd_stm_card);
++	if (result == 0)
++		snd_stm_card_registered = 1;
++
++	return result;
+ }
+ EXPORT_SYMBOL(snd_stm_card_register);
+ 
++int snd_stm_card_is_registered(void)
++{
++	snd_assert(snd_stm_card != NULL, return -EINVAL);
++
++	return snd_stm_card_registered;
++}
++EXPORT_SYMBOL(snd_stm_card_is_registered);
++
+ void snd_stm_card_free(void)
+ {
+ 	snd_assert(snd_stm_card != NULL, return);
++	snd_assert(snd_stm_card_registered, return);
+ 
+ 	snd_card_free(snd_stm_card);
+ 
++	snd_stm_card_registered = 0;
+ 	snd_stm_card = NULL;
+ }
+ EXPORT_SYMBOL(snd_stm_card_free);
+diff --git a/sound/stm/common.h b/sound/stm/common.h
+index 09e11e3..ae404f1 100644
+--- a/sound/stm/common.h
++++ b/sound/stm/common.h
+@@ -43,19 +43,30 @@ int snd_stm_fsynth_set_frequency(struct snd_stm_fsynth_channel *fsynth_channel,
+  * Converters (DAC, ADC, I2S-SPDIF etc.) control interface
+  */
+ 
+-struct snd_stm_conv *snd_stm_conv_get_attached(struct bus_type *source_bus,
+-		const char *source_bus_id);
+-int snd_stm_conv_add_route_ctl(struct bus_type *source_bus,
+-		const char *source_bus_id, struct snd_card *card,
+-		int card_device);
++struct snd_stm_conv_source;
++struct snd_stm_conv_group;
++struct snd_stm_conv_converter;
+ 
+-unsigned int snd_stm_conv_get_format(struct snd_stm_conv *conv);
+-int snd_stm_conv_get_oversampling(struct snd_stm_conv *conv);
++struct snd_stm_conv_source *snd_stm_conv_register_source(struct bus_type *bus,
++		const char *bus_id, int channels_num,
++		struct snd_card *card, int card_device);
++int snd_stm_conv_unregister_source(struct snd_stm_conv_source *source);
++
++int snd_stm_conv_get_card_device(struct snd_stm_conv_converter *converter);
++
++struct snd_stm_conv_group *snd_stm_conv_request_group(
++		struct snd_stm_conv_source *source);
++int snd_stm_conv_release_group(struct snd_stm_conv_group *group);
++
++const char *snd_stm_conv_get_name(struct snd_stm_conv_group *group);
++unsigned int snd_stm_conv_get_format(struct snd_stm_conv_group *group);
++int snd_stm_conv_get_oversampling(struct snd_stm_conv_group *group);
+ 
+-int snd_stm_conv_enable(struct snd_stm_conv *conv);
+-int snd_stm_conv_disable(struct snd_stm_conv *conv);
+-int snd_stm_conv_mute(struct snd_stm_conv *conv);
+-int snd_stm_conv_unmute(struct snd_stm_conv *conv);
++int snd_stm_conv_enable(struct snd_stm_conv_group *group,
++		int channel_from, int channel_to);
++int snd_stm_conv_disable(struct snd_stm_conv_group *group);
++int snd_stm_conv_mute(struct snd_stm_conv_group *group);
++int snd_stm_conv_unmute(struct snd_stm_conv_group *group);
+ 
+ 
+ 
+@@ -76,11 +87,10 @@ struct snd_stm_fsynth_info {
+  */
+ 
+ struct snd_stm_conv_int_dac_info {
+-	const char *name;
+ 	int ver;
+ 
+-	int card_device;
+ 	const char *source_bus_id;
++	int channel_from, channel_to;
+ };
+ 
+ 
+@@ -89,11 +99,10 @@ struct snd_stm_conv_int_dac_info {
+  */
+ 
+ struct snd_stm_conv_i2sspdif_info {
+-	const char *name;
+ 	int ver;
+ 
+-	int card_device;
+ 	const char *source_bus_id;
++	int channel_from, channel_to;
+ };
+ 
+ 
+@@ -226,6 +235,7 @@ void snd_stm_remove_platform_devices(struct platform_device **devices,
+ struct snd_card *snd_stm_card_new(int index, const char *id,
+ 		struct module *module);
+ int snd_stm_card_register(void);
++int snd_stm_card_is_registered(void);
+ void snd_stm_card_free(void);
+ 
+ struct snd_card *snd_stm_card_get(void);
+diff --git a/sound/stm/conv.c b/sound/stm/conv.c
+index 92b5c1e..e57588e 100644
+--- a/sound/stm/conv.c
++++ b/sound/stm/conv.c
+@@ -24,6 +24,7 @@
+ #include <linux/init.h>
+ #include <linux/list.h>
+ #include <linux/device.h>
++#include <sound/control.h>
+ 
+ #define COMPONENT conv
+ #include "common.h"
+@@ -31,195 +32,428 @@
+ 
+ 
+ /*
+- * Converters infrastructure interface implementation
++ * Converters infrastructure description
+  */
+ 
+-#define CONVS_MAX 5 /* TODO: dynamic structure (really necessary???) */
++struct snd_stm_conv_group;
++struct snd_stm_conv_source;
+ 
+-struct snd_stm_conv_links_list {
++struct snd_stm_conv_converter {
++	struct list_head list;
++
++	struct snd_stm_conv_group *group;
++
++	struct snd_stm_conv_ops *ops;
++	void *priv;
++
++	int source_channel_from;
++	int source_channel_to;
++
++	int enabled;
++	int muted_by_source;
++	int muted_by_user;
++	spinlock_t status_lock; /* Protects enabled and muted_by_* */
++	struct snd_kcontrol *ctl_mute;
++
++	snd_stm_magic_field;
++};
++
++struct snd_stm_conv_group {
++	struct list_head list;
++
++	struct snd_stm_conv_source *source;
++
++	struct list_head converters;
++	struct mutex converters_mutex; /* Protects converters list */
++
++	int enabled;
++	int muted_by_source;
++
++	snd_stm_magic_field;
++
++	char name[1]; /* "Expandable" */
++};
++
++struct snd_stm_conv_source {
+ 	struct list_head list;
+ 
+ 	struct bus_type *bus;
+ 	char bus_id[BUS_ID_SIZE];
++	int channels_num;
++	struct snd_card *card;
++	int card_device;
+ 
+-	int convs_num;
+-	struct snd_stm_conv *convs[CONVS_MAX];
+-
+-	int conv_attached;
++	struct snd_stm_conv_group *group_selected;
++	struct snd_stm_conv_group *group_active;
++	struct list_head groups;
++	struct mutex groups_mutex; /* Protects groups list & pointers*/
++	struct snd_kcontrol *ctl_route;
+ 
+ 	snd_stm_magic_field;
+ };
+ 
+-LIST_HEAD(snd_stm_conv_links); /* "Device->Converter" links list */
+-DEFINE_SPINLOCK(snd_stm_conv_links_lock); /* Synchronises the links list */
++LIST_HEAD(snd_stm_conv_sources); /* Sources list */
++DEFINE_MUTEX(snd_stm_conv_sources_mutex); /* Synchronises the sources list */
+ 
+-static inline struct snd_stm_conv_links_list *snd_stm_conv_find_link(
+-		struct bus_type *source_bus, const char *source_bus_id)
++
++
++/*
++ * Converter control interface implementation
++ */
++
++const char *snd_stm_conv_get_name(struct snd_stm_conv_group *group)
+ {
+-	struct snd_stm_conv_links_list *entry;
++	snd_stm_printd(1, "snd_stm_conv_get_name(group=%p)\n", group);
+ 
+-	list_for_each_entry(entry, &snd_stm_conv_links, list)
+-		if (source_bus == entry->bus &&
+-				strcmp(source_bus_id, entry->bus_id) == 0)
+-			return entry;
++	snd_assert(group, return NULL);
++	snd_stm_magic_assert(group, return NULL);
+ 
+-	return NULL;
++	return group->name;
+ }
+ 
+-int snd_stm_conv_attach(struct snd_stm_conv *conv, struct bus_type *source_bus,
+-		const char *source_bus_id)
++unsigned int snd_stm_conv_get_format(struct snd_stm_conv_group *group)
+ {
+-	static int index;
+-	struct snd_stm_conv_links_list *link =
+-			snd_stm_conv_find_link(source_bus, source_bus_id);
+-
+-	snd_stm_printd(1, "snd_stm_conv_attach(conv=%p, source_bus=%p, "
+-			"source_bus_id='%s')\n", conv, source_bus,
+-			source_bus_id);
+-
+-	/* Not synchronised intentionally (doesn't have to be...) */
+-
+-	if (link) { /* Known device */
+-		snd_stm_magic_assert(link, return -EINVAL);
+-		if (link->convs_num == CONVS_MAX)
+-			return -ENOMEM;
+-		link->convs[link->convs_num++] = conv;
+-	} else { /* New device */
+-		link = kzalloc(sizeof(*link), GFP_KERNEL);
+-		if (link == NULL)
+-			return -ENOMEM;
+-		snd_stm_magic_set(link);
+-
+-		link->bus = source_bus;
+-		strlcpy(link->bus_id, source_bus_id, BUS_ID_SIZE);
+-		link->convs_num = 1;
+-		link->convs[0] = conv;
+-
+-		list_add_tail(&link->list, &snd_stm_conv_links);
++	unsigned int result = 0;
++	struct snd_stm_conv_converter *converter;
++
++	snd_stm_printd(1, "snd_stm_conv_get_format(group=%p)\n", group);
++
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++
++	/* All configured converters must share the same input format -
++	 * get first of them and check the rest; if any of converters
++	 * has different opinion than others - raise an error! */
++
++	list_for_each_entry(converter, &group->converters, list) {
++		unsigned int format = converter->ops->get_format(
++				converter->priv);
++
++		if (result == 0) {
++			result = format;
++		} else if (format != result) {
++			snd_stm_printe("Wrong format (0x%x) for converter %p"
++					" (the rest says 0x%x)!\n", format,
++					converter, result);
++			snd_BUG();
++		}
+ 	}
+ 
+-	return index++;
++	return result;
+ }
+-EXPORT_SYMBOL(snd_stm_conv_attach);
+ 
+-struct snd_stm_conv *snd_stm_conv_get_attached(struct bus_type *source_bus,
+-		const char *source_bus_id)
++int snd_stm_conv_get_oversampling(struct snd_stm_conv_group *group)
+ {
+-	struct snd_stm_conv_links_list *link;
+-	struct snd_stm_conv *conv = NULL;
++	int result = 0;
++	struct snd_stm_conv_converter *converter;
++
++	snd_stm_printd(1, "snd_stm_conv_get_oversampling(group=%p)\n",
++			group);
++
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++
++	/* All configured converters must share the same oversampling value -
++	 * get first of them and check the rest; if any of converters
++	 * has different opinion than others - raise an error! */
+ 
+-	snd_stm_printd(1, "snd_stm_conv_attach(source_bus=%p, source_bus_id=%s"
+-			")\n", source_bus, source_bus_id);
++	list_for_each_entry(converter, &group->converters, list) {
++		int oversampling;
+ 
+-	spin_lock(&snd_stm_conv_links_lock);
++		snd_assert(converter, return -EINVAL);
++		snd_stm_magic_assert(converter, return -EINVAL);
+ 
+-	link = snd_stm_conv_find_link(source_bus, source_bus_id);
+-	conv = link ? link->convs[link->conv_attached] : NULL;
++		oversampling = converter->ops->get_oversampling(
++				converter->priv);
+ 
+-	spin_unlock(&snd_stm_conv_links_lock);
++		if (result == 0) {
++			result = oversampling;
++		} else if (oversampling != result) {
++			snd_stm_printe("Wrong oversampling value (%d) for "
++					"converter %p (the rest says %d)!\n",
++					oversampling, converter, result);
++			snd_BUG();
++		}
++	}
+ 
+-	return conv;
++	return result;
+ }
+ 
+-static int snd_stm_conv_route_info(struct snd_kcontrol *kcontrol,
+-		struct snd_ctl_elem_info *uinfo)
++int snd_stm_conv_enable(struct snd_stm_conv_group *group,
++		int channel_from, int channel_to)
+ {
+-	struct snd_stm_conv_links_list *link = snd_kcontrol_chip(kcontrol);
+-	struct snd_stm_conv *conv;
++	int result = 0;
++	struct snd_stm_conv_converter *converter;
++
++	snd_stm_printd(1, "snd_stm_conv_enable(group=%p, channel_from=%d, "
++			"channel_to=%d)\n", group, channel_from, channel_to);
++
++	snd_assert(channel_to >= channel_from, return -EINVAL);
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++	snd_assert(!group->enabled, return -EINVAL);
++
++	group->enabled = 1;
++
++	list_for_each_entry(converter, &group->converters, list) {
++		snd_assert(converter, return -EINVAL);
++		snd_stm_magic_assert(converter, return -EINVAL);
++		snd_assert(!converter->enabled, continue);
++
++		spin_lock(&converter->status_lock);
++
++		if ((channel_from <= converter->source_channel_from &&
++				converter->source_channel_from <= channel_to) ||
++				(channel_from <= converter->source_channel_to &&
++				converter->source_channel_to <= channel_to)) {
++
++			converter->enabled = 1;
++
++			if (converter->ops->set_enabled) {
++				int done = converter->ops->set_enabled(1,
++						converter->priv);
++				if (done != 0) {
++					snd_stm_printe("Failed to enable "
++							"converter %p!\n",
++							converter);
++					result = done;
++				}
++			}
++		}
+ 
+-	snd_stm_magic_assert(link, return -EINVAL);
++		spin_unlock(&converter->status_lock);
++	}
+ 
+-	/* Not synchronised intentionally (doesn't have to be...) */
++	return result;
++}
+ 
+-	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
+-	uinfo->count = 1;
+-	uinfo->value.enumerated.items = link->convs_num;
++int snd_stm_conv_disable(struct snd_stm_conv_group *group)
++{
++	int result = 0;
++	struct snd_stm_conv_converter *converter;
+ 
+-	if (uinfo->value.enumerated.item >= link->convs_num)
+-		uinfo->value.enumerated.item = link->convs_num - 1;
++	snd_stm_printd(1, "snd_stm_conv_disable(group=%p)\n", group);
+ 
+-	conv = link->convs[uinfo->value.enumerated.item];
+-	snprintf(uinfo->value.enumerated.name, 64, "%s", conv->name);
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++	snd_assert(group->enabled, return -EINVAL);
+ 
+-	return 0;
++	group->enabled = 0;
++
++	list_for_each_entry(converter, &group->converters, list) {
++		snd_assert(converter, return -EINVAL);
++		snd_stm_magic_assert(converter, return -EINVAL);
++
++		spin_lock(&converter->status_lock);
++
++		if (converter->enabled) {
++			converter->enabled = 0;
++
++			if (converter->ops->set_enabled) {
++				int done = converter->ops->set_enabled(0,
++						converter->priv);
++				if (done != 0) {
++					snd_stm_printe("Failed to disable "
++							"converter %p!\n",
++							converter);
++					result = done;
++				}
++			}
++		}
++
++		spin_unlock(&converter->status_lock);
++	}
++
++	return result;
+ }
+ 
+-static int snd_stm_conv_route_get(struct snd_kcontrol *kcontrol,
++int snd_stm_conv_mute(struct snd_stm_conv_group *group)
++{
++	int result = 0;
++	struct snd_stm_conv_converter *converter;
++
++	snd_stm_printd(1, "snd_stm_conv_mute(group=%p)\n", group);
++
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++	snd_assert(group->enabled, return -EINVAL);
++	snd_assert(!group->muted_by_source, return -EINVAL);
++
++	group->muted_by_source = 1;
++
++	list_for_each_entry(converter, &group->converters, list) {
++		snd_assert(converter, return -EINVAL);
++		snd_stm_magic_assert(converter, return -EINVAL);
++
++		spin_lock(&converter->status_lock);
++
++		if (converter->enabled) {
++			converter->muted_by_source = 1;
++
++			if (converter->ops->set_muted &&
++					!converter->muted_by_user) {
++				int done = converter->ops->set_muted(1,
++						converter->priv);
++				if (done != 0) {
++					snd_stm_printe("Failed to mute "
++							"converter %p!\n",
++							converter);
++					result = done;
++				}
++			}
++		}
++
++		spin_unlock(&converter->status_lock);
++	}
++
++	return result;
++}
++
++int snd_stm_conv_unmute(struct snd_stm_conv_group *group)
++{
++	int result = 0;
++	struct snd_stm_conv_converter *converter;
++
++	snd_stm_printd(1, "snd_stm_conv_unmute(group=%p)\n", group);
++
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++	snd_assert(group->enabled, return -EINVAL);
++	snd_assert(group->muted_by_source, return -EINVAL);
++
++	group->muted_by_source = 0;
++
++	list_for_each_entry(converter, &group->converters, list) {
++		snd_assert(converter, return -EINVAL);
++		snd_stm_magic_assert(converter, return -EINVAL);
++
++		spin_lock(&converter->status_lock);
++
++		if (converter->enabled) {
++			converter->muted_by_source = 0;
++
++			if (converter->ops->set_muted &&
++					!converter->muted_by_user) {
++				int done = converter->ops->set_muted(0,
++						converter->priv);
++				if (done != 0) {
++					snd_stm_printe("Failed to unmute "
++							"converter %p!\n",
++							converter);
++					result = done;
++				}
++			}
++		}
++
++		spin_unlock(&converter->status_lock);
++	}
++
++	return result;
++}
++
++
++
++/*
++ * ALSA controls
++ */
++
++static int snd_stm_conv_ctl_mute_get(struct snd_kcontrol *kcontrol,
+ 		struct snd_ctl_elem_value *ucontrol)
+ {
+-	struct snd_stm_conv_links_list *link = snd_kcontrol_chip(kcontrol);
++	struct snd_stm_conv_converter *converter = snd_kcontrol_chip(kcontrol);
+ 
+-	snd_stm_printd(1, "snd_stm_conv_route_get(kcontrol=0x%p, "
+-			"ucontrol=0x%p)\n", kcontrol, ucontrol);
++	snd_stm_printd(1, "snd_stm_conv_ctl_mute_get(kcontrol=0x%p,"
++			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_stm_magic_assert(link, return -EINVAL);
++	snd_assert(converter, return -EINVAL);
++	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+-	spin_lock(&snd_stm_conv_links_lock);
++	spin_lock(&converter->status_lock);
+ 
+-	ucontrol->value.enumerated.item[0] = link->conv_attached;
++	ucontrol->value.integer.value[0] = !converter->muted_by_user;
+ 
+-	spin_unlock(&snd_stm_conv_links_lock);
++	spin_unlock(&converter->status_lock);
+ 
+ 	return 0;
+ }
+ 
+-static int snd_stm_conv_route_put(struct snd_kcontrol *kcontrol,
++static int snd_stm_conv_ctl_mute_put(struct snd_kcontrol *kcontrol,
+ 		struct snd_ctl_elem_value *ucontrol)
+ {
+-	int changed;
+-	struct snd_stm_conv_links_list *link = snd_kcontrol_chip(kcontrol);
++	struct snd_stm_conv_converter *converter = snd_kcontrol_chip(kcontrol);
++	int changed = 0;
++
++	snd_stm_printd(1, "snd_stm_conv_ctl_mute_put(kcontrol=0x%p,"
++			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+ 
+-	snd_stm_printd(1, "snd_stm_conv_route_put(kcontrol=0x%p, "
+-			"ucontrol=0x%p)\n", kcontrol, ucontrol);
++	snd_assert(converter, return -EINVAL);
++	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+-	snd_stm_magic_assert(link, return -EINVAL);
++	snd_assert(converter->ops->set_muted, return -EINVAL);
+ 
+-	spin_lock(&snd_stm_conv_links_lock);
++	spin_lock(&converter->status_lock);
+ 
+-	changed = (ucontrol->value.enumerated.item[0] != link->conv_attached);
+-	link->conv_attached = ucontrol->value.enumerated.item[0];
++	if (ucontrol->value.integer.value[0] !=
++			!converter->muted_by_user) {
++		changed = 1;
+ 
+-	spin_unlock(&snd_stm_conv_links_lock);
++		converter->muted_by_user =
++				!ucontrol->value.integer.value[0];
++
++		if (converter->enabled &&
++				converter->muted_by_user &&
++				!converter->muted_by_source)
++			converter->ops->set_muted(1, converter->priv);
++		else if (converter->enabled &&
++				!converter->muted_by_user &&
++				!converter->muted_by_source)
++			converter->ops->set_muted(0, converter->priv);
++	}
++
++	spin_unlock(&converter->status_lock);
+ 
+ 	return changed;
+ }
+ 
+-static struct snd_kcontrol_new snd_stm_conv_route_ctl = {
+-	.iface = SNDRV_CTL_ELEM_IFACE_PCM,
+-	.name = "PCM Playback Route",
+-	.info = snd_stm_conv_route_info,
+-	.get = snd_stm_conv_route_get,
+-	.put = snd_stm_conv_route_put,
++static struct snd_kcontrol_new snd_stm_conv_ctl_mute = {
++	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
++	.name = "Master Playback Switch",
++	.info = snd_stm_ctl_boolean_info,
++	.get = snd_stm_conv_ctl_mute_get,
++	.put = snd_stm_conv_ctl_mute_put,
+ };
+ 
+-int snd_stm_conv_add_route_ctl(struct bus_type *source_bus,
+-		const char *source_bus_id, struct snd_card *card,
+-		int card_device)
++static int snd_stm_conv_ctl_mute_add(struct snd_stm_conv_converter *converter)
+ {
+-	int result = 0;
+-	struct snd_stm_conv_links_list *link =
+-			snd_stm_conv_find_link(source_bus, source_bus_id);
++	int result;
++	struct snd_stm_conv_source *source;
++	struct snd_kcontrol *ctl_mute;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_add_route_ctl(source_bus=%p, "
+-			"source_bus_id='%s', card=%p, cards_device=%d)\n",
+-			source_bus, source_bus_id, card, card_device);
++	snd_stm_printd(1, "snd_stm_conv_ctl_mute_add(converter=%p)\n",
++			converter);
+ 
+-	/* Not synchronised intentionally (doesn't have to be...) */
++	snd_assert(converter, return -EINVAL);
++	snd_stm_magic_assert(converter, return -EINVAL);
+ 
+-	if (link != NULL) {
+-		snd_stm_magic_assert(link, return -EINVAL);
++	source = converter->group->source;
+ 
+-		if (link->convs_num > 1) {
+-			snd_stm_conv_route_ctl.device = card_device;
+-			result = snd_ctl_add(card,
+-					snd_ctl_new1(&snd_stm_conv_route_ctl,
+-					link));
++	snd_assert(source, return -EINVAL);
++	snd_stm_magic_assert(source, return -EINVAL);
+ 
+-			snd_stm_conv_route_ctl.index++;
+-		}
++	snd_stm_conv_ctl_mute.device = source->card_device;
++
++	ctl_mute = snd_ctl_new1(&snd_stm_conv_ctl_mute, converter);
++	result = snd_ctl_add(source->card, ctl_mute);
++	if (result >= 0) {
++		/* We will have to manually dispose "hot-plugged" controls...
++		 * ("normal" ones will be disposed during snd_card_free) */
++		if (snd_stm_card_is_registered())
++			converter->ctl_mute = ctl_mute;
++
++		snd_stm_conv_ctl_mute.index++;
+ 	} else {
+-		snd_stm_printd(0, "No converter is attached to '%s' (bus %p)"
+-				"...\n", source_bus_id, source_bus);
++		snd_stm_printe("Error %d while adding mute ALSA control!\n",
++				result);
+ 	}
+ 
+ 	return result;
+@@ -227,72 +461,602 @@ int snd_stm_conv_add_route_ctl(struct bus_type *source_bus,
+ 
+ 
+ 
++static int snd_stm_conv_ctl_route_info(struct snd_kcontrol *kcontrol,
++		struct snd_ctl_elem_info *uinfo)
++{
++	struct snd_stm_conv_source *source = snd_kcontrol_chip(kcontrol);
++	struct snd_stm_conv_group *group;
++	int item = 0;
++
++	snd_stm_printd(1, "snd_stm_conv_ctl_route_info(kcontrol=0x%p,"
++			" uinfo=0x%p)\n", kcontrol, uinfo);
++
++	snd_assert(source, return -EINVAL);
++	snd_stm_magic_assert(source, return -EINVAL);
++
++	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
++	uinfo->count = 1;
++
++	mutex_lock(&source->groups_mutex);
++
++	list_for_each_entry(group, &source->groups, list) {
++		if (list_is_last(&group->list, &source->groups) &&
++				uinfo->value.enumerated.item > item)
++			uinfo->value.enumerated.item = item;
++		if (item == uinfo->value.enumerated.item)
++			snprintf(uinfo->value.enumerated.name, 64, "%s",
++					group->name);
++		item++;
++	};
++
++	uinfo->value.enumerated.items = item;
++
++	mutex_unlock(&source->groups_mutex);
++
++	return 0;
++}
++
++static int snd_stm_conv_ctl_route_get(struct snd_kcontrol *kcontrol,
++		struct snd_ctl_elem_value *ucontrol)
++{
++	struct snd_stm_conv_source *source = snd_kcontrol_chip(kcontrol);
++	struct snd_stm_conv_group *group;
++	int item = 0;
++
++	snd_stm_printd(1, "snd_stm_conv_ctl_route_get(kcontrol=0x%p,"
++			" ucontrol=0x%p)\n", kcontrol, ucontrol);
++
++	snd_assert(source, return -EINVAL);
++	snd_stm_magic_assert(source, return -EINVAL);
++
++	mutex_lock(&source->groups_mutex);
++
++	ucontrol->value.enumerated.item[0] = 0; /* First is default ;-) */
++
++	list_for_each_entry(group, &source->groups, list) {
++		if (group == source->group_selected) {
++			ucontrol->value.enumerated.item[0] = item;
++			break;
++		}
++		item++;
++	};
++
++	mutex_unlock(&source->groups_mutex);
++
++	return 0;
++}
++
++static int snd_stm_conv_ctl_route_put(struct snd_kcontrol *kcontrol,
++		struct snd_ctl_elem_value *ucontrol)
++{
++	int changed = 0;
++	struct snd_stm_conv_source *source = snd_kcontrol_chip(kcontrol);
++	struct snd_stm_conv_group *group;
++	int item = 0;
++
++	snd_stm_printd(1, "snd_stm_conv_ctl_route_put(kcontrol=0x%p,"
++			" ucontrol=0x%p)\n", kcontrol, ucontrol);
++
++	snd_assert(source, return -EINVAL);
++	snd_stm_magic_assert(source, return -EINVAL);
++
++	mutex_lock(&source->groups_mutex);
++
++	list_for_each_entry(group, &source->groups, list) {
++		if (item == ucontrol->value.enumerated.item[0]) {
++			if (group != source->group_selected) {
++				changed = 1;
++				source->group_selected = group;
++			}
++			break;
++		}
++		item++;
++	}
++
++	mutex_unlock(&source->groups_mutex);
++
++	return changed;
++}
++
++static struct snd_kcontrol_new snd_stm_conv_ctl_route = {
++	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
++	.name = "PCM Playback Route",
++	.info = snd_stm_conv_ctl_route_info,
++	.get = snd_stm_conv_ctl_route_get,
++	.put = snd_stm_conv_ctl_route_put,
++};
++
++static int snd_stm_conv_ctl_route_add(struct snd_stm_conv_source *source)
++{
++	struct snd_kcontrol *ctl_route;
++	int result;
++
++	snd_stm_printd(1, "snd_stm_conv_ctl_route_add(source=%p)\n", source);
++
++	snd_assert(source, return -EINVAL);
++	snd_stm_magic_assert(source, return -EINVAL);
++
++	snd_stm_conv_ctl_route.device = source->card_device;
++
++	ctl_route = snd_ctl_new1(&snd_stm_conv_ctl_route, source);
++	result = snd_ctl_add(source->card, ctl_route);
++	if (result >= 0) {
++		/* We will have to manually dispose "hot-plugged"
++		 * controls... ("normal" ones will be disposed
++		 * during snd_card_free) */
++		if (snd_stm_card_is_registered())
++			source->ctl_route = ctl_route;
++
++		snd_stm_conv_ctl_route.index++;
++	} else {
++		snd_stm_printe("Error %d while adding route ALSA "
++				"control!\n", result);
++	}
++
++	return result;
++}
++
+ /*
+- * Converter control interface implementation
++ * Converters router implementation
+  */
+ 
+-unsigned int snd_stm_conv_get_format(struct snd_stm_conv *conv)
++static inline int snd_stm_conv_more_than_one_entry(const struct list_head *head)
+ {
+-	snd_stm_printd(1, "snd_stm_conv_get_format(conv=%p)\n", conv);
++	return !list_empty(head) && !list_is_last(head->next, head);
++}
++
++static struct snd_stm_conv_source *snd_stm_conv_get_source(
++		struct bus_type *bus, const char *bus_id)
++{
++	struct snd_stm_conv_source *source;
++
++	snd_assert(bus, return NULL);
++	snd_assert(bus_id, return NULL);
++
++	mutex_lock(&snd_stm_conv_sources_mutex);
+ 
+-	snd_assert(conv->get_format != NULL, return -EINVAL);
++	list_for_each_entry(source, &snd_stm_conv_sources, list)
++		if (bus == source->bus && strcmp(bus_id, source->bus_id) == 0)
++			goto done; /* Already known source */
+ 
+-	return conv->get_format(conv);
++	/* First time see... */
++
++	source = kzalloc(sizeof(*source), GFP_KERNEL);
++	if (!source) {
++		snd_stm_printe("Can't allocate memory for source!\n");
++		return NULL;
++	}
++	snd_stm_magic_set(source);
++
++	source->bus = bus;
++	strlcpy(source->bus_id, bus_id, BUS_ID_SIZE);
++	INIT_LIST_HEAD(&source->groups);
++	mutex_init(&source->groups_mutex);
++
++	list_add_tail(&source->list, &snd_stm_conv_sources);
++
++done:
++	mutex_unlock(&snd_stm_conv_sources_mutex);
++
++	return source;
+ }
+ 
+-int snd_stm_conv_get_oversampling(struct snd_stm_conv *conv)
++struct snd_stm_conv_source *snd_stm_conv_register_source(struct bus_type *bus,
++		const char *bus_id, int channels_num,
++		struct snd_card *card, int card_device)
+ {
+-	snd_stm_printd(1, "snd_stm_conv_get_oversampling(conv=%p)\n", conv);
++	struct snd_stm_conv_source *source;
++	struct snd_stm_conv_group *group;
++
++	snd_stm_printd(1, "snd_stm_conv_register_source(bus=%p, bus_id='%s', "
++			"channels_num=%d, card=%p, card_device=%d)\n",
++			bus, bus_id, channels_num, card, card_device);
++
++	snd_assert(bus, return NULL);
++	snd_assert(bus_id, return NULL);
++	snd_assert(channels_num > 0, return NULL);
++	snd_assert(card, return NULL);
++	snd_assert(card_device >= 0, return NULL);
++
++	source = snd_stm_conv_get_source(bus, bus_id);
++	if (!source) {
++		snd_stm_printe("Can't get source structure!\n");
++		return NULL;
++	}
++
++	snd_assert(source->channels_num == 0, return NULL);
++	snd_assert(!source->card, return NULL);
++
++	source->channels_num = channels_num;
++	source->card = card;
++	source->card_device = card_device;
++
++	mutex_lock(&source->groups_mutex);
++
++	/* Add route ALSA control if needed */
++
++	if (snd_stm_conv_more_than_one_entry(&source->groups) &&
++			snd_stm_conv_ctl_route_add(source) != 0)
++		snd_stm_printe("Failed to add route ALSA control!\n");
++
++	/* Add mute ALSA controls for already registered converters */
++
++	list_for_each_entry(group, &source->groups, list) {
++		struct snd_stm_conv_converter *converter;
++
++		snd_stm_magic_assert(group);
++
++		list_for_each_entry(converter, &group->converters, list) {
++			snd_stm_magic_assert(converter);
++
++			if (converter->ops->set_muted &&
++					snd_stm_conv_ctl_mute_add(converter)
++					< 0)
++				snd_stm_printe("Failed to add mute "
++						"ALSA control!\n");
++		}
++	}
+ 
+-	snd_assert(conv->get_oversampling != NULL, return -EINVAL);
++	mutex_unlock(&source->groups_mutex);
+ 
+-	return conv->get_oversampling(conv);
++	return source;
+ }
+ 
+-int snd_stm_conv_enable(struct snd_stm_conv *conv)
++int snd_stm_conv_unregister_source(struct snd_stm_conv_source *source)
+ {
+-	int result = 0;
++	snd_stm_printd(1, "snd_stm_conv_unregister_source(source=%p)\n",
++			source);
++
++	snd_assert(source, return -EINVAL);
++	snd_stm_magic_assert(source, return -EINVAL);
+ 
+-	snd_stm_printd(1, "snd_stm_conv_enable(conv=%p)\n", conv);
++	snd_assert(list_empty(&source->groups), return -EINVAL);
+ 
+-	snd_assert(conv->enable != NULL, return -EINVAL);
++	mutex_lock(&snd_stm_conv_sources_mutex);
+ 
+-	if (conv->master)
+-		result = snd_stm_conv_enable(conv->master);
++	list_del(&source->list);
++	snd_stm_magic_clear(source);
++	kfree(source);
+ 
+-	return result ? result : conv->enable(conv);
++	mutex_unlock(&snd_stm_conv_sources_mutex);
++
++	return 0;
+ }
+ 
+-int snd_stm_conv_disable(struct snd_stm_conv *conv)
++
++
++static inline struct snd_stm_conv_group *snd_stm_conv_get_group(
++		struct snd_stm_conv_source *source, const char *name)
+ {
+-	int result = 0;
++	struct snd_stm_conv_group *group;
++
++	snd_stm_printd(1, "snd_stm_conv_get_group(source=%p, name='%s')\n",
++			source, name);
++
++	snd_assert(source, return NULL);
++	snd_stm_magic_assert(source, return NULL);
++	snd_assert(name, return NULL);
++
++	mutex_lock(&source->groups_mutex);
++
++	list_for_each_entry(group, &source->groups, list)
++		if (strcmp(name, group->name) == 0)
++			goto done; /* Already known group */
++
++	/* First time see... */
++
++	snd_assert(strlen(name) < 1024, return NULL); /* Random memory fuse */
++
++	group = kzalloc(sizeof(*group) + strlen(name), GFP_KERNEL);
++	if (!group) {
++		snd_stm_printe("Can't allocate memory for group!\n");
++		goto done;
++	}
++	snd_stm_magic_set(group);
++
++	INIT_LIST_HEAD(&group->converters);
++	mutex_init(&group->converters_mutex);
++
++	strcpy(group->name, name);
++
++	group->source = source;
++	group->muted_by_source = 1;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_disable(conv=%p)\n", conv);
++	if (!source->group_selected)
++		source->group_selected = group;
+ 
+-	snd_assert(conv->disable != NULL, return -EINVAL);
++	list_add_tail(&group->list, &source->groups);
+ 
+-	if (conv->master)
+-		result = snd_stm_conv_disable(conv->master);
++	/* If this is a second group attached to this source,
++	 * and the source has been already registered, we need
++	 * to add a route ALSA control... */
++	if (source->card && snd_stm_conv_more_than_one_entry(&source->groups))
++		snd_stm_conv_ctl_route_add(source);
+ 
+-	return result ? result : conv->disable(conv);
++done:
++	mutex_unlock(&source->groups_mutex);
++
++	return group;
+ }
+ 
+-int snd_stm_conv_mute(struct snd_stm_conv *conv)
++static inline int snd_stm_conv_remove_group(struct snd_stm_conv_group *group)
+ {
+-	snd_stm_printd(1, "snd_stm_conv_mute(conv=%p)\n", conv);
++	struct snd_stm_conv_source *source;
++
++	snd_stm_printd(1, "snd_stm_conv_remove_group(group=%p)\n", group);
++
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++
++	source = group->source;
++
++	snd_assert(source, return -EINVAL);
++	snd_stm_magic_assert(source, return -EINVAL);
++
++	mutex_lock(&source->groups_mutex);
++
++	list_del(&group->list);
++
++	if (group == source->group_active)
++		snd_stm_printe("WARNING! Removing active converters group! "
++				"I hope you know what are you doing...\n");
++
++	/* Removing actually selected group? */
++	if (group == source->group_selected) {
++		if (list_empty(&source->groups)) {
++			/* This was the last group... */
++			source->group_selected = NULL;
++		} else {
++			/* If there is only one group left, the route control
++			 * is not needed anymore */
++			if (!snd_stm_conv_more_than_one_entry(&source->groups)
++					&& source->ctl_route)
++				snd_ctl_remove(source->card, source->ctl_route);
+ 
+-	snd_assert(conv->mute != NULL, return -EINVAL);
++			/* The first group on list is considered default... */
++			source->group_selected = list_first_entry(
++					&source->groups,
++					struct snd_stm_conv_group, list);
++		}
++	}
++
++	snd_stm_magic_clear(group);
++	kfree(group);
+ 
+-	return conv->mute(conv);
++	mutex_unlock(&source->groups_mutex);
++
++	return 0;
+ }
+ 
+-int snd_stm_conv_unmute(struct snd_stm_conv *conv)
++struct snd_stm_conv_converter *snd_stm_conv_register_converter(
++		const char *group_name, struct snd_stm_conv_ops *ops,
++		void *priv,
++		struct bus_type *source_bus, const char *source_bus_id,
++		int source_channel_from, int source_channel_to, int *index)
+ {
+-	snd_stm_printd(1, "snd_stm_conv_unmute(conv=%p)\n", conv);
++	static int number;
++	struct snd_stm_conv_converter *converter;
++	struct snd_stm_conv_group *group;
++	struct snd_stm_conv_source *source;
++
++	snd_stm_printd(1, "snd_stm_conv_register_converter(group='%s', ops=%p,"
++			" priv=%p, source_bus=%p, source_bus_id='%s', "
++			"source_channel_from=%d, source_channel_to=%d)\n",
++			group_name, ops, priv, source_bus, source_bus_id,
++			source_channel_from, source_channel_to);
++
++	snd_assert(group_name, return NULL);
++	snd_assert(ops, return NULL);
++	snd_assert(source_bus, return NULL);
++	snd_assert(source_bus_id, return NULL);
++	snd_assert(source_channel_from >= 0, return NULL);
++	snd_assert(source_channel_to >= source_channel_from, return NULL);
++
++	/* Create converter description */
++
++	converter = kzalloc(sizeof(*converter), GFP_KERNEL);
++	if (!converter) {
++		snd_stm_printe("Can't allocate memory for converter!\n");
++		goto error_kzalloc;
++	}
++	snd_stm_magic_set(converter);
++
++	converter->ops = ops;
++	converter->priv = priv;
++	converter->source_channel_from = source_channel_from;
++	converter->source_channel_to = source_channel_to;
++
++	converter->muted_by_source = 1;
++
++	spin_lock_init(&converter->status_lock);
+ 
+-	snd_assert(conv->unmute != NULL, return -EINVAL);
++	/* And link it with the source */
+ 
+-	return conv->unmute(conv);
++	source = snd_stm_conv_get_source(source_bus, source_bus_id);
++	if (!source) {
++		snd_stm_printe("Can't get source structure!\n");
++		goto error_get_source;
++	}
++
++	group = snd_stm_conv_get_group(source, group_name);
++	if (!group) {
++		snd_stm_printe("Can't get group structure!\n");
++		goto error_get_group;
++	}
++
++	if (source->group_active == group)
++		snd_stm_printe("WARNING! Adding a converter to an active "
++				"group!\n");
++
++	mutex_lock(&group->converters_mutex);
++
++	converter->group = group;
++	list_add_tail(&converter->list, &group->converters);
++
++	mutex_unlock(&group->converters_mutex);
++
++	/* Add mute ALSA control if muting is supported and source is known */
++
++	if (source->card && ops->set_muted &&
++			snd_stm_conv_ctl_mute_add(converter) < 0) {
++		snd_stm_printe("Failed to add mute ALSA control!\n");
++		goto error_add_ctl_mute;
++	}
++
++	number++;
++	if (index)
++		*index = number;
++
++	return converter;
++
++error_add_ctl_mute:
++error_get_group:
++error_get_source:
++	list_del(&converter->list);
++	snd_stm_magic_clear(converter);
++	kfree(converter);
++error_kzalloc:
++	return NULL;
++}
++EXPORT_SYMBOL(snd_stm_conv_register_converter);
++
++int snd_stm_conv_unregister_converter(struct snd_stm_conv_converter *converter)
++{
++	struct snd_stm_conv_group *group;
++
++	snd_stm_printd(1, "snd_stm_conv_unregister_converter(converter=%p)\n",
++			converter);
++
++	snd_assert(converter, return -EINVAL);
++	snd_stm_magic_assert(converter, return -EINVAL);
++
++	group = converter->group;
++
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++
++	mutex_lock(&group->converters_mutex);
++
++	list_del(&converter->list);
++
++	if (converter->ctl_mute)
++		snd_ctl_remove(group->source->card, converter->ctl_mute);
++
++	snd_stm_magic_clear(converter);
++	kfree(converter);
++
++	if (list_empty(&group->converters))
++		snd_stm_conv_remove_group(group);
++
++	mutex_unlock(&group->converters_mutex);
++
++	return 0;
++}
++EXPORT_SYMBOL(snd_stm_conv_unregister_converter);
++
++int snd_stm_conv_get_card_device(struct snd_stm_conv_converter *converter)
++{
++	snd_stm_printd(1, "snd_stm_conv_get_card_device(converter=%p)\n",
++			converter);
++
++	snd_assert(converter, return -EINVAL);
++	snd_stm_magic_assert(converter, return -EINVAL);
++
++	return converter->group->source->card_device;
++}
++EXPORT_SYMBOL(snd_stm_conv_get_card_device);
++
++
++struct snd_stm_conv_group *snd_stm_conv_request_group(
++		struct snd_stm_conv_source *source)
++{
++	snd_stm_printd(1, "snd_stm_conv_request_group(source=%p)\n", source);
++
++	snd_assert(source, return NULL);
++	snd_stm_magic_assert(source, return NULL);
++
++	snd_assert(!source->group_active, return NULL);
++
++	mutex_lock(&source->groups_mutex);
++
++	source->group_active = source->group_selected;
++
++	mutex_unlock(&source->groups_mutex);
++
++	return source->group_active;
++}
++
++int snd_stm_conv_release_group(struct snd_stm_conv_group *group)
++{
++	snd_stm_printd(1, "snd_stm_conv_release_group(group=%p)\n", group);
++
++	snd_assert(group, return -EINVAL);
++	snd_stm_magic_assert(group, return -EINVAL);
++
++	snd_assert(group->source, return -EINVAL);
++	snd_stm_magic_assert(group->source, return -EINVAL);
++
++	snd_assert(group == group->source->group_active, return -EINVAL);
++
++	mutex_lock(&group->source->groups_mutex);
++
++	group->source->group_active = NULL;
++
++	mutex_unlock(&group->source->groups_mutex);
++
++	return 0;
++}
++
++
++
++/*
++ * Converters information view
++ */
++
++static struct snd_info_entry *snd_stm_conv_proc_entry;
++
++static void snd_stm_conv_info(struct snd_info_entry *entry,
++		struct snd_info_buffer *buffer)
++{
++	struct snd_stm_conv_source *source;
++
++	snd_iprintf(buffer, "--- converters ---\n");
++
++	list_for_each_entry(source, &snd_stm_conv_sources, list) {
++		struct snd_stm_conv_group *group;
++
++		snd_iprintf(buffer, "- source %p:\n", source);
++		snd_iprintf(buffer, "  bus=%p, bus_id='%s'\n",
++				source->bus, source->bus_id);
++		snd_iprintf(buffer, "  channels_num=%d\n",
++				source->channels_num);
++		snd_iprintf(buffer, "  card=%p, card_device=%d\n",
++				source->card, source->card_device);
++
++		list_for_each_entry(group, &source->groups, list) {
++			struct snd_stm_conv_converter *converter;
++
++			snd_iprintf(buffer, "  - group %p:\n", group);
++			snd_iprintf(buffer, "    name='%s'\n", group->name);
++
++			list_for_each_entry(converter, &group->converters,
++					list) {
++				snd_iprintf(buffer, "    - converter %p:\n",
++						converter);
++				snd_iprintf(buffer, "      source_channel_from"
++						"=%d, source_channel_to=%d\n",
++						converter->source_channel_from,
++						converter->source_channel_to);
++				snd_iprintf(buffer, "      enabled=%d\n",
++						converter->enabled);
++				snd_iprintf(buffer, "      muted_by_source=%d,"
++						" muted_by_user=%d\n",
++						converter->muted_by_source,
++						converter->muted_by_user);
++			}
++		}
++	}
++	snd_iprintf(buffer, "\n");
+ }
+ 
+ 
+@@ -301,18 +1065,51 @@ int snd_stm_conv_unmute(struct snd_stm_conv *conv)
+  * Initialization
+  */
+ 
++
+ int __init snd_stm_conv_init(void)
+ {
++	/* Register converters information file in ALSA's procfs */
++
++	snd_stm_info_register(&snd_stm_conv_proc_entry, "converters",
++			snd_stm_conv_info, NULL);
++
+ 	return 0;
+ }
+ 
+ void snd_stm_conv_exit(void)
+ {
+-	struct snd_stm_conv_links_list *entry, *next;
+-
+-	list_for_each_entry_safe(entry, next, &snd_stm_conv_links, list) {
+-		snd_stm_magic_clear(entry);
+-		list_del(&entry->list);
+-		kfree(entry);
+-	};
++	snd_stm_info_unregister(snd_stm_conv_proc_entry);
++
++	if (!list_empty(&snd_stm_conv_sources)) {
++		struct snd_stm_conv_source *source, *source_next;
++
++		snd_stm_printe("WARNING! There are some converters "
++				"infrastructure components left - "
++				"check your configuration!\n");
++
++		list_for_each_entry_safe(source, source_next,
++				&snd_stm_conv_sources, list) {
++			struct snd_stm_conv_group *group, *group_next;
++
++			list_for_each_entry_safe(group, group_next,
++					&source->groups, list) {
++				struct snd_stm_conv_converter *converter,
++						*converter_next;
++
++				list_for_each_entry_safe(converter,
++						converter_next,
++						&group->converters, list) {
++					list_del(&converter->list);
++					snd_stm_magic_clear(converter);
++					kfree(converter);
++				}
++				list_del(&group->list);
++				snd_stm_magic_clear(group);
++				kfree(group);
++			}
++			list_del(&source->list);
++			snd_stm_magic_clear(source);
++			kfree(source);
++		}
++	}
+ }
+diff --git a/sound/stm/conv_dummy.c b/sound/stm/conv_dummy.c
+index c03eb09..1a8858a 100644
+--- a/sound/stm/conv_dummy.c
++++ b/sound/stm/conv_dummy.c
+@@ -30,15 +30,12 @@
+ #include "common.h"
+ 
+ 
+-
+ /*
+  * Dummy converter instance structure
+  */
+ 
+ struct snd_stm_conv_dummy {
+-	/* Generic converter interface */
+-	struct snd_stm_conv conv;
+-
++	struct snd_stm_conv_converter *converter;
+ 	struct snd_stm_conv_dummy_info *info;
+ 
+ 	snd_stm_magic_field;
+@@ -50,13 +47,11 @@ struct snd_stm_conv_dummy {
+  * Converter interface implementation
+  */
+ 
+-static unsigned int snd_stm_conv_dummy_get_format(struct snd_stm_conv
+-		*conv)
++static unsigned int snd_stm_conv_dummy_get_format(void *priv)
+ {
+-	struct snd_stm_conv_dummy *conv_dummy = container_of(conv,
+-			struct snd_stm_conv_dummy, conv);
++	struct snd_stm_conv_dummy *conv_dummy = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_dummy_get_format(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_dummy_get_format(priv=%p)\n", priv);
+ 
+ 	snd_assert(conv_dummy, return -EINVAL);
+ 	snd_stm_magic_assert(conv_dummy, return -EINVAL);
+@@ -64,13 +59,12 @@ static unsigned int snd_stm_conv_dummy_get_format(struct snd_stm_conv
+ 	return conv_dummy->info->format;
+ }
+ 
+-static int snd_stm_conv_dummy_get_oversampling(struct snd_stm_conv *conv)
++static int snd_stm_conv_dummy_get_oversampling(void *priv)
+ {
+-	struct snd_stm_conv_dummy *conv_dummy = container_of(conv,
+-			struct snd_stm_conv_dummy, conv);
++	struct snd_stm_conv_dummy *conv_dummy = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_dummy_get_oversampling(conv=%p)\n",
+-			conv);
++	snd_stm_printd(1, "snd_stm_conv_dummy_get_oversampling(priv=%p)\n",
++			priv);
+ 
+ 	snd_assert(conv_dummy, return -EINVAL);
+ 	snd_stm_magic_assert(conv_dummy, return -EINVAL);
+@@ -78,33 +72,10 @@ static int snd_stm_conv_dummy_get_oversampling(struct snd_stm_conv *conv)
+ 	return conv_dummy->info->oversampling;
+ }
+ 
+-static int snd_stm_conv_dummy_enable(struct snd_stm_conv *conv)
+-{
+-	snd_stm_printd(1, "snd_stm_conv_dummy_enable(conv=%p)\n", conv);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_dummy_disable(struct snd_stm_conv *conv)
+-{
+-	snd_stm_printd(1, "snd_stm_conv_dummy_disable(conv=%p)\n", conv);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_dummy_mute(struct snd_stm_conv *conv)
+-{
+-	snd_stm_printd(1, "snd_stm_conv_dummy_mute(conv=%p)\n", conv);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_dummy_unmute(struct snd_stm_conv *conv)
+-{
+-	snd_stm_printd(1, "snd_stm_conv_dummy_unmute(conv=%p)\n", conv);
+-
+-	return 0;
+-}
++static struct snd_stm_conv_ops snd_stm_conv_dummy_ops = {
++	.get_format = snd_stm_conv_dummy_get_format,
++	.get_oversampling = snd_stm_conv_dummy_get_oversampling,
++};
+ 
+ 
+ 
+@@ -114,7 +85,6 @@ static int snd_stm_conv_dummy_unmute(struct snd_stm_conv *conv)
+ 
+ static int snd_stm_conv_dummy_probe(struct platform_device *pdev)
+ {
+-	int result;
+ 	struct snd_stm_conv_dummy *conv_dummy;
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+@@ -130,19 +100,15 @@ static int snd_stm_conv_dummy_probe(struct platform_device *pdev)
+ 	snd_stm_magic_set(conv_dummy);
+ 	conv_dummy->info = pdev->dev.platform_data;
+ 
+-	conv_dummy->conv.name = conv_dummy->info->name;
+-	conv_dummy->conv.get_format = snd_stm_conv_dummy_get_format;
+-	conv_dummy->conv.get_oversampling = snd_stm_conv_dummy_get_oversampling;
+-	conv_dummy->conv.enable = snd_stm_conv_dummy_enable;
+-	conv_dummy->conv.disable = snd_stm_conv_dummy_disable;
+-	conv_dummy->conv.mute = snd_stm_conv_dummy_mute;
+-	conv_dummy->conv.unmute = snd_stm_conv_dummy_unmute;
+-
+ 	snd_stm_printd(0, "This dummy DAC is attached to PCM player '%s'.\n",
+ 			conv_dummy->info->source_bus_id);
+-	result = snd_stm_conv_attach(&conv_dummy->conv, &platform_bus_type,
+-			conv_dummy->info->source_bus_id);
+-	if (result < 0) {
++	conv_dummy->converter = snd_stm_conv_register_converter(
++			conv_dummy->info->group,
++			&snd_stm_conv_dummy_ops, conv_dummy,
++			&platform_bus_type, conv_dummy->info->source_bus_id,
++			conv_dummy->info->channel_from,
++			conv_dummy->info->channel_to, NULL);
++	if (!conv_dummy->converter) {
+ 		snd_stm_printe("Can't attach to PCM player!\n");
+ 		return -EINVAL;
+ 	}
+@@ -158,7 +124,15 @@ static int snd_stm_conv_dummy_probe(struct platform_device *pdev)
+ 
+ static int snd_stm_conv_dummy_remove(struct platform_device *pdev)
+ {
+-	kfree(platform_get_drvdata(pdev));
++	struct snd_stm_conv_dummy *conv_dummy = platform_get_drvdata(pdev);
++
++	snd_assert(conv_dummy, return -EINVAL);
++	snd_stm_magic_assert(conv_dummy, return -EINVAL);
++
++	snd_stm_conv_unregister_converter(conv_dummy->converter);
++
++	snd_stm_magic_clear(conv_dummy);
++	kfree(conv_dummy);
+ 
+ 	return 0;
+ }
+diff --git a/sound/stm/conv_gpio.c b/sound/stm/conv_gpio.c
+index 26f7006..094b443 100644
+--- a/sound/stm/conv_gpio.c
++++ b/sound/stm/conv_gpio.c
+@@ -43,18 +43,12 @@
+  */
+ 
+ struct snd_stm_conv_gpio {
+-	/* Generic converter interface */
+-	struct snd_stm_conv conv;
+-
+ 	/* System informations */
+ 	const char *bus_id;
++	struct snd_stm_conv_converter *converter;
+ 	struct snd_stm_conv_gpio_info *info;
+ 
+ 	/* Runtime data */
+-	int enabled;
+-	int muted_by_source;
+-	int muted_by_user;
+-	spinlock_t status_lock; /* Protects enabled & muted_by_* */
+ 	int may_sleep;
+ 	struct work_struct work; /* Used if may_sleep */
+ 	int work_enable_value;
+@@ -130,13 +124,11 @@ static void snd_stm_conv_gpio_set_value(struct snd_stm_conv_gpio *conv_gpio,
+  * Converter interface implementation
+  */
+ 
+-static unsigned int snd_stm_conv_gpio_get_format(struct snd_stm_conv
+-		*conv)
++static unsigned int snd_stm_conv_gpio_get_format(void *priv)
+ {
+-	struct snd_stm_conv_gpio *conv_gpio = container_of(conv,
+-			struct snd_stm_conv_gpio, conv);
++	struct snd_stm_conv_gpio *conv_gpio = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_gpio_get_format(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_gpio_get_format(priv=%p)\n", priv);
+ 
+ 	snd_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+@@ -144,13 +136,12 @@ static unsigned int snd_stm_conv_gpio_get_format(struct snd_stm_conv
+ 	return conv_gpio->info->format;
+ }
+ 
+-static int snd_stm_conv_gpio_get_oversampling(struct snd_stm_conv *conv)
++static int snd_stm_conv_gpio_get_oversampling(void *priv)
+ {
+-	struct snd_stm_conv_gpio *conv_gpio = container_of(conv,
+-			struct snd_stm_conv_gpio, conv);
++	struct snd_stm_conv_gpio *conv_gpio = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_gpio_get_oversampling(conv=%p)\n",
+-			conv);
++	snd_stm_printd(1, "snd_stm_conv_gpio_get_oversampling(priv=%p)\n",
++			priv);
+ 
+ 	snd_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+@@ -158,188 +149,64 @@ static int snd_stm_conv_gpio_get_oversampling(struct snd_stm_conv *conv)
+ 	return conv_gpio->info->oversampling;
+ }
+ 
+-static int snd_stm_conv_gpio_enable(struct snd_stm_conv *conv)
++static int snd_stm_conv_gpio_set_enabled(int enabled, void *priv)
+ {
+-	struct snd_stm_conv_gpio *conv_gpio = container_of(conv,
+-			struct snd_stm_conv_gpio, conv);
++	struct snd_stm_conv_gpio *conv_gpio = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_gpio_enable(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_gpio_enable(enabled=%d, priv=%p)\n",
++			enabled, priv);
+ 
+ 	snd_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-	snd_assert(!conv_gpio->enabled, return -EINVAL);
+ 
+-	snd_stm_printd(1, "Enabling DAC %s's digital part. (still muted)\n",
++	snd_stm_printd(1, "%sabling DAC %s's.\n", enabled ? "En" : "Dis",
+ 			conv_gpio->bus_id);
+ 
+-	spin_lock(&conv_gpio->status_lock);
+-
+-	snd_stm_conv_gpio_set_value(conv_gpio, 1,
+-			conv_gpio->info->enable_value);
+-	conv_gpio->enabled = 1;
+-
+-	spin_unlock(&conv_gpio->status_lock);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_gpio_disable(struct snd_stm_conv *conv)
+-{
+-	struct snd_stm_conv_gpio *conv_gpio = container_of(conv,
+-			struct snd_stm_conv_gpio, conv);
+-
+-	snd_stm_printd(1, "snd_stm_conv_gpio_disable(conv=%p)\n", conv);
+-
+-	snd_assert(conv_gpio, return -EINVAL);
+-	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-	snd_assert(conv_gpio->enabled, return -EINVAL);
+-
+-	snd_stm_printd(1, "Disabling DAC %s's digital part.\n",
+-			conv_gpio->bus_id);
+-
+-	spin_lock(&conv_gpio->status_lock);
+-
+ 	snd_stm_conv_gpio_set_value(conv_gpio, 1,
++			enabled ? conv_gpio->info->enable_value :
+ 			!conv_gpio->info->enable_value);
+-	conv_gpio->enabled = 0;
+-
+-	spin_unlock(&conv_gpio->status_lock);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_gpio_mute(struct snd_stm_conv *conv)
+-{
+-	struct snd_stm_conv_gpio *conv_gpio = container_of(conv,
+-			struct snd_stm_conv_gpio, conv);
+-
+-	snd_stm_printd(1, "snd_stm_conv_gpio_mute(conv=%p)\n", conv);
+-
+-	snd_assert(conv_gpio, return -EINVAL);
+-	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-	snd_assert(conv_gpio->enabled, return -EINVAL);
+-
+-	if (conv_gpio->info->mute_supported) {
+-		snd_stm_printd(1, "Muting DAC %s.\n", conv_gpio->bus_id);
+-
+-		spin_lock(&conv_gpio->status_lock);
+-
+-		conv_gpio->muted_by_source = 1;
+-		if (!conv_gpio->muted_by_user)
+-			snd_stm_conv_gpio_set_value(conv_gpio, 0,
+-					conv_gpio->info->mute_value);
+-
+-		spin_unlock(&conv_gpio->status_lock);
+-	}
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_gpio_unmute(struct snd_stm_conv *conv)
+-{
+-	struct snd_stm_conv_gpio *conv_gpio = container_of(conv,
+-			struct snd_stm_conv_gpio, conv);
+-
+-	snd_stm_printd(1, "snd_stm_conv_gpio_unmute(conv=%p)\n", conv);
+-
+-	snd_assert(conv_gpio, return -EINVAL);
+-	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-	snd_assert(conv_gpio->enabled, return -EINVAL);
+-
+-	if (conv_gpio->info->mute_supported) {
+-		snd_stm_printd(1, "Unmuting DAC %s.\n", conv_gpio->bus_id);
+-
+-		spin_lock(&conv_gpio->status_lock);
+-
+-		conv_gpio->muted_by_source = 0;
+-		if (!conv_gpio->muted_by_user)
+-			snd_stm_conv_gpio_set_value(conv_gpio, 0,
+-					!conv_gpio->info->mute_value);
+-
+-		spin_unlock(&conv_gpio->status_lock);
+-	}
+ 
+ 	return 0;
+ }
+ 
+-
+-
+-/*
+- * ALSA controls
+- */
+-
+-static int snd_stm_conv_gpio_ctl_mute_get(struct snd_kcontrol *kcontrol,
+-		struct snd_ctl_elem_value *ucontrol)
++static int snd_stm_conv_gpio_set_muted(int muted, void *priv)
+ {
+-	struct snd_stm_conv_gpio *conv_gpio =
+-			snd_kcontrol_chip(kcontrol);
++	struct snd_stm_conv_gpio *conv_gpio = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_gpio_ctl_mute_get(kcontrol=0x%p,"
+-			" ucontrol=0x%p)\n", kcontrol, ucontrol);
++	snd_stm_printd(1, "snd_stm_conv_gpio_set_muted(muted=%d, priv=%p)\n",
++			muted, priv);
+ 
+ 	snd_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
++	snd_assert(conv_gpio->info->mute_supported, return -EINVAL);
+ 
+-	spin_lock(&conv_gpio->status_lock);
+-
+-	ucontrol->value.integer.value[0] = !conv_gpio->muted_by_user;
++	snd_stm_printd(1, "%suting DAC %s.\n", muted ? "M" : "Unm",
++			conv_gpio->bus_id);
+ 
+-	spin_unlock(&conv_gpio->status_lock);
++	snd_stm_conv_gpio_set_value(conv_gpio, 0,
++			muted ? conv_gpio->info->mute_value :
++			!conv_gpio->info->mute_value);
+ 
+ 	return 0;
+ }
+ 
+-static int snd_stm_conv_gpio_ctl_mute_put(struct snd_kcontrol *kcontrol,
+-		struct snd_ctl_elem_value *ucontrol)
+-{
+-	struct snd_stm_conv_gpio *conv_gpio =
+-			snd_kcontrol_chip(kcontrol);
+-	int changed = 0;
+-
+-	snd_stm_printd(1, "snd_stm_conv_gpio_ctl_mute_put(kcontrol=0x%p,"
+-			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+-
+-	snd_assert(conv_gpio, return -EINVAL);
+-	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-
+-	spin_lock(&conv_gpio->status_lock);
+-
+-	if (ucontrol->value.integer.value[0] !=
+-			!conv_gpio->muted_by_user) {
+-		changed = 1;
+-
+-		conv_gpio->muted_by_user =
+-				!ucontrol->value.integer.value[0];
+-
+-		if (conv_gpio->enabled &&
+-				conv_gpio->muted_by_user &&
+-				!conv_gpio->muted_by_source)
+-			snd_stm_conv_gpio_set_value(conv_gpio, 0,
+-					conv_gpio->info->mute_value);
+-		else if (conv_gpio->enabled &&
+-				!conv_gpio->muted_by_user &&
+-				!conv_gpio->muted_by_source)
+-			snd_stm_conv_gpio_set_value(conv_gpio, 0,
+-					!conv_gpio->info->mute_value);
+-	}
+-
+-	spin_unlock(&conv_gpio->status_lock);
+-
+-	return changed;
+-}
++static struct snd_stm_conv_ops snd_stm_conv_gpio_ops_with_mute = {
++	.get_format = snd_stm_conv_gpio_get_format,
++	.get_oversampling = snd_stm_conv_gpio_get_oversampling,
++	.set_enabled = snd_stm_conv_gpio_set_enabled,
++	.set_muted = snd_stm_conv_gpio_set_muted,
++};
+ 
+-static struct snd_kcontrol_new snd_stm_conv_gpio_ctl_mute = {
+-	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name = "Master Playback Switch",
+-	.info = snd_stm_ctl_boolean_info,
+-	.get = snd_stm_conv_gpio_ctl_mute_get,
+-	.put = snd_stm_conv_gpio_ctl_mute_put,
++static struct snd_stm_conv_ops snd_stm_conv_gpio_ops_without_mute = {
++	.get_format = snd_stm_conv_gpio_get_format,
++	.get_oversampling = snd_stm_conv_gpio_get_oversampling,
++	.set_enabled = snd_stm_conv_gpio_set_enabled,
+ };
+ 
+ 
+ 
+ /*
+- * ALSA lowlevel device implementation
++ * Procfs status callback
+  */
+ 
+ static void snd_stm_conv_gpio_read_info(struct snd_info_entry *entry,
+@@ -363,64 +230,6 @@ static void snd_stm_conv_gpio_read_info(struct snd_info_entry *entry,
+ 	snd_iprintf(buffer, "\n");
+ }
+ 
+-static int snd_stm_conv_gpio_register(struct snd_device *snd_device)
+-{
+-	struct snd_stm_conv_gpio *conv_gpio =
+-			snd_device->device_data;
+-
+-	snd_assert(conv_gpio, return -EINVAL);
+-	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-	snd_assert(!conv_gpio->enabled, return -EINVAL);
+-
+-	/* Initialize DAC disabled and mute */
+-
+-	conv_gpio->enabled = 0;
+-	conv_gpio->muted_by_source = 1;
+-	gpio_set_value(conv_gpio->info->enable_gpio,
+-			!conv_gpio->info->enable_value);
+-	if (conv_gpio->info->mute_supported)
+-		gpio_set_value(conv_gpio->info->mute_gpio,
+-				conv_gpio->info->mute_value);
+-
+-	/* Additional procfs info */
+-
+-	snd_stm_info_register(&conv_gpio->proc_entry,
+-			conv_gpio->bus_id,
+-			snd_stm_conv_gpio_read_info,
+-			conv_gpio);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_gpio_disconnect(struct snd_device *snd_device)
+-{
+-	struct snd_stm_conv_gpio *conv_gpio =
+-			snd_device->device_data;
+-
+-	snd_assert(conv_gpio, return -EINVAL);
+-	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+-	snd_assert(!conv_gpio->enabled, return -EINVAL);
+-
+-	/* Remove procfs entry */
+-
+-	snd_stm_info_unregister(conv_gpio->proc_entry);
+-
+-	/* Muting and disabling - just to be sure ;-) */
+-
+-	if (conv_gpio->info->mute_supported)
+-		gpio_set_value(conv_gpio->info->mute_gpio,
+-				conv_gpio->info->mute_value);
+-	gpio_set_value(conv_gpio->info->enable_gpio,
+-			!conv_gpio->info->enable_value);
+-
+-	return 0;
+-}
+-
+-static struct snd_device_ops snd_stm_conv_gpio_snd_device_ops = {
+-	.dev_register = snd_stm_conv_gpio_register,
+-	.dev_disconnect = snd_stm_conv_gpio_disconnect,
+-};
+-
+ 
+ 
+ /*
+@@ -431,12 +240,9 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ {
+ 	int result = 0;
+ 	struct snd_stm_conv_gpio *conv_gpio;
+-	struct snd_card *card = snd_stm_card_get();
+-	int index;
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(card, return -EINVAL);
+ 	snd_assert(pdev->dev.platform_data != NULL, return -EINVAL);
+ 
+ 	conv_gpio = kzalloc(sizeof(*conv_gpio), GFP_KERNEL);
+@@ -449,19 +255,6 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ 	snd_stm_magic_set(conv_gpio);
+ 	conv_gpio->bus_id = pdev->dev.bus_id;
+ 	conv_gpio->info = pdev->dev.platform_data;
+-	spin_lock_init(&conv_gpio->status_lock);
+-
+-	/* Converter interface initialization */
+-
+-	conv_gpio->conv.name = conv_gpio->info->name;
+-	conv_gpio->conv.get_format =
+-			snd_stm_conv_gpio_get_format;
+-	conv_gpio->conv.get_oversampling =
+-			snd_stm_conv_gpio_get_oversampling;
+-	conv_gpio->conv.enable = snd_stm_conv_gpio_enable;
+-	conv_gpio->conv.disable = snd_stm_conv_gpio_disable;
+-	conv_gpio->conv.mute = snd_stm_conv_gpio_mute;
+-	conv_gpio->conv.unmute = snd_stm_conv_gpio_unmute;
+ 
+ 	/* Get connections */
+ 
+@@ -469,24 +262,21 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ 			return -EINVAL);
+ 	snd_stm_printd(0, "This DAC is attached to PCM player '%s'.\n",
+ 			conv_gpio->info->source_bus_id);
+-	index = snd_stm_conv_attach(&conv_gpio->conv, &platform_bus_type,
+-			conv_gpio->info->source_bus_id);
+-	if (index < 0) {
++	conv_gpio->converter = snd_stm_conv_register_converter(
++			conv_gpio->info->group,
++			(conv_gpio->info->mute_supported ?
++			&snd_stm_conv_gpio_ops_with_mute :
++			&snd_stm_conv_gpio_ops_without_mute), conv_gpio,
++			&platform_bus_type, conv_gpio->info->source_bus_id,
++			conv_gpio->info->channel_from,
++			conv_gpio->info->channel_to, NULL);
++	if (!conv_gpio->converter) {
+ 		snd_stm_printe("Can't attach to PCM player!\n");
+-		result = index;
++		result = -EINVAL;
+ 		goto error_attach;
+ 	}
+ 
+-	/* Create ALSA lowlevel device*/
+-
+-	result = snd_device_new(card, SNDRV_DEV_LOWLEVEL, conv_gpio,
+-			&snd_stm_conv_gpio_snd_device_ops);
+-	if (result < 0) {
+-		snd_stm_printe("ALSA low level device creation failed!\n");
+-		goto error_device;
+-	}
+-
+-	/* Reserve GPIO lines */
++	/* Reserve & initialize GPIO lines (enabled & mute) */
+ 
+ 	result = gpio_request(conv_gpio->info->enable_gpio, conv_gpio->bus_id);
+ 	if (result != 0) {
+@@ -494,6 +284,12 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ 		goto error_gpio_request_enable;
+ 	}
+ 
++	if (gpio_direction_output(conv_gpio->info->enable_gpio,
++			!conv_gpio->info->enable_value) != 0) {
++		snd_stm_printe("Can't set 'enable' GPIO line as output!\n");
++		goto error_gpio_direction_output_enable;
++	}
++
+ 	if (conv_gpio->info->mute_supported) {
+ 		result = gpio_request(conv_gpio->info->mute_gpio,
+ 				conv_gpio->bus_id);
+@@ -501,7 +297,17 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ 			snd_stm_printe("Can't reserve 'mute' GPIO line!\n");
+ 			goto error_gpio_request_mute;
+ 		}
++
++		if (conv_gpio->info->mute_supported &&
++				gpio_direction_output(
++				conv_gpio->info->mute_gpio,
++				conv_gpio->info->mute_value) != 0) {
++			snd_stm_printe("Can't set 'mute' GPIO line as output!"
++					"\n");
++			goto error_gpio_direction_output_mute;
++		}
+ 	}
++
+ 	if (gpio_cansleep(conv_gpio->info->enable_gpio) ||
+ 			(conv_gpio->info->mute_supported &&
+ 			gpio_cansleep(conv_gpio->info->mute_gpio))) {
+@@ -512,36 +318,27 @@ static int snd_stm_conv_gpio_probe(struct platform_device *pdev)
+ 		conv_gpio->work_mute_value = -1;
+ 	}
+ 
+-	/* Create ALSA control */
++	/* Additional procfs info */
+ 
+-	if (conv_gpio->info->mute_supported) {
+-		snd_stm_conv_gpio_ctl_mute.device =
+-			conv_gpio->info->card_device;
+-		snd_stm_conv_gpio_ctl_mute.index = index;
+-		result = snd_ctl_add(card,
+-				snd_ctl_new1(&snd_stm_conv_gpio_ctl_mute,
+-				conv_gpio));
+-		if (result < 0) {
+-			snd_stm_printe("Failed to add all ALSA control!\n");
+-			goto error_control;
+-		}
+-	}
++	snd_stm_info_register(&conv_gpio->proc_entry,
++			conv_gpio->bus_id,
++			snd_stm_conv_gpio_read_info,
++			conv_gpio);
+ 
+ 	/* Done now */
+ 
+-	platform_set_drvdata(pdev, &conv_gpio->conv);
++	platform_set_drvdata(pdev, conv_gpio);
+ 
+ 	snd_stm_printd(0, "--- Probed successfully!\n");
+ 
+ 	return 0;
+ 
+-error_control:
+-	if (conv_gpio->info->mute_supported)
+-		gpio_free(conv_gpio->info->mute_gpio);
++error_gpio_direction_output_mute:
++	gpio_free(conv_gpio->info->mute_gpio);
+ error_gpio_request_mute:
++error_gpio_direction_output_enable:
+ 	gpio_free(conv_gpio->info->enable_gpio);
+ error_gpio_request_enable:
+-error_device:
+ error_attach:
+ 	snd_stm_magic_clear(conv_gpio);
+ 	kfree(conv_gpio);
+@@ -551,15 +348,28 @@ error_alloc:
+ 
+ static int snd_stm_conv_gpio_remove(struct platform_device *pdev)
+ {
+-	struct snd_stm_conv_gpio *conv_gpio =
+-			container_of(platform_get_drvdata(pdev),
+-			struct snd_stm_conv_gpio, conv);
++	struct snd_stm_conv_gpio *conv_gpio = platform_get_drvdata(pdev);
+ 
+ 	snd_assert(conv_gpio, return -EINVAL);
+ 	snd_stm_magic_assert(conv_gpio, return -EINVAL);
+ 
+-	if (conv_gpio->info->mute_supported)
++	snd_device_free(snd_stm_card_get(), conv_gpio);
++	snd_stm_conv_unregister_converter(conv_gpio->converter);
++
++	/* Remove procfs entry */
++
++	snd_stm_info_unregister(conv_gpio->proc_entry);
++
++	/* Muting and disabling - just to be sure ;-) */
++
++	if (conv_gpio->info->mute_supported) {
++		gpio_set_value(conv_gpio->info->mute_gpio,
++				conv_gpio->info->mute_value);
+ 		gpio_free(conv_gpio->info->mute_gpio);
++	}
++
++	gpio_set_value(conv_gpio->info->enable_gpio,
++			!conv_gpio->info->enable_value);
+ 	gpio_free(conv_gpio->info->enable_gpio);
+ 
+ 	snd_stm_magic_clear(conv_gpio);
+diff --git a/sound/stm/conv_i2sspdif.c b/sound/stm/conv_i2sspdif.c
+index 1d8cf7d..735faca 100644
+--- a/sound/stm/conv_i2sspdif.c
++++ b/sound/stm/conv_i2sspdif.c
+@@ -50,12 +50,11 @@
+  */
+ 
+ struct snd_stm_conv_i2sspdif {
+-	/* Generic converter interface */
+-	struct snd_stm_conv conv;
+-
+ 	/* System informations */
++	struct snd_stm_conv_converter *converter;
+ 	struct snd_stm_conv_i2sspdif_info *info;
+ 	struct device *device;
++	int index; /* ALSA controls index */
+ 	int ver; /* IP version, used by register access macros */
+ 
+ 	/* Resources */
+@@ -68,7 +67,6 @@ struct snd_stm_conv_i2sspdif {
+ 
+ 	/* Runtime data */
+ 	int enabled;
+-	struct snd_stm_conv *attached_conv;
+ 
+ 	struct snd_info_entry *proc_entry;
+ 
+@@ -183,7 +181,7 @@ static int snd_stm_conv_i2sspdif_iec958_set(struct snd_stm_conv_i2sspdif
+ 	}
+ 
+ 	snd_stm_printd(1, "Channel status registers set successfully "
+-			"in %i tries.", i);
++			"in %i tries.\n", i);
+ 
+ 	/* Set SPDIF player's VUC registers (these are used only
+ 	 * for mute data formatting, and it should never happen ;-) */
+@@ -210,71 +208,32 @@ static int snd_stm_conv_i2sspdif_iec958_set(struct snd_stm_conv_i2sspdif
+ 	return 0;
+ }
+ 
+-
+-
+-
+-/*
+- * Converter interface implementation
+- */
+-
+-static unsigned int snd_stm_conv_i2sspdif_get_format(struct snd_stm_conv
+-		*conv)
+-{
+-	snd_stm_printd(1, "snd_stm_conv_i2sspdif_get_format(conv=%p)\n", conv);
+-
+-	return (SND_STM_FORMAT__I2S | SND_STM_FORMAT__SUBFRAME_32_BITS);
+-}
+-
+-static int snd_stm_conv_i2sspdif_get_oversampling(struct snd_stm_conv *conv)
++static inline int snd_stm_conv_i2sspdif_oversampling(
++		struct snd_stm_conv_i2sspdif *conv_i2sspdif)
+ {
+-	int oversampling = 0;
+-	struct snd_stm_conv_i2sspdif *conv_i2sspdif = container_of(conv,
+-			struct snd_stm_conv_i2sspdif, conv);
+-
+-	snd_stm_printd(1, "snd_stm_conv_i2sspdif_get_oversampling(conv=%p)\n",
+-			conv);
++	snd_stm_printd(1, "snd_stm_conv_i2sspdif_oversampling("
++			"conv_i2sspdif=%p)\n", conv_i2sspdif);
+ 
+ 	snd_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+-	if (conv_i2sspdif->attached_conv)
+-		oversampling = snd_stm_conv_get_oversampling(
+-				conv_i2sspdif->attached_conv);
+-
+-	if (oversampling == 0)
+-		oversampling = DEFAULT_OVERSAMPLING;
+-
+-	return oversampling;
++	return DEFAULT_OVERSAMPLING;
+ }
+ 
+-static int snd_stm_conv_i2sspdif_enable(struct snd_stm_conv *conv)
++static inline int snd_stm_conv_i2sspdif_enable(struct snd_stm_conv_i2sspdif
++		*conv_i2sspdif)
+ {
+-	struct snd_stm_conv_i2sspdif *conv_i2sspdif = container_of(conv,
+-			struct snd_stm_conv_i2sspdif, conv);
+ 	int oversampling;
+ 	struct snd_aes_iec958 iec958;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_i2sspdif_enable(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_i2sspdif_enable(conv_i2sspdif=%p)\n",
++			conv_i2sspdif);
+ 
+ 	snd_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_assert(!conv_i2sspdif->enabled, return -EINVAL);
+ 
+-	snd_stm_printd(1, "Enabling I2S to SPDIF converter '%s'.\n",
+-			conv_i2sspdif->device->bus_id);
+-
+-	conv_i2sspdif->attached_conv =
+-			snd_stm_conv_get_attached(&platform_bus_type,
+-			conv_i2sspdif->device->bus_id);
+-	if (conv_i2sspdif->attached_conv) {
+-		int result = snd_stm_conv_enable(conv_i2sspdif->attached_conv);
+-		if (result != 0) {
+-			snd_stm_printe("Can't enable attached converter!\n");
+-			return result;
+-		}
+-	}
+-
+-	oversampling = snd_stm_conv_i2sspdif_get_oversampling(conv);
++	oversampling = snd_stm_conv_i2sspdif_oversampling(conv_i2sspdif);
+ 	snd_assert(oversampling > 0, return -EINVAL);
+ 	snd_assert((oversampling % 128) == 0, return -EINVAL);
+ 
+@@ -310,30 +269,16 @@ static int snd_stm_conv_i2sspdif_enable(struct snd_stm_conv *conv)
+ 	return 0;
+ }
+ 
+-static int snd_stm_conv_i2sspdif_disable(struct snd_stm_conv *conv)
++static inline int snd_stm_conv_i2sspdif_disable(struct snd_stm_conv_i2sspdif
++		*conv_i2sspdif)
+ {
+-	struct snd_stm_conv_i2sspdif *conv_i2sspdif = container_of(conv,
+-			struct snd_stm_conv_i2sspdif, conv);
+-
+-	snd_stm_printd(1, "snd_stm_conv_i2sspdif_disable(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_i2sspdif_disable(conv_i2sspdif=%p)\n",
++			conv_i2sspdif);
+ 
+ 	snd_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_assert(conv_i2sspdif->enabled, return -EINVAL);
+ 
+-	snd_stm_printd(1, "Disabling I2S to SPDIF converter '%s'\n",
+-			conv_i2sspdif->device->bus_id);
+-
+-	if (conv_i2sspdif->attached_conv) {
+-		int result = snd_stm_conv_disable(
+-				conv_i2sspdif->attached_conv);
+-
+-		if (result != 0) {
+-			snd_stm_printe("Can't disable attached converter!\n");
+-			return result;
+-		}
+-	}
+-
+ 	if (snd_stm_conv_i2sspdif_iec958_set(conv_i2sspdif,
+ 			&snd_stm_conv_i2sspdif_iec958_zeroed) != 0)
+ 		snd_stm_printe("WARNING! Failed to clear channel status "
+@@ -352,42 +297,57 @@ static int snd_stm_conv_i2sspdif_disable(struct snd_stm_conv *conv)
+ 	return 0;
+ }
+ 
+-static int snd_stm_conv_i2sspdif_mute(struct snd_stm_conv *conv)
++
++
++/*
++ * Converter interface implementation
++ */
++
++static unsigned int snd_stm_conv_i2sspdif_get_format(void *priv)
++{
++	snd_stm_printd(1, "snd_stm_conv_i2sspdif_get_format(priv=%p)\n", priv);
++
++	return (SND_STM_FORMAT__I2S | SND_STM_FORMAT__SUBFRAME_32_BITS);
++}
++
++static int snd_stm_conv_i2sspdif_get_oversampling(void *priv)
+ {
+-	int result = 0;
+-	struct snd_stm_conv_i2sspdif *conv_i2sspdif = container_of(conv,
+-			struct snd_stm_conv_i2sspdif, conv);
++	struct snd_stm_conv_i2sspdif *conv_i2sspdif = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_i2sspdif_mute(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_i2sspdif_get_oversampling(priv=%p)\n",
++			priv);
+ 
+ 	snd_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+-	snd_assert(conv_i2sspdif->enabled, return -EINVAL);
+-
+-	if (conv_i2sspdif->attached_conv)
+-		result = snd_stm_conv_mute(conv_i2sspdif->attached_conv);
+ 
+-	return result;
++	return snd_stm_conv_i2sspdif_oversampling(conv_i2sspdif);
+ }
+ 
+-static int snd_stm_conv_i2sspdif_unmute(struct snd_stm_conv *conv)
++static int snd_stm_conv_i2sspdif_set_enabled(int enabled, void *priv)
+ {
+-	int result = 0;
+-	struct snd_stm_conv_i2sspdif *conv_i2sspdif = container_of(conv,
+-			struct snd_stm_conv_i2sspdif, conv);
++	struct snd_stm_conv_i2sspdif *conv_i2sspdif = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_i2sspdif_unmute(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_i2sspdif_set_enabled(enabled=%d, "
++			"priv=%p)\n", enabled, priv);
+ 
+ 	snd_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+-	snd_assert(conv_i2sspdif->enabled, return -EINVAL);
+ 
+-	if (conv_i2sspdif->attached_conv)
+-		result = snd_stm_conv_unmute(conv_i2sspdif->attached_conv);
++	snd_stm_printd(1, "%sabling I2S to SPDIF converter '%s'.\n",
++			enabled ? "En" : "Dis", conv_i2sspdif->device->bus_id);
+ 
+-	return result;
++	if (enabled)
++		return snd_stm_conv_i2sspdif_enable(conv_i2sspdif);
++	else
++		return snd_stm_conv_i2sspdif_disable(conv_i2sspdif);
+ }
+ 
++static struct snd_stm_conv_ops snd_stm_conv_i2sspdif_ops = {
++	.get_format = snd_stm_conv_i2sspdif_get_format,
++	.get_oversampling = snd_stm_conv_i2sspdif_get_oversampling,
++	.set_enabled = snd_stm_conv_i2sspdif_set_enabled,
++};
++
+ 
+ 
+ /*
+@@ -512,8 +472,8 @@ static void snd_stm_conv_i2sspdif_dump_registers(struct snd_info_entry *entry,
+ static int snd_stm_conv_i2sspdif_register(
+ 		struct snd_device *snd_device)
+ {
+-	int result;
+ 	struct snd_stm_conv_i2sspdif *conv_i2sspdif = snd_device->device_data;
++	int i;
+ 
+ 	snd_stm_printd(1, "snd_stm_conv_i2sspdif_register(snd_device=0x%p)\n",
+ 			snd_device);
+@@ -545,12 +505,21 @@ static int snd_stm_conv_i2sspdif_register(
+ 
+ 	/* Create ALSA controls */
+ 
+-	result = snd_stm_conv_add_route_ctl(&platform_bus_type,
+-			conv_i2sspdif->device->bus_id, snd_device->card,
+-			conv_i2sspdif->info->card_device);
+-	if (result < 0) {
+-		snd_stm_printe("Failed to add converter route control!\n");
+-		return result;
++	for (i = 0; i < ARRAY_SIZE(snd_stm_conv_i2sspdif_ctls); i++) {
++		int result;
++
++		snd_stm_conv_i2sspdif_ctls[i].device =
++				snd_stm_conv_get_card_device(
++				conv_i2sspdif->converter);
++		snd_stm_conv_i2sspdif_ctls[i].index = conv_i2sspdif->index;
++		result = snd_ctl_add(snd_stm_card_get(),
++				snd_ctl_new1(&snd_stm_conv_i2sspdif_ctls[i],
++				conv_i2sspdif));
++		if (result < 0) {
++			snd_stm_printe("Failed to add I2S-SPDIF converter "
++					"ALSA control!\n");
++			return result;
++		}
+ 	}
+ 
+ 	snd_stm_printd(0, "--- Registered successfully!\n");
+@@ -605,13 +574,9 @@ static int snd_stm_conv_i2sspdif_probe(struct platform_device *pdev)
+ 	struct snd_stm_conv_i2sspdif_info *conv_i2sspdif_info =
+ 			pdev->dev.platform_data;
+ 	struct snd_stm_conv_i2sspdif *conv_i2sspdif;
+-	struct snd_card *card = snd_stm_card_get();
+-	int index;
+-	int i;
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+-	snd_assert(card, return -EINVAL);
+ 	snd_assert(conv_i2sspdif_info != NULL, return -EINVAL);
+ 
+ 	conv_i2sspdif = kzalloc(sizeof(*conv_i2sspdif), GFP_KERNEL);
+@@ -628,17 +593,6 @@ static int snd_stm_conv_i2sspdif_probe(struct platform_device *pdev)
+ 	conv_i2sspdif->device = &pdev->dev;
+ 	spin_lock_init(&conv_i2sspdif->iec958_default_lock);
+ 
+-	/* Converter interface initialization */
+-
+-	conv_i2sspdif->conv.name = conv_i2sspdif_info->name;
+-	conv_i2sspdif->conv.get_format = snd_stm_conv_i2sspdif_get_format;
+-	conv_i2sspdif->conv.get_oversampling =
+-			snd_stm_conv_i2sspdif_get_oversampling;
+-	conv_i2sspdif->conv.enable = snd_stm_conv_i2sspdif_enable;
+-	conv_i2sspdif->conv.disable = snd_stm_conv_i2sspdif_disable;
+-	conv_i2sspdif->conv.mute = snd_stm_conv_i2sspdif_mute;
+-	conv_i2sspdif->conv.unmute = snd_stm_conv_i2sspdif_unmute;
+-
+ 	/* Get resources */
+ 
+ 	result = snd_stm_memory_request(pdev, &conv_i2sspdif->mem_region,
+@@ -655,48 +609,36 @@ static int snd_stm_conv_i2sspdif_probe(struct platform_device *pdev)
+ 	snd_stm_printd(0, "This I2S-SPDIF converter is attached to PCM player"
+ 			" '%s'.\n",
+ 			conv_i2sspdif_info->source_bus_id);
+-	index = snd_stm_conv_attach(&conv_i2sspdif->conv, &platform_bus_type,
+-			conv_i2sspdif_info->source_bus_id);
+-	if (index < 0) {
++	conv_i2sspdif->converter = snd_stm_conv_register_converter(
++			"HDMI Output",
++			&snd_stm_conv_i2sspdif_ops, conv_i2sspdif,
++			&platform_bus_type, conv_i2sspdif_info->source_bus_id,
++			conv_i2sspdif_info->channel_from,
++			conv_i2sspdif_info->channel_to,
++			&conv_i2sspdif->index);
++	if (!conv_i2sspdif->converter) {
+ 		snd_stm_printe("Can't attach to PCM player!\n");
+-		result = index;
++		result = -EINVAL;
+ 		goto error_attach;
+ 	}
+ 
+ 	/* Create ALSA lowlevel device*/
+ 
+-	result = snd_device_new(card, SNDRV_DEV_LOWLEVEL, conv_i2sspdif,
+-			&snd_stm_conv_i2sspdif_snd_device_ops);
++	result = snd_device_new(snd_stm_card_get(), SNDRV_DEV_LOWLEVEL,
++			conv_i2sspdif, &snd_stm_conv_i2sspdif_snd_device_ops);
+ 	if (result < 0) {
+ 		snd_stm_printe("ALSA low level device creation failed!\n");
+ 		goto error_device;
+ 	}
+ 
+-	/* Create ALSA controls */
+-
+-	result = 0;
+-	for (i = 0; i < ARRAY_SIZE(snd_stm_conv_i2sspdif_ctls); i++) {
+-		snd_stm_conv_i2sspdif_ctls[i].device =
+-				conv_i2sspdif->info->card_device;
+-		snd_stm_conv_i2sspdif_ctls[i].index = index;
+-		result |= snd_ctl_add(card,
+-				snd_ctl_new1(&snd_stm_conv_i2sspdif_ctls[i],
+-				conv_i2sspdif));
+-	}
+-	if (result < 0) {
+-		snd_stm_printe("Failed to add all ALSA controls!\n");
+-		goto error_controls;
+-	}
+-
+ 	/* Done now */
+ 
+-	platform_set_drvdata(pdev, &conv_i2sspdif->conv);
++	platform_set_drvdata(pdev, conv_i2sspdif);
+ 
+ 	snd_stm_printd(0, "--- Probed successfully!\n");
+ 
+ 	return result;
+ 
+-error_controls:
+ error_device:
+ error_attach:
+ 	snd_stm_memory_release(conv_i2sspdif->mem_region,
+@@ -711,14 +653,13 @@ error_alloc:
+ static int snd_stm_conv_i2sspdif_remove(struct platform_device *pdev)
+ {
+ 	struct snd_stm_conv_i2sspdif *conv_i2sspdif =
+-			container_of(platform_get_drvdata(pdev),
+-			struct snd_stm_conv_i2sspdif, conv);
++			platform_get_drvdata(pdev);
+ 
+ 	snd_assert(conv_i2sspdif, return -EINVAL);
+ 	snd_stm_magic_assert(conv_i2sspdif, return -EINVAL);
+ 
+-	snd_stm_memory_release(conv_i2sspdif->mem_region,
+-			conv_i2sspdif->base);
++	snd_stm_conv_unregister_converter(conv_i2sspdif->converter);
++	snd_stm_memory_release(conv_i2sspdif->mem_region, conv_i2sspdif->base);
+ 
+ 	snd_stm_magic_clear(conv_i2sspdif);
+ 	kfree(conv_i2sspdif);
+diff --git a/sound/stm/conv_int_dac.c b/sound/stm/conv_int_dac.c
+index 0e539b9..33d509a 100644
+--- a/sound/stm/conv_int_dac.c
++++ b/sound/stm/conv_int_dac.c
+@@ -51,10 +51,8 @@
+  */
+ 
+ struct snd_stm_conv_int_dac {
+-	/* Generic converter interface */
+-	struct snd_stm_conv conv;
+-
+ 	/* System informations */
++	struct snd_stm_conv_converter *converter;
+ 	const char *bus_id;
+ 	int ver; /* IP version, used by register access macros */
+ 
+@@ -62,12 +60,6 @@ struct snd_stm_conv_int_dac {
+ 	struct resource *mem_region;
+ 	void *base;
+ 
+-	/* Runtime data */
+-	int enabled;
+-	int muted_by_source;
+-	int muted_by_user;
+-	spinlock_t status_lock; /* Protects enabled & muted_by_* */
+-
+ 	struct snd_info_entry *proc_entry;
+ 
+ 	snd_stm_magic_field;
+@@ -79,192 +71,71 @@ struct snd_stm_conv_int_dac {
+  * Converter interface implementation
+  */
+ 
+-static unsigned int snd_stm_conv_int_dac_get_format(struct snd_stm_conv
+-		*conv)
++static unsigned int snd_stm_conv_int_dac_get_format(void *priv)
+ {
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_get_format(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_int_dac_get_format(priv=%p)\n", priv);
+ 
+ 	return FORMAT;
+ }
+ 
+-static int snd_stm_conv_int_dac_get_oversampling(struct snd_stm_conv *conv)
++static int snd_stm_conv_int_dac_get_oversampling(void *priv)
+ {
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_get_oversampling(conv=%p)\n",
+-			conv);
++	snd_stm_printd(1, "snd_stm_conv_int_dac_get_oversampling(priv=%p)\n",
++			priv);
+ 
+ 	return OVERSAMPLING;
+ }
+ 
+-static int snd_stm_conv_int_dac_enable(struct snd_stm_conv *conv)
++static int snd_stm_conv_int_dac_set_enabled(int enabled, void *priv)
+ {
+-	struct snd_stm_conv_int_dac *conv_int_dac = container_of(conv,
+-			struct snd_stm_conv_int_dac, conv);
++	struct snd_stm_conv_int_dac *conv_int_dac = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_enable(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_int_dac_set_enabled(enabled=%d, "
++			"priv=%p)\n", enabled, priv);
+ 
+ 	snd_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-	snd_assert(!conv_int_dac->enabled, return -EINVAL);
+-
+-	snd_stm_printd(1, "Enabling DAC %s's digital part. (still muted)\n",
+-			conv_int_dac->bus_id);
+-
+-	spin_lock(&conv_int_dac->status_lock);
+ 
+-	set__AUDCFG_ADAC_CTRL__NSB__NORMAL(conv_int_dac);
+-	set__AUDCFG_ADAC_CTRL__NRST__NORMAL(conv_int_dac);
++	snd_stm_printd(1, "%sabling DAC %s's digital part.\n",
++			enabled ? "En" : "Dis", conv_int_dac->bus_id);
+ 
+-	conv_int_dac->enabled = 1;
+-
+-	spin_unlock(&conv_int_dac->status_lock);
++	if (enabled) {
++		set__AUDCFG_ADAC_CTRL__NSB__NORMAL(conv_int_dac);
++		set__AUDCFG_ADAC_CTRL__NRST__NORMAL(conv_int_dac);
++	} else {
++		set__AUDCFG_ADAC_CTRL__NRST__RESET(conv_int_dac);
++		set__AUDCFG_ADAC_CTRL__NSB__POWER_DOWN(conv_int_dac);
++	}
+ 
+ 	return 0;
+ }
+ 
+-static int snd_stm_conv_int_dac_disable(struct snd_stm_conv *conv)
++static int snd_stm_conv_int_dac_set_muted(int muted, void *priv)
+ {
+-	struct snd_stm_conv_int_dac *conv_int_dac = container_of(conv,
+-			struct snd_stm_conv_int_dac, conv);
++	struct snd_stm_conv_int_dac *conv_int_dac = priv;
+ 
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_disable(conv=%p)\n", conv);
++	snd_stm_printd(1, "snd_stm_conv_int_dac_set_muted(muted=%d, priv=%p)\n",
++		       muted, priv);
+ 
+ 	snd_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-	snd_assert(conv_int_dac->enabled, return -EINVAL);
+ 
+-	snd_stm_printd(1, "Disabling DAC %s's digital part.\n",
++	snd_stm_printd(1, "%suting DAC %s.\n", muted ? "M" : "Unm",
+ 			conv_int_dac->bus_id);
+ 
+-	spin_lock(&conv_int_dac->status_lock);
+-
+-	set__AUDCFG_ADAC_CTRL__NRST__RESET(conv_int_dac);
+-	set__AUDCFG_ADAC_CTRL__NSB__POWER_DOWN(conv_int_dac);
+-
+-	conv_int_dac->enabled = 0;
+-
+-	spin_unlock(&conv_int_dac->status_lock);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_int_dac_mute(struct snd_stm_conv *conv)
+-{
+-	struct snd_stm_conv_int_dac *conv_int_dac = container_of(conv,
+-			struct snd_stm_conv_int_dac, conv);
+-
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_mute(conv=%p)\n", conv);
+-
+-	snd_assert(conv_int_dac, return -EINVAL);
+-	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-	snd_assert(conv_int_dac->enabled, return -EINVAL);
+-
+-	snd_stm_printd(1, "Muting DAC %s.\n", conv_int_dac->bus_id);
+-
+-	spin_lock(&conv_int_dac->status_lock);
+-
+-	conv_int_dac->muted_by_source = 1;
+-	if (!conv_int_dac->muted_by_user)
++	if (muted)
+ 		set__AUDCFG_ADAC_CTRL__SOFTMUTE__MUTE(conv_int_dac);
+-
+-	spin_unlock(&conv_int_dac->status_lock);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_int_dac_unmute(struct snd_stm_conv *conv)
+-{
+-	struct snd_stm_conv_int_dac *conv_int_dac = container_of(conv,
+-			struct snd_stm_conv_int_dac, conv);
+-
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_unmute(conv=%p)\n", conv);
+-
+-	snd_assert(conv_int_dac, return -EINVAL);
+-	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-	snd_assert(conv_int_dac->enabled, return -EINVAL);
+-
+-	snd_stm_printd(1, "Unmuting DAC %s.\n", conv_int_dac->bus_id);
+-
+-	spin_lock(&conv_int_dac->status_lock);
+-
+-	conv_int_dac->muted_by_source = 0;
+-	if (!conv_int_dac->muted_by_user)
++	else
+ 		set__AUDCFG_ADAC_CTRL__SOFTMUTE__NORMAL(conv_int_dac);
+ 
+-	spin_unlock(&conv_int_dac->status_lock);
+-
+ 	return 0;
+ }
+ 
+-
+-
+-/*
+- * ALSA controls
+- */
+-
+-static int snd_stm_conv_int_dac_ctl_mute_get(struct snd_kcontrol *kcontrol,
+-		struct snd_ctl_elem_value *ucontrol)
+-{
+-	struct snd_stm_conv_int_dac *conv_int_dac =
+-			snd_kcontrol_chip(kcontrol);
+-
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_ctl_mute_get(kcontrol=0x%p,"
+-			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+-
+-	snd_assert(conv_int_dac, return -EINVAL);
+-	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-
+-	spin_lock(&conv_int_dac->status_lock);
+-
+-	ucontrol->value.integer.value[0] = !conv_int_dac->muted_by_user;
+-
+-	spin_unlock(&conv_int_dac->status_lock);
+-
+-	return 0;
+-}
+-
+-static int snd_stm_conv_int_dac_ctl_mute_put(struct snd_kcontrol *kcontrol,
+-		struct snd_ctl_elem_value *ucontrol)
+-{
+-	struct snd_stm_conv_int_dac *conv_int_dac =
+-			snd_kcontrol_chip(kcontrol);
+-	int changed = 0;
+-
+-	snd_stm_printd(1, "snd_stm_conv_int_dac_ctl_mute_put(kcontrol=0x%p,"
+-			" ucontrol=0x%p)\n", kcontrol, ucontrol);
+-
+-	snd_assert(conv_int_dac, return -EINVAL);
+-	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-
+-	spin_lock(&conv_int_dac->status_lock);
+-
+-	if (ucontrol->value.integer.value[0] !=
+-			!conv_int_dac->muted_by_user) {
+-		changed = 1;
+-
+-		conv_int_dac->muted_by_user =
+-				!ucontrol->value.integer.value[0];
+-
+-		if (conv_int_dac->enabled &&
+-				conv_int_dac->muted_by_user &&
+-				!conv_int_dac->muted_by_source)
+-			set__AUDCFG_ADAC_CTRL__SOFTMUTE__MUTE(conv_int_dac);
+-		else if (conv_int_dac->enabled &&
+-				!conv_int_dac->muted_by_user &&
+-				!conv_int_dac->muted_by_source)
+-			set__AUDCFG_ADAC_CTRL__SOFTMUTE__NORMAL(conv_int_dac);
+-	}
+-
+-	spin_unlock(&conv_int_dac->status_lock);
+-
+-	return changed;
+-}
+-
+-static struct snd_kcontrol_new snd_stm_conv_int_dac_ctl_mute = {
+-	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+-	.name = "Master Playback Switch",
+-	.info = snd_stm_ctl_boolean_info,
+-	.get = snd_stm_conv_int_dac_ctl_mute_get,
+-	.put = snd_stm_conv_int_dac_ctl_mute_put,
++static struct snd_stm_conv_ops snd_stm_conv_int_dac_ops = {
++	.get_format = snd_stm_conv_int_dac_get_format,
++	.get_oversampling = snd_stm_conv_int_dac_get_oversampling,
++	.set_enabled = snd_stm_conv_int_dac_set_enabled,
++	.set_muted = snd_stm_conv_int_dac_set_muted,
+ };
+ 
+ 
+@@ -298,12 +169,9 @@ static int snd_stm_conv_int_dac_register(struct snd_device *snd_device)
+ 
+ 	snd_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-	snd_assert(!conv_int_dac->enabled, return -EINVAL);
+ 
+ 	/* Initialize DAC with digital part down, analog up and muted */
+ 
+-	conv_int_dac->enabled = 0;
+-	conv_int_dac->muted_by_source = 1;
+ 	set__AUDCFG_ADAC_CTRL(conv_int_dac,
+ 			mask__AUDCFG_ADAC_CTRL__NRST__RESET(conv_int_dac) |
+ 			mask__AUDCFG_ADAC_CTRL__MODE__DEFAULT(conv_int_dac) |
+@@ -329,7 +197,6 @@ static int __exit snd_stm_conv_int_dac_disconnect(struct snd_device *snd_device)
+ 
+ 	snd_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+-	snd_assert(!conv_int_dac->enabled, return -EINVAL);
+ 
+ 	/* Remove procfs entry */
+ 
+@@ -366,7 +233,6 @@ static int snd_stm_conv_int_dac_probe(struct platform_device *pdev)
+ 			pdev->dev.platform_data;
+ 	struct snd_stm_conv_int_dac *conv_int_dac;
+ 	struct snd_card *card = snd_stm_card_get();
+-	int index;
+ 
+ 	snd_stm_printd(0, "--- Probing device '%s'...\n", pdev->dev.bus_id);
+ 
+@@ -384,19 +250,6 @@ static int snd_stm_conv_int_dac_probe(struct platform_device *pdev)
+ 	conv_int_dac->ver = conv_int_dac_info->ver;
+ 	snd_assert(conv_int_dac->ver > 0, return -EINVAL);
+ 	conv_int_dac->bus_id = pdev->dev.bus_id;
+-	spin_lock_init(&conv_int_dac->status_lock);
+-
+-	/* Converter interface initialization */
+-
+-	conv_int_dac->conv.name = conv_int_dac_info->name;
+-	conv_int_dac->conv.get_format =
+-			snd_stm_conv_int_dac_get_format;
+-	conv_int_dac->conv.get_oversampling =
+-			snd_stm_conv_int_dac_get_oversampling;
+-	conv_int_dac->conv.enable = snd_stm_conv_int_dac_enable;
+-	conv_int_dac->conv.disable = snd_stm_conv_int_dac_disable;
+-	conv_int_dac->conv.mute = snd_stm_conv_int_dac_mute;
+-	conv_int_dac->conv.unmute = snd_stm_conv_int_dac_unmute;
+ 
+ 	/* Get resources */
+ 
+@@ -413,11 +266,14 @@ static int snd_stm_conv_int_dac_probe(struct platform_device *pdev)
+ 			return -EINVAL);
+ 	snd_stm_printd(0, "This DAC is attached to PCM player '%s'.\n",
+ 			conv_int_dac_info->source_bus_id);
+-	index = snd_stm_conv_attach(&conv_int_dac->conv, &platform_bus_type,
+-			conv_int_dac_info->source_bus_id);
+-	if (index < 0) {
++	conv_int_dac->converter = snd_stm_conv_register_converter(
++			"Analog Output",
++			&snd_stm_conv_int_dac_ops, conv_int_dac,
++			&platform_bus_type, conv_int_dac_info->source_bus_id,
++			conv_int_dac_info->channel_from,
++			conv_int_dac_info->channel_to, NULL);
++	if (!conv_int_dac->converter) {
+ 		snd_stm_printe("Can't attach to PCM player!\n");
+-		result = index;
+ 		goto error_attach;
+ 	}
+ 
+@@ -430,28 +286,14 @@ static int snd_stm_conv_int_dac_probe(struct platform_device *pdev)
+ 		goto error_device;
+ 	}
+ 
+-	/* Create ALSA control */
+-
+-	snd_stm_conv_int_dac_ctl_mute.device =
+-			conv_int_dac_info->card_device;
+-	snd_stm_conv_int_dac_ctl_mute.index = index;
+-	result = snd_ctl_add(card,
+-			snd_ctl_new1(&snd_stm_conv_int_dac_ctl_mute,
+-			conv_int_dac));
+-	if (result < 0) {
+-		snd_stm_printe("Failed to add all ALSA control!\n");
+-		goto error_control;
+-	}
+-
+ 	/* Done now */
+ 
+-	platform_set_drvdata(pdev, &conv_int_dac->conv);
++	platform_set_drvdata(pdev, conv_int_dac);
+ 
+ 	snd_stm_printd(0, "--- Probed successfully!\n");
+ 
+ 	return 0;
+ 
+-error_control:
+ error_device:
+ error_attach:
+ 	snd_stm_memory_release(conv_int_dac->mem_region,
+@@ -465,13 +307,12 @@ error_alloc:
+ 
+ static int snd_stm_conv_int_dac_remove(struct platform_device *pdev)
+ {
+-	struct snd_stm_conv_int_dac *conv_int_dac =
+-			container_of(platform_get_drvdata(pdev),
+-			struct snd_stm_conv_int_dac, conv);
++	struct snd_stm_conv_int_dac *conv_int_dac = platform_get_drvdata(pdev);
+ 
+ 	snd_assert(conv_int_dac, return -EINVAL);
+ 	snd_stm_magic_assert(conv_int_dac, return -EINVAL);
+ 
++	snd_stm_conv_unregister_converter(conv_int_dac->converter);
+ 	snd_stm_memory_release(conv_int_dac->mem_region,
+ 			conv_int_dac->base);
+ 
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index aeb58be..01cc137 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -74,10 +74,11 @@ struct snd_stm_pcm_player {
+ 
+ 	/* Environment settings */
+ 	struct snd_stm_fsynth_channel *fsynth_channel;
+-	struct snd_stm_conv *conv;
+ 	struct snd_pcm_hw_constraint_list channels_constraint;
++	struct snd_stm_conv_source *conv_source;
+ 
+ 	/* Runtime data */
++	struct snd_stm_conv_group *conv_group;
+ 	struct snd_stm_buffer *buffer;
+ 	struct snd_info_entry *proc_entry;
+ 	struct snd_pcm_substream *substream;
+@@ -186,14 +187,14 @@ static int snd_stm_pcm_player_open(struct snd_pcm_substream *substream)
+ 
+ 	snd_pcm_set_sync(substream);  /* TODO: ??? */
+ 
+-	/* Get attached converter handle */
++	/* Get attached converters handle */
+ 
+-	pcm_player->conv = snd_stm_conv_get_attached(&platform_bus_type,
+-			pcm_player->device->bus_id);
+-	if (pcm_player->conv)
+-		snd_stm_printd(1, "Converter '%s' attached to '%s'...\n",
+-				pcm_player->conv->name,
+-				pcm_player->device->bus_id);
++	pcm_player->conv_group =
++			snd_stm_conv_request_group(pcm_player->conv_source);
++	if (pcm_player->conv_group)
++		snd_stm_printd(1, "'%s' is attached to '%s' converter(s)...\n",
++				pcm_player->device->bus_id,
++				snd_stm_conv_get_name(pcm_player->conv_group));
+ 	else
+ 		snd_stm_printd(1, "Warning! No converter attached to '%s'!\n",
+ 				pcm_player->device->bus_id);
+@@ -246,6 +247,11 @@ static int snd_stm_pcm_player_close(struct snd_pcm_substream *substream)
+ 	snd_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
++	if (pcm_player->conv_group) {
++		snd_stm_conv_release_group(pcm_player->conv_group);
++		pcm_player->conv_group = NULL;
++	}
++
+ 	pcm_player->substream = NULL;
+ 
+ 	return 0;
+@@ -408,9 +414,10 @@ static int snd_stm_pcm_player_prepare(struct snd_pcm_substream *substream)
+ 
+ 	/* Get format & oversampling value from connected converter */
+ 
+-	if (pcm_player->conv) {
+-		format = snd_stm_conv_get_format(pcm_player->conv);
+-		oversampling = snd_stm_conv_get_oversampling(pcm_player->conv);
++	if (pcm_player->conv_group) {
++		format = snd_stm_conv_get_format(pcm_player->conv_group);
++		oversampling = snd_stm_conv_get_oversampling(
++				pcm_player->conv_group);
+ 		if (oversampling == 0)
+ 			oversampling = DEFAULT_OVERSAMPLING;
+ 	} else {
+@@ -618,9 +625,10 @@ static inline int snd_stm_pcm_player_start(struct snd_pcm_substream *substream)
+ 
+ 	/* Wake up & unmute DAC */
+ 
+-	if (pcm_player->conv) {
+-		snd_stm_conv_enable(pcm_player->conv);
+-		snd_stm_conv_unmute(pcm_player->conv);
++	if (pcm_player->conv_group) {
++		snd_stm_conv_enable(pcm_player->conv_group,
++				0, substream->runtime->channels - 1);
++		snd_stm_conv_unmute(pcm_player->conv_group);
+ 	}
+ 
+ 	return 0;
+@@ -639,9 +647,9 @@ static inline int snd_stm_pcm_player_stop(struct snd_pcm_substream *substream)
+ 
+ 	/* Mute & shutdown DAC */
+ 
+-	if (pcm_player->conv) {
+-		snd_stm_conv_mute(pcm_player->conv);
+-		snd_stm_conv_disable(pcm_player->conv);
++	if (pcm_player->conv_group) {
++		snd_stm_conv_mute(pcm_player->conv_group);
++		snd_stm_conv_disable(pcm_player->conv_group);
+ 	}
+ 
+ 	/* Disable interrupts */
+@@ -844,14 +852,6 @@ static int snd_stm_pcm_player_register(struct snd_device *snd_device)
+ 
+ 	/* Create ALSA controls */
+ 
+-	result = snd_stm_conv_add_route_ctl(&platform_bus_type,
+-			pcm_player->device->bus_id, snd_device->card,
+-			pcm_player->info->card_device);
+-	if (result < 0) {
+-		snd_stm_printe("Failed to add converter route control!\n");
+-		return result;
+-	}
+-
+ 	result = snd_stm_fsynth_add_adjustement_ctl(pcm_player->fsynth_channel,
+ 			snd_device->card, pcm_player->info->card_device);
+ 	if (result < 0) {
+@@ -1014,6 +1014,18 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 		goto error_buffer_init;
+ 	}
+ 
++	/* Register in converters router */
++
++	pcm_player->conv_source = snd_stm_conv_register_source(
++			&platform_bus_type, pdev->dev.bus_id,
++			pcm_player->info->channels,
++			card, pcm_player->info->card_device);
++	if (!pcm_player->conv_source) {
++		snd_stm_printe("Cannot register in converters router!\n");
++		result = -ENOMEM;
++		goto error_conv_register_source;
++	}
++
+ 	/* Done now */
+ 
+ 	platform_set_drvdata(pdev, pcm_player);
+@@ -1022,6 +1034,8 @@ static int snd_stm_pcm_player_probe(struct platform_device *pdev)
+ 
+ 	return 0;
+ 
++error_conv_register_source:
++	snd_stm_buffer_dispose(pcm_player->buffer);
+ error_buffer_init:
+ 	/* snd_pcm_free() is not available - PCM device will be released
+ 	 * during card release */
+@@ -1047,6 +1061,7 @@ static int snd_stm_pcm_player_remove(struct platform_device *pdev)
+ 	snd_assert(pcm_player, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_player, return -EINVAL);
+ 
++	snd_stm_conv_unregister_source(pcm_player->conv_source);
+ 	snd_stm_buffer_dispose(pcm_player->buffer);
+ 	snd_stm_fdma_release(pcm_player->fdma_channel);
+ 	snd_stm_irq_release(pcm_player->irq, pcm_player);
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index adeb285..76934b6 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -68,10 +68,11 @@ struct snd_stm_pcm_reader {
+ 	int fdma_channel;
+ 
+ 	/* Environment settings */
+-	struct snd_stm_conv *conv;
+ 	struct snd_pcm_hw_constraint_list channels_constraint;
++	struct snd_stm_conv_source *conv_source;
+ 
+ 	/* Runtime data */
++	struct snd_stm_conv_group *conv_group;
+ 	struct snd_stm_buffer *buffer;
+ 	struct snd_info_entry *proc_entry;
+ 	struct snd_pcm_substream *substream;
+@@ -204,14 +205,14 @@ static int snd_stm_pcm_reader_open(struct snd_pcm_substream *substream)
+ 
+ 	snd_pcm_set_sync(substream);  /* TODO: ??? */
+ 
+-	/* Get attached converter handle */
++	/* Get attached converters handle */
+ 
+-	pcm_reader->conv = snd_stm_conv_get_attached(&platform_bus_type,
+-			pcm_reader->device->bus_id);
+-	if (pcm_reader->conv)
+-		snd_stm_printd(1, "Converter '%s' attached to '%s'...\n",
+-				pcm_reader->conv->name,
+-				pcm_reader->device->bus_id);
++	pcm_reader->conv_group =
++			snd_stm_conv_request_group(pcm_reader->conv_source);
++	if (pcm_reader->conv_group)
++		snd_stm_printd(1, "'%s' is attached to '%s' converter(s)...\n",
++				pcm_reader->device->bus_id,
++				snd_stm_conv_get_name(pcm_reader->conv_group));
+ 	else
+ 		snd_stm_printd(1, "Warning! No converter attached to '%s'!\n",
+ 				pcm_reader->device->bus_id);
+@@ -264,6 +265,11 @@ static int snd_stm_pcm_reader_close(struct snd_pcm_substream *substream)
+ 	snd_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
++	if (pcm_reader->conv_group) {
++		snd_stm_conv_release_group(pcm_reader->conv_group);
++		pcm_reader->conv_group = NULL;
++	}
++
+ 	pcm_reader->substream = NULL;
+ 
+ 	return 0;
+@@ -482,8 +488,8 @@ static int snd_stm_pcm_reader_prepare(struct snd_pcm_substream *substream)
+ 
+ 	/* Get format value from connected converter */
+ 
+-	if (pcm_reader->conv)
+-		format = snd_stm_conv_get_format(pcm_reader->conv);
++	if (pcm_reader->conv_group)
++		format = snd_stm_conv_get_format(pcm_reader->conv_group);
+ 	else
+ 		format = DEFAULT_FORMAT;
+ 
+@@ -617,9 +623,10 @@ static inline int snd_stm_pcm_reader_start(struct snd_pcm_substream *substream)
+ 
+ 	/* Wake up & unmute ADC */
+ 
+-	if (pcm_reader->conv) {
+-		snd_stm_conv_enable(pcm_reader->conv);
+-		snd_stm_conv_unmute(pcm_reader->conv);
++	if (pcm_reader->conv_group) {
++		snd_stm_conv_enable(pcm_reader->conv_group,
++				0, substream->runtime->channels - 1);
++		snd_stm_conv_unmute(pcm_reader->conv_group);
+ 	}
+ 
+ 	return 0;
+@@ -638,9 +645,9 @@ static inline int snd_stm_pcm_reader_stop(struct snd_pcm_substream *substream)
+ 
+ 	/* Mute & shutdown DAC */
+ 
+-	if (pcm_reader->conv) {
+-		snd_stm_conv_mute(pcm_reader->conv);
+-		snd_stm_conv_disable(pcm_reader->conv);
++	if (pcm_reader->conv_group) {
++		snd_stm_conv_mute(pcm_reader->conv_group);
++		snd_stm_conv_disable(pcm_reader->conv_group);
+ 	}
+ 
+ 	/* Disable interrupts */
+@@ -756,7 +763,6 @@ static void snd_stm_pcm_reader_dump_registers(struct snd_info_entry *entry,
+ 
+ static int snd_stm_pcm_reader_register(struct snd_device *snd_device)
+ {
+-	int result;
+ 	struct snd_stm_pcm_reader *pcm_reader = snd_device->device_data;
+ 
+ 	snd_stm_printd(1, "snd_stm_pcm_reader_register(snd_device=0x%p)\n",
+@@ -783,16 +789,6 @@ static int snd_stm_pcm_reader_register(struct snd_device *snd_device)
+ 			pcm_reader->device->bus_id,
+ 			snd_stm_pcm_reader_dump_registers, pcm_reader);
+ 
+-	/* Create ALSA controls */
+-
+-	result = snd_stm_conv_add_route_ctl(&platform_bus_type,
+-			pcm_reader->device->bus_id, snd_device->card,
+-			pcm_reader->info->card_device);
+-	if (result < 0) {
+-		snd_stm_printe("Failed to add converter route control!\n");
+-		return result;
+-	}
+-
+ 	snd_stm_printd(0, "--- Registered successfully!\n");
+ 
+ 	return 0;
+@@ -946,6 +942,18 @@ static int snd_stm_pcm_reader_probe(struct platform_device *pdev)
+ 		goto error_buffer_create;
+ 	}
+ 
++	/* Register in converters router */
++
++	pcm_reader->conv_source = snd_stm_conv_register_source(
++			&platform_bus_type, pdev->dev.bus_id,
++			pcm_reader->info->channels,
++			card, pcm_reader->info->card_device);
++	if (!pcm_reader->conv_source) {
++		snd_stm_printe("Cannot register in converters router!\n");
++		result = -ENOMEM;
++		goto error_conv_register_source;
++	}
++
+ 	/* Done now */
+ 
+ 	platform_set_drvdata(pdev, pcm_reader);
+@@ -954,6 +962,8 @@ static int snd_stm_pcm_reader_probe(struct platform_device *pdev)
+ 
+ 	return 0;
+ 
++error_conv_register_source:
++	snd_stm_buffer_dispose(pcm_reader->buffer);
+ error_buffer_create:
+ 	/* snd_pcm_free() is not available - PCM device will be released
+ 	 * during card release */
+@@ -979,6 +989,7 @@ static int snd_stm_pcm_reader_remove(struct platform_device *pdev)
+ 	snd_assert(pcm_reader, return -EINVAL);
+ 	snd_stm_magic_assert(pcm_reader, return -EINVAL);
+ 
++	snd_stm_conv_unregister_source(pcm_reader->conv_source);
+ 	snd_stm_buffer_dispose(pcm_reader->buffer);
+ 	snd_stm_fdma_release(pcm_reader->fdma_channel);
+ 	snd_stm_irq_release(pcm_reader->irq, pcm_reader);
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 511fdf5..f79e3fd 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -92,13 +92,14 @@ struct snd_stm_spdif_player {
+ 
+ 	/* Environment settings */
+ 	struct snd_stm_fsynth_channel *fsynth_channel;
+-	struct snd_stm_conv *conv;
++	struct snd_stm_conv_source *conv_source;
+ 
+ 	/* Default settings (controlled by controls ;-) */
+ 	struct snd_stm_spdif_player_settings default_settings;
+ 	spinlock_t default_settings_lock; /* Protects default_settings */
+ 
+ 	/* Runtime data */
++	struct snd_stm_conv_group *conv_group;
+ 	struct snd_stm_buffer *buffer;
+ 	struct snd_info_entry *proc_entry;
+ 	struct snd_pcm_substream *substream;
+@@ -256,14 +257,15 @@ static int snd_stm_spdif_player_open(struct snd_pcm_substream *substream)
+ 
+ 	snd_pcm_set_sync(substream);  /* TODO: ??? */
+ 
+-	/* Get attached converter handle */
++	/* Get attached converters handle */
+ 
+-	spdif_player->conv = snd_stm_conv_get_attached(&platform_bus_type,
+-			spdif_player->device->bus_id);
+-	if (spdif_player->conv)
+-		snd_stm_printd(1, "Converter '%s' attached to '%s'...\n",
+-				spdif_player->conv->name,
+-				spdif_player->device->bus_id);
++	spdif_player->conv_group =
++			snd_stm_conv_request_group(spdif_player->conv_source);
++	if (spdif_player->conv_group)
++		snd_stm_printd(1, "'%s' is attached to '%s' converter(s)...\n",
++				spdif_player->device->bus_id,
++				snd_stm_conv_get_name(
++				spdif_player->conv_group));
+ 	else
+ 		snd_stm_printd(1, "Warning! No converter attached to '%s'!\n",
+ 				spdif_player->device->bus_id);
+@@ -318,6 +320,11 @@ static int snd_stm_spdif_player_close(struct snd_pcm_substream *substream)
+ 	snd_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
++	if (spdif_player->conv_group) {
++		snd_stm_conv_release_group(spdif_player->conv_group);
++		spdif_player->conv_group = NULL;
++	}
++
+ 	spdif_player->substream = NULL;
+ 
+ 	return 0;
+@@ -488,15 +495,15 @@ static int snd_stm_spdif_player_prepare(struct snd_pcm_substream *substream)
+ 
+ 	/* Get oversampling value from connected converter */
+ 
+-	if (spdif_player->conv) {
+-		unsigned int format =
+-				snd_stm_conv_get_format(spdif_player->conv);
++	if (spdif_player->conv_group) {
++		unsigned int format = snd_stm_conv_get_format(
++				spdif_player->conv_group);
+ 
+ 		snd_assert((format & SND_STM_FORMAT__MASK) ==
+ 				SND_STM_FORMAT__SPDIF, return -EINVAL);
+ 
+ 		oversampling = snd_stm_conv_get_oversampling(
+-				spdif_player->conv);
++				spdif_player->conv_group);
+ 		if (oversampling == 0)
+ 			oversampling = DEFAULT_OVERSAMPLING;
+ 	} else {
+@@ -641,9 +648,10 @@ static inline int snd_stm_spdif_player_start(struct snd_pcm_substream
+ 
+ 	/* Wake up & unmute converter */
+ 
+-	if (spdif_player->conv) {
+-		snd_stm_conv_enable(spdif_player->conv);
+-		snd_stm_conv_unmute(spdif_player->conv);
++	if (spdif_player->conv_group) {
++		snd_stm_conv_enable(spdif_player->conv_group,
++				0, substream->runtime->channels - 1);
++		snd_stm_conv_unmute(spdif_player->conv_group);
+ 	}
+ 
+ 	return 0;
+@@ -662,9 +670,9 @@ static inline int snd_stm_spdif_player_stop(struct snd_pcm_substream *substream)
+ 
+ 	/* Mute & shutdown converter */
+ 
+-	if (spdif_player->conv) {
+-		snd_stm_conv_mute(spdif_player->conv);
+-		snd_stm_conv_disable(spdif_player->conv);
++	if (spdif_player->conv_group) {
++		snd_stm_conv_mute(spdif_player->conv_group);
++		snd_stm_conv_disable(spdif_player->conv_group);
+ 	}
+ 
+ 	/* Disable interrupts */
+@@ -1427,14 +1435,6 @@ static int snd_stm_spdif_player_register(struct snd_device *snd_device)
+ 
+ 	/* Create ALSA controls */
+ 
+-	result = snd_stm_conv_add_route_ctl(&platform_bus_type,
+-			spdif_player->device->bus_id, snd_device->card,
+-			spdif_player->info->card_device);
+-	if (result < 0) {
+-		snd_stm_printe("Failed to add converter route control!\n");
+-		return result;
+-	}
+-
+ 	result = snd_stm_fsynth_add_adjustement_ctl(
+ 			spdif_player->fsynth_channel, snd_device->card,
+ 			spdif_player->info->card_device);
+@@ -1592,6 +1592,17 @@ static int snd_stm_spdif_player_probe(struct platform_device *pdev)
+ 		goto error_buffer_create;
+ 	}
+ 
++	/* Register in converters router */
++
++	spdif_player->conv_source = snd_stm_conv_register_source(
++			&platform_bus_type, pdev->dev.bus_id,
++			2, card, spdif_player->info->card_device);
++	if (!spdif_player->conv_source) {
++		snd_stm_printe("Cannot register in converters router!\n");
++		result = -ENOMEM;
++		goto error_conv_register_source;
++	}
++
+ 	/* Done now */
+ 
+ 	platform_set_drvdata(pdev, spdif_player);
+@@ -1600,6 +1611,8 @@ static int snd_stm_spdif_player_probe(struct platform_device *pdev)
+ 
+ 	return 0;
+ 
++error_conv_register_source:
++	snd_stm_buffer_dispose(spdif_player->buffer);
+ error_buffer_create:
+ 	/* snd_pcm_free() is not available - PCM device will be released
+ 	 * during card release */
+@@ -1625,6 +1638,7 @@ static int snd_stm_spdif_player_remove(struct platform_device *pdev)
+ 	snd_assert(spdif_player, return -EINVAL);
+ 	snd_stm_magic_assert(spdif_player, return -EINVAL);
+ 
++	snd_stm_conv_unregister_source(spdif_player->conv_source);
+ 	snd_stm_buffer_dispose(spdif_player->buffer);
+ 	snd_stm_fdma_release(spdif_player->fdma_channel);
+ 	snd_stm_irq_release(spdif_player->irq, spdif_player);
+diff --git a/sound/stm/stx710x.c b/sound/stm/stx710x.c
+index 35a7207..4602f85 100644
+--- a/sound/stm/stx710x.c
++++ b/sound/stm/stx710x.c
+@@ -90,10 +90,10 @@ static struct platform_device fsynth = {
+ /* Internal DAC */
+ 
+ static struct snd_stm_conv_int_dac_info conv_int_dac_info = {
+-	.name = "Internal audio DAC",
+ 	/* .ver = see snd_stm_stx710x_init() */
+-	.card_device = 1,
+ 	.source_bus_id = "snd_pcm_player.1",
++	.channel_from = 0,
++	.channel_to = 1,
+ };
+ 
+ static struct platform_device conv_int_dac = {
+@@ -206,10 +206,10 @@ static struct platform_device spdif_player = {
+ /* HDMI-connected I2S to SPDIF converter */
+ 
+ static struct snd_stm_conv_i2sspdif_info conv_i2sspdif_info = {
+-	.name = "I2S to SPDIF converter",
+ 	/* .ver = see snd_stm_stx710x_init() */
+-	.card_device = 0,
+ 	.source_bus_id = "snd_pcm_player.0",
++	.channel_from = 0,
++	.channel_to = 1,
+ };
+ 
+ static struct platform_device conv_i2sspdif = {
+diff --git a/sound/stm/stx7111.c b/sound/stm/stx7111.c
+index 354f54c..2c0147c 100644
+--- a/sound/stm/stx7111.c
++++ b/sound/stm/stx7111.c
+@@ -101,10 +101,10 @@ static struct platform_device conv_int_dac = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_int_dac_info) {
+-		.name = "Internal audio DAC",
+ 		.ver = 4,
+-		.card_device = 1,
+ 		.source_bus_id = "snd_pcm_player.1",
++		.channel_from = 0,
++		.channel_to = 1,
+ 	},
+ };
+ 
+@@ -216,10 +216,10 @@ static struct platform_device conv_i2sspdif_0 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #0",
+ 		.ver = 4,
+-		.card_device = 0,
+ 		.source_bus_id = "snd_pcm_player.0",
++		.channel_from = 0,
++		.channel_to = 1,
+ 	},
+ };
+ 
+@@ -240,10 +240,10 @@ static struct platform_device conv_i2sspdif_1 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #1",
+ 		.ver = 4,
+-		.card_device = 0,
+ 		.source_bus_id = "snd_pcm_player.0",
++		.channel_from = 2,
++		.channel_to = 3,
+ 	},
+ };
+ 
+@@ -264,10 +264,10 @@ static struct platform_device conv_i2sspdif_2 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #2",
+ 		.ver = 4,
+-		.card_device = 0,
+ 		.source_bus_id = "snd_pcm_player.0",
++		.channel_from = 4,
++		.channel_to = 5,
+ 	},
+ };
+ 
+@@ -288,10 +288,10 @@ static struct platform_device conv_i2sspdif_3 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #3",
+ 		.ver = 4,
+-		.card_device = 0,
+ 		.source_bus_id = "snd_pcm_player.0",
++		.channel_from = 6,
++		.channel_to = 7,
+ 	},
+ };
+ 
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index 68158cf..3d869f2 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -127,10 +127,10 @@ static struct platform_device conv_int_dac_0 = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_int_dac_info) {
+-		.name = "Internal audio DAC #0",
+ 		/* .ver = see snd_stm_stx7200_init() */
+-		.card_device = 0,
+ 		.source_bus_id = "snd_pcm_player.0",
++		.channel_from = 0,
++		.channel_to = 1,
+ 	},
+ };
+ 
+@@ -146,10 +146,10 @@ static struct platform_device conv_int_dac_1 = {
+ 		},
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_int_dac_info) {
+-		.name = "Internal audio DAC #1 (slave)",
+ 		/* .ver = see snd_stm_stx7200_init() */
+-		.card_device = 1,
+ 		.source_bus_id = "snd_pcm_player.1",
++		.channel_from = 0,
++		.channel_to = 1,
+ 	},
+ };
+ 
+@@ -315,8 +315,6 @@ static struct platform_device hdmi_pcm_player = {
+ 			.flags = IORESOURCE_MEM,
+ 			/* .start = see snd_stm_stx7200_init() */
+ 			/* .end = see snd_stm_stx7200_init() */
+-			.start = 0xfd112d00,
+-			.end   = 0xfd112d27,
+ 		},
+ 		{
+ 			.flags = IORESOURCE_IRQ,
+@@ -381,10 +379,10 @@ static struct platform_device hdmi_conv_i2sspdif_0 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #0",
+ 		.ver = 4,
+-		.card_device = 4,
+ 		.source_bus_id = "snd_pcm_player.4",
++		.channel_from = 0,
++		.channel_to = 1,
+ 	},
+ };
+ 
+@@ -406,10 +404,10 @@ static struct platform_device hdmi_conv_i2sspdif_1 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #1",
+ 		.ver = 4,
+-		.card_device = 4,
+ 		.source_bus_id = "snd_pcm_player.4",
++		.channel_from = 2,
++		.channel_to = 3,
+ 	},
+ };
+ 
+@@ -431,10 +429,10 @@ static struct platform_device hdmi_conv_i2sspdif_2 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #2",
+ 		.ver = 4,
+-		.card_device = 4,
+ 		.source_bus_id = "snd_pcm_player.4",
++		.channel_from = 4,
++		.channel_to = 5,
+ 	},
+ };
+ 
+@@ -456,10 +454,10 @@ static struct platform_device hdmi_conv_i2sspdif_3 = {
+ 		}
+ 	},
+ 	.dev.platform_data = &(struct snd_stm_conv_i2sspdif_info) {
+-		.name = "I2S to SPDIF converter #3",
+ 		.ver = 4,
+-		.card_device = 4,
+ 		.source_bus_id = "snd_pcm_player.4",
++		.channel_from = 6,
++		.channel_to = 7,
+ 	},
+ };
+ 
+@@ -467,7 +465,7 @@ static struct platform_device hdmi_conv_i2sspdif_3 = {
+ 
+ static struct platform_device pcm_reader_0 = {
+ 	.name          = "snd_pcm_reader",
+-	/* .id = see snd_stm_stx7200_init() */
++	.id = 0,
+ 	.num_resources = 2,
+ 	.resource      = (struct resource []) {
+ 		{
+@@ -776,7 +774,6 @@ static int __init snd_stm_stx7200_init(void)
+ 		hdmi_spdif_player.resource[0].end = 0xfd106c3f;
+ 
+ 		SET_VER(snd_stm_pcm_reader_info, pcm_reader_0, 3);
+-		pcm_reader_0.id = -1; /* Only one reader */
+ 
+ 		break;
+ 
+@@ -804,7 +801,6 @@ static int __init snd_stm_stx7200_init(void)
+ 		hdmi_spdif_player.resource[0].end = 0xfd112c43;
+ 
+ 		SET_VER(snd_stm_pcm_reader_info, pcm_reader_0, 5);
+-		pcm_reader_0.id = 0;
+ 		SET_VER(snd_stm_pcm_reader_info, pcm_reader_1, 5);
+ 
+ 		break;

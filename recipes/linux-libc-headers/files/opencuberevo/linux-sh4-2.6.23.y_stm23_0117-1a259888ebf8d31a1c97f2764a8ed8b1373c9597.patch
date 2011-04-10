@@ -1,0 +1,35 @@
+From 1a259888ebf8d31a1c97f2764a8ed8b1373c9597 Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Wed, 15 Oct 2008 16:48:16 +0100
+Subject: [PATCH] sh_fpu: fcnvds fix with denormalized numbers.
+
+It fix a bug is in the FPU exception handler from the FCNVDS instruction.
+To get the register number the instruction is shifted right by 9,
+it should be shifted right by 8.
+(as described in the ST40 Programming Manual, FCVNDS instruction code).
+
+Bugzilla: #4892
+
+Signed-off-by: Giuseppe Di Giore <giuseppe.di-giore@st.com>
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/fpu.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/fpu.c b/arch/sh/kernel/cpu/sh4/fpu.c
+index ed1f0ea..87366cd 100644
+--- a/arch/sh/kernel/cpu/sh4/fpu.c
++++ b/arch/sh/kernel/cpu/sh4/fpu.c
+@@ -425,7 +425,7 @@ static int ieee_fpe_handler(struct pt_regs *regs)
+ 		int m;
+ 		unsigned int hx;
+ 
+-		m = (finsn >> 9) & 0x7;
++		m = (finsn >> 8) & 0x7;
+ 		hx = tsk->thread.fpu.hard.fp_regs[m];
+ 
+ 		if ((tsk->thread.fpu.hard.fpscr & FPSCR_CAUSE_ERROR)
+-- 
+1.5.3.6
+

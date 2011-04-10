@@ -1,0 +1,36 @@
+From bc4f637f0357f8286be3f698bd0b227b9f4ea6a1 Mon Sep 17 00:00:00 2001
+From: David MCKAY <david.mckay@st.com>
+Date: Wed, 20 May 2009 17:13:33 +0100
+Subject: [PATCH] stm_pio: Fix STMicro gpio_direction_output()
+
+The generic gpio_direction_output() takes a "value" parameter which is
+the state you want to set the pin to. The current STMicro STPIO
+implementation completely ignores this and doesn't set any value at all,
+so you end up with whatever it was. The patch fixes this by setting the
+value before you configure the pin as an output, thus avoiding any
+glitches.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ drivers/stm/pio.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index 2ccd1ec..d75375d 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -542,6 +542,11 @@ static int stpio_gpio_direction_output(struct gpio_chip *chip, unsigned offset,
+ 	if (!pin->name)
+ 		pin->name = stpio_gpio_name;
+ 
++	/* Set the output value before we configure it as an output to
++	 * avoid any glitches
++	 */
++	stpio_set_pin(pin, value);
++
+ 	stpio_configure_pin(pin, STPIO_OUT);
+ 
+ 	return 0;
+-- 
+1.6.0.6
+

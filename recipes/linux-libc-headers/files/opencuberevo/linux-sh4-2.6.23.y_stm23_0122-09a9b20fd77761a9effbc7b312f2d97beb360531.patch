@@ -1,0 +1,101 @@
+From 09a9b20fd77761a9effbc7b312f2d97beb360531 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Fri, 25 Sep 2009 13:22:12 +0200
+Subject: [PATCH] phy: add the IC+ IP1001 10/100/1000 PHY driver
+
+This patch adds the IC+ IP1001 10/100/1000 PHY
+driver.
+It helped to bring-up the 7141EUD board.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ drivers/net/phy/Kconfig  |    2 +-
+ drivers/net/phy/icplus.c |   38 +++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+index 7294cda..fd6cba9 100644
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -58,7 +58,7 @@ config BROADCOM_PHY
+ config ICPLUS_PHY
+ 	tristate "Drivers for ICPlus PHYs"
+ 	---help---
+-	  Currently supports the IP175C PHY.
++	  Currently supports the IP175C/IC1001 PHYs.
+ 
+ config STE10XP
+ 	depends on PHYLIB
+diff --git a/drivers/net/phy/icplus.c b/drivers/net/phy/icplus.c
+index af3f1f2..eb50c86 100644
+--- a/drivers/net/phy/icplus.c
++++ b/drivers/net/phy/icplus.c
+@@ -31,7 +31,7 @@
+ #include <asm/irq.h>
+ #include <asm/uaccess.h>
+ 
+-MODULE_DESCRIPTION("ICPlus IP175C PHY driver");
++MODULE_DESCRIPTION("ICPlus IP175C/IP1001 PHY drivers");
+ MODULE_AUTHOR("Michael Barkowski");
+ MODULE_LICENSE("GPL");
+ 
+@@ -90,6 +90,23 @@ static int ip175c_config_init(struct phy_device *phydev)
+ 	return 0;
+ }
+ 
++static int ip1001_config_init(struct phy_device *phydev)
++{
++	int value = phy_read(phydev, MII_BMCR);
++	value |= BMCR_RESET;
++
++	/* Software Reset PHY */
++	phy_write(phydev, MII_BMCR, value);
++
++	do {
++		value = phy_read(phydev, MII_BMCR);
++	} while (value & BMCR_RESET);
++	/* exit in normal mode operation */
++
++	return 0;
++
++}
++
+ static int ip175c_read_status(struct phy_device *phydev)
+ {
+ 	if (phydev->addr == 4) /* WAN port */
+@@ -120,13 +137,32 @@ static struct phy_driver ip175c_driver = {
+ 	.driver		= { .owner = THIS_MODULE,},
+ };
+ 
++static struct phy_driver ip1001_driver = {
++	.phy_id		= 0x02430d90,
++	.name		= "ICPlus IP1001",
++	.phy_id_mask	= 0x0ffffff0,
++	.features	= PHY_GBIT_FEATURES | SUPPORTED_Pause |
++			  SUPPORTED_Asym_Pause,
++	.config_init	= &ip1001_config_init,
++	.config_aneg	= &genphy_config_aneg,
++	.read_status	= &genphy_read_status,
++	.suspend	= genphy_suspend,
++	.resume		= genphy_resume,
++	.driver		= { .owner = THIS_MODULE,},
++};
++
+ static int __init ip175c_init(void)
+ {
++	int ret = 0;
++	ret = phy_driver_register(&ip1001_driver);
++	if (ret < 0)
++		return -ENODEV;
+ 	return phy_driver_register(&ip175c_driver);
+ }
+ 
+ static void __exit ip175c_exit(void)
+ {
++	phy_driver_unregister(&ip1001_driver);
+ 	phy_driver_unregister(&ip175c_driver);
+ }
+ 
+-- 
+1.6.0.6
+

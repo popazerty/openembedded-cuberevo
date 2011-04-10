@@ -1,0 +1,27 @@
+From 15158cb82e29626c564bc972f478cdcc8f7c32f3 Mon Sep 17 00:00:00 2001
+From: Carmelo AMOROSO <carmelo.amoroso@st.com>
+Date: Thu, 13 Nov 2008 17:43:45 +0100
+Subject: [PATCH] sound_stm: Fix Kconfig for generic I2C-controlled converter
+
+The module name reported in Kconfig was referring to the
+gpio based converter. While playing with this, just discovered
+and fixed.
+
+Signed-off-by: Carmelo Amoroso <carmelo.amoroso@st.com>
+---
+ sound/stm/Kconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/sound/stm/Kconfig b/sound/stm/Kconfig
+index 3e66042..ddd9769 100644
+--- a/sound/stm/Kconfig
++++ b/sound/stm/Kconfig
+@@ -150,4 +150,4 @@ config SND_STM_CONV_I2C
+ 		how to define required I2C addresses & commands.
+ 
+ 		If compiled as module, it will be called
+-		snd-stm-conv-gpio.ko.
++		snd-stm-conv-i2c.ko.
+-- 
+1.5.3.6
+

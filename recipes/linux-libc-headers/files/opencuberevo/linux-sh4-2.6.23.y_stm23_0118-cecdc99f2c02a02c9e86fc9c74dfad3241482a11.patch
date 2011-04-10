@@ -1,0 +1,389 @@
+From cecdc99f2c02a02c9e86fc9c74dfad3241482a11 Mon Sep 17 00:00:00 2001
+From: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Date: Thu, 12 Feb 2009 15:53:25 +0100
+Subject: [PATCH] sh_stm: PM support in ASC
+
+Added PM functions in the ASC device driver
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stb7100.c |   12 +++--
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |   12 +++--
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |   16 +++---
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |   12 +++--
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |    9 ++-
+ arch/sh/kernel/cpu/sh4/setup-stx7200.c |   12 +++--
+ drivers/serial/stasc.c                 |   90 +++++++++++++++++++++++++-------
+ drivers/serial/stasc.h                 |    4 +-
+ include/linux/stm/soc.h                |    3 +-
+ include/linux/stm/soc_init.h           |    4 +-
+ 10 files changed, 123 insertions(+), 51 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stb7100.c b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+index 9384433..837a0fd 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -697,10 +697,14 @@ static struct platform_device devrandom_rng_device = {
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+-	STASC_DEVICE(0x18030000, 123, -1, -1, 0, 0, 1, 4, 7), /* oe pin: 6 */
+-	STASC_DEVICE(0x18031000, 122, -1, -1, 1, 0, 1, 4, 5), /* oe pin: 6 */
+-	STASC_DEVICE(0x18032000, 121, -1, -1, 4, 3, 2, 4, 5),
+-	STASC_DEVICE(0x18033000, 120, -1, -1, 5, 0, 1, 2, 3),
++	STASC_DEVICE(0x18030000, 123, -1, -1, 0, 0, 1, 4, 7,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 6 */
++	STASC_DEVICE(0x18031000, 122, -1, -1, 1, 0, 1, 4, 5,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 6 */
++	STASC_DEVICE(0x18032000, 121, -1, -1, 4, 3, 2, 4, 5,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
++	STASC_DEVICE(0x18033000, 120, -1, -1, 5, 0, 1, 2, 3,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ };
+ 
+ static unsigned int __initdata stm_stasc_fdma_requests_7100[][2] = {
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index 5d373ad..cc22fa8 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -531,13 +531,17 @@ void __init stx5197_configure_lirc(lirc_scd_t *scd)
+ 
+ static struct platform_device stm_stasc_devices[] = {
+ 	STASC_DEVICE(0xfd130000, ILC_IRQ(7), 8, 10,
+-		     0, 0, 1, 5, 4),
++		     0, 0, 1, 5, 4,
++		     STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ 	STASC_DEVICE(0xfd131000, ILC_IRQ(8), 9, 11,
+-		     4, 0, 1, 3, 2),
++		     4, 0, 1, 3, 2,
++		     STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ 	STASC_DEVICE(0xfd132000, ILC_IRQ(12), 3, 5,
+-		     1, 2, 3, 5, 4),
++		     1, 2, 3, 5, 4,
++		     STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ 	STASC_DEVICE(0xfd133000, ILC_IRQ(13), 4, 6,
+-		     2, 0, 1, 2, 5),
++		     2, 0, 1, 2, 5,
++		     STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ };
+ 
+ static const unsigned char asc_alt[4][4] = {
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index 148fdd7..f65ed10 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -798,14 +798,14 @@ static struct platform_device devrandom_rng_device = {
+ 
+ static struct platform_device stm_stasc_devices[] = {
+ 	/* 7105: Checked except pacing */
+-	STASC_DEVICE(0xfd030000, evt2irq(0x1160), 11, 15,
+-		     0, 0, 1, 4, 3), /* oe pin: 2 */
+-	STASC_DEVICE(0xfd031000, evt2irq(0x1140), 12, 16,
+-		     1, 0, 1, 4, 3),
+-	STASC_DEVICE(0xfd032000, evt2irq(0x1120), 13, 17,
+-		     4, 0, 1, 2, 3), /* or 12, 0, 1, 2, 3 */
+-	STASC_DEVICE(0xfd033000, evt2irq(0x1100), 14, 18,
+-		     5, 0, 1, 3, 2),
++	STASC_DEVICE(0xfd030000, evt2irq(0x1160), 11, 15, 0, 0, 1, 4, 3,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 2 */
++	STASC_DEVICE(0xfd031000, evt2irq(0x1140), 12, 16, 1, 0, 1, 4, 3,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
++	STASC_DEVICE(0xfd032000, evt2irq(0x1120), 13, 17, 4, 0, 1, 2, 3,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* or 12, 0, 1, 2, 3 */
++	STASC_DEVICE(0xfd033000, evt2irq(0x1100), 14, 18, 5, 0, 1, 3, 2,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ };
+ 
+ /*
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 7c78090..9688b6f 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -423,13 +423,17 @@ static struct platform_device devrandom_rng_device = {
+ 
+ static struct platform_device stm_stasc_devices[] = {
+ 	STASC_DEVICE(0xfd030000, evt2irq(0x1160), 11, 15,
+-		     0, 0, 1, 4, 7), /* oe pin: 6 */
++		     0, 0, 1, 4, 7,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 6 */
+ 	STASC_DEVICE(0xfd031000, evt2irq(0x1140), 12, 16,
+-		     1, 0, 1, 4, 5), /* oe pin: 6 */
++		     1, 0, 1, 4, 5,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 6 */
+ 	STASC_DEVICE(0xfd032000, evt2irq(0x1120), 13, 17,
+-		     4, 3, 2, 4, 5),
++		     4, 3, 2, 4, 5,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ 	STASC_DEVICE(0xfd033000, evt2irq(0x1100), 14, 18,
+-		     5, 0, 1, 2, 3),
++		     5, 0, 1, 2, 3,
++		STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ };
+ 
+ /*
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index 90c1a13..70cceb2 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -886,11 +886,14 @@ static struct platform_device devrandom_rng_device = {
+ static struct platform_device stm_stasc_devices[] = {
+ 	/* 7141: Checked except pacing */
+ 	STASC_DEVICE(0xfd030000, ILC_IRQ(76), 11, 15,
+-		     -1, -1, -1, -1, -1),
++		     -1, -1, -1, -1, -1,
++		STPIO_OUT, STPIO_IN, STPIO_IN, STPIO_OUT),
+ 	STASC_DEVICE(0xfd031000, ILC_IRQ(77), 12, 16,
+-		     -1, -1, -1, -1, -1),
++		     -1, -1, -1, -1, -1,
++		STPIO_IN, STPIO_IN, STPIO_IN, STPIO_IN),
+ 	STASC_DEVICE(0xfd032000, ILC_IRQ(78), 13, 17,
+-		     -1, -1, -1, -1, -1),
++		     -1, -1, -1, -1, -1,
++		STPIO_IN, STPIO_IN, STPIO_IN, STPIO_IN),
+ };
+ 
+ /*
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index e90cc4a..18fe293 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -1069,16 +1069,20 @@ static struct platform_device devrandom_rng_device = {
+ static struct platform_device stm_stasc_devices[] = {
+ 	STASC_DEVICE(0xfd030000, ILC_IRQ(104),
+ 			STB7200_FDMA_REQ_UART_0_RX, STB7200_FDMA_REQ_UART_0_TX,
+-			0, 0, 1, 4, 7), /* oe pin: 6 */
++			0, 0, 1, 4, 7,
++			STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 6 */
+ 	STASC_DEVICE(0xfd031000, ILC_IRQ(105),
+ 			STB7200_FDMA_REQ_UART_1_RX, STB7200_FDMA_REQ_UART_1_TX,
+-			1, 0, 1, 4, 5), /* oe pin: 6 */
++			1, 0, 1, 4, 5,
++			STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT), /* oe pin: 6 */
+ 	STASC_DEVICE(0xfd032000, ILC_IRQ(106),
+ 			STB7200_FDMA_REQ_UART_2_RX, STB7200_FDMA_REQ_UART_2_TX,
+-			4, 3, 2, 4, 5),
++			4, 3, 2, 4, 5,
++			STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ 	STASC_DEVICE(0xfd033000, ILC_IRQ(107),
+ 			STB7200_FDMA_REQ_UART_3_RX, STB7200_FDMA_REQ_UART_3_TX,
+-			5, 4, 3, 5, 6),
++			5, 4, 3, 5, 6,
++			STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
+ };
+ 
+ /*
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index e68e159..f266885 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -308,7 +308,6 @@ static void __devinit asc_init_port(struct asc_port *ascport,
+ 	struct stasc_uart_data *data = pdev->dev.platform_data;
+ 	struct clk *clk;
+ 	unsigned long rate;
+-	int i;
+ 
+ 	port->iotype	= UPIO_MEM;
+ 	port->flags	= UPF_BOOT_AUTOCONF;
+@@ -336,10 +335,6 @@ static void __devinit asc_init_port(struct asc_port *ascport,
+ 
+ 	ascport->port.uartclk = rate;
+ 
+-	ascport->pio_port = data->pio_port;
+-	for (i=0; i<4; i++)
+-		ascport->pio_pin[i] = data->pio_pin[i];
+-
+ 	ascport->flags = data->flags;
+ }
+ 
+@@ -427,6 +422,66 @@ static int __devexit asc_serial_remove(struct platform_device *pdev)
+ 	return uart_remove_one_port(&asc_uart_driver, port);
+ }
+ 
++#ifdef CONFIG_PM
++static int asc_serial_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	struct asc_port *ascport = &asc_ports[pdev->id];
++	struct uart_port *port   = &(ascport->port);
++
++	if (!device_can_wakeup(&(pdev->dev)))
++		return 0; /* the other ASCs... */
++
++	if (state.event == PM_EVENT_SUSPEND && device_may_wakeup(&(pdev->dev))){
++#ifndef CONFIG_DISABLE_CONSOLE_SUSPEND
++		ascport->flags |= ASC_SUSPENDED;
++		if (ascport->pios[0])
++			stpio_configure_pin(ascport->pios[0], STPIO_IN); /* Tx  */
++		asc_disable_tx_interrupts(port);
++#endif
++		return 0; /* leaves the rx interrupt enabled! */
++	}
++
++	if (state.event == PM_EVENT_FREEZE) {
++		asc_disable_rx_interrupts(port);
++		return 0;
++	}
++	if (ascport->pios[0])
++		stpio_configure_pin(ascport->pios[0], STPIO_IN); /* Tx  */
++	if (ascport->pios[3])
++		stpio_configure_pin(ascport->pios[3], STPIO_IN); /* RTS */
++	ascport->flags |= ASC_SUSPENDED;
++	asc_disable_tx_interrupts(port);
++	asc_disable_rx_interrupts(port);
++	return 0;
++}
++
++static int asc_set_baud (struct uart_port *port, int baud);
++static int asc_serial_resume(struct platform_device *pdev)
++{
++	struct asc_port *ascport = &asc_ports[pdev->id];
++	struct uart_port *port   = &(ascport->port);
++	struct stasc_uart_data *pdata =
++		(struct stasc_uart_data *)pdev->dev.platform_data;
++	int i;
++
++	if (!device_can_wakeup(&(pdev->dev)))
++		return 0; /* the other ASCs... */
++
++	/* Reconfigure the Pio Pins */
++	for (i = 0; i < 4; ++i)
++		if (ascport->pios[i])
++			stpio_configure_pin(ascport->pios[i], pdata->pio_direction[i]);
++
++	asc_enable_rx_interrupts(port);
++	asc_enable_tx_interrupts(port);
++	ascport->flags &= ~ASC_SUSPENDED;
++	return 0;
++}
++#else
++#define asc_serial_suspend	NULL
++#define asc_serial_resume	NULL
++#endif
++
+ static struct platform_driver asc_serial_driver = {
+ 	.probe		= asc_serial_probe,
+ 	.remove		= __devexit_p(asc_serial_remove),
+@@ -434,6 +489,8 @@ static struct platform_driver asc_serial_driver = {
+ 		.name	= DRIVER_NAME,
+ 		.owner	= THIS_MODULE,
+ 	},
++	.suspend = asc_serial_suspend,
++	.resume	= asc_serial_resume,
+ };
+ 
+ static int __init asc_init(void)
+@@ -478,21 +535,10 @@ static int asc_remap_port(struct asc_port *ascport, int req)
+ {
+ 	struct uart_port *port = &ascport->port;
+ 	struct platform_device *pdev = to_platform_device(port->dev);
++	struct stasc_uart_data *pdata =
++		(struct stasc_uart_data *)pdev->dev.platform_data;
+ 	int size = pdev->resource[0].end - pdev->resource[0].start + 1;
+ 	int i;
+-	static int pio_dirs[4] = {
+-#ifdef CONFIG_CPU_SUBTYPE_STX7141
+-		STPIO_OUT,	/* Tx */
+-		STPIO_IN,	/* Rx */
+-		STPIO_IN,	/* CTS */
+-		STPIO_OUT	/* RTS */
+-#else
+-		STPIO_ALT_OUT,	/* Tx */
+-		STPIO_IN,	/* Rx */
+-		STPIO_IN,	/* CTS */
+-		STPIO_ALT_OUT	/* RTS */
+-#endif
+-	};
+ 
+ 	if (req && !request_mem_region(port->mapbase, size, pdev->name))
+ 		return -EBUSY;
+@@ -510,8 +556,8 @@ static int asc_remap_port(struct asc_port *ascport, int req)
+ 	}
+ 
+ 	for (i=0; i<((ascport->flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++) {
+-		ascport->pios[i] = stpio_request_pin(ascport->pio_port,
+-			ascport->pio_pin[i], DRIVER_NAME, pio_dirs[i]);
++		ascport->pios[i] = stpio_request_pin(pdata->pio_port,
++			pdata->pio_pin[i], DRIVER_NAME, pdata->pio_direction[i]);
+ 	}
+ 
+ 	return 0;
+@@ -580,6 +626,7 @@ asc_set_termios_cflag (struct asc_port *ascport, int cflag, int baud)
+ 		ctrl_val |= ASC_CTL_CTSENABLE;
+ 
+ 	/* set speed and baud generator mode */
++	ascport->baud = baud;
+ 	ctrl_val |= asc_set_baud (port, baud);
+ 	uart_update_timeout(port, cflag, baud);
+ 
+@@ -880,7 +927,10 @@ put_char (struct uart_port *port, char c)
+ {
+ 	unsigned long flags;
+ 	unsigned long status;
++	struct asc_port *ascport = container_of(port, struct asc_port, port);
+ 
++	if (ascport->flags & ASC_SUSPENDED)
++		return;
+ try_again:
+ 	do {
+ 		status = asc_in (port, STA);
+diff --git a/drivers/serial/stasc.h b/drivers/serial/stasc.h
+index b668af7..b114b0d 100644
+--- a/drivers/serial/stasc.h
++++ b/drivers/serial/stasc.h
+@@ -30,8 +30,7 @@ struct asc_port_fdma {
+ 
+ struct asc_port {
+ 	struct uart_port port;
+-	unsigned char pio_port;
+-	unsigned char pio_pin[4]; /* Tx, Rx, CTS, RTS */
++	unsigned long baud;
+ 	struct stpio_pin *pios[4];
+ 	unsigned char flags;
+ #ifdef CONFIG_SERIAL_ST_ASC_FDMA
+@@ -44,6 +43,7 @@ struct asc_port {
+ 
+ /* Generic serial flags */
+ #define ASC_RX_THROTTLE		0x0000001
++#define ASC_SUSPENDED		0x0000002
+ 
+ #define FIFO_SIZE		16
+ 
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index bea5a92..9cc3317 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -324,8 +324,9 @@ struct usb_init_data {
+ #endif
+ 
+ struct stasc_uart_data {
+-	unsigned char pio_port;
+ 	unsigned char pio_pin[4]; /* Tx, Rx, CTS, RTS */
++	unsigned char pio_direction[4];
++	unsigned char pio_port;
+ 	unsigned char flags;
+ };
+ 
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index 79d56d1..c511e2a 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -18,7 +18,8 @@
+ 
+ 
+ #define STASC_DEVICE(_base, _irq, _fdma_req_rx, _fdma_req_tx,		\
+-		_pio_port, _ptx, _prx, _pcts, _prts)			\
++		_pio_port, _ptx, _prx, _pcts, _prts, _dptx, _dprx,	\
++		_dpcts, _dprts)						\
+ {									\
+ 	.name		= "stasc",					\
+ 	.num_resources	= 2,						\
+@@ -45,6 +46,7 @@
+ 		.platform_data = &(struct stasc_uart_data) {		\
+ 			.pio_port	= _pio_port,			\
+ 			.pio_pin	= { _ptx, _prx, _pcts, _prts },	\
++			.pio_direction	= { _dptx, _dprx, _dpcts, _dprts},\
+ 		}							\
+ 	}								\
+ }
+-- 
+1.5.6.3
+

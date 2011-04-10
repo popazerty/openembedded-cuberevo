@@ -1,0 +1,158 @@
+From f23a469a0f0adac1005784308de8bb17681ab6af Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Wed, 6 May 2009 12:20:32 +0200
+Subject: [PATCH] stm: pm: Reworked the Hibernation on Disk
+
+This patch reworks the hibenration on disk removing a lot of
+useless stuff (now that the subsystem are as sysdev device)
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/Makefile         |    6 ----
+ arch/sh/kernel/cpu/sh4/cpu.c            |   37 -----------------------
+ arch/sh/kernel/cpu/sh4/swsusp-st_socs.c |   50 -------------------------------
+ include/asm-sh/suspend.h                |    9 +++++-
+ 4 files changed, 8 insertions(+), 94 deletions(-)
+ delete mode 100644 arch/sh/kernel/cpu/sh4/swsusp-st_socs.c
+
+diff --git a/arch/sh/kernel/cpu/sh4/Makefile b/arch/sh/kernel/cpu/sh4/Makefile
+index 55693ff..374abbb 100644
+--- a/arch/sh/kernel/cpu/sh4/Makefile
++++ b/arch/sh/kernel/cpu/sh4/Makefile
+@@ -56,10 +56,4 @@ endif
+ 
+ ifdef CONFIG_HIBERNATION
+ obj-y					+= cpu.o swsusp.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX5197)	+= swsusp-st_socs.o
+-obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= swsusp-st_socs.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX7105)	+= swsusp-st_socs.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= swsusp-st_socs.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX7141)	+= swsusp-st_socs.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= swsusp-st_socs.o
+ endif
+diff --git a/arch/sh/kernel/cpu/sh4/cpu.c b/arch/sh/kernel/cpu/sh4/cpu.c
+index 0d9b41d..76aa2d3 100644
+--- a/arch/sh/kernel/cpu/sh4/cpu.c
++++ b/arch/sh/kernel/cpu/sh4/cpu.c
+@@ -40,43 +40,6 @@
+  */
+ unsigned long saved_context_reg[12] __cacheline_aligned;
+ 
+-void (*arch_swsusp_processor_state)(int suspend) = NULL;
+-
+-void save_processor_state(void)
+-{
+-	if (arch_swsusp_processor_state)
+-		arch_swsusp_processor_state(PM_EVENT_FREEZE);
+-
+-	return;
+-}
+-
+-void restore_processor_state(void)
+-{
+-	int i;
+-	unsigned long flags;
+-	struct irq_desc *desc;
+-	void (*irq_func)(unsigned int irq);
+-
+-	if (arch_swsusp_processor_state)
+-		arch_swsusp_processor_state(PM_EVENT_ON);
+-
+-	/* now restore the hw irq setting */
+-	local_irq_save(flags);
+-	for (i = 0; i < NR_IRQS; ++i) {
+-		desc = &irq_desc[i];
+-		if (desc->chip != &no_irq_chip && desc->action) {
+-			irq_func = (desc->status & IRQ_DISABLED) ?
+-			    desc->chip->disable : desc->chip->enable;
+-			spin_lock(&desc->lock);
+-			desc->chip->startup(i);
+-			irq_func(i);
+-			spin_unlock(&desc->lock);
+-		}	/* if.. */
+-	}		/* for... */
+-	local_irq_restore(flags);
+-	return;
+-}
+-
+ /* References to section boundaries */
+ int pfn_is_nosave(unsigned long pfn)
+ {
+diff --git a/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c b/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c
+deleted file mode 100644
+index 1e811fc..0000000
+--- a/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c
++++ /dev/null
+@@ -1,50 +0,0 @@
+-/*
+- * -------------------------------------------------------------------------
+- * <linux_root>/arch/sh/kernel/cpu/sh4/swsusp-st_socs.c
+- * -------------------------------------------------------------------------
+- * Copyright (C) 2009  STMicroelectronics
+- * Author: Francesco M. Virlinzi  <francesco.virlinzi@st.com>
+- *
+- * May be copied or modified under the terms of the GNU General Public
+- * License V.2 ONLY.  See linux/COPYING for more information.
+- *
+- * ------------------------------------------------------------------------- */
+-#include <linux/suspend.h>
+-#include <linux/pm.h>
+-#include <linux/stm/pm.h>
+-#include <asm/pm.h>
+-
+-#undef  dbg_print
+-
+-#ifdef CONFIG_PM_DEBUG
+-#define dbg_print(fmt, args...)		\
+-		printk(KERN_DEBUG "%s: " fmt, __FUNCTION__ , ## args)
+-#else
+-#define dbg_print(fmt, args...)
+-#endif
+-
+-static void st_socs_processor_state(int state)
+-{
+-	pm_message_t pm = {.event = state, };
+-	if (state == PM_EVENT_FREEZE) {
+-		ilc_pm_state(pm);
+-		emi_pm_state(pm);
+-		clk_pm_state(pm);
+-		sysconf_pm_state(pm);
+-	} else {
+-		sysconf_pm_state(pm);
+-		clk_pm_state(pm);
+-		emi_pm_state(pm);
+-		ilc_pm_state(pm);
+-	}
+-	return;
+-}
+-
+-static int __init init_swsusp_st_socs(void)
+-{
+-	arch_swsusp_processor_state = st_socs_processor_state;
+-	printk(KERN_INFO "sh4 hibernation support registered\n");
+-	return 0;
+-}
+-
+-late_initcall(init_swsusp_st_socs);
+diff --git a/include/asm-sh/suspend.h b/include/asm-sh/suspend.h
+index fd4ee61..3549a8b 100644
+--- a/include/asm-sh/suspend.h
++++ b/include/asm-sh/suspend.h
+@@ -14,6 +14,13 @@ static inline int arch_prepare_suspend(void)
+ {
+ 	return 0;
+ }
++static inline void save_processor_state(void)
++{
++	return;
++}
+ 
+-extern void (*arch_swsusp_processor_state)(int suspend);
++static inline void restore_processor_state(void)
++{
++	return;
++}
+ #endif /* __ASM_SH_SUSPEND_H */
+-- 
+1.6.0.6
+

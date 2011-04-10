@@ -1,0 +1,31 @@
+From 4ff205dc590a9c948e1002a5006b1620eff78aa4 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Tue, 27 Jan 2009 11:09:48 +0000
+Subject: [PATCH] sound_stm: Fixed fsynth driver regression on 7200.
+
+Commit 3977e00cfde5bd1ef9af20c8dae845b7afa674de fixed the
+AUDCFG_FSYN_CFG register definition in terms of REF_CLK_IN field
+bit shift for 7105, but messed up the 30_MHZ_CLOCK value for
+7200 cut 2. Fixed here.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/reg_audcfg_fsyn.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/sound/stm/reg_audcfg_fsyn.h b/sound/stm/reg_audcfg_fsyn.h
+index 0217965..9eb2f78 100644
+--- a/sound/stm/reg_audcfg_fsyn.h
++++ b/sound/stm/reg_audcfg_fsyn.h
+@@ -304,7 +304,7 @@
+ 
+ #define value__AUDCFG_FSYN_CFG__REF_CLK_IN__30_MHZ_CLOCK(ip) (ip->ver \
+ 	< ver__AUDCFG_FSYN__65_3_1 ? 0x0 : (ip->ver < ver__AUDCFG_FSYN__65_3_3 \
+-	? 0x1 : 0x1))
++	? 0x1 : 0x0))
+ #define mask__AUDCFG_FSYN_CFG__REF_CLK_IN__30_MHZ_CLOCK(ip) \
+ 	(value__AUDCFG_FSYN_CFG__REF_CLK_IN__30_MHZ_CLOCK(ip) << \
+ 	shift__AUDCFG_FSYN_CFG__REF_CLK_IN(ip))
+-- 
+1.5.6.3
+

@@ -1,0 +1,22 @@
+commit 20117bc93872cd35b3df0508eb5837f70b722690
+Author: Pawel Moll <pawel.moll@st.com>
+Date:   Tue Jun 3 09:34:12 2008 +0100
+
+    Fixed setup of USB OC pin for 7200 cut 2.0.
+    
+    Signed-off-by: Pawel Moll <pawel.moll@st.com>
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7200.c b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+index 06efb1e..7e0c629 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -378,6 +378,9 @@ void __init stx7200_configure_usb(void)
+ 		if (cpu_data->cut_major < 2)
+ 			pio = stpio_request_pin(7, oc_pins[port], "USB oc",
+ 					STPIO_ALT_BIDIR);
++		else
++			pio = stpio_request_pin(7, oc_pins[port], "USB oc",
++					STPIO_IN);
+ 
+ 		platform_device_register(&st40_ohci_devices[port]);
+ 		platform_device_register(&st40_ehci_devices[port]);

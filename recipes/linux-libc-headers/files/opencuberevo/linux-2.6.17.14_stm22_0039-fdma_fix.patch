@@ -1,0 +1,55 @@
+The attached patch fixes the following issues:
+
+drivers/stm/710x_fdma.c
+
+   the free of an fdma channel never freed any channel in the range
+   min..max due to inverted tests, hence channels where *never* reused.
+
+   this was hiding a latent bug that when a channel was reused, the
+   channel_status struct had been de-initialised and not re-initialised.
+
+   Also the patch fixes the hardware reset_channels code to reset
+   all channels not just the first (0) multiple times.
+
+Signed-off-by: Jon Frosdick <jon.frosdick@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux/drivers/stm/710x_fdma2.c
+===================================================================
+--- linux.orig/drivers/stm/710x_fdma2.c	2007-08-30 13:53:13.942306000 +0100
++++ linux/drivers/stm/710x_fdma2.c	2007-08-30 13:56:03.281980000 +0100
+@@ -526,7 +526,7 @@
+ {
+ 	int channel=0;
+ 	for(;channel <(chip.ch_max-1);channel++)
+-		writel(0,CMD_STAT_REG(0));
++		writel(0,CMD_STAT_REG(channel));
+ }
+ 
+ static int stb710x_configure_pace_channel(struct fmdareq_RequestConfig_s * prq)
+@@ -773,6 +773,7 @@
+ 				xfer_ptr->priv.node[i].dma_addr);
+ 		}
+ 		kfree(xfer_ptr->priv.node);
++		xfer_ptr->priv.node = 0;
+ 		xfer_ptr->priv.alloced_nents =0;
+ 		return 0;
+ 	}
+@@ -848,7 +849,7 @@
+ static void stb710x_fdma_free(struct dma_channel *channel)
+ {
+ 	struct channel_status *this_ch = &chip.channel[channel->chan];
+-	if(CHAN_OTB(channel->chan)!=0)
++	if(CHAN_OTB(channel->chan)==0)
+ 		return;
+ 
+ 	if(!IS_CHANNEL_RESERVED(channel->chan))
+@@ -867,8 +868,6 @@
+ 	}
+         if(IS_NODE_MALLOCED(this_ch->params.priv))
+ 	       stb710x_list_mem_free(&this_ch->params);
+-
+-        memset(this_ch,0,sizeof(struct channel_status));
+ }
+ 
+ static int stb710x_fdma_configure(struct dma_channel *channel,

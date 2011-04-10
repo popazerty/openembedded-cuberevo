@@ -1,0 +1,31 @@
+From 7222e85c9caf5fd13f2c895dcd8a3dcb2b6df073 Mon Sep 17 00:00:00 2001
+From: Giuseppe CONDORELLI <giuseppe.condorelli@st.com>
+Date: Fri, 12 Jun 2009 03:09:43 -0400
+Subject: [PATCH] mb680se_defconfig: fixed LOCALVERSION
+
+Silly fix: fixed LOCALVERSION from mb680 to mb680se for mb680 32 bit
+default config.
+This will avoid mistakes, for example at modules_install time.
+
+Signed-off-by: Giuseppe Condorelli <giuseppe.condorelli@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/configs/mb680se_defconfig |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/configs/mb680se_defconfig b/arch/sh/configs/mb680se_defconfig
+index d173c52..5d80db1 100644
+--- a/arch/sh/configs/mb680se_defconfig
++++ b/arch/sh/configs/mb680se_defconfig
+@@ -29,7 +29,7 @@ CONFIG_EXPERIMENTAL=y
+ CONFIG_BROKEN_ON_SMP=y
+ CONFIG_LOCK_KERNEL=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+-CONFIG_LOCALVERSION="-mb680"
++CONFIG_LOCALVERSION="-mb680se"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_SWAP=y
+ CONFIG_SYSVIPC=y
+-- 
+1.6.0.6
+

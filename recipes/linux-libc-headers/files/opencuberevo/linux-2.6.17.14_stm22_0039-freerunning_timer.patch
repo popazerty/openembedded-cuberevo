@@ -1,0 +1,354 @@
+Subject: sh: Use a free running timer to observe the passage of time
+Modify the TMU code to configure TMU1 as a free running timer and use this
+timer to observe the passage of time. This makes system time much more
+robust in the presence of long interrupt locks.
+
+The code works on the basis that the value tmu1_tcnt_at_last_underflow
+accurately reflects the point at which the TMU0 interrupt fires. debugfs
+exposes values to allow this to be proven. Basically last_delta should, except
+when there is a long interrupt lock, have a value very slightly larger than
+actual_latch. If its value tends to increase or decrease over time then jiffies
+and gettimeofday() will not be progressing in lock step. Other checks are that
+last_usecs should generally be a value smaller than 10000 (1/HZ expressed
+in microseconds) and on an idle system null_interrupts and twin_interrupts
+should never increment.
+
+Signed-off-by: Daniel R Thompson <daniel.thompson@st.com>
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/arch/sh/kernel/timers/timer-tmu.c
+===================================================================
+--- linux.orig/arch/sh/kernel/timers/timer-tmu.c	2007-08-30 11:23:40.320448000 +0100
++++ linux/arch/sh/kernel/timers/timer-tmu.c	2007-08-30 11:24:25.295624000 +0100
+@@ -19,20 +19,35 @@
+ #include <linux/interrupt.h>
+ #include <linux/spinlock.h>
+ #include <linux/seqlock.h>
++#include <linux/debugfs.h>
+ #include <asm/timer.h>
+ #include <asm/rtc.h>
+ #include <asm/io.h>
+ #include <asm/irq.h>
+ #include <asm/clock.h>
+ 
+-#define TMU_TOCR_INIT	0x00
+-#define TMU_TCR_INIT	0x0020
+-#ifndef CONFIG_LTT
+-#define TMU_TSTR_INIT	0x1
++/*
++ * If CONFIG_SH_TMU_ALLOWLONGDELAYS is defined, then if the timer appears to
++ * have skipped forwards more than 0.1s then we don't try to catch up and
++ * compensate for the missing timer ticks (the normal behaviour now)
++ */
++
++#if defined(CONFIG_SH_TMU_ALLOWLONGDELAYS)
++static unsigned int allow_long_delays = 1;
++#else
++static unsigned int allow_long_delays = 0;
++#endif
++
++#if defined(CONFIG_SH_TMU_DEBUGFS)
++#define update_tmu_statistics 1
+ #else
+-/* Start the TMU channel 1 only if LTTng is configured! */
+-#define TMU_TSTR_INIT	0x3
++#define update_tmu_statistics 0
+ #endif
++
++#define TMU_TOCR_INIT	0x00
++#define TMU0_TCR_INIT	0x0020 /* Clock/4, rising edge; interrupt on UNF */
++#define TMU1_TCR_INIT   0x0000 /* Clock/4, rising edge; no interrupt */
++#define TMU_TSTR_INIT	0x3    /* enable both TMU0 and TMU1 */
+ #define TMU0_TCR_CALIB	0x0000
+ 
+ /* LATCH, which is derived from CLOCK_TICK_RATE is an approximation
+@@ -43,47 +58,44 @@
+  */
+ static unsigned long actual_latch = LATCH;
+ 
+-static DEFINE_SPINLOCK(tmu0_lock);
++static unsigned long tmu1_tcnt_at_last_underflow;
++
++static unsigned int null_interrupts;
++static unsigned int singleton_interrupts;
++static unsigned int twin_interrupts;
++static unsigned int long_delay_glitches;
++static unsigned int extra_ticks;
++static unsigned int last_usecs;
++static unsigned int last_delta;
+ 
+ static unsigned long tmu_timer_get_offset(void)
+ {
+-	int count;
++	unsigned long tmu1_tcnt;
++	unsigned long ticks;
+ 	long long usecs;
+-	unsigned long flags;
+ 
+-	spin_lock_irqsave(&tmu0_lock, flags);
++	tmu1_tcnt = ctrl_inl(TMU1_TCNT);
++	ticks = (tmu1_tcnt_at_last_underflow - tmu1_tcnt);
+ 
+-	count = ctrl_inl(TMU0_TCNT);	/* read the latched count */
+-	/* timer count may underflow right here */
++	usecs = (long long) ticks * (long long) TICK_SIZE;
++	usecs = (usecs + actual_latch/2) / (actual_latch+1);
++	BUG_ON(usecs < 0);
+ 
+-	/*
+-	 * avoiding timer inconsistencies (they are rare, but they happen)...
+-	 * there is one kind of problem that must be avoided here:
+-	 *  1. the timer counter underflows
++        /* On resume from breakpoint other interrupt handlers may run before
++	 * the timer interrupt. Therefore if we have accured more than
++	 * 1/10th of a second (and we are permiting time to deviate from the
++	 * wall after breakpoints) then we don't want to the interrupt handler
++	 * to observe a violent step backwards when the timer interrupt ignores
++	 * all the accured time. Note that a small step backwards may
++	 * be observed if we are about to miss yet another TMU0
++	 * interrupt but this can't be avoided.
+ 	 */
++	if (allow_long_delays && usecs > 10000)
++		while (usecs > TICK_SIZE*2)
++			usecs -= TICK_SIZE;
+ 
+-	if(ctrl_inw(TMU0_TCR) & 0x100) { /* Check UNF bit */
+-		/*
+-		 * Using only TMU0 we cannot detect lost timer interrupts ...
+-		 * well, that's why we call them lost, don't we? :)
+-		 * [hmm, on the Pentium and Alpha we can ... sort of]
+-		 *
+-		 * The best we can do it to re-read count now we know
+-		 * that there has been an underflow to ensure that count
+-		 * really has wrapped to TMU0_TCOR (and adjust count
+-		 * by the latch interval). This will give the correct
+-		 * result until we are only a few cycles away from
+-		 * dropping a timer interrupt anyway.
+-		 */
+-
+-		count = ctrl_inl(TMU0_TCNT) - actual_latch;
+-	}
+-
+-	spin_unlock_irqrestore(&tmu0_lock, flags);
+-
+-	usecs = (long long) (actual_latch - count) * (long long) TICK_SIZE;
+-	usecs = (usecs + actual_latch/2) / (actual_latch+1);
+-	BUG_ON(usecs < 0);
++	if (update_tmu_statistics)
++		last_usecs = usecs;
+ 
+ 	return (unsigned long) usecs;
+ }
+@@ -91,24 +103,88 @@
+ static irqreturn_t tmu_timer_interrupt(int irq, void *dev_id,
+ 				       struct pt_regs *regs)
+ {
++	unsigned long tmu1_tcnt;
+ 	unsigned long timer_status;
++	unsigned int ticks = 0;
+ 
+-	/* Clear UNF bit */
++	/*
++	 * Acknowledge the underflow.
++	 */
+ 	timer_status = ctrl_inw(TMU0_TCR);
+ 	timer_status &= ~0x100;
+ 	ctrl_outw(timer_status, TMU0_TCR);
+ 
+ 	/*
++	 * Read the free-running timer.
++	 */
++	tmu1_tcnt = ctrl_inl(TMU1_TCNT);
++
++	if (update_tmu_statistics)
++		last_delta = tmu1_tcnt_at_last_underflow - tmu1_tcnt;
++
++	/*
+ 	 * Here we are in the timer irq handler. We just have irqs locally
+ 	 * disabled but we don't know if the timer_bh is running on the other
+ 	 * CPU. We need to avoid to SMP race with it. NOTE: we don' t need
+ 	 * the irq version of write_lock because as just said we have irq
+ 	 * locally disabled. -arca
++	 *
++	 * We must also update the last_overflow counter while holding the
++	 * lock. Changing its value makes any concurrent call to
++	 * tmu_timer_get_offset() return garbage.
+ 	 */
+ 	write_seqlock(&xtime_lock);
+-	handle_timer_tick(regs);
++
++	/*
++	 * If we have been held off for more then a tenth of a second then
++	 * we refuse to believe it. We prefer instead to assume that some
++	 * external agent such as a debugger is responsible and that the
++	 * system will not restart nicely unless we lie to it about time.
++	 */
++
++	if (unlikely( allow_long_delays &&
++	    ((tmu1_tcnt_at_last_underflow - tmu1_tcnt) >=
++	     (actual_latch * (HZ/10))) )) {
++		ticks = (tmu1_tcnt_at_last_underflow - tmu1_tcnt)/actual_latch;
++
++		if (update_tmu_statistics)
++			long_delay_glitches++;
++
++		handle_timer_tick(regs);
++		tmu1_tcnt_at_last_underflow -= ticks * (actual_latch + 1);
++	} else {
++		/* Normal time. Accumulate ticks including possible lost ones  */
++		while ((tmu1_tcnt_at_last_underflow - tmu1_tcnt)
++			>= actual_latch) {
++
++			if (update_tmu_statistics)
++				ticks++;
++
++			handle_timer_tick(regs);
++
++			tmu1_tcnt_at_last_underflow -= (actual_latch + 1);
++		}
++	}
++
+ 	write_sequnlock(&xtime_lock);
+ 
++	if (update_tmu_statistics) {
++		switch (ticks) {
++		case 0:
++			null_interrupts++;
++			break;
++		case 1:
++			singleton_interrupts++;
++			break;
++		case 2:
++			twin_interrupts++;
++			/*FALLTHRU*/
++		default:
++			extra_ticks += ticks+1;
++			break;
++		}
++	}
++
+ 	return IRQ_HANDLED;
+ }
+ 
+@@ -175,8 +251,8 @@
+ 
+ static void tmu_clk_init(struct clk *clk)
+ {
+-	u8 divisor = TMU_TCR_INIT & 0x7;
+-	ctrl_outw(TMU_TCR_INIT, TMU0_TCR);
++	u8 divisor = TMU0_TCR_INIT & 0x7;
++	ctrl_outw(TMU0_TCR_INIT, TMU0_TCR);
+ 	clk->rate = clk->parent->rate / (4 << (divisor << 1));
+ }
+ 
+@@ -188,8 +264,8 @@
+ 
+ static void tmu1_clk_init(struct clk *clk)
+ {
+-        u8 divisor = TMU_TCR_INIT & 0x7;
+-        ctrl_outw(divisor, TMU1_TCR);
++        u8 divisor = TMU1_TCR_INIT & 0x7;
++        ctrl_outw(TMU1_TCR_INIT, TMU1_TCR);
+         clk->rate = clk->parent->rate / (4 << (divisor << 1));
+ }
+ 
+@@ -254,8 +330,9 @@
+ 	ctrl_outl(actual_latch, TMU0_TCOR);
+ 	ctrl_outl(actual_latch, TMU0_TCNT);
+ 
+-	ctrl_outl(~0, TMU1_TCOR);
+-	ctrl_outl(~0, TMU1_TCNT);
++	tmu1_tcnt_at_last_underflow = ~0;
++	ctrl_outl(tmu1_tcnt_at_last_underflow, TMU1_TCOR);
++	ctrl_outl(tmu1_tcnt_at_last_underflow, TMU1_TCNT);
+ 
+ 	tmu_timer_start();
+ 
+@@ -275,3 +352,39 @@
+ 	.ops	= &tmu_timer_ops,
+ };
+ 
++static int __init tmu_timer_init_late (void)
++{
++	struct dentry *root;
++
++        if (!update_tmu_statistics)
++		return 0;
++
++	root = debugfs_create_dir("tmu", NULL);
++	if (root) {
++		/* there is little point in storing the individual dentries
++		 * since the timer can't be shut down.
++		 */
++		(void) debugfs_create_bool("allow_long_delays", 0644,
++		                           root, &allow_long_delays);
++		(void) debugfs_create_u32("actual_latch", 0644, root,
++		                          (u32*) &actual_latch);
++		(void) debugfs_create_u32("long_delay_glitches", 0644, root,
++		                          &long_delay_glitches);
++		(void) debugfs_create_u32("extra_ticks", 0644, root,
++		                          &extra_ticks);
++		(void) debugfs_create_u32("last_delta", 0644, root,
++		                          &last_delta);
++		(void) debugfs_create_u32("last_usecs", 0644, root,
++		                          &last_usecs);
++		(void) debugfs_create_u32("null_interrupts", 0644, root,
++		                          &null_interrupts);
++		(void) debugfs_create_u32("singleton_interrupts", 0644, root,
++					  &singleton_interrupts);
++		(void) debugfs_create_u32("twin_interrupts", 0644, root,
++		                          &twin_interrupts);
++	}
++
++	return 0;
++}
++
++module_init(tmu_timer_init_late);
+Index: linux/arch/sh/Kconfig
+===================================================================
+--- linux.orig/arch/sh/Kconfig	2007-08-30 11:04:42.401900000 +0100
++++ linux/arch/sh/Kconfig	2007-08-30 11:24:25.301624000 +0100
+@@ -565,6 +565,44 @@
+ 	help
+ 	  This enables the use of the TMU as the system timer.
+ 
++config SH_TMU_DEBUGFS
++	bool "TMU timer debugfs quality-of-service metrics"
++	default n
++	depends on SH_TMU && DEBUG_FS
++	help
++	  If you say Y here then several diagnostic values will
++	  be exported via debugfs.
++
++	  These values can be used to verify the correct operation of
++	  the timer (i.e. that the period of TMU0 exactly matches the
++	  software addition performed on TMU1).  They can also be used
++	  to identify gross problems with interrupt locks.
++
++	  If unsure, say N.
++
++config SH_TMU_ALLOWLONGDELAYS
++	bool "Avoid accruing time after long delays (e.g breakpoint handling)"
++	default n
++	depends on SH_TMU
++	help
++	  If you say Y here then TMU1 will NOT be used to compensate
++	  for missing timer interrupts if the timer interrupt is not
++	  serviced for more than 1/10th of a second. The effect of
++	  this is that if the system is halted on a breakpoint time
++	  will not be acrued during this period. This prevents a
++	  violent adjustment to the system clock when resuming after
++	  a breakpoint.
++
++	  Such violent adjustments may interfere with anything that
++	  cares about the passage time (e.g. multimedia streaming,
++	  CONFIG_DETECT_SOFTLOCKUP).
++
++	  If is almost always safe to enable this option since any
++	  driver that locks interrupts for 1/10th of a second is
++	  broken.
++
++	  If unsure, say N.
++
+ endmenu
+ 
+ source "arch/sh/boards/renesas/hs7751rvoip/Kconfig"

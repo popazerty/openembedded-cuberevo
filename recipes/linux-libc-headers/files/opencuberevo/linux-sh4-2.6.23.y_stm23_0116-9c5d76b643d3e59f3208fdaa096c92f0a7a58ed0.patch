@@ -1,0 +1,32 @@
+From 9c5d76b643d3e59f3208fdaa096c92f0a7a58ed0 Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Thu, 2 Oct 2008 11:48:31 +0200
+Subject: [PATCH] Fix the clocksource flag
+
+This patch fixes the ClockSource flags to support
+suspend/resume without corrupting the dynamic timer
+namaged in run_timers_softirq
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/time.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/time.c b/arch/sh/kernel/time.c
+index 484bd0b..35d65cc 100644
+--- a/arch/sh/kernel/time.c
++++ b/arch/sh/kernel/time.c
+@@ -206,7 +206,8 @@ struct clocksource clocksource_sh = {
+ 	.mask		= CLOCKSOURCE_MASK(32),
+ 	.read		= null_hpt_read,
+ 	.shift		= 16,
+-	.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
++	.flags		= CLOCK_SOURCE_IS_CONTINUOUS |
++			  CLOCK_SOURCE_MUST_VERIFY,
+ };
+ 
+ static void __init init_sh_clocksource(void)
+-- 
+1.5.3.6
+

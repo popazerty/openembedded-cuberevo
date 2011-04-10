@@ -1,0 +1,59 @@
+From 658b50d614dba874528b1888ac5326bc470bba5c Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Mon, 11 May 2009 12:55:32 +0100
+Subject: [PATCH] sh: Add kptrace tracepoint on irq_exit
+
+This tracepoint is useful for frontends, allowing them to accurately
+judge when interrupt processing ends.
+
+This is also the first tracepoint to have a return probe, but no entry
+probe. A minor tweak to create_tracepoint is required to allow that.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+---
+ arch/sh/kernel/kptrace.c |   15 ++++++++++++++-
+ 1 files changed, 14 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index 9184986..9bc8126 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -508,7 +508,12 @@ static tracepoint_t *create_tracepoint(tracepoint_set_t * set, const char *name,
+ 	}
+ 
+ 	if (return_handler != NULL) {
+-		tp->rp.kp.addr = tp->kp.addr;
++		if (entry_handler != NULL)
++			tp->rp.kp.addr = tp->kp.addr;
++		else
++			tp->rp.kp.addr = (kprobe_opcode_t *)
++						kallsyms_lookup_name(name);
++
+ 		tp->rp.handler = return_handler;
+ 		tp->rp.maxactive = 128;
+ 	}
+@@ -849,6 +854,13 @@ static int irq_rp_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
+ 	return 0;
+ }
+ 
++static int irq_exit_rp_handler(struct kretprobe_instance *ri,
++				struct pt_regs *regs)
++{
++	write_trace_record_no_callstack("Ix");
++	return 0;
++}
++
+ static int kthread_create_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ {
+ 	char tbuf[KPTRACE_SMALL_BUF];
+@@ -1572,6 +1584,7 @@ static void init_core_event_logging(void)
+ 			  irq_rp_handler);
+ 	create_tracepoint(set, "handle_edge_irq", irq_pre_handler,
+ 			  irq_rp_handler);
++	create_tracepoint(set, "irq_exit", NULL, irq_exit_rp_handler);
+ 	create_tracepoint(set, "__switch_to", context_switch_pre_handler, NULL);
+ 	create_tracepoint(set, "tasklet_hi_action", softirq_pre_handler,
+ 			  softirq_rp_handler);
+-- 
+1.6.0.6
+

@@ -1,0 +1,423 @@
+This patch modifies the generic SMSC 911x driver to allow it to make use
+of DMA hardware which can support scatter/gather operation, in particular
+the FDMA on the STMicroelectronics 710x devices. Currently this is only
+used on packet reception.
+
+This patch has a tendency to increase the number of packets which are
+buffered in the SMSC's internal FIFO, and thus makes it more likely
+to hit bugs present in the rev A chips. For this reason the driver
+effectivly drops back to the previous behaviour on rev A chips.
+
+It is assumed that the 911x's FIFOSEL pin is connected to A16.
+
+A previous version of this patch was released under the name
+smsc911x-fdma2.patch.
+
+Note this patch needs fixing for multi-instance use.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+
+Index: linux/drivers/net/smsc_911x/smsc911x.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/smsc911x.c
++++ linux/drivers/net/smsc_911x/smsc911x.c
+@@ -48,6 +48,7 @@
+ #include <asm/bitops.h>
+ #include <asm/io.h>
+ #include <linux/version.h>
++#include <linux/scatterlist.h>
+ 
+ #endif //not USING_LINT
+ 
+@@ -509,6 +510,8 @@ typedef struct _FLOW_CONTROL_PARAMETERS
+ #define LINK_ASYMMETRIC_PAUSE	(0x20UL)
+ #define LINK_AUTO_NEGOTIATE		(0x40UL)
+ 
++#define MAX_RX_SKBS 10
++
+ typedef unsigned long VL_KEY;
+ typedef struct _VERIFIABLE_LOCK {
+ 	spinlock_t Lock;
+@@ -542,7 +545,11 @@ typedef struct _PRIVATE_DATA {
+ 	BOOLEAN TxInitialized;
+ 
+ 	DWORD dwRxDmaCh;
+-	struct sk_buff *RxSkb;
++	struct sk_buff *RxSkbs[MAX_RX_SKBS];
++	struct scatterlist RxSgs[MAX_RX_SKBS];
++	DWORD RxSkbsCount;
++	DWORD RxSkbsMax;
++	DWORD RxDropOnCallback;
+ 	BOOLEAN RxDmaChReserved;
+ 	DWORD dwRxDmaThreshold;
+ 	BOOLEAN RxCongested;
+@@ -3960,8 +3967,10 @@ void Rx_Initialize(
+ 	privateData->RxInterrupts|=INT_EN_RXE_EN_;
+ 	if(IS_REV_A(privateData)) {
+ 		privateData->RxInterrupts|=INT_EN_RDFL_EN_;
++		privateData->RxSkbsMax = 1;
+ 	} else {
+ 		privateData->RxInterrupts|=INT_EN_RDFO_EN_;
++		privateData->RxSkbsMax = MAX_RX_SKBS;
+ 	}
+ 	privateData->RxInterrupts|=INT_EN_RXDFH_INT_EN_;
+ 	Lan_EnableInterrupt(privateData,privateData->RxInterrupts);
+@@ -4210,7 +4219,7 @@ FINISH_OVERRUN_PROCESSING:
+ 					//make sure DMA has stopped before doing RX Dump
+ 					DWORD dwTimeOut=100000;
+ 
+-					while ((privateData->RxSkb) && (dwTimeOut)) {
++					while ((privateData->RxSkbsCount != 0) && (dwTimeOut)) {
+ 						udelay(10);
+ 						timeOut--;
+ 					}
+@@ -4358,6 +4367,11 @@ void Rx_ReceiverOn(PPRIVATE_DATA private
+ 	}
+ }
+ 
++unsigned int RxPacketDepth[MAX_RX_SKBS];
++
++/* This function is called from the interrupt handler or from a tasklet triggered by the
++ * interrupt handler when the status register has INT_STS_RSFL_ set, or RxOverrun is set.
++ */
+ void Rx_ProcessPackets(PPRIVATE_DATA privateData)
+ {
+ 	DWORD dwRxStatus=0;
+@@ -4413,110 +4427,89 @@ void Rx_ProcessPackets(PPRIVATE_DATA pri
+ 		DWORD dwDmaCh=privateData->dwRxDmaCh;
+ 		//struct sk_buff *dmaSkb=NULL;//use privateData->RxDmaSkb
+ 		DMA_XFER dmaXfer;
+-		dmaXfer.dwLanReg=privateData->dwLanBase+RX_DATA_FIFO;
+-		dmaXfer.pdwBuf=NULL;// this will be reset per dma request
+-		dmaXfer.dwDmaCh=dwDmaCh;
+-		dmaXfer.dwDwCnt=0;// this will be reset per dma request
+-		dmaXfer.fMemWr=TRUE;
+-		while((dwRxStatus=Rx_PopRxStatus(privateData))!=0)
++		DWORD packets;
++
++		BUG_ON(privateData->RxSkbsCount != 0);
++
++		//set end alignment and offset
++		switch(PLATFORM_CACHE_LINE_BYTES)
+ 		{
+-			DWORD dwPacketLength;
++		case 16:Lan_SetRegDW(RX_CFG,0x40000200UL);break;
++		case 32:Lan_SetRegDW(RX_CFG,0x80001200UL);break;
++		default:SMSC_ASSERT(FALSE);
++		}
+ 
+-			BUG_ON(privateData->RxSkb != NULL);
++		privateData->RxDropOnCallback = 0;
++
++		for (packets=0;
++		     (packets < MAX_RX_SKBS) &&
++			     ((dwRxStatus=Rx_PopRxStatus(privateData))!=0);
++		     packets++) {
++			DWORD dwDwordCount;
++			DWORD dwPacketLength;
++			struct sk_buff *skb;
++			struct scatterlist* sg;
+ 
+-			Rx_CountErrors(privateData,dwRxStatus);
+ 			dwPacketLength=((dwRxStatus&0x3FFF0000UL)>>16);
+-			if((dwRxStatus&RX_STS_ES_)==0)
+-			{
+-				struct sk_buff *skb=dev_alloc_skb(dwPacketLength+2*PLATFORM_CACHE_LINE_BYTES);
+-				if(skb!=NULL)
+-				{
+-					skb->data=skb->head;
+-					skb->tail=skb->head;
++			dwDwordCount =
++				(dwPacketLength+
++				  (PLATFORM_CACHE_LINE_BYTES-14)+
++				  PLATFORM_CACHE_LINE_BYTES-1)&
++				(~(PLATFORM_CACHE_LINE_BYTES-1));
+ 
+-					//align IP on cache line boundary
+-					privateData->stats.rx_packets++;
+-					privateData->stats.rx_bytes+=(dwPacketLength-4UL);
+-					if(dwPacketLength>=privateData->dwRxDmaThreshold)
+-					{
+-						//use DMA
+-						DWORD dwDwordCount;
+-						skb_reserve(skb,PLATFORM_CACHE_LINE_BYTES-14);
+-						skb_put(skb,dwPacketLength-4UL);
+-						dwDwordCount=((dwPacketLength+
+-							(PLATFORM_CACHE_LINE_BYTES-14)+
+-							PLATFORM_CACHE_LINE_BYTES-1)&
+-							(~(PLATFORM_CACHE_LINE_BYTES-1)))>>2;
+-						Platform_CacheInvalidate(
+-							platformData,
+-							skb->head,dwDwordCount<<2);
+-						dmaXfer.pdwBuf=(DWORD *)(skb->head);
+-						dmaXfer.dwDwCnt=dwDwordCount;
+-						privateData->RxDataDWReadCount+=dwDwordCount;
+-						privateData->RxPacketReadCount++;
+-						privateData->RxDmaReadCount++;
+-
+-						//set end alignment and offset
+-						switch(PLATFORM_CACHE_LINE_BYTES)
+-						{
+-						//case 4: Lan_SetRegDW(RX_CFG,0x00000200UL);break;
+-						case 16:Lan_SetRegDW(RX_CFG,0x40000200UL);break;
+-						case 32:Lan_SetRegDW(RX_CFG,0x80001200UL);break;
+-						default:SMSC_ASSERT(FALSE);
+-						}
+-						if(!Platform_DmaStartXfer(platformData,&dmaXfer, Rx_DmaCompletionCallback, privateData)) {
+-							SMSC_WARNING("Failed Platform_DmaStartXfer");
+-						}
+-						privateData->RxSkb=skb;
+-						Lan_DisableInterrupt(privateData,privateData->RxInterrupts);
+-						goto FINISH;
+-					}
+-					else
+-					{
+-						//use PIO
+-						skb_reserve(skb,2);
+-						skb_put(skb,dwPacketLength-4UL);
+-						//set end alignment and offset
+-						Lan_SetRegDW(RX_CFG,0x00000200UL);//4 byte end alignment
+-						privateData->RxPacketReadCount++;
+-						privateData->RxPioReadCount++;
+-						privateData->RxDataDWReadCount+=
+-							((dwPacketLength+2+3)>>2);
+-						Platform_ReadFifo(
+-							privateData->dwLanBase,
+-							((DWORD *)(skb->head)),
+-							(dwPacketLength+2+3)>>2);
+-						Rx_HandOffSkb(privateData,skb);
+-					}
+-					continue;
+-				}
+-				else
+-				{
+-					SMSC_WARNING("Unable to allocate sk_buff for RX Packet, in DMA path");
+-					privateData->stats.rx_dropped++;
+-				}
++			Rx_CountErrors(privateData,dwRxStatus);
++			if((dwRxStatus&RX_STS_ES_)!=0) {
++				privateData->stats.rx_dropped++;
++				privateData->RxDropOnCallback = dwPacketLength;
++				break;
+ 			}
+-			//if we get here then the packet is to be read
+-			//  out of the fifo and discarded
+-			{
+-				DWORD dwTimeOut=100000;
+ 
+-				while ((privateData->RxSkb) && (dwTimeOut)) {
+-					udelay(10);
+-					dwTimeOut--;
+-				}
+-				if (dwTimeOut == 0)
+-					SMSC_WARNING("Timed out waiting for Rx DMA complete");
++			skb=alloc_skb(dwPacketLength+2*PLATFORM_CACHE_LINE_BYTES, GFP_ATOMIC);
++			if (skb == NULL) {
++				privateData->stats.rx_dropped++;
++				privateData->RxDropOnCallback = dwPacketLength;
++				break;
+ 			}
+ 
+-			//delay returning the dmaSkb to OS till later
+-			dwPacketLength+=(2+3);
++			privateData->RxSkbs[packets] = skb;
++			skb_reserve(skb,PLATFORM_CACHE_LINE_BYTES-14);
++			skb_put(skb,dwPacketLength-4UL);
++
++			privateData->stats.rx_packets++;
++			privateData->stats.rx_bytes+=dwPacketLength;
++
++			sg=&privateData->RxSgs[packets];
++			sg->page = virt_to_page(skb->head);
++			sg->offset = (long)skb->head & ~PAGE_MASK;
++			sg->length = dwDwordCount;
++
++			privateData->RxDataDWReadCount+=dwDwordCount;
++			privateData->RxPacketReadCount++;
++			privateData->RxDmaReadCount++;
++		}
++
++		if (packets != 0) {
++			dmaXfer.dwLanReg=privateData->dwLanBase+RX_DATA_FIFO;
++			dmaXfer.pdwBuf=(DWORD*)privateData->RxSgs;
++			dmaXfer.dwDmaCh=dwDmaCh;
++			dmaXfer.dwDwCnt=packets;
++			dmaXfer.fMemWr=TRUE;
++
++			Lan_DisableInterrupt(privateData,privateData->RxInterrupts);
++
++			RxPacketDepth[packets]++;
++			privateData->RxSkbsCount = packets;
++			if(!Platform_DmaStartSgXfer(platformData,&dmaXfer, Rx_DmaCompletionCallback, privateData)) {
++				SMSC_WARNING("Failed Platform_DmaStartXfer");
++			}
++		} else if (privateData->RxDropOnCallback != 0) {
++			DWORD dwPacketLength;
++			Lan_SetRegDW(RX_CFG,0x00000200UL);
++			dwPacketLength = privateData->RxDropOnCallback+2+3;
+ 			dwPacketLength>>=2;
+-			Lan_SetRegDW(RX_CFG,0x00000200UL);//4 byte end alignment
+ 			Rx_FastForward(privateData,dwPacketLength);
+ 		}
+ 	}
+-FINISH:
+ 	Lan_SetRegDW(INT_STS,INT_STS_RSFL_);
+ //	CLEAR_GPIO(GP_RX);
+ }
+@@ -4536,10 +4529,22 @@ void Rx_ProcessPacketsTasklet(unsigned l
+ static void Rx_DmaCompletionCallback(void* param)
+ {
+ 	PPRIVATE_DATA privateData = param;
++	int i;
++
++	BUG_ON(privateData->RxSkbsCount == 0);
++	for (i=0; i<privateData->RxSkbsCount; i++) {
++		Rx_HandOffSkb(privateData,privateData->RxSkbs[i]);
++	}
++
++	if (privateData->RxDropOnCallback != 0) {
++		DWORD dwPacketLength;
++		Lan_SetRegDW(RX_CFG,0x00000200UL);
++		dwPacketLength = privateData->RxDropOnCallback+2+3;
++		dwPacketLength>>=2;
++		Rx_FastForward(privateData,dwPacketLength);
++	}
+ 
+-	BUG_ON(privateData->RxSkb == NULL);
+-	Rx_HandOffSkb(privateData,privateData->RxSkb);
+-	privateData->RxSkb = NULL;
++	privateData->RxSkbsCount = 0;
+ 	Lan_EnableInterrupt(privateData,privateData->RxInterrupts);
+ }
+ 
+@@ -4582,7 +4587,7 @@ BOOLEAN Rx_HandleInterrupt(
+ 	if((!(dwIntSts&INT_STS_RSFL_))&&(privateData->RxOverrun==FALSE)) {
+ 		return result;
+ 	}
+-	if (privateData->RxSkb) {
++	if (privateData->RxSkbsCount != 0) {
+ 		/* We are still DMAing the previous packet from the RX
+ 		 * FIFO, and waiting for the DMA completion callback.
+ 		 * We got here because another interrupt was active,
+Index: linux/drivers/net/smsc_911x/st40-shdma.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/st40-shdma.c
++++ linux/drivers/net/smsc_911x/st40-shdma.c
+@@ -1,7 +1,9 @@
++#include <linux/dma-mapping.h>
+ #include <asm/dma.h>
+ #include <linux/stm/stm-dma.h>
+ 
+ static struct stm_dma_params rx_transfer;
++static struct stm_dma_params rx_transfer_sg;
+ static struct stm_dma_params tx_transfer;
+ 
+ BOOLEAN Platform_IsValidDmaChannel(DWORD dwDmaCh)
+@@ -29,12 +31,13 @@ void Platform_ReleaseDmaChannel(
+ {
+ 	free_dma(dwDmaChannel);
+ 	dma_free_descriptor(&rx_transfer);
++	dma_free_descriptor(&rx_transfer_sg);
+ 	dma_free_descriptor(&tx_transfer);
+ }
+ 
+ static void err_cb(void* x)
+ {
+-	SMSC_TRACE("DMA err completion callback");
++	printk("DMA err callback");
+ }
+ 
+ 
+@@ -50,6 +53,13 @@ BOOLEAN Platform_DmaInitialize(
+ 			       	STM_DMA_NOBLOCK_MODE,
+ 			       	(char*)STM_DMAC_ID);
+ 
++	declare_dma_parms(  	&rx_transfer_sg,
++				MODE_DST_SCATTER,
++			       	STM_DMA_LIST_OPEN,
++			       	STM_DMA_SETUP_CONTEXT_ISR,
++			       	STM_DMA_NOBLOCK_MODE,
++			       	(char*)STM_DMAC_ID);
++
+ 	declare_dma_parms(  	&tx_transfer,
+ 				MODE_FREERUNNING,
+ 			       	STM_DMA_LIST_OPEN,
+@@ -61,6 +71,9 @@ BOOLEAN Platform_DmaInitialize(
+ 	dma_parms_err_cb(&rx_transfer, err_cb, NULL, 0);
+ 	dma_parms_DIM_2_x_1(&rx_transfer,0x20,0);
+ 
++	dma_parms_err_cb(&rx_transfer_sg, err_cb, NULL, 0);
++	dma_parms_DIM_1_x_1(&rx_transfer_sg,0);
++
+ 	/* From memory to LAN */
+ 	dma_parms_err_cb(&tx_transfer, err_cb, NULL, 0);
+ 	dma_parms_DIM_1_x_2(&tx_transfer,0x20,0);
+@@ -140,3 +153,51 @@ err_exit:
+ 	return FALSE;
+ }
+ 
++BOOLEAN Platform_DmaStartSgXfer(
++	PPLATFORM_DATA platformData,
++	const DMA_XFER * const pDmaXfer,
++	void (*pCallback)(void*),
++	void* pCallbackData)
++{
++	DWORD dwLanPhysAddr;
++	int res;
++	int sg_count;
++
++	// 1. validate the requested channel #
++	SMSC_ASSERT(Platform_IsValidDmaChannel(pDmaXfer->dwDmaCh))
++
++	// Validate this is a LAN to memory transfer
++	SMSC_ASSERT(pDmaXfer->fMemWr)
++
++	// 2. make sure the channel's not already running
++	if (dma_get_status(pDmaXfer->dwDmaCh) != DMA_CHANNEL_STATUS_IDLE)
++	{
++		SMSC_WARNING("Platform_DmaStartXfer -- requested channel (%ld) is still running", pDmaXfer->dwDmaCh);
++		return FALSE;
++	}
++
++	// 3. calculate the physical transfer addresses
++	dwLanPhysAddr = 0x1fffffffUL & (CpuToPhysicalAddr((void *)pDmaXfer->dwLanReg) + (1<<16));
++
++	// 4. Map (flush) the buffer
++	sg_count = dma_map_sg(NULL, (struct scatterlist*)pDmaXfer->pdwBuf,
++			      pDmaXfer->dwDwCnt,
++			      pDmaXfer->fMemWr ? DMA_FROM_DEVICE : DMA_TO_DEVICE);
++
++	// 5. Prepare the DMA channel structure
++	dma_parms_comp_cb(&rx_transfer_sg, pCallback, pCallbackData, 0);
++	dma_parms_addrs(&rx_transfer_sg, dwLanPhysAddr, 0, 0);
++	dma_parms_sg(&rx_transfer_sg, (struct scatterlist*)pDmaXfer->pdwBuf, sg_count);
++	res=dma_compile_list(&rx_transfer_sg);
++	if(res != 0)
++		goto err_exit;
++
++	// 6. Start the transfer
++	dma_xfer_list(pDmaXfer->dwDmaCh, &rx_transfer_sg);
++
++	// DMA Transfering....
++	return TRUE;
++err_exit:
++	SMSC_WARNING("%s cant initialise DMA engine err_code %d\n",__FUNCTION__,(int)res);
++	return FALSE;
++}
+Index: linux/drivers/net/smsc_911x/st40-gpdma.c
+===================================================================
+--- linux.orig/drivers/net/smsc_911x/st40-gpdma.c
++++ linux/drivers/net/smsc_911x/st40-gpdma.c
+@@ -244,3 +244,12 @@ BOOLEAN Platform_DmaStartXfer(
+ 	return TRUE;
+ }
+ 
++BOOLEAN Platform_DmaStartSgXfer(
++	PPLATFORM_DATA platformData,
++	const DMA_XFER * const pDmaXfer,
++	void (*pCallback)(void*),
++	void* pCallbackData)
++{
++	BUG();
++	return FALSE;
++}

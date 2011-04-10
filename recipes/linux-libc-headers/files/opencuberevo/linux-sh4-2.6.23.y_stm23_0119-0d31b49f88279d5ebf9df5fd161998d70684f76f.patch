@@ -1,0 +1,213 @@
+From 0d31b49f88279d5ebf9df5fd161998d70684f76f Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Thu, 23 Apr 2009 10:27:49 +0100
+Subject: [PATCH] serial_stasc: ASC pins doesn't have to be members of the same PIO port now
+
+Platform data for the ASC driver didn't allow to define PIO pins
+from different banks. Fixed now.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx5197.c |   18 ++++++++++--------
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |   20 ++++++++++++--------
+ arch/sh/kernel/cpu/sh4/setup-stx7141.c |   13 ++++++++-----
+ drivers/serial/stasc.c                 |   11 ++++++-----
+ include/linux/stm/soc.h                |    8 +++++---
+ include/linux/stm/soc_init.h           |   25 ++++++++++++++++++++++---
+ 6 files changed, 63 insertions(+), 32 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx5197.c b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+index 9831401..1fa93a1 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx5197.c
+@@ -578,20 +578,22 @@ void __init stx5197_configure_asc(const int *ascs, int num_ascs, int console)
+ 		uart_data = pdev->dev.platform_data;
+ 
+ 		/* Tx */
+-		stx5197_pio_conf(uart_data->pio_port, uart_data->pio_pin[0],
+-				 asc_alt[port][0], "asc");
++		stx5197_pio_conf(uart_data->pios[0].pio_port,
++				uart_data->pios[0].pio_pin,
++				asc_alt[port][0], "asc");
+ 		/* Rx */
+-		stx5197_pio_conf(uart_data->pio_port, uart_data->pio_pin[1],
+-				 asc_alt[port][1], "asc");
++		stx5197_pio_conf(uart_data->pios[1].pio_port,
++				uart_data->pios[1].pio_pin,
++				asc_alt[port][1], "asc");
+ 
+ 		if (!(flags & STASC_FLAG_NORTSCTS)) {
+ 			/* CTS */
+-			stx5197_pio_conf(uart_data->pio_port,
+-					 uart_data->pio_pin[2],
++			stx5197_pio_conf(uart_data->pios[2].pio_port,
++					 uart_data->pios[2].pio_pin,
+ 					 asc_alt[port][2], "asc");
+ 			/* RTS */
+-			stx5197_pio_conf(uart_data->pio_port,
+-					 uart_data->pio_pin[3],
++			stx5197_pio_conf(uart_data->pios[3].pio_port,
++					 uart_data->pios[3].pio_pin,
+ 					 asc_alt[port][3], "asc");
+ 		}
+ 		pdev->id = i;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index e9ccec4..78eba9f 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -857,19 +857,23 @@ void __init stx7105_configure_asc(const int *ascs, int num_ascs, int console)
+ 		uart_data = pdev->dev.platform_data;
+ 
+ 		/* Tx */
+-		stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[0],
+-				    alt_conf[port], "asc");
++		stx7105_pio_sysconf(uart_data->pios[0].pio_port,
++				uart_data->pios[0].pio_pin,
++				alt_conf[port], "asc");
+ 		/* Rx */
+-		stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[1],
+-				    alt_conf[port], "asc");
++		stx7105_pio_sysconf(uart_data->pios[1].pio_port,
++				uart_data->pios[1].pio_pin,
++				alt_conf[port], "asc");
+ 
+ 		if (! (flags & STASC_FLAG_NORTSCTS)) {
+ 			/* CTS */
+-			stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[2],
+-					    alt_conf[port], "asc");
++			stx7105_pio_sysconf(uart_data->pios[2].pio_port,
++					uart_data->pios[2].pio_pin,
++					alt_conf[port], "asc");
+ 			/* RTS */
+-			stx7105_pio_sysconf(uart_data->pio_port, uart_data->pio_pin[3],
+-					    alt_conf[port], "asc");
++			stx7105_pio_sysconf(uart_data->pios[3].pio_port,
++					uart_data->pios[3].pio_pin,
++					alt_conf[port], "asc");
+ 		}
+ 		pdev->id = i;
+ 		((struct stasc_uart_data*)(pdev->dev.platform_data))->flags = flags;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7141.c b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+index b77b726..47ab8eb 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7141.c
+@@ -947,24 +947,27 @@ void __init stx7141_configure_asc(const int *ascs, int num_ascs, int console)
+ 			BUG();
+ 		}
+ 
+-		uart_data->pio_port = pio_port;
+ 
+ 		if (pio_port) {
+ 			/* Tx */
+ 			stx7141_pio_sysconf(pio_port, 0, 3, "asc");
+-			uart_data->pio_pin[0] = 0;
++			uart_data->pios[0].pio_port = pio_port;
++			uart_data->pios[0].pio_pin = 0;
+ 			/* Rx */
+ 			stx7141_pio_sysconf(pio_port, 1, 3, "asc");
+-			uart_data->pio_pin[1] = 1;
++			uart_data->pios[1].pio_port = pio_port;
++			uart_data->pios[1].pio_pin = 1;
+ 		}
+ 
+ 		if (!(flags & STASC_FLAG_NORTSCTS)) {
+ 			/* CTS */
+ 			stx7141_pio_sysconf(pio_port, 2, 3, "asc");
+-			uart_data->pio_pin[2] = 2;
++			uart_data->pios[2].pio_port = pio_port;
++			uart_data->pios[2].pio_pin = 2;
+ 			/* RTS */
+ 			stx7141_pio_sysconf(pio_port, 3, 3, "asc");
+-			uart_data->pio_pin[3] = 3;
++			uart_data->pios[3].pio_port = pio_port;
++			uart_data->pios[3].pio_pin = 3;
+ 		}
+ 		pdev->id = i;
+ 		((struct stasc_uart_data *)(pdev->dev.platform_data))->flags =
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index f266885..98d4ae8 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -470,7 +470,8 @@ static int asc_serial_resume(struct platform_device *pdev)
+ 	/* Reconfigure the Pio Pins */
+ 	for (i = 0; i < 4; ++i)
+ 		if (ascport->pios[i])
+-			stpio_configure_pin(ascport->pios[i], pdata->pio_direction[i]);
++			stpio_configure_pin(ascport->pios[i],
++					pdata->pios[i].pio_direction);
+ 
+ 	asc_enable_rx_interrupts(port);
+ 	asc_enable_tx_interrupts(port);
+@@ -555,10 +556,10 @@ static int asc_remap_port(struct asc_port *ascport, int req)
+ 		}
+ 	}
+ 
+-	for (i=0; i<((ascport->flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++) {
+-		ascport->pios[i] = stpio_request_pin(pdata->pio_port,
+-			pdata->pio_pin[i], DRIVER_NAME, pdata->pio_direction[i]);
+-	}
++	for (i = 0; i < ((ascport->flags & STASC_FLAG_NORTSCTS) ? 2 : 4); i++)
++		ascport->pios[i] = stpio_request_pin(pdata->pios[i].pio_port,
++				pdata->pios[i].pio_pin, DRIVER_NAME,
++				pdata->pios[i].pio_direction);
+ 
+ 	return 0;
+ }
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index ea0226c..75f0d2e 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -327,9 +327,11 @@ struct usb_init_data {
+ #endif
+ 
+ struct stasc_uart_data {
+-	unsigned char pio_pin[4]; /* Tx, Rx, CTS, RTS */
+-	unsigned char pio_direction[4];
+-	unsigned char pio_port;
++	struct {
++		unsigned char pio_port;
++		unsigned char pio_pin;
++		unsigned char pio_direction;
++	} pios[4]; /* TXD, RXD, CTS, RTS */
+ 	unsigned char flags;
+ };
+ 
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index 5641e36..4bfdb02 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -45,9 +45,28 @@
+ 	},								\
+ 	.dev = {							\
+ 		.platform_data = &(struct stasc_uart_data) {		\
+-			.pio_port	= _pio_port,			\
+-			.pio_pin	= { _ptx, _prx, _pcts, _prts },	\
+-			.pio_direction	= { _dptx, _dprx, _dpcts, _dprts},\
++			.pios = {					\
++				[0] = {	/* TXD */			\
++					.pio_port	= _pio_port,	\
++					.pio_pin	= _ptx,		\
++					.pio_direction	= _dptx,	\
++				},					\
++				[1] = { /* RXD */			\
++					.pio_port	= _pio_port,	\
++					.pio_pin	= _prx,		\
++					.pio_direction	= _dprx,	\
++				},					\
++				[2] = {	/* CTS */			\
++					.pio_port	= _pio_port,	\
++					.pio_pin	= _pcts,	\
++					.pio_direction	= _dpcts,	\
++				},					\
++				[3] = { /* RTS */			\
++					.pio_port	= _pio_port,	\
++					.pio_pin	= _prts,	\
++					.pio_direction	= _dprts,	\
++				},					\
++			},						\
+ 		}							\
+ 	}								\
+ }
+-- 
+1.6.0.6
+

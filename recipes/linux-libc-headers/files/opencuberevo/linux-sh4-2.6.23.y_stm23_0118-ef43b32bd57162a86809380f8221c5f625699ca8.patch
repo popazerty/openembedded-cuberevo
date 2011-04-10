@@ -1,0 +1,100 @@
+From ef43b32bd57162a86809380f8221c5f625699ca8 Mon Sep 17 00:00:00 2001
+From: Daniel Thompson <daniel.thompson@st.com>
+Date: Wed, 11 Feb 2009 13:55:17 +0000
+Subject: [PATCH] sound_stm: Ignore interrupts when the player/reader is inactive
+
+For some applications we have a seperate sound driver operating on
+another processor. In these applications the system 'context switches'
+between the host sound drivers and the remote ones. We must therefore
+park the host drivers such that they are not affected if the players
+and readers generate interrupts when under the control of a different
+processor.
+
+Signed-off-by: Daniel Thompson <daniel.thompson@st.com>
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/common.c       |    5 +++++
+ sound/stm/pcm_player.c   |    2 ++
+ sound/stm/pcm_reader.c   |    2 ++
+ sound/stm/spdif_player.c |    2 ++
+ 4 files changed, 11 insertions(+), 0 deletions(-)
+
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 1c4ed0f..3750dbd 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -216,6 +216,11 @@ int snd_stm_irq_request(struct platform_device *pdev,
+ 		return -EINVAL;
+ 	}
+ 
++	/* request_irq() enables the interrupt immediately; as it is
++	 * lethal in concurrent audio environment, we want to have
++	 * it disabled for most of the time... */
++	disable_irq(*irq);
++
+ 	return 0;
+ }
+ 
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index b6650d0..05f8f57 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -627,6 +627,7 @@ static inline int snd_stm_pcm_player_start(struct snd_pcm_substream *substream)
+ 
+ 	/* Enable player interrupts */
+ 
++	enable_irq(pcm_player->irq);
+ 	set__AUD_PCMOUT_IT_EN_SET__NSAMPLE__SET(pcm_player);
+ 	set__AUD_PCMOUT_IT_EN_SET__UNF__SET(pcm_player);
+ 
+@@ -663,6 +664,7 @@ static inline int snd_stm_pcm_player_stop(struct snd_pcm_substream *substream)
+ 
+ 	set__AUD_PCMOUT_IT_EN_CLR__NSAMPLE__CLEAR(pcm_player);
+ 	set__AUD_PCMOUT_IT_EN_CLR__UNF__CLEAR(pcm_player);
++	disable_irq(pcm_player->irq);
+ 
+ 	/* Stop PCM player */
+ 
+diff --git a/sound/stm/pcm_reader.c b/sound/stm/pcm_reader.c
+index 01a0a34..4a8f525 100644
+--- a/sound/stm/pcm_reader.c
++++ b/sound/stm/pcm_reader.c
+@@ -625,6 +625,7 @@ static inline int snd_stm_pcm_reader_start(struct snd_pcm_substream *substream)
+ 
+ 	/* Enable required reader interrupts */
+ 
++	enable_irq(pcm_reader->irq);
+ 	set__AUD_PCMIN_IT_EN_SET__OVF__SET(pcm_reader);
+ 
+ 	/* Wake up & unmute ADC */
+@@ -659,6 +660,7 @@ static inline int snd_stm_pcm_reader_stop(struct snd_pcm_substream *substream)
+ 	/* Disable interrupts */
+ 
+ 	set__AUD_PCMIN_IT_EN_CLR__OVF__CLEAR(pcm_reader);
++	disable_irq(pcm_reader->irq);
+ 
+ 	/* Stop PCM reader */
+ 
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 8ba1284..501f10c 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -648,6 +648,7 @@ static inline int snd_stm_spdif_player_start(struct snd_pcm_substream
+ 
+ 	/* Enable player interrupts */
+ 
++	enable_irq(spdif_player->irq);
+ 	set__AUD_SPDIF_IT_EN_SET__NSAMPLE__SET(spdif_player);
+ 	set__AUD_SPDIF_IT_EN_SET__UNF__SET(spdif_player);
+ 
+@@ -684,6 +685,7 @@ static inline int snd_stm_spdif_player_stop(struct snd_pcm_substream *substream)
+ 
+ 	set__AUD_SPDIF_IT_EN_CLR__NSAMPLE__CLEAR(spdif_player);
+ 	set__AUD_SPDIF_IT_EN_CLR__UNF__CLEAR(spdif_player);
++	disable_irq(spdif_player->irq);
+ 
+ 	/* Stop SPDIF player */
+ 
+-- 
+1.5.6.3
+

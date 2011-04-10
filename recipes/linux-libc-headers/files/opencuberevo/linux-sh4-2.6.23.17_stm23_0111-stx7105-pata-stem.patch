@@ -1,0 +1,279 @@
+Add support for the PATA STEM card on the STx7105 and mb680.
+This also involves adding support for correctly configuring the EMI into
+PC card mode or not.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/boards/st/common/db679.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/common/db679.c
++++ linux-2.6.23-stm/arch/sh/boards/st/common/db679.c
+@@ -26,9 +26,12 @@
+ static int __init db679_init(void)
+ {
+ #if defined(CONFIG_CPU_SUBTYPE_STB7100)
+-	stx7100_configure_pata(STEM_CS0_BANK, STEM_INTR0_IRQ);
++	stx7100_configure_pata(STEM_CS0_BANK, 0, STEM_INTR0_IRQ);
++#elif defined(CONFIG_CPU_SUBTYPE_STX7105)
++	/* Need to use STEM bank 1 as bank 0 isn't big enough */
++	stx7105_configure_pata(STEM_CS1_BANK, 0, STEM_INTR1_IRQ);
+ #elif defined(CONFIG_CPU_SUBTYPE_STX7200)
+-	stx7200_configure_pata(STEM_CS0_BANK, STEM_INTR0_IRQ);
++	stx7200_configure_pata(STEM_CS0_BANK, 0, STEM_INTR0_IRQ);
+ #else
+ #	error Unsupported SOC.
+ #endif
+Index: linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/hms1/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/hms1/setup.c
+@@ -131,7 +131,7 @@ static int __init hms1_device_init(void)
+ 	stx7100_configure_pwm(&pwm_private_info);
+ 	stx7100_configure_ssc(&ssc_private_info);
+ 	stx7100_configure_usb();
+-	stx7100_configure_pata(3, IRL1_IRQ);
++	stx7100_configure_pata(3, 1, IRL1_IRQ);
+ 	stx7100_configure_lirc(NULL);
+ 
+ 	vpp_pio = stpio_request_pin(2,5, "VPP", STPIO_OUT);
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb411/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb411/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb411/setup.c
+@@ -208,7 +208,7 @@ static int __init device_init(void)
+ #ifdef CONFIG_PATA_PLATFORM
+ 	/* Set the EPLD ATAPI register to 1, enabling the IDE interface.*/
+ 	epld_write(1, EPLD_ATAPI);
+-	stx7100_configure_pata(3, 8);
++	stx7100_configure_pata(3, 1, 8);
+ #endif
+ 
+ #ifdef CONFIG_SND
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb442/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb442/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb442/setup.c
+@@ -171,7 +171,7 @@ static int __init device_init(void)
+ 	stx7100_configure_ssc(&ssc_private_info);
+ 	stx7100_configure_usb();
+ 	stx7100_configure_lirc(&lirc_scd);
+-	stx7100_configure_pata(3, IRL1_IRQ);
++	stx7100_configure_pata(3, 1, IRL1_IRQ);
+ 
+ 	vpp_pio = stpio_request_set_pin(2, 7, "flash_VPP", STPIO_OUT, 0);
+ 
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+@@ -422,7 +422,7 @@ static struct platform_device pata_devic
+ 	}
+ };
+ 
+-void __init stx7100_configure_pata(int bank, int irq)
++void __init stx7100_configure_pata(int bank, int pc_mode, int irq)
+ {
+ 	unsigned long bank_base;
+ 
+@@ -434,7 +434,7 @@ void __init stx7100_configure_pata(int b
+ 	pata_resources[2].start = irq;
+ 	pata_resources[2].end   = irq;
+ 
+-	emi_config_pata(bank);
++	emi_config_pata(bank, pc_mode);
+ 
+ 	platform_device_register(&pata_device);
+ }
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -19,6 +19,7 @@
+ #include <linux/phy.h>
+ #include <linux/stm/sysconf.h>
+ #include <linux/stm/emi.h>
++#include <linux/pata_platform.h>
+ #include <linux/stm/fdma-plat.h>
+ #include <linux/stm/fdma-reqs.h>
+ #include <linux/mtd/nand.h>
+@@ -422,6 +423,63 @@ void __init stx7200_configure_sata(unsig
+ 	platform_device_register(sata_device + port);
+ }
+ 
++/* PATA resources ---------------------------------------------------------- */
++
++/*
++ * EMI A20 = CS1 (active low)
++ * EMI A21 = CS0 (active low)
++ * EMI A19 = DA2
++ * EMI A18 = DA1
++ * EMI A17 = DA0
++ */
++
++static struct resource pata_resources[] = {
++	[0] = {	/* I/O base: CS1=N, CS0=A */
++		.start	= (1<<20),
++		.end	= (1<<20) + (8<<17)-1,
++		.flags	= IORESOURCE_MEM,
++	},
++	[1] = {	/* CTL base: CS1=A, CS0=N, DA2=A, DA1=A, DA0=N */
++		.start	= (1<<21) + (6<<17),
++		.end	= (1<<21) + (6<<17) + 3,
++		.flags	= IORESOURCE_MEM,
++	},
++	[2] = {	/* IRQ */
++		.flags	= IORESOURCE_IRQ,
++	}
++};
++
++static struct pata_platform_info pata_info = {
++	.ioport_shift	= 17,
++};
++
++static struct platform_device pata_device = {
++	.name		= "pata_platform",
++	.id		= -1,
++	.num_resources	= ARRAY_SIZE(pata_resources),
++	.resource	= pata_resources,
++	.dev = {
++		.platform_data = &pata_info,
++	}
++};
++
++void __init stx7105_configure_pata(int bank, int pc_mode, int irq)
++{
++	unsigned long bank_base;
++
++	bank_base = emi_bank_base(bank);
++	pata_resources[0].start += bank_base;
++	pata_resources[0].end   += bank_base;
++	pata_resources[1].start += bank_base;
++	pata_resources[1].end   += bank_base;
++	pata_resources[2].start = irq;
++	pata_resources[2].end   = irq;
++
++	emi_config_pata(bank, pc_mode);
++
++	platform_device_register(&pata_device);
++}
++
+ /* Ethernet MAC resources -------------------------------------------------- */
+ 
+ static struct sysconf_field *mac_speed_sc;
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -618,7 +618,7 @@ static struct platform_device pata_devic
+ 	}
+ };
+ 
+-void __init stx7200_configure_pata(int bank, int irq)
++void __init stx7200_configure_pata(int bank, int pc_mode, int irq)
+ {
+ 	unsigned long bank_base;
+ 
+@@ -630,7 +630,7 @@ void __init stx7200_configure_pata(int b
+ 	pata_resources[2].start = irq;
+ 	pata_resources[2].end   = irq;
+ 
+-	emi_config_pata(bank);
++	emi_config_pata(bank, pc_mode);
+ 
+ 	platform_device_register(&pata_device);
+ }
+Index: linux-2.6.23-stm/drivers/stm/emi.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/emi.c
++++ linux-2.6.23-stm/drivers/stm/emi.c
+@@ -12,7 +12,7 @@
+ #include <linux/stm/emi.h>
+ 
+ 
+-
++#define EMI_GEN_CFG			0x0028
+ #define BANK_BASEADDRESS(b)		(0x800 + (0x10 * b))
+ #define BANK_EMICONFIGDATA(b, r)	(0x100 + (0x40 * b) + (8 * r))
+ 
+@@ -135,16 +135,37 @@ static void __init set_pata_write_timing
+ 			emi_control + BANK_EMICONFIGDATA(bank, 2));
+ }
+ 
+-void __init emi_config_pata(int bank)
++void __init emi_config_pata(int bank, int pc_mode)
+ {
++	int mask;
++
+ 	BUG_ON(!emi_initialised);
+ 
+ 	/* Set timings for PIO4 */
+ 	set_pata_read_timings(bank, 120, 35, 30, 20);
+ 	set_pata_write_timings(bank, 120, 35, 30);
+-}
+-
+ 
++	switch (bank) {
++	case 2:	/* Bank C */
++		mask = 1<<3;
++		break;
++	case 3:	/* Bank D */
++		mask = 1<<4;
++		break;
++	default:
++		mask = 0;
++		break;
++	}
++
++	if (mask) {
++		u32 val = readl(emi_control + EMI_GEN_CFG);
++		if (pc_mode)
++			val |= mask;
++		else
++			val &= (~mask);
++		writel(val, emi_control + EMI_GEN_CFG);
++	}
++}
+ 
+ static void __init set_nand_read_timings(int bank, int cycle_time,
+ 		int IORD_start, int IORD_end,
+Index: linux-2.6.23-stm/include/linux/stm/emi.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/emi.h
++++ linux-2.6.23-stm/include/linux/stm/emi.h
+@@ -25,7 +25,7 @@ int emi_init(unsigned long memory_base, 
+ unsigned long emi_bank_base(int bank);
+ void emi_bank_configure(int bank, unsigned long data[4]);
+ 
+-void emi_config_pata(int bank);
++void emi_config_pata(int bank, int pc_mode);
+ void emi_config_nand(int bank, struct emi_timing_data *timing_data);
+ 
+ #endif
+Index: linux-2.6.23-stm/include/linux/stm/soc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc.h
++++ linux-2.6.23-stm/include/linux/stm/soc.h
+@@ -245,7 +245,7 @@ void stx7100_configure_ssc(struct plat_s
+ void stx7100_configure_usb(void);
+ void stx7100_configure_ethernet(int rmii_mode, int ext_clk, int phy_bus);
+ void stx7100_configure_lirc(lirc_scd_t *scd);
+-void stx7100_configure_pata(int bank, int irq);
++void stx7100_configure_pata(int bank, int pc_mode, int irq);
+ 
+ void stx7105_configure_sata(unsigned int port);
+ void stx7105_early_device_init(void);
+@@ -257,6 +257,7 @@ void stx7105_configure_ethernet(int reve
+ 				int ext_mdio, int ext_clk, int phy_bus);
+ void stx7105_configure_nand(struct nand_config_data *data);
+ void stx7105_configure_lirc(void);
++void stx7105_configure_pata(int bank, int pc_mode, int irq);
+ 
+ void stx7111_early_device_init(void);
+ void stx7111_configure_asc(const int *ascs, int num_ascs, int console);
+@@ -277,6 +278,6 @@ void stx7200_configure_ethernet(int mac,
+ 				int phy_bus);
+ void stx7200_configure_lirc(lirc_scd_t *scd);
+ void stx7200_configure_nand(struct nand_config_data *data);
+-void stx7200_configure_pata(int bank, int irq);
++void stx7200_configure_pata(int bank, int pc_mode, int irq);
+ 
+ #endif /* __LINUX_ST_SOC_H */

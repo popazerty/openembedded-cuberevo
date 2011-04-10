@@ -1,0 +1,43 @@
+From cfdb3adbc30dad1e9c3646a1b8721347baf14d2d Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 19 Nov 2008 07:54:04 +0000
+Subject: [PATCH] phy: fix a failure reading zero from the UID PHY registers
+
+Using a bad PHY address, the PHY device is erroneously attached to the MAC.
+Unfortunately, broken hardware is sometimes missing the pull down resistor
+on the MDIO line, which results in reads to non-existent devices returning
+0 rather than 0xffff from the UID PHY registers (see the get_phy_id function).
+This is caught as soon as the PHY device is attached to the MAC where phy_id=0
+is treated as a non-existent device.
+
+See STLinux Bugzilla Bug #4967 too.
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/net/phy/phy_device.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/phy/phy_device.c b/drivers/net/phy/phy_device.c
+index 6d31487..4a13677 100644
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -109,6 +109,15 @@ struct phy_device * get_phy_device(struct mii_bus *bus, int addr)
+ 	if ((phy_id & 0x1fffffff) == 0x1fffffff)
+ 		return NULL;
+ 
++	/*
++	* Broken hardware is sometimes missing the pull down resistor on the
++	* MDIO line, which results in reads to non-existent devices returning
++	* 0 rather than 0xffff. Catch this here and treat 0 as a non-existent
++	* device as well.
++	*/
++	if (phy_id == 0)
++		return NULL;
++
+ 	dev = phy_device_create(bus, addr, phy_id);
+ 
+ 	return dev;
+-- 
+1.5.3.6
+

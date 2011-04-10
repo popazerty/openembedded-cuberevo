@@ -1,0 +1,94 @@
+From abb371395460c133a7b48f489b7f78324e19b221 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Fri, 9 Oct 2009 12:58:34 +0100
+Subject: [PATCH] stm_asc: Add workaround for ASC TX FIFO bug
+
+Some of the new devices suffer from a bug in ASC (aka UART) TX FIFO,
+which causes character corruption when the FIFO is full. This
+workaround prevents such a situation, reporting reduced amount
+of space available in the FIFO.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/serial/stasc.c  |   28 +++++++++++++++++++++-------
+ include/linux/stm/soc.h |    3 ++-
+ 2 files changed, 23 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/serial/stasc.c b/drivers/serial/stasc.c
+index 3d4fe61..b8cf87e 100644
+--- a/drivers/serial/stasc.c
++++ b/drivers/serial/stasc.c
+@@ -680,15 +680,21 @@ asc_set_termios_cflag (struct asc_port *ascport, int cflag, int baud)
+ static inline unsigned asc_hw_txroom(struct uart_port* port)
+ {
+ 	unsigned long status;
++	struct asc_port *ascport = container_of(port, struct asc_port, port);
+ 
+ 	status = asc_in(port, STA);
+-	if (status & ASC_STA_THE) {
+-		return FIFO_SIZE/2;
+-	} else if (! (status & ASC_STA_TF)) {
+-		return 1;
++
++	if (ascport->platform_flags & STASC_FLAG_TXFIFO_BUG) {
++		if (status & ASC_STA_THE)
++			return (FIFO_SIZE / 2) - 1;
+ 	} else {
+-		return 0;
++		if (status & ASC_STA_THE)
++			return FIFO_SIZE / 2;
++		else if (!(status & ASC_STA_TF))
++			return 1;
+ 	}
++
++	return 0;
+ }
+ 
+ /*
+@@ -927,6 +933,14 @@ static __inline__ char lowhex(int  x)
+ #endif
+ 
+ #ifdef CONFIG_SERIAL_ST_ASC_CONSOLE
++static int asc_txfifo_is_full(struct asc_port *ascport, unsigned long status)
++{
++	if (ascport->platform_flags & STASC_FLAG_TXFIFO_BUG)
++		return !(status & ASC_STA_THE);
++
++	return status & ASC_STA_TF;
++}
++
+ static void
+ put_char (struct uart_port *port, char c)
+ {
+@@ -939,12 +953,12 @@ put_char (struct uart_port *port, char c)
+ try_again:
+ 	do {
+ 		status = asc_in (port, STA);
+-	} while (status & ASC_STA_TF);
++	} while (asc_txfifo_is_full(ascport, status));
+ 
+ 	spin_lock_irqsave(&port->lock, flags);
+ 
+ 	status = asc_in (port, STA);
+-	if (status & ASC_STA_TF) {
++	if (asc_txfifo_is_full(ascport, status)) {
+ 		spin_unlock_irqrestore(&port->lock, flags);
+ 		goto try_again;
+ 	}
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index 5fa466d..fc00e9e 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -441,7 +441,8 @@ struct stasc_uart_data {
+ 	unsigned char flags;
+ };
+ 
+-#define STASC_FLAG_NORTSCTS	1
++#define STASC_FLAG_NORTSCTS	(1 << 0)
++#define STASC_FLAG_TXFIFO_BUG	(1 << 1)
+ 
+ extern int stasc_console_device;
+ extern struct platform_device *stasc_configured_devices[];
+-- 
+1.6.0.6
+

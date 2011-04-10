@@ -1,0 +1,18 @@
+sh: Export flush_cache_page()
+
+flush_cache_page() was exported by STLinux-2.0 kernels and is used by 
+Multicom. Include flush_cache_page() in the list of exported symbols.
+
+Signed-of-by: Daniel R Thompson <daniel.thompson@st.com>
+Index: linux-2.6.17.13_stm22_0035/arch/sh/kernel/sh_ksyms.c
+===================================================================
+--- linux-2.6.17.13_stm22_0035.orig/arch/sh/kernel/sh_ksyms.c	2006-10-16 18:06:11.000000000 +0100
++++ linux-2.6.17.13_stm22_0035/arch/sh/kernel/sh_ksyms.c	2006-11-13 11:58:40.000000000 +0000
+@@ -102,6 +102,7 @@
+ #ifdef CONFIG_CPU_SH4
+ /* needed by some modules */
+ EXPORT_SYMBOL(flush_cache_all);
++EXPORT_SYMBOL(flush_cache_page);
+ EXPORT_SYMBOL(flush_cache_range);
+ EXPORT_SYMBOL(flush_dcache_page);
+ EXPORT_SYMBOL(__flush_wback_region);

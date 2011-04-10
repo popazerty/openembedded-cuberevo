@@ -1,0 +1,31 @@
+From 476aaa1160119e5fbf6ce4a67657892cde379fb0 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Fri, 26 Sep 2008 11:47:29 +0100
+Subject: [PATCH] sh_stm: Fix ILC compilation on 7141 and 7111
+
+Changes introduced by 8753045dc393b3a640a4ac739fbf074732e691c4
+requires "priority" not to be const, which was the case but only
+for 7141 and 7111...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+index 1e1a90b..a8237f0 100644
+--- a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -85,7 +85,7 @@ void ilc_irq_demux(unsigned int irq, struct irq_desc *desc)
+ {
+ #if	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7141)
+-	const unsigned int priority = 7;
++	unsigned int priority = 7;
+ #elif	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	unsigned int priority = 14 - irq;
+-- 
+1.5.3.6
+

@@ -1,0 +1,66 @@
+From cd63ceee4f53fe1098b3e7a137b2be8cfb80fc21 Mon Sep 17 00:00:00 2001
+From: Angelo CASTELLO <angelo.castello@st.com>
+Date: Wed, 18 Nov 2009 10:28:39 +0100
+Subject: [PATCH] mtd: Fixed MTD regions management.
+
+This fixes the MTD create partition phase taking into account
+the erase regions boundary provided by master device data.
+Each slave device data structure will be well configured
+to be aligned with erase regions layouts.
+
+See Bugzilla no.
+ Bug 7244 -  mtdInfo.erasesize from MEMGETINFO IOCTL
+
+Signed-off-by: Angelo Castello <angelo.castello@st.com>
+---
+ drivers/mtd/mtdpart.c |   16 ++++++++++++++++
+ 1 files changed, 16 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/mtdpart.c b/drivers/mtd/mtdpart.c
+index 6174a97..65d9955 100644
+--- a/drivers/mtd/mtdpart.c
++++ b/drivers/mtd/mtdpart.c
+@@ -298,6 +298,8 @@ int del_mtd_partitions(struct mtd_info *master)
+ 		if (slave->master == master) {
+ 			struct list_head *prev = node->prev;
+ 			__list_del(prev, node->next);
++			if (master->numeraseregions > 1)
++				kfree(slave->mtd.eraseregions);
+ 			if(slave->registered)
+ 				del_mtd_device(&slave->mtd);
+ 			kfree(slave);
+@@ -426,6 +428,7 @@ int add_mtd_partitions(struct mtd_info *master,
+ 			printk ("mtd: partition \"%s\" extends beyond the end of device \"%s\" -- size truncated to %#x\n",
+ 				parts[i].name, master->name, slave->mtd.size);
+ 		}
++
+ 		if (master->numeraseregions>1) {
+ 			/* Deal with variable erase size stuff */
+ 			int i;
+@@ -435,10 +438,23 @@ int add_mtd_partitions(struct mtd_info *master,
+ 			for (i=0; i < master->numeraseregions && slave->offset >= regions[i].offset; i++)
+ 				;
+ 
++			printk("first erase region %d for slave @ %d\n",
++				i-1, slave->offset);
++
++			slave->mtd.eraseregions = kzalloc(sizeof(struct mtd_erase_region_info) *
++				master->numeraseregions, GFP_KERNEL);
++
++			int j = 0;
++
+ 			for (i--; i < master->numeraseregions && slave->offset + slave->mtd.size > regions[i].offset; i++) {
+ 				if (slave->mtd.erasesize < regions[i].erasesize) {
+ 					slave->mtd.erasesize = regions[i].erasesize;
++				slave->mtd.eraseregions[j].offset = regions[i].offset;
++				slave->mtd.eraseregions[j].erasesize = regions[i].erasesize;
++				slave->mtd.eraseregions[j].numblocks = regions[i].numblocks;
++				j++;
+ 				}
++			slave->mtd.numeraseregions = j;
+ 			}
+ 		} else {
+ 			/* Single erase size */
+-- 
+1.6.0.6
+

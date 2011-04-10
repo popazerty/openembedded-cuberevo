@@ -1,0 +1,197 @@
+From 39fe697d91da7d7e4fbd189e092c8cca3373f833 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 18 Nov 2009 11:28:03 +0000
+Subject: [PATCH] stm_usb: Start using named resources in USB platform devices
+
+This patch modifies the USB platform device definition macro
+and relevant drivers so the resources are requested basin on
+their name, rather then just on they ordering... It's much
+cleaner and safer...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/usb/host/ehci-stcore.c |    8 ++++++--
+ drivers/usb/host/hcd-stm.c     |   24 ++++++++++++++----------
+ drivers/usb/host/ohci-stcore.c |    8 ++++++--
+ include/linux/stm/soc_init.h   |   23 ++++++++++++-----------
+ 4 files changed, 38 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/usb/host/ehci-stcore.c b/drivers/usb/host/ehci-stcore.c
+index f8743e4..1738053 100644
+--- a/drivers/usb/host/ehci-stcore.c
++++ b/drivers/usb/host/ehci-stcore.c
+@@ -123,7 +123,9 @@ static int ehci_hcd_stm_probe(struct platform_device *pdev)
+ 
+ 	stm_usb_pdev = to_platform_device(pdev->dev.parent);
+ 
+-	res = platform_get_resource(stm_usb_pdev, IORESOURCE_MEM, 0);
++	res = platform_get_resource_byname(stm_usb_pdev,
++			IORESOURCE_MEM, "ehci");
++	BUG_ON(!res);
+ 	hcd->rsrc_start = res->start;
+ 	hcd->rsrc_len = res->end - res->start;
+ 
+@@ -151,7 +153,9 @@ static int ehci_hcd_stm_probe(struct platform_device *pdev)
+  * Fix the reset port issue on a load-unload-load sequence
+  */
+ 	ehci->has_reset_port_bug = 1,
+-	res = platform_get_resource(stm_usb_pdev, IORESOURCE_IRQ, 0);
++	res = platform_get_resource_byname(stm_usb_pdev,
++			IORESOURCE_IRQ, "ehci");
++	BUG_ON(!res);
+ 	retval = usb_add_hcd(hcd, res->start, 0);
+ 	if (retval == 0) {
+ #ifdef CONFIG_PM
+diff --git a/drivers/usb/host/hcd-stm.c b/drivers/usb/host/hcd-stm.c
+index fc8a062..f36e276 100644
+--- a/drivers/usb/host/hcd-stm.c
++++ b/drivers/usb/host/hcd-stm.c
+@@ -101,9 +101,11 @@ static int st_usb_remove(struct platform_device *pdev)
+ 	platform_pm_pwdn_req(pdev, HOST_PM | PHY_PM, 0);
+ 	platform_pm_pwdn_ack(pdev, HOST_PM | PHY_PM, 0);
+ 
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "wrapper");
++	BUG_ON(!res);
+ 	devm_release_mem_region(res->start, res->end - res->start);
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 3);
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "protocol");
++	BUG_ON(!res);
+ 	devm_release_mem_region(res->start, res->end - res->start);
+ 
+ 	if (dr_data->ehci_device)
+@@ -163,7 +165,7 @@ static int st_usb_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, dr_data);
+ 
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "wrapper");
+ 	if (!res) {
+ 		ret = -ENXIO;
+ 		goto err_0;
+@@ -180,7 +182,7 @@ static int st_usb_probe(struct platform_device *pdev)
+ 		ret = -EFAULT;
+ 		goto err_1;
+ 	}
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 3);
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "protocol");
+ 	if (!res) {
+ 		ret = -ENXIO;
+ 		goto err_2;
+@@ -199,8 +201,8 @@ static int st_usb_probe(struct platform_device *pdev)
+ 	}
+ 	st_usb_boot(pdev);
+ 
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0); /* ehci iomem */
+-	if (res->start) {
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "ehci");
++	if (res) {
+ 		dr_data->ehci_device = stm_usb_device_create("stm-ehci",
+ 			pdev->id, pdev);
+ 		if (IS_ERR(dr_data->ehci_device)) {
+@@ -209,8 +211,8 @@ static int st_usb_probe(struct platform_device *pdev)
+ 		}
+ 	}
+ 
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 1); /* ohci iomem */
+-	if (res->start) {
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "ohci");
++	if (res) {
+ 		dr_data->ohci_device =
+ 			stm_usb_device_create("stm-ohci", pdev->id, pdev);
+ 		if (IS_ERR(dr_data->ohci_device)) {
+@@ -225,12 +227,14 @@ static int st_usb_probe(struct platform_device *pdev)
+ err_4:
+ 	devm_iounmap(dev, dr_data->ahb2stbus_protocol_base);
+ err_3:
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 3);
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "protocol");
++	BUG_ON(!res);
+ 	devm_release_mem_region(res->start, res->end - res->start);
+ err_2:
+ 	devm_iounmap(dev, dr_data->ahb2stbus_wrapper_glue_base);
+ err_1:
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 3);
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "wrapper");
++	BUG_ON(!res);
+ 	devm_release_mem_region(res->start, res->end - res->start);
+ err_0:
+ 	kfree(dr_data);
+diff --git a/drivers/usb/host/ohci-stcore.c b/drivers/usb/host/ohci-stcore.c
+index 4cd426b..fbeb12d 100644
+--- a/drivers/usb/host/ohci-stcore.c
++++ b/drivers/usb/host/ohci-stcore.c
+@@ -105,7 +105,9 @@ static int ohci_hcd_stm_probe(struct platform_device *pdev)
+ 
+ 	stm_usb_pdev = to_platform_device(pdev->dev.parent);
+ 
+-	res = platform_get_resource(stm_usb_pdev, IORESOURCE_MEM, 1);
++	res = platform_get_resource_byname(stm_usb_pdev,
++			IORESOURCE_MEM, "ohci");
++	BUG_ON(!res);
+ 	hcd->rsrc_start = res->start;
+ 	hcd->rsrc_len = res->end - res->start;
+ 
+@@ -124,7 +126,9 @@ static int ohci_hcd_stm_probe(struct platform_device *pdev)
+ 
+ 	ohci_hcd_init(hcd_to_ohci(hcd));
+ 
+-	res = platform_get_resource(stm_usb_pdev, IORESOURCE_IRQ, 1);
++	res = platform_get_resource_byname(stm_usb_pdev,
++			IORESOURCE_IRQ, "ohci");
++	BUG_ON(!res);
+ 	retval = usb_add_hcd(hcd, res->start, 0);
+ 	if (retval == 0) {
+ #ifdef CONFIG_PM
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index 9c9a5b4..439d855 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -158,32 +158,33 @@
+ 	},								\
+ 	.num_resources = 6,						\
+ 	.resource = (struct resource[]) {				\
+-		[0] = {							\
++		{							\
++			.name  = "ehci",				\
+ 			.start = _eh_base,				\
+ 			.end   = _eh_base + 0xff,			\
+ 			.flags = IORESOURCE_MEM,			\
+-		},							\
+-		[1] = {							\
++		}, {							\
++			.name  = "ehci",				\
+ 			.start = _eh_irq,				\
+ 			.end   = _eh_irq,				\
+ 			.flags = IORESOURCE_IRQ,			\
+-		},							\
+-		[2] = {							\
++		}, {							\
++			.name  = "ohci",				\
+ 			.start = _oh_base,				\
+ 			.end   = _oh_base + 0xff,			\
+ 			.flags = IORESOURCE_MEM,			\
+-		},							\
+-		[3] = {							\
++		}, {							\
++			.name  = "ohci",				\
+ 			.start = _oh_irq,				\
+ 			.end   = _oh_irq,				\
+ 			.flags = IORESOURCE_IRQ,			\
+-		},							\
+-		[4] = {							\
++		}, {							\
++			.name  = "wrapper",				\
+ 			.start = _wrapper_base,				\
+ 			.end   = _wrapper_base + 0xff,			\
+ 			.flags = IORESOURCE_MEM,			\
+-		},							\
+-		[5] = {							\
++		}, {							\
++			.name = "protocol",				\
+ 			.start = _protocol_base,			\
+ 			.end   = _protocol_base + 0xff,			\
+ 			.flags = IORESOURCE_MEM,			\
+-- 
+1.6.0.6
+

@@ -1,0 +1,73 @@
+From 13521020505fec6789207a8a1144c0f0225da94c Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Thu, 4 Sep 2008 17:36:32 +0100
+Subject: [PATCH] sh_stm: Removed harmful locking and excessive callbacks from STPIO driver.
+
+Removed spinlocks usage from stpio_flagged_request_irq() and
+stpio_free_irq() - the underlaying request_irq() and free_irq() are
+interacting with procfs, which may call kmalloc(, GFP_KERNEL) (sleeping
+in interrupt context). Besides they are unnecessary as they are taking
+struct stpio_pin *pin parameter, which must be obtained via synchronised
+__stpio_request_pin().
+
+Also removed .enable and .disable callbacks from irq_chip definition -
+they are unnecessary as default ones (set by irq_chip_set_defaults())
+will fall back to .unmask and .mask respectively.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ drivers/stm/pio.c |   11 -----------
+ 1 files changed, 0 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/stm/pio.c b/drivers/stm/pio.c
+index 41d29b1..eb9226a 100644
+--- a/drivers/stm/pio.c
++++ b/drivers/stm/pio.c
+@@ -337,8 +337,6 @@ void stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
+ 
+ 	DPRINTK("called\n");
+ 
+-	spin_lock(&stpio_lock);
+-
+ 	/* stpio style interrupt handling doesn't allow sharing. */
+ 	BUG_ON(pin->func);
+ 
+@@ -351,25 +349,18 @@ void stpio_flagged_request_irq(struct stpio_pin *pin, int comp,
+ 
+ 	if (flags & IRQ_DISABLED)
+ 		disable_irq(irq);
+-
+-	spin_unlock(&stpio_lock);
+ }
+ EXPORT_SYMBOL(stpio_flagged_request_irq);
+ 
+ void stpio_free_irq(struct stpio_pin *pin)
+ {
+-	unsigned long flags;
+ 	int irq = pin_to_irq(pin);
+ 
+-	spin_lock_irqsave(&stpio_lock, flags);
+-
+ 	DPRINTK("calling free_irq\n");
+ 	free_irq(irq, pin);
+ 
+ 	pin->func = 0;
+ 	pin->dev = 0;
+-
+-	spin_unlock_irqrestore(&stpio_lock, flags);
+ }
+ EXPORT_SYMBOL(stpio_free_irq);
+ 
+@@ -622,8 +613,6 @@ static struct irq_chip stpio_irq_chip = {
+ 	.mask		= stpio_irq_chip_disable,
+ 	.mask_ack	= stpio_irq_chip_disable,
+ 	.unmask		= stpio_irq_chip_enable,
+-	.enable		= stpio_irq_chip_enable,
+-	.disable	= stpio_irq_chip_disable,
+ 	.set_type	= stpio_irq_chip_type,
+ };
+ 
+-- 
+1.5.3.6
+

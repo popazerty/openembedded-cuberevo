@@ -1,0 +1,43 @@
+Previously the i2c subsystem numbered the i2c bus by looking at adapter.nr
+In later kernels, the numbering is based on adapter.id which was being set
+to the ssc bus number rather than an incrementing counter.
+
+This patch adds an incrementing counter so that the I2C bus numbers are
+always contiguous even if an SSC bus has been marked as non-I2C capable.
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+
+Index: linux/drivers/i2c/busses/i2c-stm.c
+===================================================================
+--- linux.orig/drivers/i2c/busses/i2c-stm.c	2006-11-16 09:43:56.303314000 +0000
++++ linux/drivers/i2c/busses/i2c-stm.c	2006-11-16 09:57:46.950963000 +0000
+@@ -529,6 +529,7 @@
+ {
+ 	unsigned int ssc_number = ssc_device_available();
+ 	unsigned int idx;
++	unsigned int adapnr = 0;
+ 	struct stm_adapter *st_adapter;
+ 	struct iic_ssc *iic_stm;
+ 
+@@ -547,11 +548,11 @@
+ 		iic_stm->virtual_configuration &= ~IIC_STM_CONFIG_SPEED_MASK;
+ 		memset(&(iic_stm->adapter), 0, sizeof(struct i2c_adapter));
+ 		iic_stm->adapter.owner = THIS_MODULE;
+-		iic_stm->adapter.id = idx ;
++		iic_stm->adapter.id = adapnr;
+ 		iic_stm->adapter.timeout = 4;
+ 		iic_stm->adapter.retries = 0;
+ 		iic_stm->adapter.class   = I2C_CLASS_ALL;
+-		sprintf(iic_stm->adapter.name,"i2c-ssc-%d",idx);
++		sprintf(iic_stm->adapter.name,"i2c-ssc-%d",adapnr);
+ 		iic_stm->adapter.algo = &iic_stm_algo;
+ 		iic_stm->adapter.dev.bus = &i2c_bus_type;
+ 		iic_stm->adapter.dev.parent = &(ssc_device_request(idx)->dev);
+@@ -564,6 +565,7 @@
+ 			return -ENODEV;
+ 		}
+ 		list_add(&(st_adapter->stm_list), &(stm_busses));
++		adapnr ++;
+ 	}
+ 	return 0;
+ }

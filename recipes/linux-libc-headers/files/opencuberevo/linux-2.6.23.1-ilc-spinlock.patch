@@ -1,0 +1,13 @@
+Index: linux-2.6.23.1-stm/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ linux-2.6.23.1-stm/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -36,7 +36,7 @@ static struct ilc_data ilc_data[ILC_NR_I
+ 
+ static struct list_head intc_data[16];
+ 
+-static spinlock_t ilc_data_lock;
++static DEFINE_SPINLOCK(ilc_data_lock);
+ 
+ /*
+  * Debug printk macro

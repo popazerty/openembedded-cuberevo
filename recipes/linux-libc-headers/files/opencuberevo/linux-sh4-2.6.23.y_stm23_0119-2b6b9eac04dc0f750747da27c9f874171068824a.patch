@@ -1,0 +1,76 @@
+From 2b6b9eac04dc0f750747da27c9f874171068824a Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Fri, 24 Apr 2009 10:45:25 +0100
+Subject: [PATCH] sh_stm: Make the use of the PWM timer for oprofile sampling optional.
+
+Oprofile uses the PWM for sampling on CPU_SUBTYPE_STB7100, which is great
+unless the PWM is already in use. This patch adds the option to use the timer
+interrupt instead.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+---
+ arch/sh/oprofile/Kconfig       |    7 +++++++
+ arch/sh/oprofile/Makefile      |    2 +-
+ arch/sh/oprofile/common.c      |    2 +-
+ arch/sh/oprofile/op_sh_model.h |    2 +-
+ 4 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/arch/sh/oprofile/Kconfig b/arch/sh/oprofile/Kconfig
+index 5ade198..5e44f31 100644
+--- a/arch/sh/oprofile/Kconfig
++++ b/arch/sh/oprofile/Kconfig
+@@ -19,5 +19,12 @@ config OPROFILE
+ 
+ 	  If unsure, say N.
+ 
++config OPROFILE_TMU
++	bool "Use 710x TMU for profiling (EXPERIMENTAL)"
++	depends on OPROFILE
++	depends on CPU_SUBTYPE_STB7100
++	help
++	  Say Y here to use the 710x PWM timer for oprofile sampling.
++
+ endmenu
+ 
+diff --git a/arch/sh/oprofile/Makefile b/arch/sh/oprofile/Makefile
+index 6f57c5a..b4cfcba 100644
+--- a/arch/sh/oprofile/Makefile
++++ b/arch/sh/oprofile/Makefile
+@@ -14,7 +14,7 @@ profdrvr-$(CONFIG_CPU_SUBTYPE_SH7750)	+= op_model_sh7750.o
+ profdrvr-$(CONFIG_CPU_SUBTYPE_SH7091)	+= op_model_sh7750.o
+ 
+ # SH7109 has a PWM timer we nab for performance timing.
+-profdrvr-$(CONFIG_CPU_SUBTYPE_STB7100)  += op_model_sh7109.o
++profdrvr-$(CONFIG_OPROFILE_TMU)  += op_model_sh7109.o
+ 
+ oprofile-y				:= $(DRIVER_OBJS) $(profdrvr-y)
+ 
+diff --git a/arch/sh/oprofile/common.c b/arch/sh/oprofile/common.c
+index 703be02..d46748d 100644
+--- a/arch/sh/oprofile/common.c
++++ b/arch/sh/oprofile/common.c
+@@ -70,7 +70,7 @@ int __init oprofile_arch_init(struct oprofile_operations *ops)
+         struct op_sh_model_spec *spec = NULL;
+         int ret = -ENODEV;
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STB7100)
++#if defined(CONFIG_OPROFILE_TMU)
+ 	spec = &op_sh7109_spec;
+ #else
+         spec = &op_shtimer_spec;
+diff --git a/arch/sh/oprofile/op_sh_model.h b/arch/sh/oprofile/op_sh_model.h
+index 8453770..d083196 100644
+--- a/arch/sh/oprofile/op_sh_model.h
++++ b/arch/sh/oprofile/op_sh_model.h
+@@ -20,7 +20,7 @@ struct op_sh_model_spec {
+         char *name;
+ };
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STB7100)
++#if defined(CONFIG_OPROFILE_TMU)
+ extern struct op_sh_model_spec op_sh7109_spec;
+ #else
+ extern struct op_sh_model_spec op_shtimer_spec;
+-- 
+1.6.0.6
+

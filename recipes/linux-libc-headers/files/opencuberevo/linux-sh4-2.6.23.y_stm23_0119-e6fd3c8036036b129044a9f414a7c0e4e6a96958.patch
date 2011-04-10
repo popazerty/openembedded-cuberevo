@@ -1,0 +1,28 @@
+From e6fd3c8036036b129044a9f414a7c0e4e6a96958 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Wed, 13 May 2009 12:37:57 +0100
+Subject: [PATCH] sh: Remove spurious call to trace_hardirqs_on
+
+Remove redundant call to trace_hardirqs_on(), as the call is already
+present in the following local_irq_enable().
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/mm/fault.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/mm/fault.c b/arch/sh/mm/fault.c
+index 7b50e68..c0782de 100644
+--- a/arch/sh/mm/fault.c
++++ b/arch/sh/mm/fault.c
+@@ -89,7 +89,6 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
+ 
+ 	/* Only enable interrupts if they were on before the fault */
+ 	if ((regs->sr & SR_IMASK) != SR_IMASK) {
+-		trace_hardirqs_on();
+ 		local_irq_enable();
+ 	}
+ 
+-- 
+1.6.0.6
+

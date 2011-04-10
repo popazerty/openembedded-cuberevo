@@ -1,0 +1,30 @@
+From 904f25e7eb3c5e3f4960ddd262642a2919a25fc5 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 11 Feb 2009 13:52:55 +0000
+Subject: [PATCH] sound_stm: Provisional 7200 cut 3 support
+
+This patch makes the ALSA driver work on 7200 cut 3. There is
+some more work to be done (some workarounds should be disabled),
+but the code seems to work fine as it is.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/stx7200.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/sound/stm/stx7200.c b/sound/stm/stx7200.c
+index 3aeac7b..a2698e7 100644
+--- a/sound/stm/stx7200.c
++++ b/sound/stm/stx7200.c
+@@ -777,7 +777,7 @@ static int __init snd_stm_stx7200_init(void)
+ 
+ 		break;
+ 
+-	case 2:
++	case 2 ... 3:
+ 		SET_VER(snd_stm_fsynth_info, fsynth_0, 5);
+ 		SET_VER(snd_stm_fsynth_info, fsynth_1, 5);
+ 
+-- 
+1.5.6.3
+

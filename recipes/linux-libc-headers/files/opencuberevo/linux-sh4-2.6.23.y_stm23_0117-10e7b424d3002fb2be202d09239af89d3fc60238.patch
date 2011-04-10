@@ -1,0 +1,74 @@
+From 10e7b424d3002fb2be202d09239af89d3fc60238 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Mon, 3 Nov 2008 17:00:18 +0000
+Subject: [PATCH] sound_stm: Removed potentially harmful "unsigned" from fdma_channel use
+
+snd_stm_fdma_request() was doing if (unsigned < 0)... Once again
+it turned out that unsigned usage should be signed off by three
+independent advisers ;-)
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/common.c       |    3 +--
+ sound/stm/common.h       |    3 +--
+ sound/stm/pcm_player.c   |    2 +-
+ sound/stm/spdif_player.c |    2 +-
+ 4 files changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 5fa12dc..6808399 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -219,8 +219,7 @@ int snd_stm_irq_request(struct platform_device *pdev,
+ 	return 0;
+ }
+ 
+-int snd_stm_fdma_request(struct platform_device *pdev,
+-		unsigned int *channel)
++int snd_stm_fdma_request(struct platform_device *pdev, int *channel)
+ {
+ 	static const char *fdmac_id[] = { STM_DMAC_ID, NULL };
+ 	static const char *fdma_cap_lb[] = { STM_DMA_CAP_LOW_BW, NULL };
+diff --git a/sound/stm/common.h b/sound/stm/common.h
+index 0c3ca86..fb34068 100644
+--- a/sound/stm/common.h
++++ b/sound/stm/common.h
+@@ -270,8 +270,7 @@ int snd_stm_irq_request(struct platform_device *pdev,
+ 		unsigned int *irq, irq_handler_t handler, void *dev_id);
+ #define snd_stm_irq_release(irq, dev_id) free_irq(irq, dev_id)
+ 
+-int snd_stm_fdma_request(struct platform_device *pdev,
+-		unsigned int *channel);
++int snd_stm_fdma_request(struct platform_device *pdev, int *channel);
+ #define snd_stm_fdma_release(channel) free_dma(channel)
+ 
+ 
+diff --git a/sound/stm/pcm_player.c b/sound/stm/pcm_player.c
+index 19bf885..7ba57b3 100644
+--- a/sound/stm/pcm_player.c
++++ b/sound/stm/pcm_player.c
+@@ -70,7 +70,7 @@ struct snd_stm_pcm_player {
+ 	void *base;
+ 	unsigned long fifo_phys_address;
+ 	unsigned int irq;
+-	unsigned int fdma_channel;
++	int fdma_channel;
+ 
+ 	/* Environment settings */
+ 	struct snd_stm_fsynth_channel *fsynth_channel;
+diff --git a/sound/stm/spdif_player.c b/sound/stm/spdif_player.c
+index 05e7958..e96da9b 100644
+--- a/sound/stm/spdif_player.c
++++ b/sound/stm/spdif_player.c
+@@ -88,7 +88,7 @@ struct snd_stm_spdif_player {
+ 	void *base;
+ 	unsigned long fifo_phys_address;
+ 	unsigned int irq;
+-	unsigned int fdma_channel;
++	int fdma_channel;
+ 
+ 	/* Environment settings */
+ 	struct snd_stm_fsynth_channel *fsynth_channel;
+-- 
+1.5.3.6
+

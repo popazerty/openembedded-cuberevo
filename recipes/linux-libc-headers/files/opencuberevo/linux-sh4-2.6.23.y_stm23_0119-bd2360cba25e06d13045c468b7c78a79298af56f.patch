@@ -1,0 +1,31 @@
+From bd2360cba25e06d13045c468b7c78a79298af56f Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Mon, 11 May 2009 16:14:59 +0100
+Subject: [PATCH] hwmon_stm: Minor cleanup in PWM Kconfig
+
+This patch just polishes slightly the Kconfig option for the PWM driver.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ drivers/hwmon/Kconfig |    5 ++---
+ 1 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
+index 4b23371..510dd88 100644
+--- a/drivers/hwmon/Kconfig
++++ b/drivers/hwmon/Kconfig
+@@ -531,9 +531,8 @@ config SENSORS_THMC50
+ 	  will be called thmc50.
+ 
+ config SENSORS_STM_PWM
+-	tristate "STM PWM Support"
+-	depends on HWMON && CPU_SUBTYPE_ST40
+-	default n
++	tristate "STMicroelectronics PWM"
++	depends on CPU_SUBTYPE_ST40
+ 	help
+ 	  This is a simple driver for the PWM (Pulse Width Modulation)
+ 	  hardware present on many ST chips. Although the PWM hardware can
+-- 
+1.6.0.6
+

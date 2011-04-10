@@ -1,0 +1,256 @@
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb618/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb618/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb618/setup.c
+@@ -360,6 +360,21 @@ static void __init mb618_init_irq(void)
+ 	case 5:
+ 		/* We need to control the PHY reset in software */
+ 		phy_private_data.phy_reset = &mb618_phy_reset05;
++
++		/* Quick hack to test STEM Ethernet card */
++
++		/* The version 05 EPLD contains the harp style encoded
++		 * interrupt controller, which as usual gives us problems.
++		 * Enable the STEM INTR0 signal, and ignore the others.
++		 * This results in SYSITRQ[3..0] = 0100 when active,
++		 * SYSITRQ[3..0] = 0100 when inactive, so we can treat
++		 * SYSITRQ[2] as an active high interrupt pin.
++		 */
++		epld_write(1<<4, 8);
++		ctrl_outl(0x041086f1, 0xfe700000+0x140+0);
++		ctrl_outl(0x93110000, 0xfe700000+0x140+8);
++		ctrl_outl(0x91110000, 0xfe700000+0x140+0x10);
++
+ 		break;
+ 	}
+ }
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/irq/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/irq/Makefile
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/irq/Makefile
+@@ -6,5 +6,5 @@ obj-y	+= imask.o intc.o
+ obj-$(CONFIG_CPU_HAS_IPR_IRQ)		+= ipr.o
+ obj-$(CONFIG_CPU_HAS_MASKREG_IRQ)	+= maskreg.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= st40_ilc_sti5528.o ilc3_common.o
+-obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= st40_ilc_sti5528.o ilc3_common.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= st40_ilc_stx7200.o ilc3_common.o
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -79,7 +79,11 @@ static struct pr_mask priority_mask[16];
+  */
+ void ilc_irq_demux(unsigned int irq, struct irq_desc *desc)
+ {
++#if	defined(CONFIG_CPU_SUBTYPE_STX7111)
++	const unsigned int priority = 7;
++#elif	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	unsigned int priority = 14 - irq;
++#endif
+ 	unsigned int irq_offset;
+ 	int handled = 0;
+ 	int idx;
+@@ -128,14 +132,25 @@ static unsigned int startup_ilc_irq(unsi
+ 		_BIT(irq_offset);
+ 	spin_unlock_irqrestore(&ilc_data_lock, flags);
+ 
++#if	defined(CONFIG_CPU_SUBTYPE_STX7111)
++	/* ILC_EXT_OUT[4] -> IRL[0] (default priority 13 = irq  2) */
++	/* ILC_EXT_OUT[5] -> IRL[1] (default priority 10 = irq  5) */
++	/* ILC_EXT_OUT[6] -> IRL[2] (default priority  7 = irq  8) */
++	/* ILC_EXT_OUT[7] -> IRL[3] (default priority  4 = irq 11) */
++	ILC_SET_PRI(irq_offset, 0x8007);
++#elif	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	ILC_SET_PRI(irq_offset, priority);
++#endif
++
+ 	ILC_SET_TRIGMODE(irq_offset, ILC_TRIGGERMODE_HIGH);
+ 
++#if CONFIG_CPU_SUBTYPE_STX7200
+ 	/* Gross hack for external Ethernet PHYs which are active low */
+ 	/* FIXME: Move this into the BSP code */
+ 	if ((irq_offset == 93)  ||  (irq_offset == 95)) {
+ 		ILC_SET_TRIGMODE(irq_offset, ILC_TRIGGERMODE_LOW);
+ 	}
++#endif
+ 
+ 	ILC_SET_ENABLE(irq_offset);
+ 
+@@ -190,7 +205,7 @@ DPRINTK2("%s: irq %d\n", __FUNCTION__, i
+ }
+ 
+ static struct irq_chip ilc_chip = {
+-	.name		= "ILC3-IRQ",
++	.name		= "ILC3",
+ 	.startup	= startup_ilc_irq,
+ 	.shutdown	= shutdown_ilc_irq,
+ 	.mask		= disable_ilc_irq,
+@@ -198,11 +213,11 @@ static struct irq_chip ilc_chip = {
+ 	.unmask		= enable_ilc_irq,
+ };
+ 
+-void __init ilc_stx7200_init(void)
++void __init ilc_demux_init(void)
+ {
+ 	int irq;
+ 
+-	DPRINTK("STx7200: Initialising ILC\n");
++	DPRINTK("Initialising ILC demux\n");
+ 
+ 	for (irq = ILC_FIRST_IRQ; irq < (ILC_FIRST_IRQ+ILC_NR_IRQS); irq++)
+ 		/* SIM: Should we do the masking etc in ilc_irq_demux and
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -24,6 +24,7 @@
+ #include <linux/stm/fdma-reqs.h>
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/partitions.h>
++#include <asm/irl.h>
+ #include <asm/irq-ilc.h>
+ 
+ static struct sysconf_field *sc7_3;
+@@ -747,8 +748,8 @@ static struct platform_device ilc3_devic
+ 	.num_resources	= 1,
+ 	.resource	= (struct resource[]) {
+ 		{
+-			.start	= 0xfd804000,
+-			.end	= 0xfd804000 + 0x900,
++			.start	= 0xfd000000,
++			.end	= 0xfd000000 + 0x900,
+ 			.flags	= IORESOURCE_MEM
+ 		}
+ 	},
+@@ -946,21 +947,17 @@ static struct intc_mask_reg mask_registe
+ static DECLARE_INTC_DESC(intc_desc, "stx7111", vectors, groups,
+ 			 priorities, mask_registers, prio_registers, NULL);
+ 
+-static struct intc_vect vectors_irlm[] = {
+-	INTC_VECT(IRL0, 0x240), INTC_VECT(IRL1, 0x2a0),
+-	INTC_VECT(IRL2, 0x300), INTC_VECT(IRL3, 0x360),
+-};
+-
+-static DECLARE_INTC_DESC(intc_desc_irlm, "stx7111_irlm", vectors_irlm, NULL,
+-			 priorities, NULL, prio_registers, NULL);
++#define INTC_ICR	0xffd00000UL
++#define INTC_ICR_IRLM   (1<<7)
+ 
+ void __init plat_irq_setup(void)
+ {
+ 	struct sysconf_field *sc;
+ 	unsigned long intc2_base = (unsigned long)ioremap(0xfe001000, 0x400);
+ 	int i;
+-
+-	ilc_early_init(&ilc3_device);
++	static const int irl_irqs[4] = {
++		IRL0_IRQ, IRL1_IRQ, IRL2_IRQ, IRL3_IRQ
++	};
+ 
+ 	for (i=4; i<=6; i++)
+ 		prio_registers[i].set_reg += intc2_base;
+@@ -969,24 +966,25 @@ void __init plat_irq_setup(void)
+ 		mask_registers[i].clr_reg += intc2_base;
+ 	}
+ 
++	register_intc_controller(&intc_desc);
++
+ 	/* Configure the external interrupt pins as inputs */
+ 	sc = sysconf_claim(SYS_CFG, 10, 0, 3, "irq");
+ 	sysconf_write(sc, 0xf);
+ 
+-	register_intc_controller(&intc_desc);
+-}
+-
+-#define INTC_ICR	0xffd00000UL
+-#define INTC_ICR_IRLM   (1<<7)
++	/* Disable encoded interrupts */
++	ctrl_outw(ctrl_inw(INTC_ICR) | INTC_ICR_IRLM, INTC_ICR);
+ 
+-void __init plat_irq_setup_pins(int mode)
+-{
+-	switch (mode) {
+-	case IRQ_MODE_IRQ: /* individual interrupt mode for IRL3-0 */
+-		register_intc_controller(&intc_desc_irlm);
+-		ctrl_outw(ctrl_inw(INTC_ICR) | INTC_ICR_IRLM, INTC_ICR);
+-		break;
+-	default:
+-		BUG();
++	/* Don't change the default priority assignments, so we get a
++	 * range of priorities for the ILC3 interrupts by picking the
++	 * correct output. */
++
++	for (i=0; i<4; i++) {
++		int irq = irl_irqs[i];
++		set_irq_chip(irq, &dummy_irq_chip);
++		set_irq_chained_handler(irq, ilc_irq_demux);
+ 	}
++
++	ilc_early_init(&ilc3_device);
++	ilc_demux_init();
+ }
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+@@ -1298,5 +1298,5 @@ void __init plat_irq_setup(void)
+ 	}
+ 
+ 	ilc_early_init(&ilc3_device);
+-	ilc_stx7200_init();
++	ilc_demux_init();
+ }
+Index: linux-2.6.23-stm/drivers/net/smsc_911x/st40.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/smsc_911x/st40.c
++++ linux-2.6.23-stm/drivers/net/smsc_911x/st40.c
+@@ -84,6 +84,20 @@
+ #define PLATFORM_CSBASE		(0x02800000UL)
+ #define PLATFORM_IRQ		(MUXED_IRQ_BASE+4)
+ #endif
++#elif defined(CONFIG_SH_ST_MB618)
++#include <asm/irq-ilc.h>
++/* db641 STEM card plugged into mb618 */
++#ifdef DB641_USE_PORT0
++/* STEM CS0 = BANK1 (notCSB). This assumes J30-B is in the 4-5 position */
++/* Note R100 needs to be fitted */
++#define PLATFORM_CSBASE		(0x02000000UL)
++#define PLATFORM_IRQ		ILC_EXT_IRQ(2)
++#else
++/* STEM CS1 = BANK3 (notCSD). This assumes J11 is in the 1-2 position. */
++/* Note R109 needs to be fitted */
++#define PLATFORM_CSBASE		(0x02800000UL)
++#define PLATFORM_IRQ		ILC_EXT_IRQ(1)
++#endif
+ #elif defined(CONFIG_SH_HMS1)
+ /* SD HMS1 with in-built SMSC 911x */
+ #undef PLATFORM_IRQ_POL
+Index: linux-2.6.23-stm/include/asm-sh/irq-ilc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/asm-sh/irq-ilc.h
++++ linux-2.6.23-stm/include/asm-sh/irq-ilc.h
+@@ -1,7 +1,22 @@
++#if defined(CONFIG_CPU_SUBTYPE_STX7111)
++/* In an attempt to stick within NR_IRQS (256), and not complicate the
++ * mapping between ILC interrupt number and Linux IRQ number, we cap
++ * the number of external interrupts at 16. This will probably
++ * break one day, at which point we have the option of increasing
++ * NR_IRQS or modifying the ILC code to support an offset (effectivly
++ * ignoring the internal interrupts).
++ */
++#define ILC_FIRST_IRQ	176
++#define ILC_NR_IRQS	(64+16)
++#define ILC_INT_IRQ(x)	(ILC_FIRST_IRQ + (x))
++#define ILC_EXT_IRQ(x)	(ILC_FIRST_IRQ + 64 + (x))
++#define ILC_IRQ(x)	ILC_INT_IRQ(x)
++#elif defined(CONFIG_CPU_SUBTYPE_STX7200)
+ #define ILC_FIRST_IRQ	44
+ #define ILC_NR_IRQS	150
+ #define ILC_IRQ(x) (ILC_FIRST_IRQ + (x))
++#endif
+ 
+ void __init ilc_early_init(struct platform_device* pdev);
+-void __init ilc_stx7200_init(void);
++void __init ilc_demux_init(void);
+ void ilc_irq_demux(unsigned int irq, struct irq_desc *desc);

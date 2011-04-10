@@ -1,0 +1,415 @@
+Index: linux-2.6.17/arch/sh/kernel/irq.c
+===================================================================
+--- linux-2.6.17.orig/arch/sh/kernel/irq.c
++++ linux-2.6.17/arch/sh/kernel/irq.c
+@@ -83,8 +83,9 @@ inline unsigned long current_stack_point
+ 
+ asmlinkage int do_IRQ(unsigned long r4, unsigned long r5,
+ 		      unsigned long r6, unsigned long r7,
+-		      struct pt_regs regs)
++		      struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	int irq = r4;
+ 
+ 	irq_enter();
+@@ -135,7 +136,7 @@ asmlinkage int do_IRQ(unsigned long r4, 
+ 		      "  mov     %3,    r15  \n"// swith to the irq stack
+ 		      "mov       r8,    r15  \n"// restore the stack (ring zero)
+ 		  : : "r" (irq),
+-		      "r" (&regs),
++		      "r" (regs),
+ 		      "r" (__do_IRQ),
+ 		      "r" (hardirq_stack+(HARDIRQ_STACK_SIZE/sizeof(long)))
+                   : "memory", "r0", "r1", "r2", "r3", "r4",
+@@ -143,7 +144,7 @@ asmlinkage int do_IRQ(unsigned long r4, 
+         }
+ 	else
+ #endif
+-	__do_IRQ(irq,&regs);
++	__do_IRQ(irq,regs);
+ 
+ 	irq_exit();
+ 
+Index: linux-2.6.17/arch/sh/kernel/process.c
+===================================================================
+--- linux-2.6.17.orig/arch/sh/kernel/process.c
++++ linux-2.6.17/arch/sh/kernel/process.c
+@@ -352,10 +352,11 @@ struct task_struct *__switch_to(struct t
+ 
+ asmlinkage int sys_fork(unsigned long r4, unsigned long r5,
+ 			unsigned long r6, unsigned long r7,
+-			struct pt_regs regs)
++			struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ #ifdef CONFIG_MMU
+-	return do_fork(SIGCHLD, regs.regs[15], &regs, 0, NULL, NULL);
++	return do_fork(SIGCHLD, regs->regs[15], regs, 0, NULL, NULL);
+ #else
+ 	/* fork almost works, enough to trick you into looking elsewhere :-( */
+ 	return -EINVAL;
+@@ -365,11 +366,12 @@ asmlinkage int sys_fork(unsigned long r4
+ asmlinkage int sys_clone(unsigned long clone_flags, unsigned long newsp,
+ 			 unsigned long parent_tidptr,
+ 			 unsigned long child_tidptr,
+-			 struct pt_regs regs)
++			 struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	if (!newsp)
+-		newsp = regs.regs[15];
+-	return do_fork(clone_flags, newsp, &regs, 0,
++		newsp = regs->regs[15];
++	return do_fork(clone_flags, newsp, regs, 0,
+ 			(int __user *)parent_tidptr, (int __user *)child_tidptr);
+ }
+ 
+@@ -385,9 +387,10 @@ asmlinkage int sys_clone(unsigned long c
+  */
+ asmlinkage int sys_vfork(unsigned long r4, unsigned long r5,
+ 			 unsigned long r6, unsigned long r7,
+-			 struct pt_regs regs)
++			 struct pt_regs __regs)
+ {
+-	return do_fork(CLONE_VFORK | CLONE_VM | SIGCHLD, regs.regs[15], &regs,
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
++	return do_fork(CLONE_VFORK | CLONE_VM | SIGCHLD, regs->regs[15], regs,
+ 		       0, NULL, NULL);
+ }
+ 
+@@ -396,8 +399,9 @@ asmlinkage int sys_vfork(unsigned long r
+  */
+ asmlinkage int sys_execve(char *ufilename, char **uargv,
+ 			  char **uenvp, unsigned long r7,
+-			  struct pt_regs regs)
++			  struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	int error;
+ 	char *filename;
+ 
+@@ -409,7 +413,7 @@ asmlinkage int sys_execve(char *ufilenam
+ 	error = do_execve(filename,
+ 			  (char __user * __user *)uargv,
+ 			  (char __user * __user *)uenvp,
+-			  &regs);
++			  regs);
+ 	if (error == 0) {
+ 		task_lock(current);
+ 		current->ptrace &= ~PT_DTRACE;
+@@ -439,9 +443,7 @@ unsigned long get_wchan(struct task_stru
+ 	return pc;
+ }
+ 
+-asmlinkage void break_point_trap(unsigned long r4, unsigned long r5,
+-				 unsigned long r6, unsigned long r7,
+-				 struct pt_regs regs)
++asmlinkage void break_point_trap(void)
+ {
+ 	/* Clear tracing.  */
+ 	ctrl_outw(0, UBC_BBRA);
+@@ -454,8 +456,10 @@ asmlinkage void break_point_trap(unsigne
+ 
+ asmlinkage void break_point_trap_software(unsigned long r4, unsigned long r5,
+ 					  unsigned long r6, unsigned long r7,
+-					  struct pt_regs regs)
++					  struct pt_regs __regs)
+ {
+-	regs.pc -= 2;
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
++
++	regs->pc -= 2;
+ 	force_sig(SIGTRAP, current);
+ }
+Index: linux-2.6.17/arch/sh/kernel/signal.c
+===================================================================
+--- linux-2.6.17.orig/arch/sh/kernel/signal.c
++++ linux-2.6.17/arch/sh/kernel/signal.c
+@@ -42,8 +42,9 @@ asmlinkage int do_signal(struct pt_regs 
+ asmlinkage int
+ sys_sigsuspend(old_sigset_t mask,
+ 	       unsigned long r5, unsigned long r6, unsigned long r7,
+-	       struct pt_regs regs)
++	       struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	sigset_t saveset;
+ 
+ 	mask &= _BLOCKABLE;
+@@ -53,11 +54,11 @@ sys_sigsuspend(old_sigset_t mask,
+ 	recalc_sigpending();
+ 	spin_unlock_irq(&current->sighand->siglock);
+ 
+-	regs.regs[0] = -EINTR;
++	regs->regs[0] = -EINTR;
+ 	while (1) {
+ 		current->state = TASK_INTERRUPTIBLE;
+ 		schedule();
+-		if (do_signal(&regs, &saveset, regs.regs[0]))
++		if (do_signal(regs, &saveset, regs->regs[0]))
+ 			return -EINTR;
+ 	}
+ }
+@@ -65,8 +66,9 @@ sys_sigsuspend(old_sigset_t mask,
+ asmlinkage int
+ sys_rt_sigsuspend(sigset_t *unewset, size_t sigsetsize,
+ 		  unsigned long r6, unsigned long r7,
+-		  struct pt_regs regs)
++		  struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	sigset_t saveset, newset;
+ 
+ 	/* XXX: Don't preclude handling different sized sigset_t's.  */
+@@ -82,11 +84,11 @@ sys_rt_sigsuspend(sigset_t *unewset, siz
+ 	recalc_sigpending();
+ 	spin_unlock_irq(&current->sighand->siglock);
+ 
+-	regs.regs[0] = -EINTR;
++	regs->regs[0] = -EINTR;
+ 	while (1) {
+ 		current->state = TASK_INTERRUPTIBLE;
+ 		schedule();
+-		if (do_signal(&regs, &saveset, regs.regs[0]))
++		if (do_signal(regs, &saveset, regs->regs[0]))
+ 			return -EINTR;
+ 	}
+ }
+@@ -126,9 +128,11 @@ sys_sigaction(int sig, const struct old_
+ asmlinkage int
+ sys_sigaltstack(const stack_t __user *uss, stack_t __user *uoss,
+ 		unsigned long r6, unsigned long r7,
+-		struct pt_regs regs)
++		struct pt_regs __regs)
+ {
+-	return do_sigaltstack(uss, uoss, regs.regs[15]);
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
++
++	return do_sigaltstack(uss, uoss, regs->regs[15]);
+ }
+ 
+ 
+@@ -233,9 +237,10 @@ restore_sigcontext(struct pt_regs *regs,
+ 
+ asmlinkage int sys_sigreturn(unsigned long r4, unsigned long r5,
+ 			     unsigned long r6, unsigned long r7,
+-			     struct pt_regs regs)
++			     struct pt_regs __regs)
+ {
+-	struct sigframe __user *frame = (struct sigframe __user *)regs.regs[15];
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
++	struct sigframe __user *frame = (struct sigframe __user *)regs->regs[15];
+ 	sigset_t set;
+ 	int r0;
+ 
+@@ -255,7 +260,7 @@ asmlinkage int sys_sigreturn(unsigned lo
+ 	recalc_sigpending();
+ 	spin_unlock_irq(&current->sighand->siglock);
+ 
+-	if (restore_sigcontext(&regs, &frame->sc, &r0))
++	if (restore_sigcontext(regs, &frame->sc, &r0))
+ 		goto badframe;
+ 	return r0;
+ 
+@@ -266,9 +271,10 @@ badframe:
+ 
+ asmlinkage int sys_rt_sigreturn(unsigned long r4, unsigned long r5,
+ 				unsigned long r6, unsigned long r7,
+-				struct pt_regs regs)
++				struct pt_regs __regs)
+ {
+-	struct rt_sigframe __user *frame = (struct rt_sigframe __user *)regs.regs[15];
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
++	struct rt_sigframe __user *frame = (struct rt_sigframe __user *)regs->regs[15];
+ 	sigset_t set;
+ 	stack_t st;
+ 	int r0;
+@@ -285,14 +291,14 @@ asmlinkage int sys_rt_sigreturn(unsigned
+ 	recalc_sigpending();
+ 	spin_unlock_irq(&current->sighand->siglock);
+ 
+-	if (restore_sigcontext(&regs, &frame->uc.uc_mcontext, &r0))
++	if (restore_sigcontext(regs, &frame->uc.uc_mcontext, &r0))
+ 		goto badframe;
+ 
+ 	if (__copy_from_user(&st, &frame->uc.uc_stack, sizeof(st)))
+ 		goto badframe;
+ 	/* It is more difficult to avoid calling this function than to
+ 	   call it and ignore errors.  */
+-	do_sigaltstack(&st, NULL, regs.regs[15]);
++	do_sigaltstack(&st, NULL, regs->regs[15]);
+ 
+ 	return r0;
+ 
+Index: linux-2.6.17/arch/sh/kernel/sys_sh.c
+===================================================================
+--- linux-2.6.17.orig/arch/sh/kernel/sys_sh.c
++++ linux-2.6.17/arch/sh/kernel/sys_sh.c
+@@ -32,14 +32,15 @@
+  */
+ asmlinkage int sys_pipe(unsigned long r4, unsigned long r5,
+ 	unsigned long r6, unsigned long r7,
+-	struct pt_regs regs)
++	struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	int fd[2];
+ 	int error;
+ 
+ 	error = do_pipe(fd);
+ 	if (!error) {
+-		regs.regs[1] = fd[1];
++		regs->regs[1] = fd[1];
+ 		return fd[0];
+ 	}
+ 	return error;
+Index: linux-2.6.17/arch/sh/kernel/traps.c
+===================================================================
+--- linux-2.6.17.orig/arch/sh/kernel/traps.c
++++ linux-2.6.17/arch/sh/kernel/traps.c
+@@ -555,8 +555,9 @@ extern int do_fpu_inst(unsigned short, s
+ 
+ asmlinkage void do_reserved_inst(unsigned long r4, unsigned long r5,
+ 				unsigned long r6, unsigned long r7,
+-				struct pt_regs regs)
++				struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	unsigned long error_code;
+ 	struct task_struct *tsk = current;
+ 
+@@ -564,11 +565,11 @@ asmlinkage void do_reserved_inst(unsigne
+ 	unsigned short inst;
+ 	int err;
+ 
+-	get_user(inst, (unsigned short*)regs.pc);
++	get_user(inst, (unsigned short*)regs->pc);
+ 
+-	err = do_fpu_inst(inst, &regs);
++	err = do_fpu_inst(inst, regs);
+ 	if (!err) {
+-		regs.pc += 2;
++		regs->pc += 2;
+ 		return;
+ 	}
+ 	/* not a FPU inst. */
+@@ -576,9 +577,9 @@ asmlinkage void do_reserved_inst(unsigne
+ 
+ #ifdef CONFIG_SH_DSP
+ 	/* Check if it's a DSP instruction */
+- 	if (is_dsp_inst(&regs)) {
++ 	if (is_dsp_inst(regs)) {
+ 		/* Enable DSP mode, and restart instruction. */
+-		regs.sr |= SR_DSP;
++		regs->sr |= SR_DSP;
+ 		return;
+ 	}
+ #endif
+@@ -587,9 +588,9 @@ asmlinkage void do_reserved_inst(unsigne
+ 	local_irq_enable();
+ 	tsk->thread.error_code = error_code;
+ 	tsk->thread.trap_no = TRAP_RESERVED_INST;
+-	CHK_REMOTE_DEBUG(&regs);
++	CHK_REMOTE_DEBUG(regs);
+ 	force_sig(SIGILL, tsk);
+-	die_if_no_fixup("reserved instruction", &regs, error_code);
++	die_if_no_fixup("reserved instruction", regs, error_code);
+ }
+ 
+ #ifdef CONFIG_SH_FPU_EMU
+@@ -637,17 +638,18 @@ static int emulate_branch(unsigned short
+ 
+ asmlinkage void do_illegal_slot_inst(unsigned long r4, unsigned long r5,
+ 				unsigned long r6, unsigned long r7,
+-				struct pt_regs regs)
++				struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	unsigned long error_code;
+ 	struct task_struct *tsk = current;
+ #ifdef CONFIG_SH_FPU_EMU
+ 	unsigned short inst;
+ 
+-	get_user(inst, (unsigned short *)regs.pc + 1);
+-	if (!do_fpu_inst(inst, &regs)) {
+-		get_user(inst, (unsigned short *)regs.pc);
+-		if (!emulate_branch(inst, &regs))
++	get_user(inst, (unsigned short *)regs->pc + 1);
++	if (!do_fpu_inst(inst, regs)) {
++		get_user(inst, (unsigned short *)regs->pc);
++		if (!emulate_branch(inst, regs))
+ 			return;
+ 		/* fault in branch.*/
+ 	}
+@@ -658,18 +660,20 @@ asmlinkage void do_illegal_slot_inst(uns
+ 	local_irq_enable();
+ 	tsk->thread.error_code = error_code;
+ 	tsk->thread.trap_no = TRAP_RESERVED_INST;
+-	CHK_REMOTE_DEBUG(&regs);
++	CHK_REMOTE_DEBUG(regs);
+ 	force_sig(SIGILL, tsk);
+-	die_if_no_fixup("illegal slot instruction", &regs, error_code);
++	die_if_no_fixup("illegal slot instruction", regs, error_code);
+ }
+ 
+ asmlinkage void do_exception_error(unsigned long r4, unsigned long r5,
+ 				   unsigned long r6, unsigned long r7,
+-				   struct pt_regs regs)
++				   struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	long ex;
++
+ 	asm volatile("stc	r2_bank, %0" : "=r" (ex));
+-	die_if_kernel("exception", &regs, ex);
++	die_if_kernel("exception", regs, ex);
+ }
+ 
+ #if defined(CONFIG_SH_STANDARD_BIOS)
+Index: linux-2.6.17/arch/sh/kernel/cpu/sh4/fpu.c
+===================================================================
+--- linux-2.6.17.orig/arch/sh/kernel/cpu/sh4/fpu.c
++++ linux-2.6.17/arch/sh/kernel/cpu/sh4/fpu.c
+@@ -437,19 +437,20 @@ int float_rounding_mode(void)
+ 
+ asmlinkage void
+ do_fpu_error(unsigned long r4, unsigned long r5, unsigned long r6,
+-	     unsigned long r7, struct pt_regs regs)
++	     unsigned long r7, struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	struct task_struct *tsk = current;
+ 
+-	save_fpu(tsk, &regs);
++	save_fpu(tsk, regs);
+ 	fpu_exception_flags = 0;
+-	if (ieee_fpe_handler(&regs)) {
++	if (ieee_fpe_handler(regs)) {
+ 		tsk->thread.fpu.hard.fpscr &=
+ 		    ~(FPSCR_CAUSE_MASK | FPSCR_FLAG_MASK);
+ 		tsk->thread.fpu.hard.fpscr |= fpu_exception_flags;
+ 		/* Set the FPSCR flag as well as cause bits - simply replicate the cause */
+ 		tsk->thread.fpu.hard.fpscr |= (fpu_exception_flags >> 10);
+-		grab_fpu(&regs);
++		grab_fpu(regs);
+ 		restore_fpu(tsk);
+ 		set_tsk_thread_flag(tsk, TIF_USEDFPU);
+ 		if ((((tsk->thread.fpu.hard.fpscr & FPSCR_ENABLE_MASK) >> 7) &
+@@ -463,12 +464,13 @@ do_fpu_error(unsigned long r4, unsigned 
+ 
+ asmlinkage void
+ do_fpu_state_restore(unsigned long r4, unsigned long r5, unsigned long r6,
+-		     unsigned long r7, struct pt_regs regs)
++		     unsigned long r7, struct pt_regs __regs)
+ {
++	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	struct task_struct *tsk = current;
+ 
+-	grab_fpu(&regs);
+-	if (!user_mode(&regs)) {
++	grab_fpu(regs);
++	if (!user_mode(regs)) {
+ 		printk(KERN_ERR "BUG: FPU is used in kernel mode.\n");
+ 		return;
+ 	}

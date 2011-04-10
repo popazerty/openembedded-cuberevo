@@ -1,0 +1,30 @@
+From d2333634477fe7fc54318c6f61c3b0c5605729fb Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Wed, 27 May 2009 08:35:02 +0200
+Subject: [PATCH] sh4: fix the trap handler while compiling with PREEMPT_NONE
+
+When compile with CONFIG_PREEMPT_NONE, returning to userspace,
+we erroneously fell through to restore_all.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ arch/sh/kernel/cpu/sh4/entry.S |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/entry.S b/arch/sh/kernel/cpu/sh4/entry.S
+index 9b8cf92..fbf7d25 100644
+--- a/arch/sh/kernel/cpu/sh4/entry.S
++++ b/arch/sh/kernel/cpu/sh4/entry.S
+@@ -659,7 +659,7 @@ ret_from_irq:
+ 	shll	r0		! kernel space?
+ 	get_current_thread_info r8, r0
+ #ifndef CONFIG_PREEMPT
+-	bt	restore_all
++	bf	resume_userspace
+ #else
+ 	bt	resume_kernel	! Yes, it's from kernel, go back soon
+ 	bra	resume_userspace
+-- 
+1.6.0.6
+

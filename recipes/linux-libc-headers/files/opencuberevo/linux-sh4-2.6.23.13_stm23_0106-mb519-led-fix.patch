@@ -1,0 +1,29 @@
+Fix a silly typo in the mb519 LED driver which prevented it building.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb519/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/boards/st/mb519/setup.c
++++ linux-2.6.23-stm/arch/sh/boards/st/mb519/setup.c
+@@ -35,7 +35,7 @@ static void __init mb519_setup(char** cm
+ }
+ 
+ static struct plat_stm_pwm_data pwm_private_info = {
+-	.flags		= PLAT_STM_PWM_OUT1,
++	.flags		= PLAT_STM_PWM_OUT0,
+ };
+ 
+ static struct plat_ssc_data ssc_private_info = {
+Index: linux-2.6.23-stm/drivers/leds/leds-mb519.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/leds/leds-mb519.c
++++ linux-2.6.23-stm/drivers/leds/leds-mb519.c
+@@ -30,7 +30,7 @@ static void mb519_led_set(struct led_cla
+ static struct led_classdev mb519_led = {
+ 	.name = "mb519-led",
+ 	.brightness_set = mb519_led_set,
+-	.default_trigger = "heartbeat";
++	.default_trigger = "heartbeat",
+ };
+ 
+ static int __init mb519_led_init(void)

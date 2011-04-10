@@ -1,0 +1,131 @@
+From b46d82df85bd1e53f30565bdde8f5def41bd72e3 Mon Sep 17 00:00:00 2001
+From: David McKay <david.mckay@st.com>
+Date: Sun, 8 Feb 2009 21:28:03 +0000
+Subject: [PATCH] sh: Allow use of GENERIC_IOMAP
+
+The synopsys PCI cell used in the later STMicro chips requires code to
+be run in order to do IO cycles, rather than just memory mapping the IO
+space. Rather than extending the existing SH infrastructure to allow
+this, use the GENERIC_IOMAP implmentation to save re-inventing the
+wheel.
+
+This set of changes allows the SH to be built with GENERIC_IOMAP
+enabled, it just ifdef's out the functions provided by the GENERIC_IOMAP
+implementation, and provides a few required missing functions.
+
+Signed-off-by: David McKay <david.mckay@st.com>
+---
+ arch/sh/drivers/pci/pci.c |    6 ++++++
+ arch/sh/kernel/io.c       |   26 ++++++++++++++++++++++++++
+ include/asm-sh/io.h       |   12 ++++++++++++
+ 3 files changed, 44 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/drivers/pci/pci.c b/arch/sh/drivers/pci/pci.c
+index ccaba36..52db183 100644
+--- a/arch/sh/drivers/pci/pci.c
++++ b/arch/sh/drivers/pci/pci.c
+@@ -189,6 +189,9 @@ void __init pcibios_update_irq(struct pci_dev *dev, int irq)
+ 	pci_write_config_byte(dev, PCI_INTERRUPT_LINE, irq);
+ }
+ 
++
++#ifndef CONFIG_GENERIC_IOMAP
++
+ void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long maxlen)
+ {
+ 	unsigned long start = pci_resource_start(dev, bar);
+@@ -224,3 +227,6 @@ void pci_iounmap(struct pci_dev *dev, void __iomem *addr)
+ 	iounmap(addr);
+ }
+ EXPORT_SYMBOL(pci_iounmap);
++
++#endif
++
+diff --git a/arch/sh/kernel/io.c b/arch/sh/kernel/io.c
+index 7de0bdc..b6b4810 100644
+--- a/arch/sh/kernel/io.c
++++ b/arch/sh/kernel/io.c
+@@ -114,6 +114,16 @@ void memset_io(volatile void __iomem *dst, int c, unsigned long count)
+ }
+ EXPORT_SYMBOL(memset_io);
+ 
++void __raw_readsb(const void __iomem *addrp, void *datap, int len)
++{
++	u8 *data;
++
++	for (data = datap; len != 0; len--)
++		*data++ = ctrl_inb(addrp);
++
++}
++EXPORT_SYMBOL(__raw_readsb);
++
+ void __raw_readsw(const void __iomem *addrp, void *datap, int len)
+ {
+ 	u16 *data;
+@@ -174,6 +184,17 @@ void __raw_readsl(const void __iomem *addrp, void *datap, int len)
+ }
+ EXPORT_SYMBOL(__raw_readsl);
+ 
++
++void __raw_writesb(void __iomem *addrp, const void *datap, int len)
++{
++	u8 *data;
++
++	for (data = datap; len != 0; len--)
++		ctrl_outb(*data++, addrp);
++
++}
++EXPORT_SYMBOL(__raw_writesb);
++
+ void __raw_writesw(void __iomem *addrp, const void *datap, int len)
+ {
+ 	u16 *data;
+@@ -208,6 +229,8 @@ void __raw_writesl(void __iomem *addrp, const void *data, int len)
+ }
+ EXPORT_SYMBOL(__raw_writesl);
+ 
++#ifndef CONFIG_GENERIC_IOMAP
++
+ void __iomem *ioport_map(unsigned long port, unsigned int nr)
+ {
+ 	return sh_mv.mv_ioport_map(port, nr);
+@@ -219,3 +242,6 @@ void ioport_unmap(void __iomem *addr)
+ 	sh_mv.mv_ioport_unmap(addr);
+ }
+ EXPORT_SYMBOL(ioport_unmap);
++
++#endif
++
+diff --git a/include/asm-sh/io.h b/include/asm-sh/io.h
+index 1d12e02..854badd 100644
+--- a/include/asm-sh/io.h
++++ b/include/asm-sh/io.h
+@@ -172,6 +172,8 @@ __BUILD_MEMORY_STRING(w, u16)
+ #define readw_relaxed(a) readw(a)
+ #define readl_relaxed(a) readl(a)
+ 
++
++#ifndef CONFIG_GENERIC_IOMAP
+ /* Simple MMIO */
+ #define ioread8(a)		readb(a)
+ #define ioread16(a)		readw(a)
+@@ -192,6 +194,16 @@ __BUILD_MEMORY_STRING(w, u16)
+ #define iowrite8_rep(p,s,c)	__raw_writesb(p,s,c)
+ #define iowrite16_rep(p,s,c)	__raw_writesw(p,s,c)
+ #define iowrite32_rep(p,s,c)	__raw_writesl(p,s,c)
++#endif
++
++#define mmio_insb(p,d,c)       __raw_readsb(p,d,c)
++#define mmio_insw(p,d,c)       __raw_readsw(p,d,c)
++#define mmio_insl(p,d,c)       __raw_readsl(p,d,c)
++
++#define mmio_outsb(p,s,c)      __raw_writesb(p,s,c)
++#define mmio_outsw(p,s,c)      __raw_writesw(p,s,c)
++#define mmio_outsl(p,s,c)      __raw_writesl(p,s,c)
++
+ 
+ #define mmiowb()	wmb()	/* synco on SH-4A, otherwise a nop */
+ 
+-- 
+1.5.6.3
+

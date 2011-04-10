@@ -1,0 +1,30 @@
+From 09f1294b0ad3f35fe33660189f13b065a2ee76e7 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Tue, 14 Apr 2009 15:30:28 +0100
+Subject: [PATCH] sound_stm: Fixed debug message in common code
+
+snd_stm_memory_request() is supposed to print a remapped base address
+value. It was printing a pointer to a variable containing this value
+instead...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/common.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 3750dbd..a8d6bdb 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -180,7 +180,7 @@ int snd_stm_memory_request(struct platform_device *pdev,
+ 		return -EINVAL;
+ 	}
+ 
+-	snd_stm_printd(0, "Base address is 0x%p.\n", base_address);
++	snd_stm_printd(0, "Base address is 0x%p.\n", *base_address);
+ 
+ 	return 0;
+ }
+-- 
+1.6.0.6
+

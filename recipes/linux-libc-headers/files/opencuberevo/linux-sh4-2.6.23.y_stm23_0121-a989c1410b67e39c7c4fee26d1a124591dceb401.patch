@@ -1,0 +1,125 @@
+From a989c1410b67e39c7c4fee26d1a124591dceb401 Mon Sep 17 00:00:00 2001
+From: Pawel MOLL <pawel.moll@st.com>
+Date: Wed, 15 Jul 2009 15:16:19 +0100
+Subject: [PATCH] sh_stm: Simplify "multi-evt" interrupts handling
+
+This patch changes the way in which "multi-evt" interrups are handled.
+The intc_evt2irq_table and related intc_evt2irq() have been removed and
+the "redirecting" handler is installed for the coupled interrupts.
+
+Thanks to that the do_IRQ() function don't have to use another level
+of indirection for all the interrupts...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/irq/intc.c |   42 +++++++++++-----------------------------
+ arch/sh/kernel/irq.c          |    2 +-
+ include/asm-sh/hw_irq.h       |    1 -
+ 3 files changed, 13 insertions(+), 32 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/irq/intc.c b/arch/sh/kernel/cpu/irq/intc.c
+index 8fbf8c6..009f190 100644
+--- a/arch/sh/kernel/cpu/irq/intc.c
++++ b/arch/sh/kernel/cpu/irq/intc.c
+@@ -657,16 +657,9 @@ static unsigned int __init save_reg(struct intc_desc_int *d,
+ 	return 0;
+ }
+ 
+-static unsigned char *intc_evt2irq_table;
+-
+-unsigned int intc_evt2irq(unsigned int vector)
++static void fastcall intc_redirect_irq(unsigned int irq, struct irq_desc *desc)
+ {
+-	unsigned int irq = evt2irq(vector);
+-
+-	if (intc_evt2irq_table && intc_evt2irq_table[irq])
+-		irq = intc_evt2irq_table[irq];
+-
+-	return irq;
++	generic_handle_irq((unsigned int)get_irq_data(irq));
+ }
+ 
+ void __init register_intc_controller(struct intc_desc *desc)
+@@ -739,43 +732,32 @@ void __init register_intc_controller(struct intc_desc *desc)
+ 
+ 	BUG_ON(k > 256); /* _INTC_ADDR_E() and _INTC_ADDR_D() are 8 bits */
+ 
+-	/* keep the first vector only if same enum is used multiple times */
++	/* register the vectors one by one */
+ 	for (i = 0; i < desc->nr_vectors; i++) {
+ 		struct intc_vect *vect = desc->vectors + i;
+-		int first_irq = evt2irq(vect->vect);
++		unsigned int irq = evt2irq(vect->vect);
+ 
+ 		if (!vect->enum_id)
+ 			continue;
+ 
++		intc_register_irq(desc, d, vect->enum_id, irq);
++
++		/* check if same enum is used multiple times */
+ 		for (k = i + 1; k < desc->nr_vectors; k++) {
+ 			struct intc_vect *vect2 = desc->vectors + k;
++			unsigned int irq2 = evt2irq(vect2->vect);
+ 
+ 			if (vect->enum_id != vect2->enum_id)
+ 				continue;
+ 
+ 			vect2->enum_id = 0;
+ 
+-			if (!intc_evt2irq_table)
+-				intc_evt2irq_table = alloc_bootmem(NR_IRQS);
+-
+-			if (!intc_evt2irq_table) {
+-				pr_warning("intc: cannot allocate evt2irq!\n");
+-				continue;
+-			}
+-
+-			intc_evt2irq_table[evt2irq(vect2->vect)] = first_irq;
++			/* redirect this interrupts to the first one */
++			set_irq_chip_and_handler_name(irq2, &d->chip,
++					intc_redirect_irq, "redirect");
++			set_irq_data(irq2, (void *)irq);
+ 		}
+ 	}
+-
+-	/* register the vectors one by one */
+-	for (i = 0; i < desc->nr_vectors; i++) {
+-		struct intc_vect *vect = desc->vectors + i;
+-
+-		if (!vect->enum_id)
+-			continue;
+-
+-		intc_register_irq(desc, d, vect->enum_id, evt2irq(vect->vect));
+-	}
+ }
+ 
+ #define irq_to_desc(irq)	(&irq_desc[irq])
+diff --git a/arch/sh/kernel/irq.c b/arch/sh/kernel/irq.c
+index 41e4adf..5e493fc 100644
+--- a/arch/sh/kernel/irq.c
++++ b/arch/sh/kernel/irq.c
+@@ -107,7 +107,7 @@ asmlinkage int do_IRQ(unsigned int irq, struct pt_regs *regs)
+ 	}
+ #endif
+ 
+-	irq = intc_evt2irq(irq);
++	irq = evt2irq(irq);
+ 
+ #ifdef CONFIG_4KSTACKS
+ 	curctx = (union irq_ctx *)current_thread_info();
+diff --git a/include/asm-sh/hw_irq.h b/include/asm-sh/hw_irq.h
+index 7df913b..c958fda 100644
+--- a/include/asm-sh/hw_irq.h
++++ b/include/asm-sh/hw_irq.h
+@@ -91,7 +91,6 @@ struct intc_desc symbol __initdata = {					\
+ 	chipname,							\
+ }
+ 
+-unsigned int intc_evt2irq(unsigned int vector);
+ void __init register_intc_controller(struct intc_desc *desc);
+ int intc_set_priority(unsigned int irq, unsigned int prio);
+ 
+-- 
+1.6.0.6
+

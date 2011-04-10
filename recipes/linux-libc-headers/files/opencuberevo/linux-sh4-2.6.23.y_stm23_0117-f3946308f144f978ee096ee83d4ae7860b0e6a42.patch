@@ -1,0 +1,31 @@
+From f3946308f144f978ee096ee83d4ae7860b0e6a42 Mon Sep 17 00:00:00 2001
+From: Stuart MENEFY <stuart.menefy@st.com>
+Date: Thu, 27 Nov 2008 16:02:17 +0000
+Subject: [PATCH] sh_stm: Fix incorrect configuration for the STx7105 UART3
+
+The UART3 is listed in the datasheet as alternate configuration 3, but
+the configuration registers actually need to be set to 0x1, which is
+alternate configuration 2.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Acked-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index ff7bb3a..5137ff1 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -803,7 +803,7 @@ unsigned int stasc_configured_devices_count __initdata = 0;
+ void __init stx7105_configure_asc(const int *ascs, int num_ascs, int console)
+ {
+ 	int i;
+-	static const int alt_conf[4] = { 4, 4, 3, 3 };
++	static const int alt_conf[4] = { 4, 4, 3, 2 };
+ 
+ 	for (i=0; i<num_ascs; i++) {
+ 		int port;
+-- 
+1.5.3.6
+

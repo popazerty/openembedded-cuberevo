@@ -1,0 +1,3752 @@
+From 21ca836799c8cbd2c7ab2376e7668264afffbf93 Mon Sep 17 00:00:00 2001
+From: Giuseppe Condorelli <giuseppe.condorelli@st.com>
+Date: Wed, 11 Feb 2009 13:56:58 +0000
+Subject: [PATCH] rt73_wireless: updated legacy driver and added power management
+
+This is the new legacy driver update. Porting was done against cvs daily
+snapshot from serialmonkey project. Also suspend/resume functions are now
+implemented to support power management (both selective and system suspend).
+
+Signed-off-by: Giuseppe Condorelli <giuseppe.condorelli@st.com>
+---
+ drivers/net/wireless/rt73/assoc.c      |   32 +---
+ drivers/net/wireless/rt73/auth_rsp.c   |    5 +-
+ drivers/net/wireless/rt73/connect.c    |   85 ++++----
+ drivers/net/wireless/rt73/mlme.c       |  231 +++++++++-----------
+ drivers/net/wireless/rt73/mlme.h       |    2 +-
+ drivers/net/wireless/rt73/rt_config.h  |   82 ++++++-
+ drivers/net/wireless/rt73/rtmp.h       |   77 +++++--
+ drivers/net/wireless/rt73/rtmp_def.h   |    6 +-
+ drivers/net/wireless/rt73/rtmp_info.c  |   28 ++--
+ drivers/net/wireless/rt73/rtmp_init.c  |  142 ++++++++----
+ drivers/net/wireless/rt73/rtmp_main.c  |  370 +++++++++++++++++---------------
+ drivers/net/wireless/rt73/rtmp_type.h  |    4 +-
+ drivers/net/wireless/rt73/rtusb_bulk.c |  187 +++++++++++------
+ drivers/net/wireless/rt73/rtusb_data.c |  213 ++++---------------
+ drivers/net/wireless/rt73/rtusb_io.c   |  122 ++++++++++-
+ drivers/net/wireless/rt73/sanity.c     |   32 ++-
+ drivers/net/wireless/rt73/sync.c       |   81 ++++----
+ drivers/net/wireless/rt73/wpa.c        |   11 +
+ 18 files changed, 944 insertions(+), 766 deletions(-)
+
+diff --git a/drivers/net/wireless/rt73/assoc.c b/drivers/net/wireless/rt73/assoc.c
+index 28d3a49..96a4cfd 100644
+--- a/drivers/net/wireless/rt73/assoc.c
++++ b/drivers/net/wireless/rt73/assoc.c
+@@ -66,6 +66,8 @@ UCHAR   CipherWpa2TemplateLen = (sizeof(CipherWpa2Template) / sizeof(UCHAR));
+     ==========================================================================
+     Description:
+         association state machine init, including state transition and timer init
++		All functions run in process context
++
+     Parameters:
+         S - pointer to the association state machine
+     Note:
+@@ -125,7 +127,6 @@ VOID AssocStateMachineInit(
+     // timer init
+     RTMPInitTimer(pAd, &pAd->MlmeAux.AssocTimer, &AssocTimeout);
+     RTMPInitTimer(pAd, &pAd->MlmeAux.ReassocTimer, &ReassocTimeout);
+-    RTMPInitTimer(pAd, &pAd->MlmeAux.DisassocTimer, &DisassocTimeout);
+ 
+ }
+ 
+@@ -166,24 +167,6 @@ VOID ReassocTimeout(
+ }
+ 
+ /*
+-    ==========================================================================
+-    Description:
+-        Disassociation timeout procedure. After disassociation timeout, this
+-        function will be called and put a message into the MLME queue
+-    Parameters:
+-        Standard timer parameters
+-    ==========================================================================
+- */
+-VOID DisassocTimeout(
+-    IN	unsigned long data)
+-{
+-    RTMP_ADAPTER *pAd = (RTMP_ADAPTER *)data;
+-    DBGPRINT(RT_DEBUG_TRACE,"ASSOC - enqueue MT2_DISASSOC_TIMEOUT \n");
+-    MlmeEnqueue(pAd, ASSOC_STATE_MACHINE, MT2_DISASSOC_TIMEOUT, 0, NULL);
+-    RTUSBMlmeUp(pAd);
+-}
+-
+-/*
+ 	==========================================================================
+ 	Description:
+ 		mlme assoc req handling procedure
+@@ -565,7 +548,6 @@ VOID MlmeDisassocReqAction(
+     HEADER_802_11         DisassocHdr;
+     PCHAR                 pOutBuffer = NULL;
+     ULONG                 FrameLen = 0;
+-    ULONG                 Timeout = 0;
+     USHORT                Status;
+     USHORT                NStatus;
+ #if WPA_SUPPLICANT_SUPPORT
+@@ -580,14 +562,11 @@ VOID MlmeDisassocReqAction(
+     if (NStatus != NDIS_STATUS_SUCCESS)
+     {
+         DBGPRINT(RT_DEBUG_TRACE, "ASSOC - MlmeDisassocReqAction() allocate memory failed\n");
+-        pAd->Mlme.AssocMachine.CurrState = ASSOC_IDLE;
+         Status = MLME_FAIL_NO_RESOURCE;
+         MlmeEnqueue(pAd, MLME_CNTL_STATE_MACHINE, MT2_DISASSOC_CONF, 2, &Status);
+         return;
+     }
+ 
+-    RTMPCancelTimer(&pAd->MlmeAux.DisassocTimer);
+-
+     DBGPRINT(RT_DEBUG_TRACE, "ASSOC - Send DISASSOC request\n");
+     MgtMacHeaderInit(pAd, &DisassocHdr, SUBTYPE_DISASSOC, 0, pDisassocReq->Addr, pDisassocReq->Addr);
+     MakeOutgoingFrame(pOutBuffer,           &FrameLen,
+@@ -613,12 +592,11 @@ VOID MlmeDisassocReqAction(
+     }
+ #endif
+ 
+-    pAd->PortCfg.DisassocReason = REASON_DISASSOC_STA_LEAVING;
++    pAd->PortCfg.DisassocReason = pDisassocReq->Reason;
+     COPY_MAC_ADDR(pAd->PortCfg.DisassocSta, pDisassocReq->Addr);
+ 
+-    RTMPSetTimer(pAd, &pAd->MlmeAux.DisassocTimer, Timeout);
+-
+-    pAd->Mlme.AssocMachine.CurrState = DISASSOC_WAIT_RSP;
++	Status = MLME_SUCCESS;
++	MlmeEnqueue(pAd, MLME_CNTL_STATE_MACHINE, MT2_DISASSOC_CONF, 2, &Status);
+ }
+ 
+ #if WPA_SUPPLICANT_SUPPORT
+diff --git a/drivers/net/wireless/rt73/auth_rsp.c b/drivers/net/wireless/rt73/auth_rsp.c
+index efdead5..51ca494 100644
+--- a/drivers/net/wireless/rt73/auth_rsp.c
++++ b/drivers/net/wireless/rt73/auth_rsp.c
+@@ -126,11 +126,10 @@ VOID PeerDeauthAction(
+ 
+     if (PeerDeauthSanity(pAd, Elem->Msg, Elem->MsgLen, Addr2, &Reason))
+     {
++		DBGPRINT(RT_DEBUG_TRACE, "AUTH_RSP - (%s) DE-AUTH from AP Reason=%d\n",
++				__FUNCTION__, Reason);
+         if (INFRA_ON(pAd) && MAC_ADDR_EQUAL(Addr2, &pAd->PortCfg.Bssid))
+         {
+-            DBGPRINT(RT_DEBUG_TRACE,
+-					"AUTH_RSP - receive DE-AUTH from our AP Reason=%d\n",
+-					le16_to_cpu(Reason));
+             LinkDown(pAd, TRUE);
+         }
+     }
+diff --git a/drivers/net/wireless/rt73/connect.c b/drivers/net/wireless/rt73/connect.c
+index 1b09216..0dd6ce0 100644
+--- a/drivers/net/wireless/rt73/connect.c
++++ b/drivers/net/wireless/rt73/connect.c
+@@ -158,6 +158,10 @@ VOID MlmeCntlMachinePerformAction(
+ 		case CNTL_WAIT_OID_DISASSOC:
+ 			if (Elem->MsgType == MT2_DISASSOC_CONF)
+ 			{
++				DBGPRINT(RT_DEBUG_TRACE,
++						"LinkDown(MlmeCntlMachinePerformAction)\n");
++				// maybe wait for the disassoc frame to hit the air.
++				RTUSBwaitTxDone(pAd);
+ 				LinkDown(pAd, FALSE);
+ 				pAd->Mlme.CntlMachine.CurrState = CNTL_IDLE;
+ 			}
+@@ -207,7 +211,8 @@ VOID CntlIdleProc(
+ 						sizeof(MLME_DISASSOC_REQ_STRUCT), &DisassocReq);
+ 			pAd->Mlme.CntlMachine.CurrState = CNTL_WAIT_OID_DISASSOC;
+ 			// Set the AutoReconnectSsid to prevent it reconnect to old SSID
+-			// Since calling this indicate user don't want to connect to that SSID anymore.
++			// Since calling this indicate user don't want to connect to that
++			// SSID anymore.
+ 			pAd->MlmeAux.AutoReconnectSsidLen= 32;
+ 			memset(pAd->MlmeAux.AutoReconnectSsid, 0, pAd->MlmeAux.AutoReconnectSsidLen);
+ 			break;
+@@ -870,8 +875,10 @@ VOID LinkUp(
+ 	IN UCHAR BssType)
+ {
+ 	ULONG	Now;
+-	TXRX_CSR4_STRUC *NewTxRxCsr4 = kzalloc(sizeof(TXRX_CSR4_STRUC), GFP_KERNEL);
+-	TXRX_CSR4_STRUC *CurTxRxCsr4 = kzalloc(sizeof(TXRX_CSR4_STRUC), GFP_KERNEL);
++	TXRX_CSR4_STRUC *NewTxRxCsr4 = kzalloc(sizeof(TXRX_CSR4_STRUC),
++						GFP_KERNEL);
++	TXRX_CSR4_STRUC *CurTxRxCsr4 = kzalloc(sizeof(TXRX_CSR4_STRUC),
++						GFP_KERNEL);
+ 
+ 	if (!NewTxRxCsr4 || !CurTxRxCsr4) {
+ 		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+@@ -884,10 +891,6 @@ VOID LinkUp(
+ 	// !!! LINK DOWN !!!
+ 	// [88888] OID_802_11_SSID should have returned NDTEST_WEP_AP2(Returned: )
+ 	//
+-	// To prevent DisassocTimeoutAction to call Link down after we link up,
+-	// cancel the DisassocTimer no matter what it start or not.
+-	//
+-	RTMPCancelTimer(&pAd->MlmeAux.DisassocTimer);
+ 
+ 	COPY_SETTINGS_FROM_MLME_AUX_TO_ACTIVE_CFG(pAd);
+ 	DBGPRINT(RT_DEBUG_TRACE, "!!! LINK UP !!! (Infra=%d, AID=%d, ssid=%s)\n",
+@@ -1020,7 +1023,6 @@ VOID LinkUp(
+ 	//
+ 	RTUSBReadMACRegister(pAd, TXRX_CSR4, &CurTxRxCsr4->word);
+ 	NewTxRxCsr4->word = CurTxRxCsr4->word;
+-	
+ 	if ((pAd->PortCfg.Channel <= 14) &&
+ 		((pAd->PortCfg.PhyMode == PHY_11B) ||
+ 		 (pAd->PortCfg.PhyMode == PHY_11BG_MIXED) ||
+@@ -1036,6 +1038,7 @@ VOID LinkUp(
+ 	if (NewTxRxCsr4->word!= CurTxRxCsr4->word)
+ 		RTUSBWriteMACRegister(pAd, TXRX_CSR4, NewTxRxCsr4->word);
+ 
++
+ 	pAd->Mlme.PeriodicRound = 0;		// re-schedule MlmePeriodicExec()
+ 	pAd->bConfigChanged = FALSE;		// Reset config flag
+ 	pAd->ExtraInfo = GENERAL_LINK_UP;	// Update extra information to link is up
+@@ -1071,7 +1074,8 @@ VOID LinkDown(
+ 	IN PRTMP_ADAPTER pAd,
+ 	IN	BOOLEAN 	 IsReqFromAP)
+ {
+-	TXRX_CSR4_STRUC *CurTxRxCsr4 = kzalloc(sizeof(TXRX_CSR4_STRUC), GFP_KERNEL);
++	TXRX_CSR4_STRUC *CurTxRxCsr4 = kzalloc(sizeof(TXRX_CSR4_STRUC),
++					GFP_KERNEL);
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "!!! LINK DOWN !!!\n");
+ 
+@@ -1086,15 +1090,17 @@ VOID LinkDown(
+ 	{
+ 		OPSTATUS_CLEAR_FLAG(pAd, fOP_STATUS_ADHOC_ON);
+ 
+-#ifdef	SINGLE_ADHOC_LINKUP
++#if 1 //#ifdef	SINGLE_ADHOC_LINKUP
+ 		OPSTATUS_CLEAR_FLAG(pAd, fOP_STATUS_MEDIA_STATE_CONNECTED);
+ 		// clean up previous SCAN result, add current BSS back to table if any
+-		BssTableDeleteEntry(&pAd->PortCfg.ScanTab, &(pAd->PortCfg.Bssid), pAd->PortCfg.Channel);
++		BssTableDeleteEntry(&pAd->ScanTab,
++							pAd->PortCfg.Bssid, pAd->PortCfg.Channel);
+ #else
+ 		if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF))
+ 		{
+ 			OPSTATUS_CLEAR_FLAG(pAd, fOP_STATUS_MEDIA_STATE_CONNECTED);
+-			BssTableDeleteEntry(&pAd->ScanTab, pAd->PortCfg.Bssid, pAd->PortCfg.Channel);
++			BssTableDeleteEntry(&pAd->ScanTab,
++								pAd->PortCfg.Bssid, pAd->PortCfg.Channel);
+ 		}
+ #endif
+ 	}
+@@ -1117,7 +1123,8 @@ VOID LinkDown(
+ 			RTMPSetTimer(pAd, &pAd->Mlme.LinkDownTimer, 10000);
+ 		}
+ 
+-		BssTableDeleteEntry(&pAd->ScanTab, pAd->PortCfg.Bssid, pAd->PortCfg.Channel);
++		BssTableDeleteEntry(&pAd->ScanTab,
++							pAd->PortCfg.Bssid, pAd->PortCfg.Channel);
+ 
+ 		// restore back to -
+ 		//		1. long slot (20 us) or short slot (9 us) time
+@@ -1541,6 +1548,7 @@ ULONG MakeIbssBeacon(
+ 			  (pAd->PortCfg.WepStatus == Ndis802_11Encryption3Enabled);
+ 	CapabilityInfo = CAP_GENERATE(0, 1, Privacy, (pAd->PortCfg.TxPreamble == Rt802_11PreambleShort), 0);
+ 
++	cpu_to_le16s(&pAd->ActiveCfg.AtimWin);
+ 	MakeOutgoingFrame(pBeaconFrame, 				&FrameLen,
+ 					  sizeof(HEADER_802_11),		&BcnHdr,
+ 					  TIMESTAMP_LEN,				&FakeTimestamp,
+@@ -1559,18 +1567,19 @@ ULONG MakeIbssBeacon(
+ 					  1,							&IbssLen,
+ 					  2,							&pAd->ActiveCfg.AtimWin,
+ 					  END_OF_ARGS);
++	le16_to_cpus(&pAd->ActiveCfg.AtimWin);
+ 
+ 	// add ERP_IE and EXT_RAE IE of in 802.11g
+ 	if (ExtRateLen)
+ 	{
+ 		ULONG	tmp;
+ 
+-		MakeOutgoingFrame(pBeaconFrame + FrameLen,		   &tmp,
+-						  3,							   LocalErpIe,
+-						  1,							   &ExtRateIe,
+-						  1,							   &ExtRateLen,
+-						  ExtRateLen,					   ExtRate,
+-						  END_OF_ARGS);
++		MakeOutgoingFrame(pBeaconFrame + FrameLen,	&tmp,
++						3,						LocalErpIe,
++						1,						&ExtRateIe,
++						1,						&ExtRateLen,
++						ExtRateLen,				ExtRate,
++						END_OF_ARGS);
+ 		FrameLen += tmp;
+ 	}
+ 
+@@ -1579,30 +1588,27 @@ ULONG MakeIbssBeacon(
+ 	{
+ 		ULONG	tmp;
+ 
+-		if (pAd->PortCfg.WepStatus == Ndis802_11Encryption2Enabled)		// Tkip
++		if (pAd->PortCfg.WepStatus == Ndis802_11Encryption2Enabled)	// Tkip
+ 		{
+-			MakeOutgoingFrame(pBeaconFrame + FrameLen,		&tmp,
+-							  1,							&WpaIe,
+-							  1,							&CipherSuiteWpaNoneTkipLen,
+-							  CipherSuiteWpaNoneTkipLen,	&CipherSuiteWpaNoneTkip[0],
+-							  END_OF_ARGS);
++			MakeOutgoingFrame(pBeaconFrame + FrameLen,&tmp,
++						1,					&WpaIe,
++						1,					&CipherSuiteWpaNoneTkipLen,
++						CipherSuiteWpaNoneTkipLen,&CipherSuiteWpaNoneTkip[0],
++						END_OF_ARGS);
+ 			FrameLen += tmp;
+ 		}
+-		else if (pAd->PortCfg.WepStatus == Ndis802_11Encryption3Enabled)	// Aes
++		else if (pAd->PortCfg.WepStatus == Ndis802_11Encryption3Enabled)// Aes
+ 		{
+-			MakeOutgoingFrame(pBeaconFrame + FrameLen,	  &tmp,
+-							  1,						  &WpaIe,
+-							  1,						  &CipherSuiteWpaNoneAesLen,
+-							  CipherSuiteWpaNoneAesLen,   &CipherSuiteWpaNoneAes[0],
+-							  END_OF_ARGS);
++			MakeOutgoingFrame(pBeaconFrame + FrameLen,&tmp,
++						1,						&WpaIe,
++						1,						&CipherSuiteWpaNoneAesLen,
++						CipherSuiteWpaNoneAesLen,&CipherSuiteWpaNoneAes[0],
++						END_OF_ARGS);
+ 			FrameLen += tmp;
+ 		}
+ 	}
+-
+-#ifdef BIG_ENDIAN
+-	RTMPFrameEndianChange(pAd, pBeaconFrame, DIR_WRITE, FALSE);
+-#endif
+-
++	// N.B. The frame is flipped as needed in RTUSBMlmeHardTransmit ()
++	// - if it is called - bb
+ 	RTUSBWriteTxDescriptor(pAd, pTxD, CIPHER_NONE, 0,0, FALSE, FALSE, TRUE, SHORT_RETRY,
+ 		IFS_BACKOFF, pAd->PortCfg.MlmeRate, FrameLen, QID_MGMT, PID_MGMT_FRAME, FALSE);
+ 
+@@ -1613,9 +1619,14 @@ ULONG MakeIbssBeacon(
+ 	// or
+ 	// 2.) Modify cwmin.
+ 	//
++#ifdef BIG_ENDIAN
++	RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
++#endif
+ 	pTxD->Cwmin = 2;
++#ifdef BIG_ENDIAN
++	RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
++#endif
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "MakeIbssBeacon (len=%d)\n", FrameLen);
+ 	return FrameLen;
+ }
+-
+diff --git a/drivers/net/wireless/rt73/mlme.c b/drivers/net/wireless/rt73/mlme.c
+index 3128ca7..738e94f 100644
+--- a/drivers/net/wireless/rt73/mlme.c
++++ b/drivers/net/wireless/rt73/mlme.c
+@@ -375,6 +375,21 @@ VOID MlmeHandler(
+ 	NdisReleaseSpinLock(&pAd->Mlme.Queue.Lock);
+ }
+ 
++static void cancelSMTimers(
++	IN PRTMP_ADAPTER pAd)
++{
++	RTMPCancelTimer(&pAd->Mlme.PeriodicTimer);
++	RTMPCancelTimer(&pAd->Mlme.LinkDownTimer);
++	RTMPCancelTimer(&pAd->MlmeAux.AssocTimer);
++	RTMPCancelTimer(&pAd->MlmeAux.ReassocTimer);
++	RTMPCancelTimer(&pAd->MlmeAux.AuthTimer);
++	RTMPCancelTimer(&pAd->MlmeAux.BeaconTimer);
++	RTMPCancelTimer(&pAd->MlmeAux.ScanTimer);
++    RTMPCancelTimer(&pAd->PortCfg.QuickResponeForRateUpTimer);
++	RTMPCancelTimer(&pAd->RxAnt.RxAntDiversityTimer);
++
++} /* End cancelSMTimers () */
++
+ VOID MlmeStart(
+ 	IN PRTMP_ADAPTER pAd)
+ {
+@@ -402,12 +417,24 @@ VOID MlmeHalt(
+ 	MlmeRestartStateMachine(pAd);
+ 
+ 	// Cancel pending timers
+-	RTMPCancelTimer(&pAd->Mlme.PeriodicTimer);
+-	RTMPCancelTimer(&pAd->Mlme.LinkDownTimer);
++	cancelSMTimers(pAd);
+ 
+ 	msleep(500); //RTMPusecDelay(500000); // 0.5 sec to guarantee timer canceled
+ 
++	RTUSBwaitTxDone(pAd);
++
++	// We want to wait until all pending receives and sends to the
++	// device object. We cancel any
++	// irps. Wait until sends and receives have stopped.
++	//
++	RTUSBCancelPendingIRPs(pAd);
++	RTUSBCleanUpMLMEWaitQueue(pAd);
++	RTUSBCleanUpMLMEBulkOutQueue(pAd);
++
++	RTUSBfreeCmdQ(pAd, &pAd->CmdQ);
++
+ 	MlmeQueueInit(&pAd->Mlme.Queue);
++	BssTableInit(&pAd->ScanTab);	// no scan resuls when closed - bb
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "<== MlmeHalt\n");
+ }
+@@ -422,12 +449,7 @@ VOID MlmeSuspend(
+ 	DBGPRINT(RT_DEBUG_TRACE, "==>MlmeSuspend\n");
+ 
+ 	// Cancel pending timers
+-	RTMPCancelTimer(&pAd->MlmeAux.AssocTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.ReassocTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.DisassocTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.AuthTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.BeaconTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.ScanTimer);
++	cancelSMTimers(pAd);
+ 
+ 	while (TRUE)
+ 	{
+@@ -456,14 +478,14 @@ VOID MlmeSuspend(
+ 		Elem->Occupied = FALSE;
+ 	}
+ 	NdisReleaseSpinLock(&pAd->Mlme.Queue.Lock);
++	RTUSBwaitTxDone(pAd);
+ 
+-	// Remove running state
+-	NdisAcquireSpinLock(&pAd->Mlme.Queue.Lock);
+-	pAd->Mlme.Running = FALSE;
+-	NdisReleaseSpinLock(&pAd->Mlme.Queue.Lock);
+-
+-	RTUSBCleanUpMLMEWaitQueue(pAd);
++	RTUSBCancelPendingIRPs(pAd);
++	RTUSBCleanUpDataBulkInQueue(pAd);
++	RTUSBCleanUpDataBulkOutQueue(pAd);
+ 	RTUSBCleanUpMLMEBulkOutQueue(pAd);
++	RTUSBCleanUpMLMEWaitQueue(pAd);
++	RTUSBfreeCmdQ(pAd, &pAd->CmdQ);
+ 
+ 	// Set all state machines back IDLE
+ 	pAd->Mlme.CntlMachine.CurrState    = CNTL_IDLE;
+@@ -471,12 +493,11 @@ VOID MlmeSuspend(
+ 	pAd->Mlme.AuthMachine.CurrState    = AUTH_REQ_IDLE;
+ 	pAd->Mlme.AuthRspMachine.CurrState = AUTH_RSP_IDLE;
+ 	pAd->Mlme.SyncMachine.CurrState    = SYNC_IDLE;
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_JOIN_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_JOIN_IN_PROGRESS);//steven:for test
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_REASSOC_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_REASSOC_IN_PROGRESS);//steven:for test
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS);//steven:for test
++
++	// Remove running state
++	NdisAcquireSpinLock(&pAd->Mlme.Queue.Lock);
++	pAd->Mlme.Running = FALSE;
++	NdisReleaseSpinLock(&pAd->Mlme.Queue.Lock);
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "<==MlmeSuspend\n");
+ }
+@@ -486,12 +507,6 @@ VOID MlmeResume(
+ {
+ 	DBGPRINT(RT_DEBUG_TRACE, "==>MlmeResume\n");
+ 
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_JOIN_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_JOIN_IN_PROGRESS);//steven:for test
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_REASSOC_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_REASSOC_IN_PROGRESS);//steven:for test
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS);//steven:for test
+ 	// Set all state machines back IDLE
+ 	pAd->Mlme.CntlMachine.CurrState    = CNTL_IDLE;
+ 	pAd->Mlme.AssocMachine.CurrState   = ASSOC_IDLE;
+@@ -499,6 +514,13 @@ VOID MlmeResume(
+ 	pAd->Mlme.AuthRspMachine.CurrState = AUTH_RSP_IDLE;
+ 	pAd->Mlme.SyncMachine.CurrState    = SYNC_IDLE;
+ 
++	// If previously associated, reassociate on resume - bb.
++	if (pAd->MlmeAux.SsidLen > 0) {
++		memcpy(pAd->MlmeAux.AutoReconnectSsid, pAd->MlmeAux.Ssid,
++				pAd->MlmeAux.SsidLen);
++		pAd->MlmeAux.AutoReconnectSsidLen = pAd->MlmeAux.SsidLen;
++	}
++	MlmePeriodicExec(pAd);
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "<==MlmeResume\n");
+ }
+@@ -532,8 +554,6 @@ VOID MlmePeriodicExecTimeout(
+ VOID MlmePeriodicExec(
+ 	IN	PRTMP_ADAPTER pAd)
+ {
+-	unsigned long			flags;
+-
+ 	// Timer need to reset every time, so using do-while loop
+ 	do
+ 	{
+@@ -588,41 +608,10 @@ VOID MlmePeriodicExec(
+ 		// to recover the system
+ 		if (pAd->RalinkCounters.MgmtRingFullCount >= 2)
+ 		{
+-			PCmdQElmt	cmdqelmt;
+-
+-			RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_RESET_IN_PROGRESS);
+-			DBGPRINT(RT_DEBUG_ERROR, "- (%s) mgmt ring full, count=%d\n",
+-					__FUNCTION__, pAd->RalinkCounters.MgmtRingFullCount);
+-
+-			NdisAcquireSpinLock(&pAd->CmdQLock);
+-			while (pAd->CmdQ.size > 0)
+-			{
+-				RTUSBDequeueCmd(&pAd->CmdQ, &cmdqelmt);
+-				if(cmdqelmt == NULL) {	//Thomas
+-				DBGPRINT(RT_DEBUG_INFO,
+-						"- MlmePeriodicExec (cmdqelmt==NULL)\n");
+-					break;
+-				}
+-				if (cmdqelmt->CmdFromNdis == TRUE)
+-				{
+-					if ((cmdqelmt->command != RT_OID_MULTI_READ_MAC) &&
+-						(cmdqelmt->command != RT_OID_VENDOR_READ_BBP) &&
+-						(cmdqelmt->command != RT_OID_USB_VENDOR_EEPROM_READ))
+-					{
+-						if (cmdqelmt->buffer != NULL){
+-							kfree(cmdqelmt->buffer);
+-						}
+-					}
+-					if(cmdqelmt != NULL){
+-						kfree(cmdqelmt);
+-					}
+-				}
+-				else
+-					cmdqelmt->InUse = FALSE;
+-			}
+-			NdisReleaseSpinLock(&pAd->CmdQLock);
+-
++			RTUSBfreeCmdQ(pAd, &pAd->CmdQ);
+ 			RTUSBEnqueueInternalCmd(pAd, RT_OID_RESET_FROM_ERROR);
++
++			DBGPRINT(RT_DEBUG_ERROR, "<---MlmePeriodicExec (Mgmt Ring Full)\n");
+ 			break;
+ 		}
+ 		pAd->RalinkCounters.MgmtRingFullCount = 0;
+@@ -664,8 +653,10 @@ VOID STAMlmePeriodicExec(
+ 	}
+ 
+ 	// WPA MIC error should block association attempt for 60 seconds
+-	if (pAd->PortCfg.bBlockAssoc && (time_after(pAd->Mlme.Now, pAd->PortCfg.LastMicErrorTime + (60 * HZ))))
++	if (pAd->PortCfg.bBlockAssoc &&
++		(time_after(pAd->Mlme.Now, pAd->PortCfg.LastMicErrorTime + (60*HZ)))) {
+ 		pAd->PortCfg.bBlockAssoc = FALSE;
++	}
+ 	DBGPRINT(RT_DEBUG_INFO, "MMCHK - PortCfg.Ssid=%s ... MlmeAux.Ssid=%s\n",
+ 			pAd->PortCfg.Ssid, pAd->MlmeAux.Ssid);
+ 
+@@ -874,8 +865,8 @@ VOID STAMlmePeriodicExec(
+ 	{
+ 		if (!ADHOC_ON(pAd) && !INFRA_ON(pAd))
+ 		{
+-			DBGPRINT(RT_DEBUG_INFO, "MLME periodic exec, no association so far\n");
+-
++			DBGPRINT(RT_DEBUG_INFO, "-  %s, no association so far\n",
++					__FUNCTION__);
+ 			if ((pAd->PortCfg.bAutoReconnect == TRUE) &&
+ 				(MlmeValidateSSID(pAd->MlmeAux.AutoReconnectSsid, pAd->MlmeAux.AutoReconnectSsidLen) == TRUE))
+ 			{
+@@ -1837,7 +1828,6 @@ VOID MlmeSetTxPreamble(
+ 	}
+ 
+ 	RTUSBReadMACRegister(pAd, TXRX_CSR4, &csr4->word);
+-
+ 	if (TxPreamble == Rt802_11PreambleShort)
+ 	{
+ 		// NOTE: 1Mbps should always use long preamble
+@@ -2078,8 +2068,6 @@ VOID MlmeUpdateTxRates(
+ VOID MlmeRadioOff(
+ 	IN PRTMP_ADAPTER pAd)
+ {
+-	MLME_DISASSOC_REQ_STRUCT	DisReq;
+-	MLME_QUEUE_ELEM 			MsgElem;
+ 	ULONG						i = 0;
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "===>MlmeRadioOff()\n");
+@@ -2094,27 +2082,9 @@ VOID MlmeRadioOff(
+ 	//
+ 	if (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST))
+ 	{
+-		if (INFRA_ON(pAd))
+-		{
+-			COPY_MAC_ADDR(&DisReq.Addr, pAd->PortCfg.Bssid);
+-			DisReq.Reason =  REASON_DISASSOC_STA_LEAVING;
+-
+-			MsgElem.Machine = ASSOC_STATE_MACHINE;
+-			MsgElem.MsgType = MT2_MLME_DISASSOC_REQ;
+-			MsgElem.MsgLen = sizeof(MLME_DISASSOC_REQ_STRUCT);
+-			memcpy(MsgElem.Msg, &DisReq, sizeof(MLME_DISASSOC_REQ_STRUCT));
+-
+-			MlmeDisassocReqAction(pAd, &MsgElem);
+-			msleep(1);	//RTMPusecDelay(1000);
+-		}
+-
++		// all calls now preceeded with disassoc request - for now - bb
+ 		// Set Radio off flag will turn off RTUSBKickBulkOut function
+ 		RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF);
+-
+-		// Link down first if any association exists
+-		if (INFRA_ON(pAd) || ADHOC_ON(pAd))
+-			LinkDown(pAd, FALSE);
+-
+ 	}
+ 	else
+ 	{
+@@ -2122,8 +2092,7 @@ VOID MlmeRadioOff(
+ 		RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF);
+ 	}
+ 
+-	RTUSBRejectPendingPackets(pAd); //reject all NDIS packets waiting in TX queue
+-	RTUSBCleanUpDataBulkOutQueue(pAd);
++	RTUSBRejectPendingPackets(pAd);//reject all NDIS packets waiting in TX queue
+ 	MlmeSuspend(pAd, TRUE);
+ 
+ 	// Disable Rx
+@@ -2142,14 +2111,7 @@ VOID MlmeRadioOff(
+ 		{
+ 			DBGPRINT(RT_DEBUG_TRACE,
+ 					"- (%s) BulkIn IRP Pending!!!\n", __FUNCTION__);
+-			RTUSB_VendorRequest(pAd,
+-				0,
+-				DEVICE_VENDOR_REQUEST_OUT,
+-				0x0C,
+-				0x0,
+-				0x0,
+-				NULL,
+-				0);
++			RTUSBStopRx(pAd);
+ 		}
+ 
+ 		if ((pAd->BulkOutPending[0] == TRUE) ||
+@@ -2180,8 +2142,6 @@ VOID MlmeRadioOn(
+ {
+ 	DBGPRINT(RT_DEBUG_TRACE,"MlmeRadioOn()\n");
+ 
+-	NICResetFromError(pAd);
+-
+ 	// Turn on radio, Abort TX, Disable RX
+ 	RTUSBWriteMACRegister(pAd, MAC_CSR10, 0x00000718);
+ 	RT73WriteTXRXCSR0(pAd, TRUE, FALSE);
+@@ -2189,7 +2149,6 @@ VOID MlmeRadioOn(
+ 	// Clear Radio off flag
+ 	RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF);
+ 
+-	MlmeResume(pAd);
+ 	RTUSBBulkReceive(pAd);
+ 
+ 	// enable RX of MAC block
+@@ -2208,13 +2167,9 @@ VOID MlmeRadioOn(
+ 	// After MLME Reset the routine RTUSBResumeMsduTransmission will also be call
+ 	// To
+ 	//
+-	MlmeEnqueue(pAd,
+-				MLME_CNTL_STATE_MACHINE,
+-				RT_CMD_RESET_MLME,
+-				0,
+-				NULL);
++	MlmeResume(pAd);
+ 
+-}
++} /* End MlmeRadioOn () */
+ 
+ // ===========================================================================================
+ // bss_table.c
+@@ -3443,13 +3398,7 @@ VOID MlmeRestartStateMachine(
+ 
+ 	// Cancel all timer events
+ 	// Be careful to cancel new added timer
+-	RTMPCancelTimer(&pAd->MlmeAux.AssocTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.ReassocTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.DisassocTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.AuthTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.BeaconTimer);
+-	RTMPCancelTimer(&pAd->MlmeAux.ScanTimer);
+-
++	cancelSMTimers(pAd);
+ 
+ 	// Set all state machines back IDLE
+ 	pAd->Mlme.CntlMachine.CurrState    = CNTL_IDLE;
+@@ -3457,12 +3406,6 @@ VOID MlmeRestartStateMachine(
+ 	pAd->Mlme.AuthMachine.CurrState    = AUTH_REQ_IDLE;
+ 	pAd->Mlme.AuthRspMachine.CurrState = AUTH_RSP_IDLE;
+ 	pAd->Mlme.SyncMachine.CurrState    = SYNC_IDLE;
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_JOIN_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_JOIN_IN_PROGRESS);//steven:for test
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_REASSOC_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_REASSOC_IN_PROGRESS);//steven:for test
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS))
+-		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS);//steven:for test
+ 
+ 	RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_MLME_RESET_IN_PROGRESS);
+ 
+@@ -4784,6 +4727,7 @@ VOID AsicEnableBssSync(
+ 
+ 	RTUSBReadMACRegister(pAd, TXRX_CSR9, &csr->word);
+ 
++
+ 	csr->field.BeaconInterval = pAd->PortCfg.BeaconPeriod << 4; // ASIC register in units of 1/16 TU
+ 	csr->field.bTsfTicking = 1;
+ 	csr->field.TsfSyncMode = 1; // sync TSF in INFRASTRUCTURE mode
+@@ -4812,6 +4756,11 @@ VOID AsicEnableIbssSync(
+ 	UINT i;
+ 	DBGPRINT(RT_DEBUG_ERROR, "--->AsicEnableIbssSync(ADHOC mode)\n");
+ 
++	if (!csr9) {
++		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
++		return;
++	}
++
+ 	RTUSBReadMACRegister(pAd, TXRX_CSR9, &csr9->word);
+ 	csr9->field.bBeaconGen = 0;
+ 	csr9->field.bTBTTEnable = 0;
+@@ -5024,6 +4973,7 @@ VOID AsicSetSlotTime(
+ 
+ 	RTUSBWriteMACRegister(pAd, MAC_CSR9, Csr9->word);
+ 
++
+ 	DBGPRINT(RT_DEBUG_TRACE, "AsicSetSlotTime(=%d us)\n", Csr9->field.SlotTime);
+ 	kfree(Csr9);
+ }
+@@ -5232,18 +5182,24 @@ VOID AsicAddSharedKeyEntry(
+ 		union aaa {
+ 		ULONG	temp_ul;
+ 		struct bbb{
++#ifdef BIG_ENDIAN
++			UCHAR ch4;
++			UCHAR ch3;
++			UCHAR ch2;
++			UCHAR ch1;
++#else
+ 			UCHAR ch1;
+ 			UCHAR ch2;
+ 			UCHAR ch3;
+ 			UCHAR ch4;
++#endif
+ 			} temp_uc;
+ 	} ddd;
+ 
+ 	if (!csr0 || !csr1) {
+ 		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+-    return;
+-  }
+-
++		return;
++	}
+ 	DBGPRINT(RT_DEBUG_TRACE, "AsicAddSharedKeyEntry: %s key #%d\n", CipherName[CipherAlg], BssIndex*4 + KeyIdx);
+ 	DBGPRINT(RT_DEBUG_TRACE, "   Key =");
+ 	for (i = 0; i < 16; i++)
+@@ -5275,7 +5231,7 @@ VOID AsicAddSharedKeyEntry(
+ 	//
+ 	RTUSBReadMACRegister(pAd, SEC_CSR0, csr0);
+ 	*csr0 = *csr0 & ~BIT32[BssIndex*4 + KeyIdx];	// turn off the valid bit
+-	RTUSBWriteMACRegister(pAd, SEC_CSR0, csr0);
++	RTUSBWriteMACRegister(pAd, SEC_CSR0, (int)csr0);
+ 
+ 
+ 	//
+@@ -5283,6 +5239,8 @@ VOID AsicAddSharedKeyEntry(
+ 	//
+ 	offset = SHARED_KEY_TABLE_BASE + (4*BssIndex + KeyIdx)*HW_KEY_ENTRY_SIZE;
+ 
++	/* For big endian machines, we need to pre- swap the key data so that
++	 * the correct byte order is restored after endianization. */
+ 	for (i=0; i<MAX_LEN_OF_SHARE_KEY; i = i+4)
+ 	{
+ 		ddd.temp_uc.ch1  = pKey[i];
+@@ -5339,7 +5297,7 @@ VOID AsicAddSharedKeyEntry(
+ 	//
+ 	RTUSBReadMACRegister(pAd, SEC_CSR0, csr0);
+ 	*csr0 |= BIT32[BssIndex*4 + KeyIdx]; 	// turrn on the valid bit
+-	RTUSBWriteMACRegister(pAd, SEC_CSR0, csr0);
++	RTUSBWriteMACRegister(pAd, SEC_CSR0, (int)csr0);
+ 	kfree(csr0);
+ 	kfree(csr1);
+ }
+@@ -5370,13 +5328,22 @@ VOID AsicAddPairwiseKeyEntry(
+ 	IN PUCHAR		 pTxMic,
+ 	IN PUCHAR		 pRxMic)
+ {
+-	ULONG offset, csr2, csr3;
++	ULONG offset;
++	ULONG *csr2 = kmalloc(sizeof(ULONG), GFP_KERNEL);
++	ULONG *csr3 = kmalloc(sizeof(ULONG), GFP_KERNEL);
++
++	if (!csr2 || !csr3) {
++		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
++		return;
++	}
+ 
++#if 0
+ 	DBGPRINT(RT_DEBUG_TRACE,"AsicAddPairwiseKeyEntry: Entry#%d Alg=%s mac=%02x:%02x:%02x:%02x:%02x:%02x\n",
+ 		KeyIdx, CipherName[CipherAlg], pAddr[0], pAddr[1], pAddr[2], pAddr[3], pAddr[4], pAddr[5]);
+ 	DBGPRINT(RT_DEBUG_TRACE,"  Key	  = %02x:%02x:%02x:%02x:...\n", pKey[0],pKey[1],pKey[2],pKey[3]);
+ 	DBGPRINT(RT_DEBUG_TRACE,"  TxMIC  = %02x:%02x:%02x:%02x:...\n", pTxMic[0],pTxMic[1],pTxMic[2],pTxMic[3]);
+ 	DBGPRINT(RT_DEBUG_TRACE,"  pRxMic = %02x:%02x:%02x:%02x:...\n", pRxMic[0],pRxMic[1],pRxMic[2],pRxMic[3]);
++#endif
+ 
+ 	offset = PAIRWISE_KEY_TABLE_BASE + (KeyIdx * HW_KEY_ENTRY_SIZE);
+ 
+@@ -5390,16 +5357,18 @@ VOID AsicAddPairwiseKeyEntry(
+ 	// enable this entry
+ 	if (KeyIdx < 32)
+ 	{
+-		RTUSBReadMACRegister(pAd, SEC_CSR2, &csr2);
+-		csr2 |= BIT32[KeyIdx];
+-		RTUSBWriteMACRegister(pAd, SEC_CSR2, csr2);
++		RTUSBReadMACRegister(pAd, SEC_CSR2, csr2);
++		*csr2 |= BIT32[KeyIdx];
++		RTUSBWriteMACRegister(pAd, SEC_CSR2, *csr2);
+ 	}
+ 	else
+ 	{
+-		RTUSBReadMACRegister(pAd, SEC_CSR3, &csr3);
+-		csr3 |= BIT32[KeyIdx-32];
+-		RTUSBWriteMACRegister(pAd, SEC_CSR3, csr3);
++		RTUSBReadMACRegister(pAd, SEC_CSR3, csr3);
++		*csr3 |= BIT32[KeyIdx-32];
++		RTUSBWriteMACRegister(pAd, SEC_CSR3, *csr3);
+ 	}
++	kfree(csr2);
++	kfree(csr3);
+ }
+ 
+ VOID AsicRemovePairwiseKeyEntry(
+diff --git a/drivers/net/wireless/rt73/mlme.h b/drivers/net/wireless/rt73/mlme.h
+index a4e526f..f1b5f89 100644
+--- a/drivers/net/wireless/rt73/mlme.h
++++ b/drivers/net/wireless/rt73/mlme.h
+@@ -400,7 +400,7 @@ typedef struct _MLME_AUX {
+ 
+ 	RALINK_TIMER_STRUCT BeaconTimer, ScanTimer;
+ 	RALINK_TIMER_STRUCT AuthTimer;
+-	RALINK_TIMER_STRUCT AssocTimer, ReassocTimer, DisassocTimer;
++	RALINK_TIMER_STRUCT AssocTimer, ReassocTimer;
+ } MLME_AUX, *PMLME_AUX;
+ 
+ // assoc struct is equal to reassoc
+diff --git a/drivers/net/wireless/rt73/rt_config.h b/drivers/net/wireless/rt73/rt_config.h
+index 63afd4b..3a35627 100644
+--- a/drivers/net/wireless/rt73/rt_config.h
++++ b/drivers/net/wireless/rt73/rt_config.h
+@@ -37,7 +37,8 @@
+ #define	__RT_CONFIG_H__
+ 
+ // Propagate predefined compiler variables asap - bb.
+-#if defined(__BIG_ENDIAN) || defined(__BIG_ENDIAN__) || defined(_BIG_ENDIAN)
++#if defined(__BIG_ENDIAN) || defined(__BIG_ENDIAN__) || \
++	defined(_BIG_ENDIAN) || defined(__ARMEB__) || defined(__MIPSEB__)
+ #define BIG_ENDIAN TRUE
+ #endif /* __BIG_ENDIAN */
+ 
+@@ -46,7 +47,7 @@
+ #define RT2573_IMAGE_FILE_NAME      "rt73.bin"
+ #define DRIVER_NAME                 "rt73"
+ #define DRIVER_VERSION		    "1.0.3.6 CVS"
+-#define DRIVER_RELDATE              "2008050900"
++#define DRIVER_RELDATE              "2009012305"
+ 
+ // Query from UI
+ #define DRV_MAJORVERSION        1
+@@ -105,7 +106,13 @@
+ #include <asm/irq.h>
+ #include <asm/uaccess.h>
+ #include <asm/atomic.h>
+-#include <asm/byteorder.h>
++#include <asm/unaligned.h>
++#if LINUX_VERSION_CODE < 0x20500
++#include <linux/pm.h>
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
++#include <linux/freezer.h>
++#endif
+ 
+ // load firmware
+ #define __KERNEL_SYSCALLS__
+@@ -256,17 +263,51 @@ static inline unsigned long msecs_to_jiffies(const unsigned int m)
+ #endif
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
+-#define reserve_module(x)	try_module_get(x)
+-#define release_module(x)	module_put(x)
+-#define rtusb_submit_urb(purb) usb_submit_urb(purb, GFP_KERNEL)
++#define reserve_module(x)		try_module_get(x)
++#define release_module(x)		module_put(x)
++#define rt_daemonize(x, y...)	(daemonize(x, ## y))
++#define rtusb_submit_urb(purb)	usb_submit_urb(purb, GFP_KERNEL)
+ #else
+-#define usb_get_dev			usb_inc_dev_use
+-#define usb_put_dev			usb_dec_dev_use
+-#define reserve_module(x)  	MOD_INC_USE_COUNT
+-#define release_module(x)	MOD_DEC_USE_COUNT
++#define allow_signal(x)
++#define usb_get_dev				usb_inc_dev_use
++#define usb_put_dev				usb_dec_dev_use
++#define reserve_module(x)  		MOD_INC_USE_COUNT
++#define release_module(x)		MOD_DEC_USE_COUNT
++#define rt_daemonize(x, y...)			\
++{										\
++	daemonize();						\
++	reparent_to_init();					\
++	sprintf(current->comm, x, ## y);	\
++}
+ #define rtusb_submit_urb(purb) usb_submit_urb(purb)
+ #endif
+ 
++// TODO Available as of 2.5.18, but patches are available for 2.4 series,
++// so we should find a way to allow for these. - bb
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,18) || !defined(CONFIG_PM)
++#define set_freezable()
++#define try_to_freeze()	0
++#else
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,11)
++static inline int try_to_freeze()
++{
++	if (unlikely(current->flags & PF_FREEZE)) {
++		refrigerator(PF_FREEZE);
++		return 1;
++	} else
++		return 0;
++}
++#elif LINUX_VERSION_CODE < KERNEL_VERSION(2,6,13)
++#define try_to_freeze()	try_to_freeze(PF_FREEZE)
++#endif
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
++static inline void set_freezable(void)
++{
++	current->flags &= ~PF_NOFREEZE;
++}
++#endif
++#endif /* < 2.5.18 || !CONFIG_PM */
++
+ // 2.5.44? 2.5.26?
+ #ifndef smp_read_barrier_depends
+ #define smp_read_barrier_depends() ((void)0)
+@@ -292,6 +333,27 @@ static inline unsigned long msecs_to_jiffies(const unsigned int m)
+ #define first_net_device() first_net_device(&init_net)
+ #endif
+ 
++// Changes in 2.6.27, but Fedora jumps the gun - bb
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25) || \
++   (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,25) && \
++   (!defined(FEDORA) || (defined(FEDORA) && FEDORA < 10))) || \
++   (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,26) && !defined(FEDORA))
++#define iwri_struct(x)
++#define iwri_start(x)
++#define iwri_ref(x)
++#else
++#define iwri_struct(x)	struct iw_request_info x
++#define iwri_start(x)	memset(&x, 0, sizeof(x))
++#define iwri_ref(x)		x,
++#endif
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)
++static inline int kill_proc(pid_t pid, int sig, int priv)
++{
++	return kill_pid(find_pid_ns(pid, &init_pid_ns), sig, priv);
++}
++#endif /* LINUX_VERSION_CODE >= 2.6.27 */
++
+ #ifndef USB_ST_NOERROR
+ #define  USB_ST_NOERROR     0
+ #endif
+diff --git a/drivers/net/wireless/rt73/rtmp.h b/drivers/net/wireless/rt73/rtmp.h
+index b9e93b5..293a076 100644
+--- a/drivers/net/wireless/rt73/rtmp.h
++++ b/drivers/net/wireless/rt73/rtmp.h
+@@ -300,9 +300,25 @@ extern ULONG	RTDebugLevel;
+ #define RTMP_TEST_FLAGS(_M, _F) 	(((_M)->Flags & (_F)) == (_F))
+ 
+ // Flags control for RT2500 USB bulk out frame type
+-#define RTUSB_SET_BULK_FLAG(_M, _F)				((_M)->BulkFlags |= (_F))
+-#define RTUSB_CLEAR_BULK_FLAG(_M, _F)			((_M)->BulkFlags &= ~(_F))
+-#define RTUSB_TEST_BULK_FLAG(_M, _F)			(((_M)->BulkFlags & (_F)) != 0)
++// We serialize modification between process context and interrupt context
++// and between processors, allowing also for relaxed memory consistency - bb
++//#define RTUSB_SET_BULK_FLAG(_M, _F)		((_M)->BulkFlags |= (_F))
++#define RTUSB_SET_BULK_FLAG(_M, _F)						\
++{														\
++	spin_lock_irqsave(&(_M)->BulkFlagsLock, flags);		\
++	smp_wmb();											\
++	(_M)->BulkFlags |= (_F);							\
++	spin_unlock_irqrestore(&(_M)->BulkFlagsLock, flags);	\
++}
++//#define RTUSB_CLEAR_BULK_FLAG(_M, _F)	((_M)->BulkFlags &= ~(_F))
++#define RTUSB_CLEAR_BULK_FLAG(_M, _F)					\
++{														\
++	spin_lock_irqsave(&(_M)->BulkFlagsLock, flags);		\
++	smp_wmb();											\
++	(_M)->BulkFlags &= ~(_F);							\
++	spin_unlock_irqrestore(&(_M)->BulkFlagsLock, flags);	\
++}
++#define RTUSB_TEST_BULK_FLAG(_M, _F)	(((_M)->BulkFlags & (_F)) != 0)
+ 
+ #define OPSTATUS_SET_FLAG(_pAd, _F) 	((_pAd)->PortCfg.OpStatusFlags |= (_F))
+ #define OPSTATUS_CLEAR_FLAG(_pAd, _F)	((_pAd)->PortCfg.OpStatusFlags &= ~(_F))
+@@ -667,6 +683,8 @@ typedef struct _RTMP_SCATTER_GATHER_LIST {
+ 
+ #define	LOCAL_TX_RING_EMPTY(_p, _i)		(((_p)->TxContext[_i][(_p)->NextBulkOutIndex[_i]].InUse) == FALSE)
+ 
++#define nextTxContext(p, i)	(&((p)->TxContext[i][(p)->NextBulkOutIndex[i]]))
++
+ typedef	struct _CmdQElmt	{
+ 	UINT				command;
+ 	PVOID				buffer;
+@@ -1342,6 +1360,10 @@ typedef struct _RTMP_ADAPTER
+ 	CHAR							nickn[IW_ESSID_MAX_SIZE+1]; // nickname, only used in the iwconfig i/f
+ 	struct usb_device				*pUsb_Dev;
+ 	struct net_device				*net_dev;
++	struct usb_device *usb;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) && defined(CONFIG_PM)
++	struct pm_dev				*pmdev;
++#endif
+ 	struct tasklet_struct			rx_bh;
+ 	struct tasklet_struct			rx_bk;
+ 	struct usb_config_descriptor	*config;
+@@ -1544,18 +1566,12 @@ typedef struct _RTMP_ADAPTER
+ 	CmdQ				CmdQ;
+ 	CmdQElmt			CmdQElements[COMMAND_QUEUE_SIZE];
+ 
+-	BOOLEAN				DeQueueRunning[4];		// for ensuring RTUSBDeQueuePacket get call once
+-
+ 	// SpinLocks
+-	spinlock_t			SendTxWaitQueueLock[4]; // SendTxWaitQueue spinlock
+-
+-	spinlock_t			DeQueueLock[4];
+-
+-	spinlock_t			MLMEWaitQueueLock;	// SendTxWaitQueue spinlock
+-	spinlock_t			CmdQLock;			// SendTxWaitQueue spinlock
+-	spinlock_t			BulkOutLock[4];		// SendTxWaitQueue spinlock for 4 ACs
+-
+-	spinlock_t			MLMEQLock;			// SendTxWaitQueue spinlock
++	spinlock_t			MLMEWaitQueueLock;
++	spinlock_t			CmdQLock;
++	spinlock_t			BulkOutLock[4];		// for 4 ACs
++	spinlock_t			MLMEQLock;
++	spinlock_t			BulkFlagsLock;
+ 
+ 	/////////////////////
+ 	// Transmit Path
+@@ -1569,7 +1585,7 @@ typedef struct _RTMP_ADAPTER
+ //	TX_BUFFER				TxMgmtBuf;
+ //	PURB					pTxMgmtUrb;
+ //	PIRP					pTxMgmtIrp;
+-	struct sk_buff_head			SendTxWaitQueue[4];
++	struct sk_buff_head		SendTxWaitQueue[4];
+ 
+ 	UINT32					TxRingTotalNumber[4];
+ 	UCHAR					NextTxIndex[4];				// Next TxD write pointer
+@@ -2184,9 +2200,6 @@ VOID AssocTimeout(
+ VOID ReassocTimeout(
+ 	IN	unsigned long data);
+ 
+-VOID DisassocTimeout(
+-	IN	unsigned long data);
+-
+ VOID MlmeAssocReqAction(
+ 	IN PRTMP_ADAPTER pAd,
+ 	IN MLME_QUEUE_ELEM *Elem);
+@@ -2694,13 +2707,19 @@ VOID	RTUSBBulkReceive(
+ VOID	RTUSBKickBulkOut(
+ 	IN	PRTMP_ADAPTER pAd);
+ 
++VOID	RTUSBCleanUpDataBulkInQueue(
++	IN	PRTMP_ADAPTER	pAd);
++
+ VOID	RTUSBCleanUpDataBulkOutQueue(
+ 	IN	PRTMP_ADAPTER	pAd);
+ 
+ VOID	RTUSBCleanUpMLMEBulkOutQueue(
+ 	IN	PRTMP_ADAPTER	pAd);
+ 
+-VOID	RTUSBCancelPendingIRPs(
++VOID	RTUSBwaitRxDone(
++	IN	PRTMP_ADAPTER	pAd);
++
++VOID	RTUSBwaitTxDone(
+ 	IN	PRTMP_ADAPTER	pAd);
+ 
+ VOID RTUSBCancelPendingBulkOutIRP(
+@@ -2709,6 +2728,9 @@ VOID RTUSBCancelPendingBulkOutIRP(
+ VOID	RTUSBCancelPendingBulkInIRP(
+ 	IN	PRTMP_ADAPTER	pAd);
+ 
++VOID	RTUSBCancelPendingIRPs(
++	IN	PRTMP_ADAPTER	pAd);
++
+ 
+ // macro definitions and prototypes of completion funuc.
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) || LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,19)
+@@ -2791,6 +2813,9 @@ NTSTATUS	RTUSBWriteEEPROM(
+ 	IN	PVOID			pData,
+ 	IN	USHORT			length);
+ 
++NTSTATUS RTUSBStopRx(
++	IN	PRTMP_ADAPTER	pAd);
++
+ NTSTATUS RTUSBPutToSleep(
+ 	IN	PRTMP_ADAPTER	pAd);
+ 
+@@ -2812,8 +2837,15 @@ VOID	RTUSBEnqueueInternalCmd(
+ 	IN	NDIS_OID		Oid);
+ 
+ VOID	RTUSBDequeueCmd(
+-	IN	PCmdQ		cmdq,
+-	OUT	PCmdQElmt	*pcmdqelmt);
++	IN	PCmdQ			cmdq,
++	OUT	PCmdQElmt		*pcmdqelmt);
++
++VOID	RTUSBfreeCmdQElem(
++	OUT	PCmdQElmt		pcmdqelmt);
++
++VOID	RTUSBfreeCmdQ(
++	IN	PRTMP_ADAPTER	pAd,
++	IN	PCmdQ			cmdq);
+ 
+ INT		RTUSB_VendorRequest(
+ 	IN	PRTMP_ADAPTER	pAd,
+@@ -2896,6 +2928,9 @@ VOID	RTMPDeQueuePacket(
+ 	IN	PRTMP_ADAPTER	pAd,
+ 	IN	UCHAR			BulkOutPipeId);
+ 
++VOID	RTMPDeQueuePackets(
++	IN	PRTMP_ADAPTER	pAd);
++
+ VOID	RTUSBRxPacket(
+ 	IN	 unsigned long data);
+ 
+diff --git a/drivers/net/wireless/rt73/rtmp_def.h b/drivers/net/wireless/rt73/rtmp_def.h
+index f13476d..5cf340e 100644
+--- a/drivers/net/wireless/rt73/rtmp_def.h
++++ b/drivers/net/wireless/rt73/rtmp_def.h
+@@ -82,8 +82,8 @@
+ #define	MAX_CLIENT				2
+ 
+ #define LOCAL_TXBUF_SIZE		2048
+-#define TXD_SIZE				64
+-#define RXD_SIZE				64
++#define TXD_SIZE				24
++#define RXD_SIZE				24
+ #define TX_DMA_1ST_BUFFER_SIZE	64	  // only the 1st physical buffer is pre-allocated
+ #define MGMT_DMA_BUFFER_SIZE	2048
+ #define RX_DMA_BUFFER_SIZE      4096
+@@ -835,7 +835,7 @@ typedef UCHAR ADDRESS[MAC_ADDRESS_LENGTH];
+  /* D-Link */\
+  {USB_DEVICE(0x07d1,0x3c03)},\
+  {USB_DEVICE(0x07d1,0x3c04)},\
+- {USB_DEVICE(0x07d1,0x3c06)},\
++ {USB_DEVICE(0x07d1,0x3c06)}, /* D-Link DWA111 - thanks to zenon_666 */ \
+  {USB_DEVICE(0x07d1,0x3c07)},\
+  /* Gemtek*/\
+  {USB_DEVICE(0x15a9,0x0004)},\
+diff --git a/drivers/net/wireless/rt73/rtmp_info.c b/drivers/net/wireless/rt73/rtmp_info.c
+index 26fee00..bd8d37e 100644
+--- a/drivers/net/wireless/rt73/rtmp_info.c
++++ b/drivers/net/wireless/rt73/rtmp_info.c
+@@ -645,6 +645,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 	char *end_buf = extra + IW_SCAN_MAX_DATA;   // some of platforms restricted on IW_SCAN_MAX_DATA
+ 	char *current_val;
+     struct iw_event iwe;
++	iwri_struct(iwri);
+ 
+ #if 0   // support bit rate, extended rate, quality and last beacon timing
+     //-------------------------------------------
+@@ -674,12 +675,13 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		//MAC address
+ 		//================================
+ 		memset(&iwe, 0, sizeof(iwe));
++		iwri_start(iwri);
+ 		iwe.cmd = SIOCGIWAP;
+ 		iwe.u.ap_addr.sa_family = ARPHRD_ETHER;
+         memcpy(iwe.u.ap_addr.sa_data, &pAdapter->ScanTab.BssEntry[i].Bssid, ETH_ALEN);
+ 
+         previous_ev = current_ev;
+-        current_ev = iwe_stream_add_event(current_ev,end_buf, &iwe, IW_EV_ADDR_LEN);
++        current_ev = iwe_stream_add_event(iwri_ref(&iwri) current_ev,end_buf, &iwe, IW_EV_ADDR_LEN);
+         if (current_ev == previous_ev)
+             break;
+ 
+@@ -691,7 +693,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		iwe.u.data.flags = 1;
+ 
+         previous_ev = current_ev;
+-		current_ev = iwe_stream_add_point(current_ev,end_buf, &iwe, pAdapter->ScanTab.BssEntry[i].Ssid);
++		current_ev = iwe_stream_add_point(iwri_ref(&iwri) current_ev,end_buf, &iwe, pAdapter->ScanTab.BssEntry[i].Ssid);
+         if (current_ev == previous_ev)
+             break;
+ 
+@@ -714,7 +716,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		iwe.len = IW_EV_UINT_LEN;
+ 
+         previous_ev = current_ev;
+-		current_ev = iwe_stream_add_event(current_ev, end_buf, &iwe,  IW_EV_UINT_LEN);
++		current_ev = iwe_stream_add_event(iwri_ref(&iwri) current_ev, end_buf, &iwe,  IW_EV_UINT_LEN);
+         if (current_ev == previous_ev)
+             break;
+ 
+@@ -730,7 +732,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		iwe.u.freq.i = 0;
+ 
+ 		previous_ev = current_ev;
+-		current_ev = iwe_stream_add_event(current_ev,end_buf, &iwe, IW_EV_FREQ_LEN);
++		current_ev = iwe_stream_add_event(iwri_ref(&iwri) current_ev,end_buf, &iwe, IW_EV_FREQ_LEN);
+         if (current_ev == previous_ev)
+             break;
+ 
+@@ -744,7 +746,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 			iwe.u.data.flags = IW_ENCODE_DISABLED;
+ 
+         previous_ev = current_ev;
+-        current_ev = iwe_stream_add_point(current_ev, end_buf,&iwe,  (char *)pAdapter->SharedKey[(iwe.u.data.flags & IW_ENCODE_INDEX)-1].Key);
++        current_ev = iwe_stream_add_point(iwri_ref(&iwri) current_ev, end_buf,&iwe,  pAdapter->SharedKey[(iwe.u.data.flags & IW_ENCODE_INDEX)-1].Key);
+         if (current_ev == previous_ev)
+             break;
+ 
+@@ -759,7 +761,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		{
+ 			iwe.u.bitrate.value = RateIdToMbps[pAdapter->ScanTab.BssEntry[i].SupRate[i]/2] * 1000000;
+ 			iwe.u.bitrate.disabled = 0;
+-			current_val = iwe_stream_add_value(current_ev,
++			current_val = iwe_stream_add_value(iwri_ref(&iwri) current_ev,
+ 				current_val, end_buf, &iwe,
+ 				IW_EV_PARAM_LEN);
+ 		}
+@@ -814,7 +816,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		}
+ 		iwe.u.bitrate.value = max_rate * 500000;
+ 		iwe.u.bitrate.disabled = 0;
+-		current_val = iwe_stream_add_value(current_ev,
++		current_val = iwe_stream_add_value(iwri_ref(&iwri) current_ev,
+ 			current_val, end_buf, &iwe,
+ 			IW_EV_PARAM_LEN);
+ 		if((current_val-current_ev)>IW_EV_LCP_LEN)
+@@ -830,7 +832,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		if (iwe.u.data.length)
+ 		{
+ 		    previous_ev = current_ev;
+-			current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe, custom);
++			current_ev = iwe_stream_add_point(iwri_ref(&iwri) current_ev, end_buf, &iwe, custom);
+             if (current_ev == previous_ev)
+                 break;
+         }
+@@ -841,7 +843,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		set_quality(pAdapter, &iwe.u.qual, pAdapter->ScanTab.BssEntry[i].Rssi);
+ 
+ 		previous_ev = current_ev;
+-		current_ev = iwe_stream_add_event(current_ev, end_buf, &iwe, IW_EV_QUAL_LEN);
++		current_ev = iwe_stream_add_event(iwri_ref(&iwri) current_ev, end_buf, &iwe, IW_EV_QUAL_LEN);
+         if (current_ev == previous_ev)
+             break;
+ 
+@@ -856,7 +858,7 @@ rt_ioctl_giwscan(struct net_device *dev,
+ 		if (iwe.u.data.length)
+ 		{
+ 		    previous_ev = current_ev;
+-			current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe, custom);
++			current_ev = iwe_stream_add_point(iwri_ref(&iwri) current_ev, end_buf, &iwe, custom);
+             if (current_ev == previous_ev)
+                 break;
+         }
+@@ -1057,7 +1059,7 @@ int rt_ioctl_siwfrag(struct net_device *dev,
+ 	if (rts->disabled)
+ 		val = MAX_FRAG_THRESHOLD;
+ 	else if (rts->value >= MIN_FRAG_THRESHOLD || rts->value <= MAX_FRAG_THRESHOLD)
+-		val = __cpu_to_le16(rts->value & ~0x1); /* even numbers only */
++		val = rts->value & ~0x1; /* even numbers only */
+ 	else if (rts->value == 0)
+ 		val = MAX_FRAG_THRESHOLD;
+ 	else {
+@@ -2874,8 +2876,8 @@ INT rt73_ioctl(
+ 	switch(cmd)
+ 	{
+ 		case SIOCGIFHWADDR:     //get  MAC addresses
+-			DBGPRINT(RT_DEBUG_TRACE, "IOCTL::SIOCGIFHWADDR\n");
+-			memcpy(wrq->u.name, pAd->CurrentAddress, ETH_ALEN);
++			wrq->u.ap_addr.sa_family = ARPHRD_ETHER;
++			memcpy(wrq->u.ap_addr.sa_data, pAd->CurrentAddress, ETH_ALEN);
+             DBGPRINT(RT_DEBUG_TRACE, "IOCTL::SIOCGIFHWADDR(=%02x:%02x:%02x:%02x:%02x:%02x)\n",
+ 		        pAd->CurrentAddress[0],pAd->CurrentAddress[1],pAd->CurrentAddress[2],
+ 		        pAd->CurrentAddress[3],pAd->CurrentAddress[4],pAd->CurrentAddress[5]);
+diff --git a/drivers/net/wireless/rt73/rtmp_init.c b/drivers/net/wireless/rt73/rtmp_init.c
+index 8afc8a2..c1798e3 100644
+--- a/drivers/net/wireless/rt73/rtmp_init.c
++++ b/drivers/net/wireless/rt73/rtmp_init.c
+@@ -808,17 +808,10 @@ void RTMPInitAdapterBlock(
+ 		NdisAllocateSpinLock(&pAd->BulkOutLock[2]);
+ 		NdisAllocateSpinLock(&pAd->BulkOutLock[3]);
+ 		NdisAllocateSpinLock(&pAd->CmdQLock);
+-		NdisAllocateSpinLock(&pAd->SendTxWaitQueueLock[0]);
+-		NdisAllocateSpinLock(&pAd->SendTxWaitQueueLock[1]);
+-		NdisAllocateSpinLock(&pAd->SendTxWaitQueueLock[2]);
+-		NdisAllocateSpinLock(&pAd->SendTxWaitQueueLock[3]);
+-		NdisAllocateSpinLock(&pAd->DeQueueLock[0]);
+-		NdisAllocateSpinLock(&pAd->DeQueueLock[1]);
+-		NdisAllocateSpinLock(&pAd->DeQueueLock[2]);
+-		NdisAllocateSpinLock(&pAd->DeQueueLock[3]);
+ 
+ 		NdisAllocateSpinLock(&pAd->MLMEWaitQueueLock);
+ 		NdisAllocateSpinLock(&pAd->MLMEQLock);
++		NdisAllocateSpinLock(&pAd->BulkFlagsLock);
+ 
+ 	}	while (FALSE);
+ 
+@@ -828,16 +821,17 @@ void RTMPInitAdapterBlock(
+ NDIS_STATUS	RTUSBWriteHWMACAddress(
+ 	IN	PRTMP_ADAPTER		pAd)
+ {
+-	MAC_CSR2_STRUC		*StaMacReg0 = kzalloc(sizeof(MAC_CSR2_STRUC), GFP_KERNEL);
+-	MAC_CSR3_STRUC		*StaMacReg1 = kzalloc(sizeof(MAC_CSR3_STRUC), GFP_KERNEL);
++	MAC_CSR2_STRUC          *StaMacReg0 = kzalloc(sizeof(MAC_CSR2_STRUC), GFP_KERNEL);
++	MAC_CSR3_STRUC          *StaMacReg1 = kzalloc(sizeof(MAC_CSR3_STRUC), GFP_KERNEL);
+ 	NDIS_STATUS			Status = NDIS_STATUS_SUCCESS;
+ 	PUCHAR			curMAC;
+ 	int			t;
+ 
+ 	if (!StaMacReg0 || !StaMacReg1) {
+ 		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+-    return -ENOMEM;
+-  }
++		return -ENOMEM;
++	}
++
+ 	if (pAd->bLocalAdminMAC != TRUE)
+ 	{
+ 		if (!memcmp(pAd->net_dev->dev_addr, "\x00\x00\x00\x00\x00\x00", 6)) {
+@@ -914,6 +908,7 @@ VOID NICReadEEPROMParameters(
+ 		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+ 		return;
+ 	}
++
+ 	//Read MAC address.
+ 	RTUSBReadEEPROM(pAd, EEPROM_MAC_ADDRESS_BASE_OFFSET,
+ 					pAd->PermanentAddress, MAC_ADDR_LEN);
+@@ -943,14 +938,22 @@ VOID NICReadEEPROMParameters(
+ 	// if E2PROM version mismatch with driver's expectation, then skip
+ 	// all subsequent E2RPOM retieval and set a system error bit to notify GUI
+ 	RTUSBReadEEPROM(pAd, EEPROM_VERSION_OFFSET, (PUCHAR)&Version->word, 2);
+-	pAd->EepromVersion = Version->field.Version + Version->field.FaeReleaseNumber * 256;
+-	DBGPRINT(RT_DEBUG_TRACE, "E2PROM: Version = %d, FAE release #%d\n", Version->field.Version, Version->field.FaeReleaseNumber);
++	Version->word = le16_to_cpu(Version->word);
++	pAd->EepromVersion = Version->field.Version +
++					Version->field.FaeReleaseNumber * 256;
++	DBGPRINT(RT_DEBUG_INFO, "E2PROM: Version = %d, FAE release #%d\n",
++			Version->field.Version, Version->field.FaeReleaseNumber);
+ 
+-	// Read BBP default value from EEPROM and store to array(EEPROMDefaultValue) in pAd
+-	RTUSBReadEEPROM(pAd, EEPROM_BBP_BASE_OFFSET, (PUCHAR)(pAd->EEPROMDefaultValue), 2 * NUM_EEPROM_BBP_PARMS);
++	// Read BBP default from EEPROM, store to array(EEPROMDefaultValue) in pAd
++	RTUSBReadEEPROM(pAd, EEPROM_BBP_BASE_OFFSET,
++				(PUCHAR)(pAd->EEPROMDefaultValue), 2 * NUM_EEPROM_BBP_PARMS);
+ 
++	// Bit of a swag, here - bb
++	for (i = 0; i < NUM_EEPROM_BBP_PARMS; i++) {
++		pAd->EEPROMDefaultValue[i] = le16_to_cpu(pAd->EEPROMDefaultValue[i]);
++	}
+ 	// We have to parse NIC configuration 0 at here.
+-	// If TSSI did not have preloaded value, it should reset the TxAutoAgc to false
++	// If TSSI did not have preloaded value, it should reset TxAutoAgc to false
+ 	// Therefore, we have to read TxAutoAgc control beforehand.
+ 	// Read Tx AGC control bit
+ 	Antenna.word = pAd->EEPROMDefaultValue[0];
+@@ -989,7 +992,8 @@ VOID NICReadEEPROMParameters(
+ 	// Value from 1 - 0x7f. Default value is 24.
+ 	// 0. 11b/g
+ 	// Power value 0xFA (-6) ~ 0x24 (36)
+-	RTUSBReadEEPROM(pAd, EEPROM_G_TX_PWR_OFFSET, ChannelTxPower, 2 * NUM_EEPROM_TX_G_PARMS);
++	RTUSBReadEEPROM(pAd, EEPROM_G_TX_PWR_OFFSET,
++					ChannelTxPower, 2 * NUM_EEPROM_TX_G_PARMS);
+ 	for (i = 0; i < 2 * NUM_EEPROM_TX_G_PARMS; i++)
+ 	{
+ 		if ((ChannelTxPower[i] > 36) || (ChannelTxPower[i] < -6))
+@@ -997,27 +1001,33 @@ VOID NICReadEEPROMParameters(
+ 		else
+ 			pAd->TxPower[i].Power = ChannelTxPower[i];
+ 
+-		DBGPRINT(RT_DEBUG_INFO, "Tx power for channel %d : 0x%02x\n", pAd->TxPower[i].Channel, (UCHAR)(pAd->TxPower[i].Power));
++		DBGPRINT(RT_DEBUG_INFO, "Tx power for channel %d : 0x%02x\n",
++				pAd->TxPower[i].Channel, (UCHAR)(pAd->TxPower[i].Power));
+ 	}
+ 
+ 	// 1. UNI 36 - 64, HipperLAN 2 100 - 140, UNI 140 - 165
+ 	// Power value 0xFA (-6) ~ 0x24 (36)
+-	RTUSBReadEEPROM(pAd, EEPROM_A_TX_PWR_OFFSET, ChannelTxPower, MAX_NUM_OF_A_CHANNELS);
++	RTUSBReadEEPROM(pAd, EEPROM_A_TX_PWR_OFFSET,
++					ChannelTxPower, MAX_NUM_OF_A_CHANNELS);
+ 	for (i = 0; i < MAX_NUM_OF_A_CHANNELS; i++)
+ 	{
+ 		if ((ChannelTxPower[i] > 36) || (ChannelTxPower[i] < -6))
+ 			pAd->TxPower[i + 14].Power = 24;
+ 		else
+ 			pAd->TxPower[i + 14].Power = ChannelTxPower[i];
+-		DBGPRINT(RT_DEBUG_INFO, "Tx power for channel %d : 0x%02x\n", pAd->TxPower[i + 14].Channel, (UCHAR)(pAd->TxPower[i + 14].Power));
++		DBGPRINT(RT_DEBUG_INFO, "Tx power for channel %d : 0x%02x\n",
++				pAd->TxPower[i + 14].Channel,
++				(UCHAR)(pAd->TxPower[i + 14].Power));
+ 	}
+ 
+ 	//
+-	// Please note, we must skip frist value, so we get TxPower as ChannelTxPower[i + 1];
+-	// because the TxPower was stored from 0x7D, but we need to read EEPROM from 0x7C. (Word alignment)
++	// we must skip frist value, so we get TxPower as ChannelTxPower[i + 1];
++	// because the TxPower was stored from 0x7D, but we need to read EEPROM
++	// from 0x7C. (Word alignment)
+ 	//
+ 	// for J52, 34/38/42/46
+-	RTUSBReadEEPROM(pAd, EEPROM_J52_TX_PWR_OFFSET, ChannelTxPower, 6); //must Read even valuse
++	RTUSBReadEEPROM(pAd, EEPROM_J52_TX_PWR_OFFSET,
++					ChannelTxPower, 6); //must Read even valuse
+ 
+ 	for (i = 0; i < 4; i++)
+ 	{
+@@ -1027,7 +1037,9 @@ VOID NICReadEEPROMParameters(
+ 		else
+ 			pAd->TxPower[J52_CHANNEL_START_OFFSET + i].Power = ChannelTxPower[i + 1];
+ 
+-		DBGPRINT(RT_DEBUG_INFO, "Tx power for channel %d : %0x\n", pAd->TxPower[J52_CHANNEL_START_OFFSET + i].Channel, pAd->TxPower[J52_CHANNEL_START_OFFSET + i].Power);
++		DBGPRINT(RT_DEBUG_INFO, "Tx power for channel %d : 0x%02x\n",
++				pAd->TxPower[J52_CHANNEL_START_OFFSET + i].Channel,
++				(UCHAR)pAd->TxPower[J52_CHANNEL_START_OFFSET + i].Power);
+ 	}
+ 
+ 	// Read TSSI reference and TSSI boundary for temperature compensation.
+@@ -1052,10 +1064,12 @@ VOID NICReadEEPROMParameters(
+ 		if (pAd->TssiRefG == 0xff)
+ 			pAd->bAutoTxAgcG = FALSE;
+ 
+-		DBGPRINT(RT_DEBUG_TRACE,"E2PROM: G Tssi[-4 .. +4] = %d %d %d %d - %d -%d %d %d %d, step=%d, tuning=%d\n",
+-			pAd->TssiMinusBoundaryG[4], pAd->TssiMinusBoundaryG[3], pAd->TssiMinusBoundaryG[2], pAd->TssiMinusBoundaryG[1],
++		DBGPRINT(RT_DEBUG_INFO,"E2PROM: G Tssi[-4 .. +4] = %d %d %d %d - %d -%d %d %d %d, step=%d, tuning=%d\n",
++			pAd->TssiMinusBoundaryG[4], pAd->TssiMinusBoundaryG[3],
++			pAd->TssiMinusBoundaryG[2], pAd->TssiMinusBoundaryG[1],
+ 			pAd->TssiRefG,
+-			pAd->TssiPlusBoundaryG[1], pAd->TssiPlusBoundaryG[2], pAd->TssiPlusBoundaryG[3], pAd->TssiPlusBoundaryG[4],
++			pAd->TssiPlusBoundaryG[1], pAd->TssiPlusBoundaryG[2],
++			pAd->TssiPlusBoundaryG[3], pAd->TssiPlusBoundaryG[4],
+ 			pAd->TxAgcStepG, pAd->bAutoTxAgcG);
+ 	}
+ 	// 1. 11a
+@@ -1079,15 +1093,19 @@ VOID NICReadEEPROMParameters(
+ 		if (pAd->TssiRefA == 0xff)
+ 			pAd->bAutoTxAgcA = FALSE;
+ 
+-		DBGPRINT(RT_DEBUG_TRACE,"E2PROM: A Tssi[-4 .. +4] = %d %d %d %d - %d -%d %d %d %d, step=%d, tuning=%d\n",
+-			pAd->TssiMinusBoundaryA[4], pAd->TssiMinusBoundaryA[3], pAd->TssiMinusBoundaryA[2], pAd->TssiMinusBoundaryA[1],
++		DBGPRINT(RT_DEBUG_INFO,"E2PROM: A Tssi[-4 .. +4] = %d %d %d %d - %d -%d %d %d %d, step=%d, tuning=%d\n",
++			pAd->TssiMinusBoundaryA[4], pAd->TssiMinusBoundaryA[3],
++			pAd->TssiMinusBoundaryA[2], pAd->TssiMinusBoundaryA[1],
+ 			pAd->TssiRefA,
+-			pAd->TssiPlusBoundaryA[1], pAd->TssiPlusBoundaryA[2], pAd->TssiPlusBoundaryA[3], pAd->TssiPlusBoundaryA[4],
++			pAd->TssiPlusBoundaryA[1], pAd->TssiPlusBoundaryA[2],
++			pAd->TssiPlusBoundaryA[3], pAd->TssiPlusBoundaryA[4],
+ 			pAd->TxAgcStepA, pAd->bAutoTxAgcA);
+ 	}
+ 	pAd->BbpRssiToDbmDelta = 0x79;
+ 
+ 	RTUSBReadEEPROM(pAd, EEPROM_FREQ_OFFSET, (PUCHAR)value, 2);
++	*value = le16_to_cpu(*value);
++	DBGPRINT(RT_DEBUG_INFO, "E2PROM[EEPROM_FREQ_OFFSET]=0x%04x\n", *value);
+ 	if ((*value & 0xFF00) == 0xFF00)
+ 	{
+ 		pAd->RFProgSeq = 0;
+@@ -1105,9 +1123,9 @@ VOID NICReadEEPROMParameters(
+ 	DBGPRINT(RT_DEBUG_TRACE, "E2PROM: RF freq offset=0x%x\n", pAd->RfFreqOffset);
+ 
+ 	//CountryRegion byte offset = 0x25
+-	*value = pAd->EEPROMDefaultValue[2] >> 8;
++	*value = pAd->EEPROMDefaultValue[2] >> 8;	// n.b. already flipped - bb
+ 	value2 = pAd->EEPROMDefaultValue[2] & 0x00FF;
+-	if ((*value <= REGION_MAXIMUM_BG_BAND) && (value2 <= REGION_MAXIMUM_A_BAND))
++    if ((*value <= REGION_MAXIMUM_BG_BAND) && (value2 <= REGION_MAXIMUM_A_BAND))
+ 	{
+ 		pAd->PortCfg.CountryRegion = ((UCHAR) *value) | 0x80;
+ 		pAd->PortCfg.CountryRegionForABand = ((UCHAR) value2) | 0x80;
+@@ -1117,7 +1135,9 @@ VOID NICReadEEPROMParameters(
+ 	// Get RSSI Offset on EEPROM 0x9Ah & 0x9Ch.
+ 	// The valid value are (-10 ~ 10)
+ 	//
+-	RTUSBReadEEPROM(pAd, EEPROM_RSSI_BG_OFFSET, (PUCHAR)value, 2);
++	RTUSBReadEEPROM(pAd, EEPROM_RSSI_BG_OFFSET, (PUCHAR) value, 2);
++	*value = le16_to_cpu(*value);
++	DBGPRINT(RT_DEBUG_INFO, "E2PROM[EEPROM_RSSI_BG_OFFSET]=0x%04x\n", *value);
+ 	pAd->BGRssiOffset1 = *value & 0x00ff;
+ 	pAd->BGRssiOffset2 = (*value >> 8);
+ 
+@@ -1129,7 +1149,9 @@ VOID NICReadEEPROMParameters(
+ 	if ((pAd->BGRssiOffset2 < -10) || (pAd->BGRssiOffset2 > 10))
+ 		pAd->BGRssiOffset2 = 0;
+ 
+-	RTUSBReadEEPROM(pAd, EEPROM_RSSI_A_OFFSET, (PUCHAR)value, 2);
++	RTUSBReadEEPROM(pAd, EEPROM_RSSI_A_OFFSET, (PUCHAR) value, 2);
++	*value = le16_to_cpu(*value);
++	DBGPRINT(RT_DEBUG_INFO, "E2PROM[EEPROM_RSSI_A_OFFSET]=0x%04x\n", *value);
+ 	pAd->ARssiOffset1 = *value & 0x00ff;
+ 	pAd->ARssiOffset2 = (*value >> 8);
+ 
+@@ -1145,6 +1167,9 @@ VOID NICReadEEPROMParameters(
+ 	// Get LED Setting.
+ 	//
+ 	RTUSBReadEEPROM(pAd, EEPROM_LED_OFFSET, (PUCHAR)&LedSetting->word, 2);
++	DBGPRINT(RT_DEBUG_INFO, "E2PROM[EEPROM_LED_OFFSET]=0x%04x\n",
++			LedSetting->word);
++	LedSetting->word = le16_to_cpu(LedSetting->word);
+ 	if (LedSetting->word == 0xFFFF)
+ 	{
+ 		//
+@@ -1152,7 +1177,7 @@ VOID NICReadEEPROMParameters(
+ 		//
+ 		LedSetting->field.PolarityRDY_G = 0;   // Active High.
+ 		LedSetting->field.PolarityRDY_A = 0;   // Active High.
+-		LedSetting->field.PolarityACT = 0;   // Active High.
++		LedSetting->field.PolarityACT = 0;	 // Active High.
+ 		LedSetting->field.PolarityGPIO_0 = 0; // Active High.
+ 		LedSetting->field.PolarityGPIO_1 = 0; // Active High.
+ 		LedSetting->field.PolarityGPIO_2 = 0; // Active High.
+@@ -1160,6 +1185,7 @@ VOID NICReadEEPROMParameters(
+ 		LedSetting->field.PolarityGPIO_4 = 0; // Active High.
+ 		LedSetting->field.LedMode = LED_MODE_DEFAULT;
+ 	}
++	pAd->LedCntl.word = 0;
+ 	pAd->LedCntl.field.LedMode = LedSetting->field.LedMode;
+ 	pAd->LedCntl.field.PolarityRDY_G = LedSetting->field.PolarityRDY_G;
+ 	pAd->LedCntl.field.PolarityRDY_A = LedSetting->field.PolarityRDY_A;
+@@ -1171,6 +1197,8 @@ VOID NICReadEEPROMParameters(
+ 	pAd->LedCntl.field.PolarityGPIO_4 = LedSetting->field.PolarityGPIO_4;
+ 
+ 	RTUSBReadEEPROM(pAd, EEPROM_TXPOWER_DELTA_OFFSET, (PUCHAR)value, 2);
++	*value = le16_to_cpu(*value);
++	DBGPRINT(RT_DEBUG_INFO, "E2PROM[EEPROM_TXPOWER_DELTA_OFFSET]=0x%04x\n", *value);
+ 	*value = *value & 0x00ff;
+ 	if (*value != 0xff)
+ 	{
+@@ -1332,14 +1360,12 @@ VOID NICInitAsicFromEEPROM(
+ NDIS_STATUS	NICInitializeAsic(
+ 	IN	PRTMP_ADAPTER	pAd)
+ {
+-	ULONG     Index;
++	ULONG			Index;
+ 	ULONG *Counter = kzalloc(sizeof(ULONG), GFP_KERNEL);
+ 	UCHAR *Value = kzalloc(sizeof(UCHAR), GFP_KERNEL);
+ 	ULONG *Version = kzalloc(sizeof(ULONG), GFP_KERNEL);
+ 	MAC_CSR12_STRUC *MacCsr12 = kzalloc(sizeof(MAC_CSR12_STRUC), GFP_KERNEL);
+ 
+-	DBGPRINT(RT_DEBUG_TRACE, "--> NICInitializeAsic\n");
+-
+ 	if(!Counter || !Value || !Version || !MacCsr12) {
+ 		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+ 		return -ENOMEM;
+@@ -1347,6 +1373,8 @@ NDIS_STATUS	NICInitializeAsic(
+ 	*Value = 0xff;
+ 	RTUSBReadMACRegister(pAd, MAC_CSR0, Version);
+ 
++	DBGPRINT(RT_DEBUG_TRACE, "--> NICInitializeAsic ASIC Ver 0x%x\n", *Version);
++
+ 	// Initialize MAC register to default value
+ 	for (Index = 0; Index < NUM_MAC_REG_PARMS; Index++)
+ 	{
+@@ -1379,6 +1407,7 @@ NDIS_STATUS	NICInitializeAsic(
+ 		RTUSBReadBBPRegister(pAd, BBP_R0, Value);
+ 		DBGPRINT(RT_DEBUG_TRACE, "BBP version = %d\n", *Value);
+ 	} while ((++Index < 100) && ((*Value == 0xff) || (*Value == 0x00)));
++
+ 	// Initialize BBP register to default value
+ 	for (Index = 0; Index < NUM_BBP_REG_PARMS; Index++)
+ 	{
+@@ -1394,11 +1423,11 @@ NDIS_STATUS	NICInitializeAsic(
+ 	RTUSBWriteMACRegister(pAd, MAC_CSR1, 0x4);
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "<-- NICInitializeAsic\n");
+-
+ 	kfree(Version);
+ 	kfree(MacCsr12);
+ 	kfree(Counter);
+ 	kfree(Value);
++
+ 	return NDIS_STATUS_SUCCESS;
+ }
+ 
+@@ -1473,9 +1502,10 @@ VOID NICUpdateRawCounters(
+ 	STA_CSR5_STRUC *StaCsr5 = kzalloc(sizeof(STA_CSR5_STRUC), GFP_KERNEL);
+ 
+ 	if(!StaCsr0 || !StaCsr1 || !StaCsr2 || !StaCsr3 || !StaCsr4 || !StaCsr5) {
+-		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+-		return;
++	DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
++	return;
+ 	}
++
+ 	RTUSBReadMACRegister(pAd, STA_CSR0, &StaCsr0->word);
+ 
+ 	// Update RX PLCP error counter
+@@ -1501,12 +1531,14 @@ VOID NICUpdateRawCounters(
+ 	// Update RX Overflow counter
+ 	RTUSBReadMACRegister(pAd, STA_CSR2, &StaCsr2->word);
+ 	pAd->Counters8023.RxNoBuffer += (StaCsr2->field.RxOverflowCount + StaCsr2->field.RxFifoOverflowCount);
++
+ 	// Update BEACON sent count
+ 	RTUSBReadMACRegister(pAd, STA_CSR3, &StaCsr3->word);
+ 	pAd->RalinkCounters.OneSecBeaconSentCnt += StaCsr3->field.TxBeaconCount;
+ 
+ 	RTUSBReadMACRegister(pAd, STA_CSR4, &StaCsr4->word);
+ 	RTUSBReadMACRegister(pAd, STA_CSR5, &StaCsr5->word);
++
+ 	// 1st - Transmit Success
+ 	OldValue = pAd->WlanCounters.TransmittedFragmentCount.vv.LowPart;
+ 	pAd->WlanCounters.TransmittedFragmentCount.vv.LowPart += (StaCsr4->field.TxOneRetryCount + StaCsr4->field.TxNoRetryCount + StaCsr5->field.TxMultiRetryCount);
+@@ -1582,6 +1614,10 @@ VOID NICResetFromError(
+ #endif
+ 	RTUSBWriteHWMACAddress(pAd);
+ 
++	// Switch to current channel, since during reset process, the connection
++	// should remain on.
++	AsicSwitchChannel(pAd, pAd->PortCfg.Channel);
++	AsicLockChannel(pAd, pAd->PortCfg.Channel);
+ }
+ 
+ INT LoadFirmware (PRTMP_ADAPTER pAd, char *firmName)
+@@ -1617,21 +1653,29 @@ INT LoadFirmware (PRTMP_ADAPTER pAd, char *firmName)
+ 	// Access firmware file
+ 	if ((status = request_firmware(&fw_entry, firmName, udevice))) {
+ 		KPRINT(KERN_ERR, "Failed to request_firmware. "
++			"Check your firmware file location\n");
++		goto fw_error;
++		DBGPRINT(RT_DEBUG_ERROR, "rt73: Failed to request_firmware. "
++				"Check your firmware file location\n");
++		KPRINT(KERN_ERR, "Failed to request_firmware. "
+ 				"Check your firmware file location\n");
+ 		goto fw_error;
+ 	}
+ 
+ 	if (fw_entry->size != FIRMWARE_IMAGE_SIZE) {
++		DBGPRINT(RT_DEBUG_ERROR, "rt73: Firmware file size error "
++			"(%d instead of %d)\n",
++			(int)fw_entry->size, FIRMWARE_IMAGE_SIZE);
+ 		KPRINT(KERN_ERR, "Firmware file size error "
+ 			"(%d instead of %d)\n",
+-			fw_entry->size, FIRMWARE_IMAGE_SIZE);
++			(int)fw_entry->size, FIRMWARE_IMAGE_SIZE);
+ 		status = -EBADF;
+ 		goto error;
+ 	}
+ 
+ 	// Firmware CRC check
+ 	size = fw_entry->size - 2;
+-	data = fw_entry->data;
++	data = (u8 *)fw_entry->data;
+ 
+ 	for (i=0; i < size; i++)
+ 		crc = ByteCRC16(*data++, crc);
+@@ -1639,6 +1683,8 @@ INT LoadFirmware (PRTMP_ADAPTER pAd, char *firmName)
+ 	crc = ByteCRC16(0x00, crc);
+ 
+ 	if (crc != ((fw_entry->data[size] << 8) | fw_entry->data[size + 1])) {
++		DBGPRINT(RT_DEBUG_ERROR, "rt73: Firmware CRC error "
++				"Check your firmware file integrity\n");
+ 		KPRINT(KERN_ERR, "Firmware CRC error "
+ 				"Check your firmware file integrity\n");
+ 		status = -EBADF;
+@@ -1654,6 +1700,7 @@ INT LoadFirmware (PRTMP_ADAPTER pAd, char *firmName)
+ 	}
+ 
+ 	if (!reg) {
++		DBGPRINT(RT_DEBUG_ERROR, "rt73: Unstable hardware\n");
+ 		KPRINT(KERN_ERR, "Unstable hardware\n");
+ 		status = -EBUSY;
+ 		goto error;
+@@ -1668,6 +1715,7 @@ INT LoadFirmware (PRTMP_ADAPTER pAd, char *firmName)
+ #endif
+ 		if ((status = RTUSBMultiWrite(pAd, FIRMWARE_IMAGE_BASE + i,
+ 						&buf, sizeof(buf))) < 0) {
++			DBGPRINT(RT_DEBUG_ERROR, "rt73: Firmware loading error\n");
+ 			KPRINT(KERN_ERR, "Firmware loading error\n");
+ 			goto error;
+ 		}
+@@ -1677,6 +1725,7 @@ INT LoadFirmware (PRTMP_ADAPTER pAd, char *firmName)
+ 
+ 	if (loaded < FIRMWARE_IMAGE_SIZE) {
+ 		// Should never happen
++		DBGPRINT(RT_DEBUG_ERROR, "rt73: Firmware loading incomplete\n");
+ 		KPRINT(KERN_ERR, "Firmware loading incomplete\n");
+ 		status = -EIO;
+ 		goto error;
+@@ -1685,6 +1734,7 @@ INT LoadFirmware (PRTMP_ADAPTER pAd, char *firmName)
+ 
+ 	// Send 'run firmware' request to device
+ 	if ((status = RTUSBFirmwareRun(pAd)) < 0) {
++		DBGPRINT(RT_DEBUG_ERROR, "rt73: Device refuses to run firmware\n");
+ 		KPRINT(KERN_ERR, "Device refuses to run firmware\n");
+ 		goto error;
+ 	}
+diff --git a/drivers/net/wireless/rt73/rtmp_main.c b/drivers/net/wireless/rt73/rtmp_main.c
+index a8528aa..bfbe321 100644
+--- a/drivers/net/wireless/rt73/rtmp_main.c
++++ b/drivers/net/wireless/rt73/rtmp_main.c
+@@ -109,6 +109,10 @@ static int usb_rtusb_probe (struct usb_interface *intf,
+ 					  const struct usb_device_id *id);
+ 
+ static void usb_rtusb_disconnect(struct usb_interface *intf);
++#ifdef CONFIG_PM
++static int rt73_suspend(struct usb_interface *intf, pm_message_t state);
++static int rt73_resume(struct usb_interface *intf);
++#endif
+ 
+ struct usb_driver rtusb_driver = {
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)
+@@ -118,6 +122,10 @@ struct usb_driver rtusb_driver = {
+ 	.probe=usb_rtusb_probe,
+ 	.disconnect=usb_rtusb_disconnect,
+ 	.id_table=rtusb_usb_id,
++#ifdef CONFIG_PM
++	.suspend = rt73_suspend,
++	.resume = rt73_resume,
++#endif
+ 	};
+ 
+ 
+@@ -218,12 +226,25 @@ struct iw_statistics *rt73_get_wireless_stats(
+ }
+ #endif
+ 
++// must be called with usb dev semaphore held - bb
++static void disassocSTA(PRTMP_ADAPTER pAd)
++{
++	if (INFRA_ON(pAd) || ADHOC_ON(pAd)) {
++		// Set to immediately send the media disconnect event
++		MlmeEnqueue(pAd,
++					MLME_CNTL_STATE_MACHINE,
++					OID_802_11_DISASSOCIATE,
++					0,
++					NULL);
++		MlmeHandler(pAd);
++	}
++
++} /* End disassocSTA () */
++
+ VOID RTUSBHalt(
+ 	IN	PRTMP_ADAPTER	pAd,
+ 	IN  BOOLEAN         IsFree)
+ {
+-	MLME_DISASSOC_REQ_STRUCT DisReq;
+-	MLME_QUEUE_ELEM          MsgElem;
+ 	INT                      i;
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "--> RTUSBHalt\n");
+@@ -234,19 +255,7 @@ VOID RTUSBHalt(
+ 	//
+ 	if (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST))
+ 	{
+-		if (INFRA_ON(pAd))
+-		{
+-			COPY_MAC_ADDR(DisReq.Addr, pAd->PortCfg.Bssid);
+-			DisReq.Reason =  REASON_DISASSOC_STA_LEAVING;
+-
+-			MsgElem.Machine = ASSOC_STATE_MACHINE;
+-			MsgElem.MsgType = MT2_MLME_DISASSOC_REQ;
+-			MsgElem.MsgLen = sizeof(MLME_DISASSOC_REQ_STRUCT);
+-			memcpy(MsgElem.Msg, &DisReq, sizeof(MLME_DISASSOC_REQ_STRUCT));
+-
+-			MlmeDisassocReqAction(pAd, &MsgElem);
+-			RTMPusecDelay(1000);
+-		}
++		disassocSTA(pAd);
+ 
+         //
+ 		// Patch to fully turn off BBP, need to send a fake NULL frame.
+@@ -266,26 +275,11 @@ VOID RTUSBHalt(
+ 
+ 	RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS);
+ 
+-	// We want to wait until all pending receives and sends to the
+-	// device object. We cancel any
+-	// irps. Wait until sends and receives have stopped.
+-	//
+-	RTUSBCancelPendingIRPs(pAd);
+-
+-	RTUSBCleanUpMLMEWaitQueue(pAd);
+-	RTUSBCleanUpMLMEBulkOutQueue(pAd);
+-
+-    RTMPCancelTimer(&pAd->PortCfg.QuickResponeForRateUpTimer);
+-	RTMPCancelTimer(&pAd->RxAnt.RxAntDiversityTimer);
+-
+ 	// Free MLME stuff
+ 	MlmeHalt(pAd);
+ 
+     // Sleep 50 milliseconds so pending io might finish normally
+ 	RTMPusecDelay(50000);
+-
+-	// initialize table
+-	BssTableInit(&pAd->ScanTab);
+ 	RTMP_CLEAR_FLAGS(pAd);
+ 	OPSTATUS_CLEAR_FLAG(pAd, fOP_STATUS_INFRA_ON|fOP_STATUS_ADHOC_ON);
+ 	DBGPRINT(RT_DEBUG_TRACE, "<-- RTUSBHalt\n");
+@@ -344,6 +338,7 @@ VOID CMDHandler(
+ 					}
+ 					else
+ 					{
++						disassocSTA(pAd);
+ 						MlmeRadioOff(pAd);
+ 						// Update extra information
+ 						pAd->ExtraInfo = HW_RADIO_OFF;
+@@ -573,7 +568,7 @@ VOID CMDHandler(
+ 			{
+ 				INT 	Index;
+ 
+-		        DBGPRINT(RT_DEBUG_ERROR, "RT_OID_USB_RESET_BULK_OUT\n");
++		        DBGPRINT(RT_DEBUG_INFO, "RT_OID_USB_RESET_BULK_OUT\n");
+ 
+ 				RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_RESET_PIPE_IN_PROGRESS);
+ 
+@@ -583,7 +578,7 @@ VOID CMDHandler(
+ 
+ 				NICInitializeAsic(pAd);
+ 				//ReleaseAdapter(pAd, FALSE, TRUE);   // unlink urb releated tx context
+-				NICInitTransmit(pAd);
++				//NICInitTransmit(pAd);
+ 
+ 				RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_RESET_PIPE_IN_PROGRESS);
+ 
+@@ -611,7 +606,7 @@ VOID CMDHandler(
+ 			case RT_OID_USB_RESET_BULK_IN:
+ 		    {
+ 			    int	i;
+-				DBGPRINT(RT_DEBUG_ERROR, "!!!!!RT_OID_USB_RESET_BULK_IN\n");
++				DBGPRINT(RT_DEBUG_INFO, "!!!!!RT_OID_USB_RESET_BULK_IN\n");
+ 				RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_RESET_PIPE_IN_PROGRESS);
+ 				NICInitializeAsic(pAd);
+ 				//RTUSBWriteMACRegister(pAd, TXRX_CSR0, 0x025eb032); // ??
+@@ -712,6 +707,7 @@ VOID CMDHandler(
+ 			    }
+ 			    else
+                 {
++					disassocSTA(pAd);
+ 			        MlmeRadioOff(pAd);
+ 				    // Update extra information
+     			    pAd->ExtraInfo = SW_RADIO_OFF;
+@@ -800,7 +796,7 @@ VOID CMDHandler(
+ 			break;
+ 
+ 			case RT_OID_LINK_DOWN:
+-				DBGPRINT(RT_DEBUG_TRACE, "LinkDown(RT_OID_LINK_DOWN)\n");
++				DBGPRINT(RT_DEBUG_INFO, "LinkDown(RT_OID_LINK_DOWN)\n");
+ 				LinkDown(pAd, TRUE);
+ 			break;
+ 
+@@ -1341,47 +1337,9 @@ VOID CMDHandler(
+ 			default:
+ 			break;
+ 		}
+-
+-
+-		if (cmdqelmt->CmdFromNdis == TRUE)
+-		{
+-
+-			if ((cmdqelmt->command != OID_802_11_BSSID_LIST_SCAN) &&
+-				(cmdqelmt->command != RT_OID_802_11_BSSID) &&
+-				(cmdqelmt->command != OID_802_11_SSID) &&
+-				(cmdqelmt->command != OID_802_11_DISASSOCIATE))
+-			{
+-			}
+-
+-			if ((cmdqelmt->command != RT_OID_MULTI_READ_MAC) &&
+-				(cmdqelmt->command != RT_OID_VENDOR_READ_BBP) &&
+-#ifdef DBG
+-				(cmdqelmt->command != RT_OID_802_11_QUERY_HARDWARE_REGISTER) &&
+-#endif
+-				(cmdqelmt->command != RT_OID_USB_VENDOR_EEPROM_READ))
+-			{
+-#if 1
+-
+-				if (cmdqelmt->buffer != NULL){
+-					kfree(cmdqelmt->buffer);
+-				}
+-#endif
+-			}
+-#if 1
+-			if(cmdqelmt != NULL){
+-				kfree((PCmdQElmt)cmdqelmt);
+-			}
+-#endif
+-		}
+-		else{
+-			cmdqelmt->InUse = FALSE;
+-		}
+-
+-
++		RTUSBfreeCmdQElem(cmdqelmt);
+ 	}
+-
+-
+-}
++} /* End CMDHandler () */
+ 
+ #ifdef RT2X00DEBUGFS
+ /*
+@@ -1493,6 +1451,82 @@ static inline void rt73usb_open_debugfs(RTMP_ADAPTER *pAd){}
+ static inline void rt73usb_close_debugfs(RTMP_ADAPTER *pAd){}
+ #endif /* RT2X00DEBUGFS */
+ 
++#ifdef CONFIG_PM
++static inline int common_suspend(PRTMP_ADAPTER pAd)
++{
++	struct net_device *netdev;
++
++	if (!pAd) {
++		DBGPRINT(RT_DEBUG_ERROR, "-  %s: dev not specified\n", __FUNCTION__);
++		return -EINVAL;
++	}
++	/* lock the device pointers & shut up compiler under 2.6.26 */
++	if (down_interruptible(&pAd->usbdev_semaphore));
++
++	netdev = pAd->net_dev;
++	if (netif_running(netdev)) {
++		netif_stop_queue(netdev);
++
++		// need to send it first before USB go susped.
++		// without it system unable to reume back.
++		RTUSBStopRx(pAd);
++
++		disassocSTA(pAd);
++		RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS);
++		MlmeRadioOff(pAd);
++		RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS);
++	}
++	/* unlock the device pointers */
++	up(&(pAd->usbdev_semaphore));
++
++	DBGPRINT(RT_DEBUG_TRACE,"<-- common_suspend()\n");
++	return 0;
++
++} /* End common_suspend () */
++
++static inline int common_resume(PRTMP_ADAPTER pAd)
++{
++	struct net_device *netdev;
++
++	if (!pAd) {
++		DBGPRINT(RT_DEBUG_ERROR, "-  %s: dev not specified\n", __FUNCTION__);
++		return -EINVAL;
++	}
++	// Remember USB bus power was shut off.
++	NICResetFromError(pAd);
++
++	if (pAd->PortCfg.AuthMode == Ndis802_11AuthModeWPANone) {
++		AsicAddSharedKeyEntry(pAd,
++							0,
++							pAd->PortCfg.DefaultKeyId,
++							pAd->SharedKey[pAd->PortCfg.DefaultKeyId].CipherAlg,
++							pAd->SharedKey[pAd->PortCfg.DefaultKeyId].Key,
++							NULL,
++							NULL);
++	}
++	else {
++		AsicAddPairwiseKeyEntry(pAd,
++							pAd->PortCfg.Bssid,
++							pAd->PortCfg.DefaultKeyId,
++							pAd->SharedKey[pAd->PortCfg.DefaultKeyId].CipherAlg,
++							pAd->SharedKey[pAd->PortCfg.DefaultKeyId].Key,
++							NULL,
++							NULL);
++	}
++	netdev = pAd->net_dev;
++	if (netif_running(netdev)) {
++		MlmeRadioOn(pAd);
++		netif_carrier_on(netdev);
++		netif_wake_queue(netdev);
++	}
++	DBGPRINT(RT_DEBUG_TRACE,"<-- common_resume()\n");
++
++	return 0;
++
++} /* End common_resume () */
++
++#endif
++
+ static inline int common_probe(PRTMP_ADAPTER pAd)
+ {
+ 	//struct net_device   *netdev = pAd->net_dev;
+@@ -1669,8 +1703,8 @@ static int usb_rtusb_close(struct net_device *net_dev)
+ 	pAd->wait = NULL;
+ 	remove_wait_queue (&unlink_wakeup, &wait);
+ 
+-	/* lock the device pointers */
+-	down_interruptible(&pAd->usbdev_semaphore);
++	/* lock the device pointers & shut up compiler under 2.6.26 */
++	if (down_interruptible(&pAd->usbdev_semaphore));
+ 
+ 	RTUSBHalt(pAd, TRUE);
+ 
+@@ -1681,23 +1715,26 @@ static int usb_rtusb_close(struct net_device *net_dev)
+ 	return 0;
+ }
+ 
+-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+-INT MlmeThread(
+-    IN void * Context)
++int MlmeThread(void * Context)
+ {
+ 	PRTMP_ADAPTER	pAd = (PRTMP_ADAPTER)Context;
+ 
+-	DBGPRINT(RT_DEBUG_TRACE,"--> %s (2.4)\n", __FUNCTION__);
++	DBGPRINT(RT_DEBUG_TRACE,"--> %s\n", __FUNCTION__);
+ 
+-	daemonize();
+-	current->flags |= PF_NOFREEZE;
++	rt_daemonize("%s-Mlme", pAd->net_dev->name);
++	allow_signal(SIGTERM);		\
++	set_freezable();
+ 
+ 	/* Bail on any enabled signal */
+ 	while (down_interruptible(&pAd->mlme_semaphore) == 0)
+ 	{
++		if (try_to_freeze()) continue;
++
+ 		/* lock the device pointers , need to check if required*/
+ 		if (down_interruptible(&(pAd->usbdev_semaphore))) break;
+ 
++		RTMPDeQueuePackets(pAd);
++
+ 		// Always call Bulk routine, even reset bulk.
+ 		// The protectioon of rest bulk should be in BulkOut routine
+ 		RTUSBKickBulkOut(pAd);
+@@ -1726,19 +1763,22 @@ INT MlmeThread(
+ 	complete_and_exit (&pAd->mlmenotify, 0);
+ 
+ }
+-INT RTUSBCmdThread(
+-    IN void * Context)
++
++int RTUSBCmdThread(void * Context)
+ {
+ 	PRTMP_ADAPTER	pAd = (PRTMP_ADAPTER)Context;
+ 
+-	DBGPRINT(RT_DEBUG_TRACE,"--> %s (2.4)\n", __FUNCTION__);
++	DBGPRINT(RT_DEBUG_TRACE,"--> %s\n", __FUNCTION__);
+ 
+-	daemonize();
+-	current->flags |= PF_NOFREEZE;
++	rt_daemonize("%s-Cmd", pAd->net_dev->name);
++	allow_signal(SIGTERM);		\
++	set_freezable();
+ 
+ 	/* Bail on any enabled signal */
+ 	while (down_interruptible(&pAd->RTUSBCmd_semaphore) == 0)
+ 	{
++		if (try_to_freeze()) continue;
++
+ 		/* lock the device pointers , need to check if required*/
+ 		if (down_interruptible(&(pAd->usbdev_semaphore))) break;
+ 		CMDHandler(pAd);
+@@ -1766,6 +1806,26 @@ INT RTUSBCmdThread(
+ 
+ }
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
++
++#ifdef CONFIG_PM
++static int rt73_pm_callback(struct pm_dev *pdev, pm_request_t rqst, void *data)
++{
++	DBGPRINT(RT_DEBUG_TRACE, "--> %s\n", __FUNCTION__);
++
++	switch (rqst) {
++		case PM_SUSPEND:
++			return common_suspend((PRTMP_ADAPTER)data);
++
++		case PM_RESUME:
++			return common_resume((PRTMP_ADAPTER)data);
++	}
++	DBGPRINT(RT_DEBUG_TRACE, "<-- %s %s\n",
++			__FUNCTION__, data? "ok": "dev not specified");
++	return data? 0: -EINVAL;
++}
++#endif
++
+ static void *usb_rtusb_probe(struct usb_device *dev, UINT interface,
+ 				const struct usb_device_id *id_table)
+ {
+@@ -1886,10 +1946,21 @@ static void *usb_rtusb_probe(struct usb_device *dev, UINT interface,
+         as = ifp->altsetting + ifp->act_altsetting;
+         ep = as->endpoint;
+ 
+-        pAd->BulkOutMaxPacketSize = (USHORT)ep[i].wMaxPacketSize;
+-        DBGPRINT(RT_DEBUG_TRACE, "BulkOutMaxPacketSize  %d\n", pAd->BulkOutMaxPacketSize);
+-
++        pAd->BulkOutMaxPacketSize = le16_to_cpu(ep[i].wMaxPacketSize);
++
++		// Workaround for EDIMAX 7318USg suggested by Ivo in forum
++		if (pAd->BulkOutMaxPacketSize == 0) {
++			pAd->BulkOutMaxPacketSize = 1;
++			DBGPRINT(RT_DEBUG_WARN,
++					"-  %s: Device reports zero length wMaxPacketSize. "
++					"Using workaround.\n",
++					__FUNCTION__);
++			KPRINT(KERN_WARNING, "Device reports zero length wMaxPacketSize. "
++					"Using workaround.\n");
++		}
+ 
++        DBGPRINT(RT_DEBUG_INFO, "BulkOutMaxPacketSize %d\n",
++				pAd->BulkOutMaxPacketSize);
+ 	}
+ 
+ 	res = register_netdev(netdev);
+@@ -1900,6 +1971,14 @@ static void *usb_rtusb_probe(struct usb_device *dev, UINT interface,
+ 	res = common_probe(pAd);
+ 	if (res) goto out;
+ 
++#ifdef CONFIG_PM
++	/* register power management */
++	pAd->pmdev = pm_register(PM_USB_DEV, 0, rt73_pm_callback);
++	if (pAd->pmdev) {
++		pAd->pmdev->data = pAd;
++	}
++#endif
++
+ 	DBGPRINT(RT_DEBUG_TRACE, "<-- %s: adapter present\n", __FUNCTION__);
+ 	return pAd;
+ 
+@@ -1957,90 +2036,22 @@ static void usb_rtusb_disconnect(struct usb_device *dev, void *ptr)
+ }
+ 
+ #else	// Kernel version > 2.5.0
+-INT MlmeThread(
+-    IN void * Context)
+-{
+-	PRTMP_ADAPTER	pAd = (PRTMP_ADAPTER)Context;
+-
+-	DBGPRINT(RT_DEBUG_TRACE,"--> %s (2.6)\n", __FUNCTION__);
+-
+-	daemonize("rt73Mlme");
+-	allow_signal(SIGTERM);
+-	current->flags |= PF_NOFREEZE;
+-
+-	/* Bail on any enabled signal */
+-	while (down_interruptible(&pAd->mlme_semaphore) == 0)
+-	{
+-		/* lock the device pointers , need to check if required*/
+-		if (down_interruptible(&(pAd->usbdev_semaphore))) break;
+ 
+-		// Always call Bulk routine, even reset bulk.
+-		// The protectioon of rest bulk should be in BulkOut routine
+-		RTUSBKickBulkOut(pAd);
+-		RTUSBDequeueRxPackets(pAd);
+-		MlmeHandler(pAd);
+-
+-		/* unlock the device pointers */
+-		up(&(pAd->usbdev_semaphore));
+-	}
+-
+-	/* notify the exit routine that we're actually exiting now
+-	 *
+-	 * complete()/wait_for_completion() is similar to up()/down(),
+-	 * except that complete() is safe in the case where the structure
+-	 * is getting deleted in a parallel mode of execution (i.e. just
+-	 * after the down() -- that's necessary for the thread-shutdown
+-	 * case.
+-	 *
+-	 * complete_and_exit() goes even further than this -- it is safe in
+-	 * the case that the thread of the caller is going away (not just
+-	 * the structure) -- this is necessary for the module-remove case.
+-	 * This is important in preemption kernels, which transfer the flow
+-	 * of execution immediately upon a complete().
+-	 */
+-	DBGPRINT(RT_DEBUG_TRACE, "<-- MlmeThread\n");
+-	complete_and_exit (&pAd->mlmenotify, 0);
++#ifdef CONFIG_PM
++static int rt73_suspend(struct usb_interface *intf, pm_message_t state)
++{
++	DBGPRINT(RT_DEBUG_TRACE,"---> rt73_suspend()\n");
++	printk(">>>>>>>>>>>>>>>>>> suspend rt73\n");
++	return common_suspend((PRTMP_ADAPTER)usb_get_intfdata(intf));
+ }
+ 
+-INT RTUSBCmdThread(
+-    IN void * Context)
++static int rt73_resume(struct usb_interface *intf)
+ {
+-	PRTMP_ADAPTER	pAd = (PRTMP_ADAPTER)Context;
+-
+-	DBGPRINT(RT_DEBUG_TRACE,"--> %s (2.6)\n", __FUNCTION__);
+-
+-	daemonize("rt73Cmd");
+-	allow_signal(SIGTERM);
+-	current->flags |= PF_NOFREEZE;
+-
+-	/* Bail on any enabled signal */
+-	while (down_interruptible(&pAd->RTUSBCmd_semaphore) == 0)
+-	{
+-		/* lock the device pointers , need to check if required*/
+-		if (down_interruptible(&(pAd->usbdev_semaphore))) break;
+-		CMDHandler(pAd);
+-
+-		/* unlock the device pointers */
+-		up(&(pAd->usbdev_semaphore));
+-	}
+-
+-	/* notify the exit routine that we're actually exiting now
+-	 *
+-	 * complete()/wait_for_completion() is similar to up()/down(),
+-	 * except that complete() is safe in the case where the structure
+-	 * is getting deleted in a parallel mode of execution (i.e. just
+-	 * after the down() -- that's necessary for the thread-shutdown
+-	 * case.
+-	 *
+-	 * complete_and_exit() goes even further than this -- it is safe in
+-	 * the case that the thread of the caller is going away (not just
+-	 * the structure) -- this is necessary for the module-remove case.
+-	 * This is important in preemption kernels, which transfer the flow
+-	 * of execution immediately upon a complete().
+-	 */
+-	DBGPRINT(RT_DEBUG_TRACE,"<-- %s\n", __FUNCTION__);
+-	complete_and_exit (&pAd->cmdnotify, 0);
++	DBGPRINT(RT_DEBUG_TRACE,"---> rt73_resume()\n");
++	printk(">>>>>>>>>>>>>>>>>> resume rt73\n");
++	return common_resume((PRTMP_ADAPTER)usb_get_intfdata(intf));
+ }
++#endif
+ 
+ static int usb_rtusb_probe (struct usb_interface *intf,
+ 					  const struct usb_device_id *id)
+@@ -2160,7 +2171,7 @@ static int usb_rtusb_probe (struct usb_interface *intf,
+ 		}
+ 
+ 		sprintf(pAd->net_dev->name, slot_name, i);
+-		DBGPRINT(RT_DEBUG_ERROR, "usb device name %s\n", pAd->net_dev->name);
++		DBGPRINT(RT_DEBUG_INFO, "usb device name %s\n", pAd->net_dev->name);
+ 
+ 
+         /* get the active interface descriptor */
+@@ -2170,9 +2181,21 @@ static int usb_rtusb_probe (struct usb_interface *intf,
+         endpoint = &iface_desc->endpoint[i].desc;
+ 
+         /* get Max Packet Size from endpoint */
+-        pAd->BulkOutMaxPacketSize = (USHORT)endpoint->wMaxPacketSize;
+-        DBGPRINT(RT_DEBUG_TRACE, "BulkOutMaxPacketSize  %d\n", pAd->BulkOutMaxPacketSize);
++        pAd->BulkOutMaxPacketSize = le16_to_cpu(endpoint->wMaxPacketSize);
++
++		// Workaround for EDIMAX 7318USg suggested by Ivo in forum
++		if (pAd->BulkOutMaxPacketSize == 0) {
++			pAd->BulkOutMaxPacketSize = 1;
++			DBGPRINT(RT_DEBUG_WARN,
++					"-  %s: Device reports zero length wMaxPacketSize. "
++					"Using workaround.\n",
++					__FUNCTION__);
++			KPRINT(KERN_WARNING, "Device reports zero length wMaxPacketSize. "
++					"Using workaround.\n");
++		}
+ 
++        DBGPRINT(RT_DEBUG_INFO, "BulkOutMaxPacketSize  %d\n",
++				pAd->BulkOutMaxPacketSize);
+ 	}
+ 
+ 	res = register_netdev(netdev);
+@@ -2248,8 +2271,8 @@ static void usb_rtusb_disconnect(struct usb_interface *intf)
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE,"<-- %s\n", __FUNCTION__);
+ 	KPRINT(KERN_INFO, "disconnected\n");
+-
+ }
++
+ #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0) */
+ 
+ 
+@@ -2280,7 +2303,6 @@ static int __init rt73_wlan_opt(char *str)
+ 	}
+ 	return 0;
+ }
+-
+ //
+ // Driver module unload function
+ //
+diff --git a/drivers/net/wireless/rt73/rtmp_type.h b/drivers/net/wireless/rt73/rtmp_type.h
+index bb3f5df..53ffee3 100644
+--- a/drivers/net/wireless/rt73/rtmp_type.h
++++ b/drivers/net/wireless/rt73/rtmp_type.h
+@@ -38,8 +38,10 @@
+ // Put platform dependent declaration here
+ // For example, linux type definition
+ 
+-#ifdef RTMP_EMBEDDED
++#if defined(PPC) || defined(ARM)
+ #define ALIGN_USB_RCV  __attribute__ ((aligned(2)))
++#elif defined(mips)
++#define ALIGN_USB_RCV  __attribute__ ((aligned(4)))
+ #else
+ #define ALIGN_USB_RCV
+ #endif
+diff --git a/drivers/net/wireless/rt73/rtusb_bulk.c b/drivers/net/wireless/rt73/rtusb_bulk.c
+index 67e98ff..2e7f769 100644
+--- a/drivers/net/wireless/rt73/rtusb_bulk.c
++++ b/drivers/net/wireless/rt73/rtusb_bulk.c
+@@ -53,6 +53,28 @@ void RTusb_fill_bulk_urb (struct urb *pUrb,
+ }
+ 
+ // ************************ Completion Func ************************ //
++/*
++	========================================================================
++
++	Routine Description:
++		This routine processes data and RTS/CTS frame completions.
++		If the current frame has transmitted OK and there are more fragments,
++		then schedule the next frame fragment.
++
++		If there's been an error, empty any remaining fragments for that
++		queue from the tx ring.
++
++	Arguments:
++		pUrb		Our URB
++		pt_regs		Historical
++
++	Return Value:
++		void
++
++	Note:
++		ALL (i.e. we've done a submit_urb) in-flight URBS are posted complete.
++	========================================================================
++*/
+ VOID RTUSBBulkOutDataPacketComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ {
+ 	PTX_CONTEXT 	pTxContext;
+@@ -71,7 +93,6 @@ VOID RTUSBBulkOutDataPacketComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ 
+ 	// Store BulkOut PipeId
+ 	BulkOutPipeId = pTxContext->BulkOutPipeId;
+-	pAd->TxRingTotalNumber[BulkOutPipeId]--;// sync. to PendingTx
+ 	pAd->BulkOutDataOneSecCount++;
+ 
+ 	switch (status) {
+@@ -80,9 +101,11 @@ VOID RTUSBBulkOutDataPacketComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ 			{
+ 				pAd->Counters.GoodTransmits++;
+ 				FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
+-
+-				if (!skb_queue_empty(&pAd->SendTxWaitQueue[BulkOutPipeId])) {
+-					RTMPDeQueuePacket(pAd, BulkOutPipeId);
++				pAd->TxRingTotalNumber[BulkOutPipeId]--;// sync. to PendingTx
++				pTxContext = nextTxContext(pAd, BulkOutPipeId);
++				if (pTxContext->bWaitingBulkOut == TRUE) {
++					RTUSB_SET_BULK_FLAG(pAd,
++							(fRTUSB_BULK_OUT_DATA_NORMAL << BulkOutPipeId));
+ 				}
+ 			}
+ 			else {
+@@ -92,18 +115,18 @@ VOID RTUSBBulkOutDataPacketComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ 					(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET)))
+ 				{
+ 					FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
++					pAd->TxRingTotalNumber[BulkOutPipeId]--;// sync. to PendingTx
+ 
+ 					// Indicate next one is frag data which has highest priority
+-					RTUSB_SET_BULK_FLAG(pAd, (fRTUSB_BULK_OUT_DATA_FRAG << BulkOutPipeId));
++					RTUSB_SET_BULK_FLAG(pAd,
++							(fRTUSB_BULK_OUT_DATA_FRAG << BulkOutPipeId));
+ 				}
+ 				else {
+-					while (pTxContext->LastOne != TRUE) {
++					do {
+ 						FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
+-						pTxContext = &(pAd->TxContext[BulkOutPipeId][pAd->NextBulkOutIndex[BulkOutPipeId]]);
+-						atomic_dec(&pAd->PendingTx);
+ 						pAd->TxRingTotalNumber[BulkOutPipeId]--;// sync. to PendingTx
+-					}
+-					FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
++						pTxContext = nextTxContext(pAd, BulkOutPipeId);
++					} while (pTxContext->InUse != FALSE);
+ 				}
+ 			}
+ 			RTUSBMlmeUp(pAd);
+@@ -115,18 +138,20 @@ VOID RTUSBBulkOutDataPacketComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ 		case -EPROTO:			// unplugged = -71
+ 			DBGPRINT(RT_DEBUG_ERROR,"=== %s: shutdown status=%d\n",
+ 					__FUNCTION__, status);
++			do {
++				FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
++				pAd->TxRingTotalNumber[BulkOutPipeId]--;// sync. to PendingTx
++				pTxContext = nextTxContext(pAd, BulkOutPipeId);
++			} while (pTxContext->InUse != FALSE);
+ 			break;
+ 
+ 		default:
+-#if 1	// STATUS_OTHER
+-			while (pTxContext->LastOne != TRUE) {
++#if 1	// TODO: Think about if we really want to do this reset - bb
++			do {
+ 				FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
+-				pAd->TxRingTotalNumber[BulkOutPipeId]--;    // sync. to PendingTx
+-				pTxContext = &(pAd->TxContext[BulkOutPipeId][pAd->NextBulkOutIndex[BulkOutPipeId]]);
+-				atomic_dec(&pAd->PendingTx);
+-			}
+-			FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
+-			pAd->TxRingTotalNumber[BulkOutPipeId]--;    // sync. to PendingTx
++				pAd->TxRingTotalNumber[BulkOutPipeId]--;// sync. to PendingTx
++				pTxContext = nextTxContext(pAd, BulkOutPipeId);
++			} while (pTxContext->InUse != FALSE);
+ 
+ 			if ((!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RESET_IN_PROGRESS)) &&
+ 				(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)) &&
+@@ -140,17 +165,6 @@ VOID RTUSBBulkOutDataPacketComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ #endif
+ 			break;
+ 	}
+-	pTxContext = &(pAd->TxContext[BulkOutPipeId][pAd->NextBulkOutIndex[BulkOutPipeId]]);
+-	//
+-	// bInUse = TRUE, means some process are filling TX data, after that must turn on bWaitingBulkOut
+-	// bWaitingBulkOut = TRUE, means the TX data are waiting for bulk out.
+-	//
+-	if ((pTxContext->bWaitingBulkOut == TRUE) &&
+-	!RTUSB_TEST_BULK_FLAG(pAd, (fRTUSB_BULK_OUT_DATA_FRAG << BulkOutPipeId)))
+-	{
+-		// Indicate There is data avaliable
+-		RTUSB_SET_BULK_FLAG(pAd, (fRTUSB_BULK_OUT_DATA_NORMAL << BulkOutPipeId));
+-	}
+ 	NdisAcquireSpinLock(&pAd->BulkOutLock[BulkOutPipeId]);
+ 	pAd->BulkOutPending[BulkOutPipeId] = FALSE;
+ 	NdisReleaseSpinLock(&pAd->BulkOutLock[BulkOutPipeId]);
+@@ -178,8 +192,6 @@ VOID RTUSBBulkOutNullFrameComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ 
+ 	switch (status) {
+ 		case 0:					// OK
+-		// Don't worry about the queue is empty or not, this function will check itself
+-			RTMPDeQueuePacket(pAd, 0);
+ 			RTUSBMlmeUp(pAd);
+ 			break;
+ 
+@@ -234,8 +246,6 @@ VOID RTUSBBulkOutRTSFrameComplete(purbb_t pUrb, struct pt_regs *pt_regs)
+ 
+ 	switch (status) {
+ 		case 0:					// OK
+-		// Don't worry about the queue is empty or not, this function will check itself
+-			RTMPDeQueuePacket(pAd, pRTSContext->BulkOutPipeId);
+ 			RTUSBMlmeUp(pAd);
+ 			break;
+ 
+@@ -367,8 +377,6 @@ VOID RTUSBBulkOutPsPollComplete(purbb_t pUrb,struct pt_regs *pt_regs)
+ 
+ 	switch (status) {
+ 		case 0:					// OK
+-		// Don't worry about the queue is empty or not, this function will check itself
+-			RTMPDeQueuePacket(pAd, 0);
+ 			RTUSBMlmeUp(pAd);
+ 			break;
+ 
+@@ -519,12 +527,16 @@ VOID	RTUSBInitRxDesc(
+ 	========================================================================
+ 
+ 	Routine Description:
++		Admit one URB for transmit. This routine submits one URB at a time,
++		even though there may be multiple entries in the Tx ring.
+ 
+ 	Arguments:
+ 
+ 	Return Value:
+ 
+ 	Note:
++		TODO: Make sure Ralink's controller doesn't blow up before we try
++		to change this to enqueue multiple URBs - bb.
+ 
+ 	========================================================================
+ */
+@@ -559,8 +571,9 @@ VOID	RTUSBBulkOutDataPacket(
+ 
+ 	if (pTxContext->bWaitingBulkOut	!= TRUE)
+ 	{
+-		DBGPRINT(RT_DEBUG_ERROR, "RTUSBBulkOutDataPacket failed, pTxContext->bWaitingBulkOut != TRUE, Index %d, NextBulkOutIndex %d\n",
+-			Index, pAd->NextBulkOutIndex[BulkOutPipeId]);
++		DBGPRINT(RT_DEBUG_ERROR, "RTUSBBulkOutDataPacket failed, "
++				"bWaitingBulkOut != TRUE, Index %d, NextBulkOutIndex %d\n",
++				Index, pAd->NextBulkOutIndex[BulkOutPipeId]);
+ 		NdisAcquireSpinLock(&pAd->BulkOutLock[BulkOutPipeId]);
+ 		pAd->BulkOutPending[BulkOutPipeId] = FALSE;
+ 		NdisReleaseSpinLock(&pAd->BulkOutLock[BulkOutPipeId]);
+@@ -574,34 +587,33 @@ VOID	RTUSBBulkOutDataPacket(
+ 		// We will break it when the Key was Zero on RTUSBHardTransmit
+ 		// And this will cause deadlock that the TxContext always InUse.
+ 		//
++		DBGPRINT(RT_DEBUG_ERROR, "RTUSBBulkOutDataPacket failed, "
++				"BulkOutSize==0\n");
+ 		NdisAcquireSpinLock(&pAd->BulkOutLock[BulkOutPipeId]);
+ 
+-		pTxContext->InUse	   = FALSE;
+-		pTxContext->LastOne    = FALSE;
+-		pTxContext->IRPPending = FALSE;
+-		pTxContext->bWaitingBulkOut = FALSE;
+-		pTxContext->BulkOutSize= 0;
+-		pAd->NextBulkOutIndex[BulkOutPipeId] = (pAd->NextBulkOutIndex[BulkOutPipeId] + 1) % TX_RING_SIZE;
++		FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
++		pAd->TxRingTotalNumber[BulkOutPipeId]--;    // sync. to PendingTx
+ 		pAd->BulkOutPending[BulkOutPipeId] = FALSE;
+ 		NdisReleaseSpinLock(&pAd->BulkOutLock[BulkOutPipeId]);
+ 
+ 		return;
+ 	}
+-	// FIXME totally hosed logic - bb
+ 	else if (!OPSTATUS_TEST_FLAG(pAd, fOP_STATUS_MEDIA_STATE_CONNECTED) &&
+ 			!(pAd->PortCfg.BssType == BSS_MONITOR && pAd->bAcceptRFMONTx==TRUE))
+ 	{
+ 		//
+-		// Since there is no connection, so we need to empty the Tx Bulk out Ring.
++		// There is no connection, so we need to empty the Tx Bulk out Ring.
+ 		//
+-		while (atomic_read(&pAd->PendingTx) > 0)
+-		{
+-			DBGPRINT(RT_DEBUG_ERROR, "RTUSBBulkOutDataPacket failed, since NdisMediaStateDisconnected discard NextBulkOutIndex %d, NextIndex = %d\n",
+-				pAd->NextBulkOutIndex[BulkOutPipeId], pAd->NextTxIndex[BulkOutPipeId]);
++		DBGPRINT(RT_DEBUG_ERROR, "RTUSBBulkOutDataPacket failed, "
++				"Media Disconnected NextBulkOutIndex %d, NextIndex=%d\n",
++				pAd->NextBulkOutIndex[BulkOutPipeId],
++				pAd->NextTxIndex[BulkOutPipeId]);
+ 
++		while (pTxContext->InUse != FALSE)
++		{
+ 			FREE_TX_RING(pAd, BulkOutPipeId, pTxContext);
+ 			pAd->TxRingTotalNumber[BulkOutPipeId]--;    // sync. to PendingTx
+-			pTxContext = &(pAd->TxContext[BulkOutPipeId][pAd->NextBulkOutIndex[BulkOutPipeId]]);
++			pTxContext = nextTxContext(pAd, BulkOutPipeId);
+ 		}
+ 
+ 		NdisAcquireSpinLock(&pAd->BulkOutLock[BulkOutPipeId]);
+@@ -611,7 +623,6 @@ VOID	RTUSBBulkOutDataPacket(
+ 		return;
+ 	}
+ 
+-
+ 	// Init Tx context descriptor
+ 	RTUSBInitTxDesc(pAd, pTxContext, BulkOutPipeId, RTUSBBulkOutDataPacketComplete);
+ 
+@@ -621,14 +632,15 @@ VOID	RTUSBBulkOutDataPacket(
+ 	pUrb = pTxContext->pUrb;
+ 	if((ret = rtusb_submit_urb(pUrb))!=0)
+ 	{
+-		DBGPRINT(RT_DEBUG_ERROR, "Submit Tx URB failed %d\n", ret);
++		DBGPRINT(RT_DEBUG_ERROR, "-  %s: Submit Tx URB failed %d\n",
++				__FUNCTION__, ret);
+ 		return;
+ 	}
+ 	else {
+ 		atomic_inc(&pAd->PendingTx);
+ 	}
+ 
+-	DBGPRINT(RT_DEBUG_TRACE, "<---RTUSBBulkOutDataPacket \n");
++	DBGPRINT(RT_DEBUG_TRACE, "<-- RTUSBBulkOutDataPacket \n");
+ 	return;
+ }
+ 
+@@ -700,6 +712,7 @@ VOID	RTUSBBulkOutNullFrame(
+ 	Return Value:
+ 
+ 	Note:
++		Apparently not called - bb.
+ 
+ 	========================================================================
+ */
+@@ -1111,6 +1124,39 @@ VOID	RTUSBKickBulkOut(
+ 
+ 	========================================================================
+ */
++VOID	RTUSBCleanUpDataBulkInQueue(
++	IN	PRTMP_ADAPTER	pAd)
++{
++	int			i = 0;
++
++	DBGPRINT(RT_DEBUG_TRACE, "--> %s: %d PendingRx left\n",
++			__FUNCTION__, atomic_read(&pAd->PendingRx));
++
++	do {
++		PRX_CONTEXT pRxContext = &pAd->RxContext[i];
++
++		pRxContext->InUse = FALSE;
++		atomic_set(&pRxContext->IrpLock, IRPLOCK_COMPLETED);
++		pRxContext->IRPPending	= FALSE;
++	} while (++i < RX_RING_SIZE);
++
++	DBGPRINT(RT_DEBUG_TRACE, "<-- RTUSBCleanUpDataBulkInQueue\n");
++
++} /* End RTUSBCleanUpDataBulkInQueue () */
++
++/*
++	========================================================================
++
++	Routine Description:
++
++	Arguments:
++
++	Return Value:
++
++	Note:
++
++	========================================================================
++*/
+ VOID	RTUSBCleanUpDataBulkOutQueue(
+ 	IN	PRTMP_ADAPTER	pAd)
+ {
+@@ -1118,7 +1164,7 @@ VOID	RTUSBCleanUpDataBulkOutQueue(
+ 	PTX_CONTEXT 	pTxContext;
+ 	unsigned long			flags;
+ 
+-	DBGPRINT(RT_DEBUG_TRACE, "--->CleanUpDataBulkOutQueue\n");
++	DBGPRINT(RT_DEBUG_TRACE, "--->RTUSBCleanUpDataBulkOutQueue\n");
+ 
+ 	for (Idx = 0; Idx < 4; Idx++)
+ 	{
+@@ -1135,7 +1181,7 @@ VOID	RTUSBCleanUpDataBulkOutQueue(
+ 		NdisReleaseSpinLock(&pAd->BulkOutLock[Idx]);
+ 	}
+ 
+-	DBGPRINT(RT_DEBUG_TRACE, "<---CleanUpDataBulkOutQueue\n");
++	DBGPRINT(RT_DEBUG_TRACE, "<---RTUSBCleanUpDataBulkOutQueue\n");
+ }
+ 
+ /*
+@@ -1176,6 +1222,28 @@ VOID	RTUSBCleanUpMLMEBulkOutQueue(
+ 	DBGPRINT(RT_DEBUG_TRACE, "<---%s\n", __FUNCTION__);
+ }
+ 
++VOID	RTUSBwaitRxDone(
++	IN	PRTMP_ADAPTER	pAd)
++{
++	int i;
++
++	for (i = 0; atomic_read(&pAd->PendingRx) > 0 && i < 25; i++) {
++		msleep(UNLINK_TIMEOUT_MS);
++	}
++
++} /* End RTUSBwaitRxDone () */
++
++VOID	RTUSBwaitTxDone(
++	IN	PRTMP_ADAPTER	pAd)
++{
++	int i;
++
++	for (i = 0; atomic_read(&pAd->PendingTx) > 0 && i < 25; i++) {
++		msleep(UNLINK_TIMEOUT_MS);
++	}
++
++} /* End RTUSBwaitTxDone () */
++
+ /*
+ 	========================================================================
+ 
+@@ -1223,9 +1291,7 @@ VOID	RTUSBCancelPendingBulkInIRP(
+ #endif
+ 
+ 	// maybe wait for cancellations to finish.
+-	for (i = 0; atomic_read(&pAd->PendingRx) > 0 && i < 25; i++) {
+-		msleep(UNLINK_TIMEOUT_MS);
+-	}
++	RTUSBwaitRxDone(pAd);
+ 	pAd->CurRxBulkInIndex = pAd->NextRxBulkInIndex = 0;
+ 	DBGPRINT(RT_DEBUG_TRACE, "<-- %s: %d PendingRx left\n",
+ 			__FUNCTION__, atomic_read(&pAd->PendingRx));
+@@ -1339,9 +1405,7 @@ VOID	RTUSBCancelPendingBulkOutIRP(
+ 	}
+ 
+ 	// maybe wait for cancellations to finish.
+-	for (i = 0; atomic_read(&pAd->PendingTx) > 0 && i < 25; i++) {
+-		msleep(UNLINK_TIMEOUT_MS);
+-	}
++	RTUSBwaitTxDone(pAd);
+ 	DBGPRINT(RT_DEBUG_TRACE, "<-- %s: %d PendingTx left\n",
+ 			__FUNCTION__, atomic_read(&pAd->PendingTx));
+ }
+@@ -1365,4 +1429,3 @@ VOID	RTUSBCancelPendingIRPs(
+ 	RTUSBCancelPendingBulkInIRP(pAd);
+ 	RTUSBCancelPendingBulkOutIRP(pAd);
+ }
+-
+diff --git a/drivers/net/wireless/rt73/rtusb_data.c b/drivers/net/wireless/rt73/rtusb_data.c
+index ea083b4..9dbe1c2 100644
+--- a/drivers/net/wireless/rt73/rtusb_data.c
++++ b/drivers/net/wireless/rt73/rtusb_data.c
+@@ -156,7 +156,6 @@ NDIS_STATUS	RTMPSendPacket(
+ 	NDIS_STATUS 	Status = NDIS_STATUS_SUCCESS;
+ 	struct sk_buff_head	*pTxQueue;
+ 	UCHAR			PsMode;
+-	unsigned long flags;
+ 
+ 	DBGPRINT(RT_DEBUG_INFO, "====> RTMPSendPacket\n");
+ 
+@@ -174,9 +173,7 @@ NDIS_STATUS	RTMPSendPacket(
+ 	if (pSkb && pAd->PortCfg.BssType == BSS_MONITOR &&
+ 		   pAd->bAcceptRFMONTx == TRUE)
+ 	{
+-		NdisAcquireSpinLock(&pAd->SendTxWaitQueueLock[QID_AC_BE]);
+ 		skb_queue_tail(&pAd->SendTxWaitQueue[QID_AC_BE], pSkb);
+-		NdisReleaseSpinLock(&pAd->SendTxWaitQueueLock[QID_AC_BE]);
+ 		return (NDIS_STATUS_SUCCESS);
+ 	}
+ 
+@@ -286,9 +283,6 @@ NDIS_STATUS	RTMPSendPacket(
+ 
+ 	RTMP_SET_PACKET_UP(pSkb, UserPriority);
+ 
+-	// Make sure SendTxWait queue resource won't be used by other threads
+-	NdisAcquireSpinLock(&pAd->SendTxWaitQueueLock[QueIdx]);
+-
+ 	pTxQueue = &pAd->SendTxWaitQueue[QueIdx];
+ 
+ 	//
+@@ -313,7 +307,8 @@ NDIS_STATUS	RTMPSendPacket(
+ 		PsMode = PWR_ACTIVE;		// Faked
+ 		if (PsMode == PWR_ACTIVE)
+ 		{
+-			DBGPRINT(RT_DEBUG_INFO,"Ad-Hoc -> Enqueue one frame\n");
++			DBGPRINT(RT_DEBUG_INFO,"-  %s(Ad-Hoc) Enqueue one frame\n",
++					__FUNCTION__);
+ 
+ 			// Enqueue Ndis packet to end of Tx wait queue
+ 			skb_queue_tail(pTxQueue, pSkb);
+@@ -323,11 +318,8 @@ NDIS_STATUS	RTMPSendPacket(
+ #endif
+ 		}
+ 	}
+-
+-	NdisReleaseSpinLock(&pAd->SendTxWaitQueueLock[QueIdx]);
+-
+ 	return (Status);
+-}
++} /* End RTMPSendPacket () */
+ 
+ /*
+ 	========================================================================
+@@ -351,7 +343,7 @@ INT RTMPSendPackets(
+ {
+ 	PRTMP_ADAPTER	pAd = net_dev->priv;
+ 	NDIS_STATUS 	Status = NDIS_STATUS_SUCCESS;
+-	INT 			Index;
++	//INT 			Index;
+ 
+ 	DBGPRINT(RT_DEBUG_INFO, "===> RTMPSendPackets\n");
+ 
+@@ -388,27 +380,7 @@ INT RTMPSendPackets(
+ 			return 0;
+ 		}
+ 	}
+-
+-	// Dequeue one frame from SendTxWait queue and process it
+-	// There are two place calling dequeue for TX ring.
+-	// 1. Here, right after queueing the frame.
+-	// 2. At the end of TxRingTxDone service routine.
+-	if ((!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS)) &&
+-		(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF)) &&
+-		(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RESET_IN_PROGRESS)) &&
+-		(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)))
+-	{
+-		for (Index = 0; Index < 4; Index++)
+-		{
+-			if(!skb_queue_empty(&pAd->SendTxWaitQueue[Index]))
+-			{
+-				RTMPDeQueuePacket(pAd, Index);
+-			}
+-		}
+-	}
+-
+-	// Kick bulk out
+-	RTUSBKickBulkOut(pAd);
++	RTUSBMlmeUp(pAd);
+ 
+ 	return 0;
+ }
+@@ -455,10 +427,6 @@ NDIS_STATUS RTUSBHardTransmit(
+ //	PUCHAR			pSrc;
+ 	PTX_CONTEXT		pTxContext;
+ 	PTXD_STRUC		pTxD;
+-#ifdef BIG_ENDIAN
+-	PTXD_STRUC		pDestTxD;
+-	TXD_STRUC		TxD;
+-#endif
+ //	PURB			pUrb;
+ 	BOOLEAN			StartOfFrame;
+ 	BOOLEAN			bEAPOLFrame;
+@@ -484,6 +452,7 @@ NDIS_STATUS RTUSBHardTransmit(
+ 	PUCHAR			pWirelessPacket;
+ 	ULONG			NextMpduSize;
+ 	BOOLEAN			bRTS_CTSFrame = FALSE;
++	unsigned long flags;	// For 'Ndis' spin lock
+ 
+     if ((pAd->PortCfg.bIEEE80211H == 1) && (pAd->PortCfg.RadarDetect.RDMode != RD_NORMAL_MODE))
+     {
+@@ -516,14 +485,7 @@ NDIS_STATUS RTUSBHardTransmit(
+ 			pAd->NextTxIndex[QueIdx] = 0;
+ 		}
+ 
+-#ifndef BIG_ENDIAN
+ 		pTxD  = (PTXD_STRUC) &pTxContext->TransferBuffer->TxDesc;
+-#else
+-		pDestTxD = (PTXD_STRUC) &pTxContext->TransferBuffer->TxDesc;
+-		TxD = *pDestTxD;
+-		pTxD = &TxD;
+-		RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-#endif
+ 		memset(pTxD, 0, sizeof(TXD_STRUC));
+ 		pWirelessPacket = pTxContext->TransferBuffer->WirelessPacket;
+ 		memcpy( pWirelessPacket, pSkb->data, pSkb->len );
+@@ -863,14 +825,7 @@ NDIS_STATUS RTUSBHardTransmit(
+ 			pAd->NextTxIndex[QueIdx] = 0;
+ 		}
+ 
+-#ifndef BIG_ENDIAN
+ 		pTxD  = (PTXD_STRUC) &pTxContext->TransferBuffer->TxDesc;
+-#else
+-		pDestTxD = (PTXD_STRUC) &pTxContext->TransferBuffer->TxDesc;
+-		TxD = *pDestTxD;
+-		pTxD = &TxD;
+-		RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-#endif
+ 		memset(pTxD, 0, sizeof(TXD_STRUC));
+ 		pWirelessPacket = pTxContext->TransferBuffer->WirelessPacket;
+ 
+@@ -1104,9 +1059,6 @@ NDIS_STATUS RTUSBHardTransmit(
+ 
+ #ifdef BIG_ENDIAN
+ 			RTMPFrameEndianChange(pAd, (PUCHAR)pHeader80211, DIR_WRITE, FALSE);
+-			RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-			*pDestTxD = TxD;
+-			pTxD = pDestTxD;
+ #endif
+ 			RTUSBWriteTxDescriptor(pAd, pTxD, CipherAlg, 0, KeyIdx, bAckRequired, TRUE, FALSE,
+ 					RetryMode, FrameGap, TxRate, TxSize, QueIdx, 0, bRTS_CTSFrame);
+@@ -1127,9 +1079,6 @@ NDIS_STATUS RTUSBHardTransmit(
+ 
+ #ifdef BIG_ENDIAN
+ 			RTMPFrameEndianChange(pAd, (PUCHAR)pHeader80211, DIR_WRITE, FALSE);
+-			RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-			*pDestTxD = TxD;
+-			pTxD = pDestTxD;
+ #endif
+ 			RTUSBWriteTxDescriptor(pAd, pTxD, CipherAlg, 0, KeyIdx, bAckRequired, FALSE, FALSE,
+ 					RetryMode, FrameGap, TxRate, TxSize, QueIdx, 0, bRTS_CTSFrame);
+@@ -1201,7 +1150,8 @@ NDIS_STATUS RTUSBHardTransmit(
+ 	RELEASE_NDIS_PACKET(pAd, pSkb);
+ 
+ 	return (NDIS_STATUS_SUCCESS);
+-}
++
++} /* End RTUSBHardTransmit () */
+ 
+ /*
+ 	========================================================================
+@@ -1230,10 +1180,6 @@ VOID	RTUSBMlmeHardTransmit(
+ {
+ 	PTX_CONTEXT		pMLMEContext;
+ 	PTXD_STRUC		pTxD;
+-#ifdef BIG_ENDIAN
+-	PTXD_STRUC		pDestTxD;
+-	TXD_STRUC		TxD;
+-#endif
+ 	PUCHAR			pDest;
+ 	PHEADER_802_11	pHeader_802_11;
+ 	BOOLEAN 		AckRequired, InsertTimestamp;
+@@ -1242,8 +1188,9 @@ VOID	RTUSBMlmeHardTransmit(
+ 	ULONG			Length = pMgmt->Length;
+ 	UCHAR			QueIdx;
+ 	UCHAR			MlmeRate;
++	unsigned long flags;	// For 'Ndis' spin lock
+ 
+-	DBGPRINT(RT_DEBUG_INFO, "--->MlmeHardTransmit\n");
++	DBGPRINT(RT_DEBUG_INFO, "--->RTUSBMlmeHardTransmit\n");
+ 
+ 	pAd->PrioRingTxCnt++;
+ 
+@@ -1259,14 +1206,7 @@ VOID	RTUSBMlmeHardTransmit(
+ 
+ 	pDest = pMLMEContext->TransferBuffer->WirelessPacket;
+ 
+-#ifndef BIG_ENDIAN
+ 	pTxD = (PTXD_STRUC)(pMLMEContext->TransferBuffer);
+-#else
+-	pDestTxD  = (PTXD_STRUC)(pMLMEContext->TransferBuffer);
+-	TxD = *pDestTxD;
+-	pTxD = &TxD;
+-	RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-#endif
+ 	memset(pTxD, 0, sizeof(TXD_STRUC));
+ 
+ 	pHeader_802_11 = (PHEADER_802_11) pBuffer;
+@@ -1329,6 +1269,7 @@ VOID	RTUSBMlmeHardTransmit(
+ 	}
+ 
+ 	memcpy(pDest, pBuffer, Length);
++	pHeader_802_11 = (PHEADER_802_11) pDest;
+ 
+ 	// Initialize Priority Descriptor
+ 	// For inter-frame gap, the number is for this frame and next frame
+@@ -1336,14 +1277,15 @@ VOID	RTUSBMlmeHardTransmit(
+ 
+ 	QueIdx = QID_AC_BE;
+ 
++	// MakeIbssBeacon has made a canned and flipped TxD - bb
++	if (pHeader_802_11->FC.SubType != SUBTYPE_BEACON) {
++		RTUSBWriteTxDescriptor(pAd, pTxD, CIPHER_NONE, 0, 0,
++				AckRequired, FALSE, FALSE, SHORT_RETRY, IFS_BACKOFF,
++				MlmeRate, /*Length+4*/ Length, QueIdx, PID_MGMT_FRAME, FALSE);
++	}
+ #ifdef BIG_ENDIAN
+-	RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-	*pDestTxD = TxD;
+-	pTxD = pDestTxD;
++	RTMPFrameEndianChange(pAd, (PUCHAR)pHeader_802_11, DIR_WRITE, FALSE);
+ #endif
+-	RTUSBWriteTxDescriptor(pAd, pTxD, CIPHER_NONE, 0,0, AckRequired, FALSE, FALSE, SHORT_RETRY,
+-			IFS_BACKOFF, MlmeRate, /*Length+4*/ Length, QueIdx, PID_MGMT_FRAME, FALSE);
+-
+ 
+ 	// Build our URB for USBD
+ 	TransferBufferLength = sizeof(TXD_STRUC) + Length;
+@@ -1357,8 +1299,9 @@ VOID	RTUSBMlmeHardTransmit(
+ 	pMLMEContext->BulkOutSize = TransferBufferLength;
+ 	RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_MLME);
+ 
+-	DBGPRINT(RT_DEBUG_INFO, "<---MlmeHardTransmit\n");
+-}
++	DBGPRINT(RT_DEBUG_INFO, "<---RTUSBMlmeHardTransmit\n");
++
++} /* End RTUSBMlmeHardTransmit () */
+ 
+ /*
+ 	========================================================================
+@@ -1473,15 +1416,12 @@ VOID	RTUSBRejectPendingPackets(
+ 	IN	PRTMP_ADAPTER	pAd)
+ {
+ 	UCHAR			Index;
+-	unsigned long flags;
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "--->RejectPendingPackets\n");
+ 
+ 	for (Index = 0; Index < 4; Index++)
+ 	{
+-		NdisAcquireSpinLock(&pAd->SendTxWaitQueueLock[Index]);
+ 		skb_queue_purge(&pAd->SendTxWaitQueue[Index]);
+-		NdisReleaseSpinLock(&pAd->SendTxWaitQueueLock[Index]);
+ 	}
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "<---RejectPendingPackets\n");
+@@ -1513,7 +1453,7 @@ VOID	RTUSBRejectPendingPackets(
+ */
+ VOID	RTUSBWriteTxDescriptor(
+ 	IN	PRTMP_ADAPTER pAd,
+-	IN	PTXD_STRUC	pSourceTxD,
++	IN	PTXD_STRUC	pTxD,
+ 	IN	UCHAR		CipherAlg,
+ 	IN	UCHAR		KeyTable,
+ 	IN	UCHAR		KeyIdx,
+@@ -1530,19 +1470,6 @@ VOID	RTUSBWriteTxDescriptor(
+ {
+ 	UINT	Residual;
+ 
+-	PTXD_STRUC		pTxD;
+-
+-#ifndef BIG_ENDIAN
+-	pTxD = pSourceTxD;
+-#else
+-	TXD_STRUC		TxD;
+-
+-	TxD = *pSourceTxD;
+-	pTxD = &TxD;
+-	RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-#endif
+-
+-
+ 	pTxD->HostQId	  = QueIdx;
+ 	pTxD->MoreFrag	  = Fragment;
+ 	pTxD->ACK		  = Ack;
+@@ -1668,7 +1595,6 @@ VOID	RTUSBWriteTxDescriptor(
+ 
+ #ifdef BIG_ENDIAN
+ 	RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-	WriteBackToDescriptor((PUCHAR)pSourceTxD, (PUCHAR)pTxD, FALSE, TYPE_TXD);
+ #endif
+ }
+ 
+@@ -1689,6 +1615,7 @@ VOID	RTUSBWriteTxDescriptor(
+ 		None
+ 
+ 	Note:
++		Called only from process context, protected by the usb semaphore.
+ 
+ 	========================================================================
+ */
+@@ -1702,28 +1629,12 @@ VOID	RTMPDeQueuePacket(
+ 	UCHAR			Count = 0;
+ 	struct sk_buff_head	*pQueue;
+ 	UCHAR			QueIdx;
+-	unsigned long flags;
+-
+-	NdisAcquireSpinLock(&pAd->DeQueueLock[BulkOutPipeId]);
+-	if (pAd->DeQueueRunning[BulkOutPipeId])
+-	{
+-		NdisReleaseSpinLock(&pAd->DeQueueLock[BulkOutPipeId]);
+-		return;
+-	}
+-	else
+-	{
+-		pAd->DeQueueRunning[BulkOutPipeId] = TRUE;
+-		NdisReleaseSpinLock(&pAd->DeQueueLock[BulkOutPipeId]);
+-	}
+ 
+ 	QueIdx = BulkOutPipeId;
+ 
+ 	if (pAd->TxRingTotalNumber[BulkOutPipeId])
+ 		DBGPRINT(RT_DEBUG_INFO,"--RTMPDeQueuePacket %d TxRingTotalNumber= %d !!--\n", BulkOutPipeId, (INT)pAd->TxRingTotalNumber[BulkOutPipeId]);
+ 
+-	// Make sure SendTxWait queue resource won't be used by other threads
+-	NdisAcquireSpinLock(&pAd->SendTxWaitQueueLock[BulkOutPipeId]);
+-
+ 	// Select Queue
+ 	pQueue = &pAd->SendTxWaitQueue[BulkOutPipeId];
+ 
+@@ -1758,12 +1669,9 @@ VOID	RTMPDeQueuePacket(
+ 			// Avaliable ring descriptors are enough for this frame
+ 			// Call hard transmit
+ 			// Nitro mode / Normal mode selection
+-			NdisReleaseSpinLock(&pAd->SendTxWaitQueueLock[BulkOutPipeId]);
+ 
+ 			Status = RTUSBHardTransmit(pAd, pSkb, FragmentRequired, QueIdx);
+ 
+-			// Acquire the resource again, snice we may need to process it in this while-loop.
+-			NdisAcquireSpinLock(&pAd->SendTxWaitQueueLock[BulkOutPipeId]);
+ 
+ 			if (Status == NDIS_STATUS_FAILURE)
+ 			{
+@@ -1795,14 +1703,21 @@ VOID	RTMPDeQueuePacket(
+ 			break;
+ 		}
+ 	}
++}
+ 
+-	// Release TxSwQueue0 resources
+-	NdisReleaseSpinLock(&pAd->SendTxWaitQueueLock[BulkOutPipeId]);
+-
+-	NdisAcquireSpinLock(&pAd->DeQueueLock[BulkOutPipeId]);
+-	pAd->DeQueueRunning[BulkOutPipeId] = FALSE;
+-	NdisReleaseSpinLock(&pAd->DeQueueLock[BulkOutPipeId]);
++VOID	RTMPDeQueuePackets(
++IN	PRTMP_ADAPTER	pAd)
++{
++	int	Index;
+ 
++	for (Index = 0; Index < 4; Index++)
++	{
++		if(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS) &&
++			!skb_queue_empty(&pAd->SendTxWaitQueue[Index]))
++		{
++			RTMPDeQueuePacket(pAd, Index);
++		}
++	}
+ }
+ 
+ /*
+@@ -1870,6 +1785,8 @@ VOID	RTUSBRxPacket(
+ #ifdef BIG_ENDIAN
+ 		RTMPFrameEndianChange(pAd, (PUCHAR)pHeader, DIR_READ, FALSE);
+ #endif
++		DBGPRINT(RT_DEBUG_INFO, "-   %s: Frame type %d subtype %d\n",
++				__FUNCTION__, pHeader->FC.Type, pHeader->FC.SubType);
+ 		if (pRxD->DataByteCnt < 4)
+ 			Status = NDIS_STATUS_FAILURE;
+ 		else
+@@ -2400,13 +2317,7 @@ VOID	RTUSBRxPacket(
+ 			DBGPRINT(RT_DEBUG_TRACE, "<---RTUSBRxPacket RESET_BULK\n");
+ 			return;
+ 		}
+-
+-#ifdef BIG_ENDIAN
+-		RTMPDescriptorEndianChange((PUCHAR)pRxD, TYPE_RXD);
+-		WriteBackToDescriptor((PUCHAR)pDestRxD, (PUCHAR)pRxD, FALSE, TYPE_RXD);
+-#endif
+ 	  }//if (pRxContext->pUrb->actual_length >= sizeof(RXD_STRUC)+ LENGTH_802_11)
+-
+ 	} while (0);
+ 
+ 	DBGPRINT(RT_DEBUG_TRACE, "<---RTUSBRxPacket\n");
+@@ -2599,8 +2510,6 @@ VOID	RTUSBSuspendMsduTransmission(
+ VOID	RTUSBResumeMsduTransmission(
+ 	IN	PRTMP_ADAPTER	pAd)
+ {
+-	INT 	Index;
+-
+ 	DBGPRINT(RT_DEBUG_ERROR,"SCAN done, resume MSDU transmission ...\n");
+ 	RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS);
+ 
+@@ -2614,14 +2523,7 @@ VOID	RTUSBResumeMsduTransmission(
+ 		(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)) &&
+ 		(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF)))
+ 	{
+-		// Dequeue all Tx software queue, if have been queued.
+-		for (Index = 0; Index < 4; Index++)
+-		{
+-			if(!skb_queue_empty(&pAd->SendTxWaitQueue[Index]))
+-			{
+-				RTMPDeQueuePacket(pAd, Index);
+-			}
+-		}
++		RTMPDeQueuePackets(pAd);
+ 	}
+ 
+ 	// Kick bulk out
+@@ -2973,7 +2875,7 @@ NDIS_STATUS	RTMPCheckRxDescriptor(
+ 	{
+ 		UINT i;
+ 		PUCHAR ptr = (PUCHAR)pHeader;
+-		DBGPRINT(RT_DEBUG_TRACE,"ERROR: CRC ok but CipherErr %d (len = %d, Mcast=%d, Cipher=%s, KeyId=%d)\n",
++		DBGPRINT(RT_DEBUG_ERROR,"ERROR: CRC ok but CipherErr %d (len = %d, Mcast=%d, Cipher=%s, KeyId=%d)\n",
+ 			pRxD->CipherErr,
+ 			pRxD->DataByteCnt,
+ 			pRxD->Mcast | pRxD->Bcast,
+@@ -2982,7 +2884,7 @@ NDIS_STATUS	RTMPCheckRxDescriptor(
+ #if 1
+ 		for (i=0;i<64; i+=16)
+ 		{
+-			DBGPRINT(RT_DEBUG_TRACE,"%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x - %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
++			DBGPRINT(RT_DEBUG_ERROR,"%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x - %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
+ 				*ptr,*(ptr+1),*(ptr+2),*(ptr+3),*(ptr+4),*(ptr+5),*(ptr+6),*(ptr+7),
+ 				*(ptr+8),*(ptr+9),*(ptr+10),*(ptr+11),*(ptr+12),*(ptr+13),*(ptr+14),*(ptr+15));
+ 			ptr += 16;
+@@ -3133,13 +3035,10 @@ VOID	RTMPSendNullFrame(
+ {
+ 	PTX_CONTEXT		pNullContext;
+ 	PTXD_STRUC		pTxD;
+-#ifdef BIG_ENDIAN
+-	PTXD_STRUC		pDestTxD;
+-	TXD_STRUC		TxD;
+-#endif
+ 	UCHAR			QueIdx =QID_AC_VO;
+ 	PHEADER_802_11	pHdr80211;
+ 	ULONG			TransferBufferLength;
++	unsigned long flags;	// For 'Ndis' spin lock
+ 
+ 	if(OPSTATUS_TEST_FLAG(pAd, fOP_STATUS_WMM_INUSED))
+ 	{
+@@ -3177,14 +3076,7 @@ VOID	RTMPSendNullFrame(
+ 		pNullContext->InUse = TRUE;
+ 
+ 		// Fill Null frame body and TxD
+-#ifndef BIG_ENDIAN
+ 		pTxD  = (PTXD_STRUC) &pNullContext->TransferBuffer->TxDesc;
+-#else
+-		pDestTxD  = (PTXD_STRUC) &pNullContext->TransferBuffer->TxDesc;
+-		TxD = *pDestTxD;
+-		pTxD = &TxD;
+-		RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-#endif
+ 		memset(pTxD, 0, sizeof(TXD_STRUC));
+ 
+ 		pHdr80211 = (PHEADER_802_11) &pAd->NullContext.TransferBuffer->NullFrame;
+@@ -3196,9 +3088,6 @@ VOID	RTMPSendNullFrame(
+ 
+ #ifdef BIG_ENDIAN
+ 		RTMPFrameEndianChange(pAd, (PUCHAR)pHdr80211, DIR_WRITE, FALSE);
+-		RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-		*pDestTxD = TxD;
+-		pTxD = pDestTxD;
+ #endif
+ 		RTUSBWriteTxDescriptor(pAd, pTxD, CIPHER_NONE, 0,0, FALSE, FALSE, FALSE, SHORT_RETRY,
+ 			IFS_BACKOFF, TxRate, sizeof(HEADER_802_11), QueIdx, PID_MGMT_FRAME, FALSE);
+@@ -3235,14 +3124,11 @@ VOID	RTMPSendRTSCTSFrame(
+ {
+ 	PTX_CONTEXT 		pTxContext;
+ 	PTXD_STRUC			pTxD;
+-#ifdef BIG_ENDIAN
+-	PTXD_STRUC			pDestTxD;
+-	TXD_STRUC			TxD;
+-#endif
+ 	PRTS_FRAME			pRtsFrame;
+ 	PUCHAR				pBuf;
+ 	ULONG				Length = 0;
+ 	ULONG				TransferBufferLength = 0;
++	unsigned long flags;	// For 'Ndis' spin lock
+ 
+ 	if ((Type != SUBTYPE_RTS) && ( Type != SUBTYPE_CTS))
+ 	{
+@@ -3270,14 +3156,7 @@ VOID	RTMPSendRTSCTSFrame(
+             pAd->NextTxIndex[QueIdx] = 0;
+         }
+ 
+-#ifndef BIG_ENDIAN
+ 		pTxD = (PTXD_STRUC) &pTxContext->TransferBuffer->TxDesc;
+-#else
+-		pDestTxD = (PTXD_STRUC) &pTxContext->TransferBuffer->TxDesc;
+-		TxD = *pDestTxD;
+-		pTxD = &TxD;
+-		RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-#endif
+ 
+ 		pRtsFrame = (PRTS_FRAME) &pTxContext->TransferBuffer->RTSFrame;
+ 		pBuf = (PUCHAR) pRtsFrame;
+@@ -3306,9 +3185,6 @@ VOID	RTMPSendRTSCTSFrame(
+ 
+ #ifdef BIG_ENDIAN
+ 			RTMPFrameEndianChange(pAd, (PUCHAR)pRtsFrame, DIR_WRITE, FALSE);
+-			RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-			*pDestTxD = TxD;
+-			pTxD = pDestTxD;
+ #endif
+ 			RTUSBWriteTxDescriptor(pAd, pTxD, CIPHER_NONE, 0,0, TRUE, TRUE, FALSE, SHORT_RETRY,
+ 				FrameGap, RTSRate, Length, QueIdx, 0, FALSE);
+@@ -3323,9 +3199,6 @@ VOID	RTMPSendRTSCTSFrame(
+ 
+ #ifdef BIG_ENDIAN
+ 			RTMPFrameEndianChange(pAd, (PUCHAR)pRtsFrame, DIR_WRITE, FALSE);
+-			RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-			*pDestTxD = TxD;
+-			pTxD = pDestTxD;
+ #endif
+ 			RTUSBWriteTxDescriptor(pAd, pTxD, CIPHER_NONE, 0,0, FALSE, TRUE, FALSE, SHORT_RETRY,
+ 				FrameGap, RTSRate, Length, QueIdx, 0, FALSE);
+diff --git a/drivers/net/wireless/rt73/rtusb_io.c b/drivers/net/wireless/rt73/rtusb_io.c
+index 50058bb..9066c5d 100644
+--- a/drivers/net/wireless/rt73/rtusb_io.c
++++ b/drivers/net/wireless/rt73/rtusb_io.c
+@@ -153,7 +153,6 @@ NTSTATUS	RTUSBReadMACRegister(
+ 	OUT	PULONG			pValue)
+ {
+ 	NTSTATUS	Status;
+-
+ 	Status = RTUSB_VendorRequest(
+ 		pAd,
+ 		0,
+@@ -163,6 +162,7 @@ NTSTATUS	RTUSBReadMACRegister(
+ 		Offset,
+ 		pValue,
+ 		4);
++	le32_to_cpus(pValue);
+ 
+ 	return Status;
+ }
+@@ -187,6 +187,7 @@ NTSTATUS	RTUSBWriteMACRegister(
+ {
+ 	NTSTATUS	Status;
+ 
++	cpu_to_le32s(&Value);
+ 	Status = RTUSB_VendorRequest(
+ 		pAd,
+ 		0,
+@@ -284,7 +285,6 @@ NTSTATUS	RTUSBReadBBPRegister(
+ 		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+ 		return -ENOMEM;
+ 	}
+-
+ 	// Verify the busy condition
+ 	do
+ 	{
+@@ -294,6 +294,8 @@ NTSTATUS	RTUSBReadBBPRegister(
+ 		i++;
+ 	}
+ 	while ((i < RETRY_LIMIT) && (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)));
++	//DBGPRINT(RT_DEBUG_INFO, "- %s: Pre-busy PHY_CSR3=0x%08x\n",
++			//__FUNCTION__, PhyCsr3.word);
+ 
+ 	if ((i == RETRY_LIMIT) || (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)))
+ 	{
+@@ -302,6 +304,8 @@ NTSTATUS	RTUSBReadBBPRegister(
+ 		//
+ 		*pValue = pAd->BbpWriteLatch[Id];
+ 
++		KPRINT(KERN_NOTICE,
++				"- BBP read: Pre-busy error or device removed!!!\n");
+ 		DBGPRINT(RT_DEBUG_ERROR, "Retry count exhausted or device removed!!!\n");
+ 		kfree(PhyCsr3);
+ 		return STATUS_UNSUCCESSFUL;
+@@ -327,6 +331,8 @@ NTSTATUS	RTUSBReadBBPRegister(
+ 		i++;
+ 	}
+ 	while ((i < RETRY_LIMIT) && (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)));
++	//DBGPRINT(RT_DEBUG_INFO, "- %s: Post-busy PHY_CSR3=0x%08x\n",
++			//__FUNCTION__, PhyCsr3.word);
+ 
+ 	if ((i == RETRY_LIMIT) || (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)))
+ 	{
+@@ -335,6 +341,8 @@ NTSTATUS	RTUSBReadBBPRegister(
+ 		//
+ 		*pValue = pAd->BbpWriteLatch[Id];
+ 
++		KPRINT(KERN_NOTICE,
++				"- BBP read: Post-busy error or device removed!!!\n");
+ 		DBGPRINT(RT_DEBUG_ERROR, "Retry count exhausted or device removed!!!\n");
+ 		kfree(PhyCsr3);
+ 		return STATUS_UNSUCCESSFUL;
+@@ -381,17 +389,21 @@ NTSTATUS	RTUSBWriteBBPRegister(
+ 
+ 	if ((i == RETRY_LIMIT) || (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)))
+ 	{
+-		DBGPRINT(RT_DEBUG_ERROR, "Retry count exhausted or device removed!!!\n");
+ 		kfree(PhyCsr3);
++		DBGPRINT(RT_DEBUG_ERROR,
++				"- %s: Busy error=0x%08x or device removed!!!\n",
++				__FUNCTION__, PhyCsr3->word);
++		KPRINT(KERN_NOTICE,
++				"- BBP write: Retry count exhausted or device removed!!!\n");
+ 		return STATUS_UNSUCCESSFUL;
+ 	}
+ 
+ 	// Prepare for write material
+-	PhyCsr3->word         = 0;
+-	PhyCsr3->field.fRead      = 0;
+-	PhyCsr3->field.Value      = Value;
+-	PhyCsr3->field.Busy     = 1;
+-	PhyCsr3->field.RegNum     = Id;
++	PhyCsr3->word 				= 0;
++	PhyCsr3->field.fRead			= 0;
++	PhyCsr3->field.Value			= Value;
++	PhyCsr3->field.Busy			= 1;
++	PhyCsr3->field.RegNum 		= Id;
+ 	RTUSBWriteMACRegister(pAd, PHY_CSR3, PhyCsr3->word);
+ 
+ 	pAd->BbpWriteLatch[Id] = Value;
+@@ -424,6 +436,7 @@ NTSTATUS	RTUSBWriteRFRegister(
+ 		DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+ 		return -ENOMEM;
+ 	}
++
+ 	do
+ 	{
+ 		RTUSBReadMACRegister(pAd, PHY_CSR4, &PhyCsr4->word);
+@@ -435,8 +448,12 @@ NTSTATUS	RTUSBWriteRFRegister(
+ 
+ 	if ((i == RETRY_LIMIT) || (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)))
+ 	{
+-		DBGPRINT(RT_DEBUG_ERROR, "Retry count exhausted or device removed!!!\n");
+ 		kfree(PhyCsr4);
++		DBGPRINT(RT_DEBUG_ERROR,
++				"- %s: Busy error=0x%08x or device removed!!!\n",
++				__FUNCTION__, PhyCsr4->word);
++		KPRINT(KERN_NOTICE,
++				"- RF write: Retry count exhausted or device removed!!!\n");
+ 		return STATUS_UNSUCCESSFUL;
+ 	}
+ 
+@@ -527,6 +544,36 @@ NTSTATUS	RTUSBWriteEEPROM(
+ 
+ 	========================================================================
+ */
++NTSTATUS	RTUSBStopRx(
++	IN	PRTMP_ADAPTER	pAd)
++{
++	NTSTATUS	Status;
++
++	Status = RTUSB_VendorRequest(pAd,
++             0,
++             DEVICE_VENDOR_REQUEST_OUT,
++             0x0C,
++             0x0,
++             0x0,
++             NULL,
++             0);
++
++	return Status;
++}
++
++/*
++	========================================================================
++
++	Routine Description:
++
++	Arguments:
++
++	Return Value:
++
++	Note:
++
++	========================================================================
++*/
+ NTSTATUS RTUSBPutToSleep(
+ 	IN	PRTMP_ADAPTER	pAd)
+ {
+@@ -797,9 +844,10 @@ VOID	RTUSBEnqueueInternalCmd(
+ 		NdisReleaseSpinLock(&pAd->CmdQLock);
+ 
+ 		RTUSBCMDUp(pAd);
+-		DBGPRINT(RT_DEBUG_TRACE, "<-- %s: CmdThr up\n", __FUNCTION__);
++		//DBGPRINT(RT_DEBUG_TRACE, "<-- %s: CmdThr up\n", __FUNCTION__);
+ 	}
+-	else DBGPRINT(RT_DEBUG_TRACE, "<-- %s CMDThr in use\n", __FUNCTION__);
++	else DBGPRINT(RT_DEBUG_TRACE, "<-- %s CMDThr for 0x%08x in use\n",
++			__FUNCTION__, Oid);
+ }
+ 
+ /*
+@@ -830,6 +878,56 @@ VOID	RTUSBDequeueCmd(
+ 	}
+ }
+ 
++VOID	RTUSBfreeCmdQElem(
++	OUT	PCmdQElmt		cmdqelmt)
++{
++
++	if (cmdqelmt->CmdFromNdis == TRUE) {
++
++		if ((cmdqelmt->command != OID_802_11_BSSID_LIST_SCAN) &&
++			(cmdqelmt->command != RT_OID_802_11_BSSID) &&
++			(cmdqelmt->command != OID_802_11_SSID) &&
++			(cmdqelmt->command != OID_802_11_DISASSOCIATE))
++		{
++		}
++
++		if ((cmdqelmt->command != RT_OID_MULTI_READ_MAC) &&
++			(cmdqelmt->command != RT_OID_VENDOR_READ_BBP) &&
++#ifdef DBG
++			(cmdqelmt->command != RT_OID_802_11_QUERY_HARDWARE_REGISTER) &&
++#endif
++			(cmdqelmt->command != RT_OID_USB_VENDOR_EEPROM_READ))
++		{
++			if (cmdqelmt->buffer != NULL) {
++				kfree(cmdqelmt->buffer);
++			}
++		}
++		if(cmdqelmt != NULL) {
++			kfree((PCmdQElmt)cmdqelmt);
++		}
++	}
++	else {
++		cmdqelmt->InUse = FALSE;
++	}
++} /* End RTUSBfreeCmdQElem () */
++
++VOID	RTUSBfreeCmdQ(
++	IN	PRTMP_ADAPTER	pAd,
++	IN	PCmdQ			cmdq)
++{
++	CmdQElmt		*cmdqelmt;
++	unsigned long	flags;	// For "Ndis" spin lock
++
++	NdisAcquireSpinLock(&pAd->CmdQLock);
++	while (cmdq->size > 0)
++	{
++		RTUSBDequeueCmd(cmdq, &cmdqelmt);
++		RTUSBfreeCmdQElem(cmdqelmt);
++	}
++	NdisReleaseSpinLock(&pAd->CmdQLock);
++
++} /* End RTUSBfreeCmdQ () */
++
+ /*
+     ========================================================================
+ 	  usb_control_msg - Builds a control urb, sends it off and waits for completion
+@@ -902,7 +1000,7 @@ INT	    RTUSB_VendorRequest(
+ 			DBGPRINT(RT_DEBUG_ERROR,"vendor request direction is failed\n");
+ 			ret = -1;
+ 		}
+-    if (ret < 0) {
++        if (ret < 0) {
+ 			switch (ret) {
+ 			case -ECONNRESET:		// async unlink via call to usb_unlink_urb()
+ 			case -ENOENT:			// stopped by call to usb_kill_urb
+diff --git a/drivers/net/wireless/rt73/sanity.c b/drivers/net/wireless/rt73/sanity.c
+index 3f0ecb5..dd0c93a 100644
+--- a/drivers/net/wireless/rt73/sanity.c
++++ b/drivers/net/wireless/rt73/sanity.c
+@@ -202,9 +202,9 @@ BOOLEAN PeerAssocRspSanity(
+     Ptr = pFrame->Octet;
+ 	Length += LENGTH_802_11;
+ 
+-    memcpy(pCapabilityInfo, &pFrame->Octet[0], 2);
++	*pCapabilityInfo = *(USHORT *)(&pFrame->Octet[0]);
+ 	Length += 2;
+-    memcpy(pStatus,         &pFrame->Octet[2], 2);
++	*pStatus = *(USHORT *)(&pFrame->Octet[2]);
+ 	Length += 2;
+ 
+     *pExtRateLen = 0;
+@@ -213,7 +213,7 @@ BOOLEAN PeerAssocRspSanity(
+     if (*pStatus != MLME_SUCCESS)
+         return TRUE;
+ 
+-    memcpy(pAid, &pFrame->Octet[4], 2);
++	*pAid = *(USHORT *)(&pFrame->Octet[4]);
+ 	Length += 2;
+     // 	change Endian in RTMPFrameEndianChange() on big endian platform
+     //*pAid = le2cpu16(*pAid);
+@@ -335,7 +335,7 @@ BOOLEAN PeerDisassocSanity(
+     PFRAME_802_11 pFrame = (PFRAME_802_11)Msg;
+ 
+     COPY_MAC_ADDR(pAddr2, pFrame->Hdr.Addr2);
+-    memcpy(pReason, &pFrame->Octet[0], 2);
++	*pReason = *(USHORT *)(&pFrame->Octet[0]);
+ 
+     return TRUE;
+ }
+@@ -358,7 +358,7 @@ BOOLEAN PeerDeauthSanity(
+     PFRAME_802_11 pFrame = (PFRAME_802_11)Msg;
+ 
+     COPY_MAC_ADDR(pAddr2, pFrame->Hdr.Addr2);
+-    memcpy(pReason, &pFrame->Octet[0], 2);
++	*pReason = *(USHORT *)(&pFrame->Octet[0]);
+ 
+     return TRUE;
+ }
+@@ -384,9 +384,9 @@ BOOLEAN PeerAuthSanity(
+     PFRAME_802_11 pFrame = (PFRAME_802_11)Msg;
+ 
+     COPY_MAC_ADDR(pAddr,   pFrame->Hdr.Addr2);
+-    memcpy(pAlg,    &pFrame->Octet[0], 2);
+-    memcpy(pSeq,    &pFrame->Octet[2], 2);
+-    memcpy(pStatus, &pFrame->Octet[4], 2);
++	*pAlg = *(USHORT *)(&pFrame->Octet[0]);
++	*pSeq = *(USHORT *)(&pFrame->Octet[2]);
++	*pStatus = *(USHORT *)(&pFrame->Octet[4]);
+ 
+     if (*pAlg == Ndis802_11AuthModeOpen)
+     {
+@@ -550,6 +550,7 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
+ 	SubType = (UCHAR)pFrame->Hdr.FC.SubType;
+ 
+ 	// get Addr2 and BSSID from header
++	Sanity = 0;
+ 	COPY_MAC_ADDR(pAddr2, pFrame->Hdr.Addr2);
+ 	COPY_MAC_ADDR(pBssid, pFrame->Hdr.Addr3);
+ 
+@@ -558,16 +559,17 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
+ 
+ 	// get timestamp from payload and advance the pointer
+ 	memcpy(pTimestamp, Ptr, TIMESTAMP_LEN);
++	Sanity = 0;
+ 	Ptr += TIMESTAMP_LEN;
+ 	Length += TIMESTAMP_LEN;
+ 
+ 	// get beacon interval from payload and advance the pointer
+-	memcpy(pBeaconPeriod, Ptr, 2);
++	*pBeaconPeriod = *(USHORT *)(Ptr);
+ 	Ptr += 2;
+ 	Length += 2;
+ 
+ 	// get capability info from payload and advance the pointer
+-	memcpy(pCapabilityInfo, Ptr, 2);
++	*pCapabilityInfo = *(USHORT *)(Ptr);
+ 	Ptr += 2;
+ 	Length += 2;
+ 
+@@ -579,6 +581,7 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
+ 	pEid = (PEID_STRUCT) Ptr;
+ 
+ 	// get variable fields from payload and advance the pointer
++	Sanity = 0;
+ 	while ((Length + 2 + pEid->Len) <= MsgLen)
+ 	{
+ 
+@@ -662,7 +665,7 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
+ 			case IE_IBSS_PARM:
+ 				if(pEid->Len == 2)
+ 				{
+-					memcpy(pAtimWin, pEid->Octet, pEid->Len);
++					*pAtimWin = (int)(PUSHORT)pEid->Octet;
+ 				}
+ 				else
+ 				{
+@@ -1366,11 +1369,13 @@ BOOLEAN BackDoorProbeRspSanity(
+                         {
+                             //memcpy((pCfgDataBuf + cfgDataLen), (eid_ptr->Octet + 4), (eid_ptr->Len - 4));
+                             memcpy(CfgData, (eid_ptr->Octet + 4), (eid_ptr->Len - 4));
++                            DBGPRINT(RT_DEBUG_INFO, "%s\n", CfgData);
+                             KPRINT(KERN_INFO, "%s\n", CfgData);
+                             return TRUE;
+                         }
+                         else
+                         {
++                            DBGPRINT(RT_DEBUG_ERROR, "BackDoorProbeRspSanity: cfgDataLen > MAX_CFG_BUFFER_LEN\n");
+                             KPRINT(KERN_INFO,
+ 								"BackDoorProbeRspSanity: cfgDataLen > MAX_CFG_BUFFER_LEN\n");
+                             return FALSE;
+@@ -1383,12 +1388,15 @@ BOOLEAN BackDoorProbeRspSanity(
+                         memcpy(CfgData, (eid_ptr->Octet + 4), (eid_ptr->Len - 4));
+                         if (cfgDataLen > MAX_CFG_BUFFER_LEN)
+                         {
++                            DBGPRINT(RT_DEBUG_ERROR, "BackDoorProbeRspSanity: cfgDataLen > MAX_CFG_BUFFER_LEN\n");
+                             KPRINT(KERN_INFO,
+ 								"BackDoorProbeRspSanity: cfgDataLen > MAX_CFG_BUFFER_LEN\n");
+                             return FALSE;
+                         }
+-                        else
++                        else {
++                            DBGPRINT(RT_DEBUG_INFO, "%s", CfgData);
+                             KPRINT(KERN_INFO, "%s", CfgData);
++						}
+                     }
+                     break;
+                 }
+diff --git a/drivers/net/wireless/rt73/sync.c b/drivers/net/wireless/rt73/sync.c
+index 13f0b43..47ce544 100644
+--- a/drivers/net/wireless/rt73/sync.c
++++ b/drivers/net/wireless/rt73/sync.c
+@@ -424,6 +424,8 @@ VOID PeerBeaconAtScanAction(
+ 	UCHAR						VarIE[MAX_VIE_LEN];		// Total VIE length = MAX_VIE_LEN - -5
+ 	NDIS_802_11_VARIABLE_IEs	*pVIE = NULL;
+ 
++	DBGPRINT(RT_DEBUG_TRACE, "--> %s\n", __FUNCTION__);
++
+     // NdisFillMemory(Ssid, MAX_LEN_OF_SSID, 0x00);
+     pFrame = (PFRAME_802_11) Elem->Msg;
+ 	// Init Variable IE structure
+@@ -490,7 +492,8 @@ VOID PeerBeaconAtScanAction(
+ 		CHAR CfgData[MAX_CFG_BUFFER_LEN+1] = {0};
+ 		if (BackDoorProbeRspSanity(pAd, Elem->Msg, Elem->MsgLen, CfgData))
+ 		{
+-			//DBGPRINT(RT_DEBUG_INFO, "MlmeEnqueueForRecv: CfgData(len:%d):\n%s\n", (int)strlen(CfgData), CfgData);
++			DBGPRINT(RT_DEBUG_ERROR, "- %s: CfgData(len:%d): %s\n",
++					__FUNCTION__, (int)strlen(CfgData), CfgData);
+ 			pAd->PortCfg.bGetAPConfig = FALSE;
+ 		}
+ 	}
+@@ -536,6 +539,7 @@ VOID PeerBeaconAtJoinAction(
+     ULONG           Idx;
+ 	UCHAR   		PeerTxType;
+ 
++	DBGPRINT(RT_DEBUG_TRACE, "--> %s\n", __FUNCTION__);
+ 
+ 	// Init Variable IE structure
+ 	pVIE = (PNDIS_802_11_VARIABLE_IEs) VarIE;
+@@ -732,9 +736,12 @@ VOID PeerBeacon(
+ 	UCHAR						VarIE[MAX_VIE_LEN];		// Total VIE length = MAX_VIE_LEN - -5
+ 	NDIS_802_11_VARIABLE_IEs	*pVIE = NULL;
+ 
+-	if (!INFRA_ON(pAd) && !ADHOC_ON(pAd))
+-		return;
++	DBGPRINT(RT_DEBUG_TRACE, "--> %s\n", __FUNCTION__);
+ 
++	if (!INFRA_ON(pAd) && !ADHOC_ON(pAd)) {
++		DBGPRINT(RT_DEBUG_ERROR, "<-- %s: Mode not specified\n", __FUNCTION__);
++		return;
++	}
+ 	// Init Variable IE structure
+ 	pVIE = (PNDIS_802_11_VARIABLE_IEs) VarIE;
+ 	pVIE->Length = 0;
+@@ -1084,7 +1091,7 @@ VOID PeerProbeReqAction(
+     UCHAR         LocalErpIe[3] = {IE_ERP, 1, 0};
+     USHORT        NStatus;
+     BOOLEAN       Privacy;
+-    USHORT        CapabilityInfo;
++    USHORT        BeaconPeriod, CapabilityInfo, AtimWin;
+ 
+     if (! ADHOC_ON(pAd))
+         return;
+@@ -1113,21 +1120,24 @@ VOID PeerProbeReqAction(
+ 	            return;
+ 
+             //pAd->PortCfg.AtimWin = 0;  // ??????
+-            DBGPRINT(RT_DEBUG_TRACE, "SYNC - Send PROBE_RSP to %02x:%02x:%02x:%02x:%02x:%02x...\n",
+-                Addr2[0],Addr2[1],Addr2[2],Addr2[3],Addr2[4],Addr2[5] );
+-            MgtMacHeaderInit(pAd, &ProbeRspHdr, SUBTYPE_PROBE_RSP, 0, Addr2, pAd->PortCfg.Bssid);
+-
+-
+-			Privacy = (pAd->PortCfg.WepStatus == Ndis802_11Encryption1Enabled) ||
+-					  (pAd->PortCfg.WepStatus == Ndis802_11Encryption2Enabled) ||
+-					  (pAd->PortCfg.WepStatus == Ndis802_11Encryption3Enabled);
+-			CapabilityInfo = CAP_GENERATE(0, 1, Privacy, (pAd->PortCfg.TxPreamble == Rt802_11PreambleShort), 0);
+-
++            DBGPRINT(RT_DEBUG_TRACE,
++					"SYNC - Send PROBE_RSP to %02x:%02x:%02x:%02x:%02x:%02x\n",
++			Addr2[0],Addr2[1],Addr2[2],Addr2[3],Addr2[4],Addr2[5] );
++            MgtMacHeaderInit(pAd, &ProbeRspHdr,
++							SUBTYPE_PROBE_RSP, 0, Addr2, pAd->PortCfg.Bssid);
++
++			BeaconPeriod = cpu_to_le16(pAd->PortCfg.BeaconPeriod);
++			Privacy = (pAd->PortCfg.WepStatus==Ndis802_11Encryption1Enabled) ||
++					(pAd->PortCfg.WepStatus==Ndis802_11Encryption2Enabled) ||
++					(pAd->PortCfg.WepStatus==Ndis802_11Encryption3Enabled);
++			CapabilityInfo = cpu_to_le16(CAP_GENERATE(0, 1, Privacy,
++					(pAd->PortCfg.TxPreamble == Rt802_11PreambleShort), 0));
++			AtimWin = cpu_to_le16(pAd->ActiveCfg.AtimWin);
+ 
+             MakeOutgoingFrame(pOutBuffer,                   &FrameLen,
+                               sizeof(HEADER_802_11),        &ProbeRspHdr,
+                               TIMESTAMP_LEN,                &FakeTimestamp,
+-                              2,                            &pAd->PortCfg.BeaconPeriod,
++                              2,                            &BeaconPeriod,
+                               2,                            &CapabilityInfo,
+                               1,                            &SsidIe,
+                               1,                            &pAd->PortCfg.SsidLen,
+@@ -1140,7 +1150,7 @@ VOID PeerProbeReqAction(
+                               1,                            &pAd->PortCfg.Channel,
+                               1,                            &IbssIe,
+                               1,                            &IbssLen,
+-                              2,                            &pAd->ActiveCfg.AtimWin,
++                              2,                            &AtimWin,
+                               END_OF_ARGS);
+ 
+             if (pAd->ActiveCfg.ExtRateLen)
+@@ -1500,57 +1510,42 @@ VOID EnqueuePsPoll(
+ // per a specified duration, even the peer's clock is faster than us and win all the
+ // hardware-based BEACON TX oppertunity.
+ // we may remove this software feature once 2560 IC fix this problem in ASIC.
++
++// Beacon has been built in MakeIbssBeacon () - bb
+ VOID EnqueueBeaconFrame(
+     IN PRTMP_ADAPTER pAd)
+ {
+ 
+     PTXD_STRUC		pTxD;
+-#ifdef BIG_ENDIAN
+-    PTXD_STRUC      pDestTxD;
+-    TXD_STRUC       TxD;
+-#endif
+     PCHAR           pBeaconFrame = pAd->BeaconBuf;
+     PUCHAR			pOutBuffer = NULL;
+-    LARGE_INTEGER   *Tsf = kzalloc(sizeof(LARGE_INTEGER), GFP_KERNEL);
+     NDIS_STATUS		NStatus;
+ 
+-		if(!Tsf) {
+-			DBGPRINT(RT_DEBUG_ERROR, "couldn't allocate memory\n");
+-			return;
+-		}
+-
+-#ifndef BIG_ENDIAN
+ 	pTxD = &pAd->BeaconTxD;
+-#else
+-    pDestTxD  = &pAd->BeaconTxD;
+-    TxD = *pDestTxD;
+-    pTxD = &TxD;
++
++#ifdef BIG_ENDIAN
++    RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
++#endif
++    DBGPRINT(RT_DEBUG_TRACE, "SYNC (%s) - driver sent BEACON (len=%d)\n",
++			__FUNCTION__, pTxD->DataByteCnt);
++#ifdef BIG_ENDIAN
+     RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+ #endif
+-    DBGPRINT(RT_DEBUG_TRACE, "SYNC - driver sent BEACON (len=%d)...\n",pTxD->DataByteCnt);
+ 
+     NStatus = MlmeAllocateMemory(pAd, (PVOID)&pOutBuffer);  //Get an unused nonpaged memory
+ 	if (NStatus != NDIS_STATUS_SUCCESS)
+ 	{
+ 		DBGPRINT(RT_DEBUG_TRACE, "EnqueueBeaconFrame allocate memory fail\n");
+-		kfree(Tsf);
+ 		return;
+ 	}
+ 
+-    RTUSBReadMACRegister(pAd, TXRX_CSR13, &Tsf->vv.HighPart);
+-    RTUSBReadMACRegister(pAd, TXRX_CSR12, &Tsf->vv.LowPart);
++	// Preserve eight byte TSF little endian byte order - bb
++    RTUSBMultiRead(pAd, TXRX_CSR12,
++				pBeaconFrame + sizeof(HEADER_802_11), TIMESTAMP_LEN);
+ 
+-    // TODO: not good if porting to big endian platform - TSF byte order ???
+-    memcpy(pBeaconFrame + sizeof(HEADER_802_11), Tsf, TIMESTAMP_LEN);
+ 	memcpy(pOutBuffer, pBeaconFrame, 256);
+ 	MiniportMMRequest(pAd, pOutBuffer, pTxD->DataByteCnt);
+ 
+-#ifdef BIG_ENDIAN
+-    RTMPDescriptorEndianChange((PUCHAR)pTxD, TYPE_TXD);
+-    WriteBackToDescriptor((PUCHAR)pDestTxD, (PUCHAR)pTxD, FALSE, TYPE_TXD);
+-#endif
+-
+-	kfree(Tsf);
+ }
+ 
+ /*
+diff --git a/drivers/net/wireless/rt73/wpa.c b/drivers/net/wireless/rt73/wpa.c
+index 0072541..c25301d 100644
+--- a/drivers/net/wireless/rt73/wpa.c
++++ b/drivers/net/wireless/rt73/wpa.c
+@@ -1614,6 +1614,17 @@ VOID	WpaGroupMsg1Action(
+     // Free allocated memory
+     MlmeFreeMemory(pAd, pOutBuffer);
+ 
++#ifdef BIG_ENDIAN
++   // recovery original byte order, before extracting key index.
++{
++    USHORT	tmpKeyinfo;
++
++    memcpy(&tmpKeyinfo, &Packet.KeyDesc.KeyInfo, sizeof(USHORT));
++    tmpKeyinfo = SWAP16(tmpKeyinfo);
++    memcpy(&Packet.KeyDesc.KeyInfo, &tmpKeyinfo, sizeof(USHORT));
++}
++#endif
++
+ 	// 6. Update GTK
+ 	memset(pGroupKey, 0, sizeof(NDIS_802_11_KEY) + LEN_EAP_KEY);
+ 	pGroupKey->Length    = sizeof(NDIS_802_11_KEY) + LEN_EAP_KEY;
+-- 
+1.5.6.3
+

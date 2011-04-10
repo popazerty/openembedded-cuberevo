@@ -1,0 +1,20 @@
+From 10d211cebd56665192f9bf0071656e6db41d85fe Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Thu, 19 Nov 2009 15:30:46 +0000
+Subject: [PATCH] sh_stm: STMicroelectronics STLinux 2.3 kernel release 123
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ localversion-stm |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/localversion-stm b/localversion-stm
+index ea56787..ec2b8d6 100644
+--- a/localversion-stm
++++ b/localversion-stm
+@@ -1 +1 @@
+-_stm23_0122
++_stm23_0123
+-- 
+1.6.0.6
+

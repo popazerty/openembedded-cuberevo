@@ -1,0 +1,45 @@
+From be927effd506ab476714b8ba23ee0d546eb07cec Mon Sep 17 00:00:00 2001
+From: Christopher SMITH <chris.smith@st.com>
+Date: Mon, 11 May 2009 12:55:33 +0100
+Subject: [PATCH] sh: Add kptrace tracepoint on hash_futex.
+
+The interesting bits aren't easily available in the registers, so use
+a bespoke tracepoint to bring them out.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+---
+ arch/sh/kernel/kptrace.c |   11 +++++++++++
+ 1 files changed, 11 insertions(+), 0 deletions(-)
+
+diff --git a/arch/sh/kernel/kptrace.c b/arch/sh/kernel/kptrace.c
+index 9bc8126..65c3edb 100644
+--- a/arch/sh/kernel/kptrace.c
++++ b/arch/sh/kernel/kptrace.c
+@@ -1059,6 +1059,16 @@ static int syscall_sihh_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ 	return 0;
+ }
+ 
++static int hash_futex_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	char tbuf[KPTRACE_SMALL_BUF];
++	union futex_key *key = (union futex_key *)regs->regs[4];
++	snprintf(tbuf, KPTRACE_SMALL_BUF, "HF %.8lx %p %.8x",
++		key->both.word, key->both.ptr, key->both.offset);
++	write_trace_record(p, regs, tbuf);
++	return 0;
++}
++
+ static int kmalloc_pre_handler(struct kprobe *p, struct pt_regs *regs)
+ {
+ 	char tbuf[KPTRACE_SMALL_BUF];
+@@ -1830,6 +1840,7 @@ static void init_syscall_logging(void)
+ 	INIT_SYSCALL_PROBE(sys_tkill);
+ 	INIT_SYSCALL_PROBE(sys_sendfile64);
+ 	INIT_SYSCALL_PROBE(sys_futex);
++	create_tracepoint(set, "hash_futex", hash_futex_handler, NULL);
+ 	INIT_SYSCALL_PROBE(sys_sched_setaffinity);
+ 	INIT_SYSCALL_PROBE(sys_sched_getaffinity);
+ 	INIT_SYSCALL_PROBE(sys_io_setup);
+-- 
+1.6.0.6
+

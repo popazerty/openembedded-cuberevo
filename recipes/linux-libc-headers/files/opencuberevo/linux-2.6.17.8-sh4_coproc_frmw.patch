@@ -1,0 +1,27 @@
+--- linux-sh4-2.6.17.8_stm22-34/drivers/stm/stm-coprocessor_frmw.c.orig	2006-08-25 12:19:57.131429512 +0000
++++ linux-sh4-2.6.17.8_stm22-34/drivers/stm/stm-coprocessor_frmw.c	2006-08-25 12:20:55.220598616 +0000
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/platform_device.h>
+ #include <linux/module.h>
+ #include <linux/bootmem.h>
+ #include <linux/fs.h>
+@@ -115,7 +116,6 @@ static int st_coproc_open(struct inode *
+ 	dbg_print("Asking the file %s for %s\n", firm_file, cop->dev.bus_id);
+ 	if (request_firmware(&fw, firm_file, &(cop->dev)) == 0) {
+ 		unsigned long boot_address;
+-		unsigned long p1_addr;
+ 
+ 		cop->control |= COPROC_IN_USE;
+ 		/* move the firmware in the coprocessor memory */
+@@ -232,7 +232,7 @@ static int __init st_coproc_init(void)
+ 		} else {
+ 			cop->control |= COPROC_SPACE_ALLOCATE;
+ 			cop->vma_address =
+-			    ioremap_nocache(cop->ram_offset, cop->ram_size);
++			    (int)ioremap_nocache(cop->ram_offset, cop->ram_size);
+ 		}
+ 		/*
+ 		 * Setup and Add the device entries in the SysFS

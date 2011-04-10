@@ -1,0 +1,2033 @@
+From 5f05821f0e03cd7553d3ea1d3d08bfe4945b805f Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 11 Nov 2009 15:59:50 +0000
+Subject: [PATCH] sh_stm: Initial Freeman 510 (FLI7510) support
+
+This patch adds an initial support for Freeman 510 (FLI7510) chip.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/kernel/cpu/Makefile                  |    1 +
+ arch/sh/kernel/cpu/irq/Makefile              |    1 +
+ arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c    |    9 +-
+ arch/sh/kernel/cpu/sh4/Makefile              |    3 +
+ arch/sh/kernel/cpu/sh4/clock-fli7510.c       |  352 ++++++++
+ arch/sh/kernel/cpu/sh4/platform-pm-fli7510.c |   64 ++
+ arch/sh/kernel/cpu/sh4/probe.c               |    3 +
+ arch/sh/kernel/cpu/sh4/setup-fli7510.c       | 1246 ++++++++++++++++++++++++++
+ arch/sh/kernel/setup.c                       |    1 +
+ arch/sh/mm/Kconfig                           |    9 +
+ drivers/usb/Kconfig                          |    2 +
+ include/asm-sh/irq-ilc.h                     |    6 +-
+ include/asm-sh/processor.h                   |    4 +-
+ include/linux/stm/pio.h                      |    2 +-
+ include/linux/stm/soc.h                      |   25 +
+ include/linux/stm/sysconf.h                  |   69 ++-
+ 16 files changed, 1790 insertions(+), 7 deletions(-)
+ create mode 100644 arch/sh/kernel/cpu/sh4/clock-fli7510.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/platform-pm-fli7510.c
+ create mode 100644 arch/sh/kernel/cpu/sh4/setup-fli7510.c
+
+diff --git a/arch/sh/kernel/cpu/Makefile b/arch/sh/kernel/cpu/Makefile
+index 4d37db5..1607bb0 100644
+--- a/arch/sh/kernel/cpu/Makefile
++++ b/arch/sh/kernel/cpu/Makefile
+@@ -17,6 +17,7 @@ obj-y	+= irq/ init.o clock.o
+ # clocks. Those which do not can remove it here, and define a complete
+ # new clock architecture in their own processor specific code.
+ archclock-y					:= clock-cpg.o
++archclock-$(CONFIG_CPU_SUBTYPE_FLI7510)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STX5197)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STX5206)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STB7100)	:=
+diff --git a/arch/sh/kernel/cpu/irq/Makefile b/arch/sh/kernel/cpu/irq/Makefile
+index 53de7d3..6c8a72e 100644
+--- a/arch/sh/kernel/cpu/irq/Makefile
++++ b/arch/sh/kernel/cpu/irq/Makefile
+@@ -5,6 +5,7 @@ obj-y	+= imask.o intc.o
+ 
+ obj-$(CONFIG_CPU_HAS_IPR_IRQ)		+= ipr.o
+ obj-$(CONFIG_CPU_HAS_MASKREG_IRQ)	+= maskreg.o
++obj-$(CONFIG_CPU_SUBTYPE_FLI7510)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX5197)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX5206)	+= st40_ilc_stx7200.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= st40_ilc_sti5528.o ilc3_common.o
+diff --git a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+index 61fb110..d791d9a 100644
+--- a/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
++++ b/arch/sh/kernel/cpu/irq/st40_ilc_stx7200.c
+@@ -110,7 +110,8 @@ int ilc2irq(unsigned int evtcode)
+ 	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7141)
+ 	unsigned int priority = 7;
+-#elif	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++#elif	defined(CONFIG_CPU_SUBTYPE_FLI7510) || \
++	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	unsigned int priority = 14 - evt2irq(evtcode);
+@@ -137,7 +138,8 @@ void ilc_irq_demux(unsigned int irq, struct irq_desc *desc)
+ 	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7141)
+ 	unsigned int priority = 7;
+-#elif	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++#elif	defined(CONFIG_CPU_SUBTYPE_FLI7510) || \
++	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	unsigned int priority = 14 - irq;
+@@ -217,7 +219,8 @@ static unsigned int startup_ilc_irq(unsigned int irq)
+ 	/* ILC_EXT_OUT[6] -> IRL[2] (default priority  7 = irq  8) */
+ 	/* ILC_EXT_OUT[7] -> IRL[3] (default priority  4 = irq 11) */
+ 	ILC_SET_PRI(irq_offset, 0x8007);
+-#elif	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
++#elif	defined(CONFIG_CPU_SUBTYPE_FLI7510) || \
++	defined(CONFIG_CPU_SUBTYPE_STX5197) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7105) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ 	ILC_SET_PRI(irq_offset, priority);
+diff --git a/arch/sh/kernel/cpu/sh4/Makefile b/arch/sh/kernel/cpu/sh4/Makefile
+index 336ae14..8614316 100644
+--- a/arch/sh/kernel/cpu/sh4/Makefile
++++ b/arch/sh/kernel/cpu/sh4/Makefile
+@@ -18,6 +18,7 @@ obj-$(CONFIG_CPU_SUBTYPE_SH7751)	+= setup-sh7750.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH7751R)	+= setup-sh7750.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH7760)	+= setup-sh7760.o
+ obj-$(CONFIG_CPU_SUBTYPE_SH4_202)	+= setup-sh4-202.o
++obj-$(CONFIG_CPU_SUBTYPE_FLI7510)	+= setup-fli7510.o
+ obj-$(CONFIG_CPU_SUBTYPE_ST40STB1)	+= setup-st40ra.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX5197)	+= setup-stx5197.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX5206)	+= setup-stx5206.o
+@@ -30,6 +31,7 @@ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= setup-stx7200.o sata-init.o
+ # Primary on-chip clocks (common)
+ ifndef CONFIG_CPU_SH4A
+ clock-$(CONFIG_CPU_SH4)			:= clock-sh4.o
++clock-$(CONFIG_CPU_SUBTYPE_FLI7510)	:= clock-fli7510.o clock-common.o
+ clock-$(CONFIG_CPU_SUBTYPE_STX5197)	:= clock-stx5197.o clock-common.o
+ clock-$(CONFIG_CPU_SUBTYPE_STX5206)	:= clock-stx5206.o clock-common.o
+ clock-$(CONFIG_CPU_SUBTYPE_STB7100)	:= clock-stb7100.o clock-common.o
+@@ -48,6 +50,7 @@ obj-$(CONFIG_STM_CPU_FREQ)		+= cpufreq-stm.o
+ 
+ ifdef CONFIG_SUSPEND
+ obj-y					+= suspend.o suspend-core.o
++obj-$(CONFIG_CPU_SUBTYPE_FLI7510)	+= suspend-fli7510.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX5197)	+= suspend-stx5197.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX5206)	+= suspend-stx5206.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= suspend-stb7100.o
+diff --git a/arch/sh/kernel/cpu/sh4/clock-fli7510.c b/arch/sh/kernel/cpu/sh4/clock-fli7510.c
+new file mode 100644
+index 0000000..de124de
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/clock-fli7510.c
+@@ -0,0 +1,352 @@
++/*
++ * Copyright (C) 2009 STMicroelectronics Limited
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Code to handle the clockgen hardware on the Freeman 510 (FLI7510).
++ */
++
++#include <asm/clock.h>
++#include <asm/freq.h>
++#include <linux/err.h>
++#include <linux/io.h>
++#include <linux/init.h>
++#include <linux/kernel.h>
++#include <linux/pm.h>
++#include <linux/stm/sysconf.h>
++
++#include "clock-common.h"
++
++
++
++/* 30 MHz quartz oscillator clock ----------------------------------------- */
++
++static struct clk fli7510_osc_clk = {
++	.name	= "osc_clk",
++	.flags	= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++	.rate	= 30000000,
++};
++
++
++
++/* Clockgen A ------------------------------------------------------------- */
++
++#define FLI7510_CLOCKGENA_BASE_ADDR     	0xfde00000
++#define FLI7510_CKGA_PLL0_CFG			0x000
++#define FLI7510_CKGA_PLL1_CFG			0x004
++#define FLI7510_CKGA_CLKOPSRC_SWITCH_CFG(n)	(0x014 + ((n) * 0x10))
++#define FLI7510_CKGA_OSC_DIV_CFG(n)		(0x800 + ((n) * 4))
++#define FLI7510_CKGA_PLL0HS_DIV_CFG(x)		(0x900 + ((x) * 4))
++#define FLI7510_CKGA_PLL0LS_DIV_CFG(x)		(0xa10 + (((x) -4) *4))
++#define FLI7510_CKGA_PLL1_DIV_CFG(x)		(0xb00 + ((x) *4))
++
++static void __iomem *fli7510_clkgena_base;
++
++/* PLLs */
++
++static unsigned long pll1600_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0x7;
++	ndiv = (cfg >>  8) & 0xff;
++	freq = (((input / 1000) * ndiv) / mdiv) * 1000;
++
++	return freq;
++}
++
++static unsigned long pll800_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, pdiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0xff;
++	ndiv = (cfg >>  8) & 0xff;
++	pdiv = (cfg >> 16) & 0x7;
++	freq = (((2 * (input / 1000) * ndiv) / mdiv) / (1 << pdiv)) * 1000;
++
++	return freq;
++}
++
++static int fli7510_clkgena_pll_clk_init(struct clk *clk)
++{
++	clk->ops->recalc(clk);
++
++	return 0;
++}
++
++static void fli7510_clkgena_pll_clk_recalc(struct clk *clk)
++{
++	int pll_num = (int)clk->private_data;
++	unsigned long cfg;
++
++	switch (pll_num) {
++	case 0:
++		cfg = readl(fli7510_clkgena_base + FLI7510_CKGA_PLL0_CFG);
++		clk->rate = pll1600_freq(clk->parent->rate, cfg);
++		break;
++	case 1:
++		cfg = readl(fli7510_clkgena_base + FLI7510_CKGA_PLL1_CFG);
++		clk->rate = pll800_freq(clk->parent->rate, cfg);
++		break;
++	default:
++		BUG();
++		break;
++	}
++}
++
++static struct clk_ops fli7510_clkgena_pll_clk_ops = {
++	.init	= fli7510_clkgena_pll_clk_init,
++	.recalc	= fli7510_clkgena_pll_clk_recalc,
++};
++
++static struct clk fli7510_clkgena_pll_clks[] = {
++	{
++		.name		= "clkgena_pll0_clk",
++		.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++		.parent		= &fli7510_osc_clk,
++		.ops		= &fli7510_clkgena_pll_clk_ops,
++		.private_data	= (void *)0,
++	}, {
++		.name		= "clkgena_pll1_clk",
++		.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++		.parent		= &fli7510_osc_clk,
++		.ops		= &fli7510_clkgena_pll_clk_ops,
++		.private_data	= (void *)1,
++	},
++};
++
++/* Generated clocks */
++
++enum fli7510_clkgena_ids {
++	CLK_SLIM_FDMA = 0,
++	CLK_VCPU,
++	CLK_XP70_TANGO,
++	CLK_IC_266,
++	CLK_ST40_HOST_ICK,
++	CLK_ST40_CTL_ICK,
++	CLK_ST231_DRA2,
++	CLK_ST231_AUD,
++	CLK_BLT,
++	CLK_XP70_AATV,
++	CLK_EMI,
++	CLK_PP,
++	CLK_ETHERNET,
++	CLK_PCI,
++	CLK_IC_100,
++	CLK_IC_150,
++	CLK_SPARE_1,
++	CLK_IC_200,
++	CLK_SPARE_2,
++};
++
++static int fli7510_clkgena_clk_init(struct clk *clk)
++{
++	int num = (int)clk->private_data;
++	unsigned long data;
++	unsigned long src_sel;
++
++	data = readl(fli7510_clkgena_base +
++			FLI7510_CKGA_CLKOPSRC_SWITCH_CFG(num / 16));
++	src_sel = (data >> ((num % 16) * 2)) & 0x3;
++
++	switch (src_sel) {
++	case 0:
++		clk->parent = &fli7510_osc_clk;
++		break;
++	case 1:
++	case 2:
++		clk->parent = &fli7510_clkgena_pll_clks[src_sel - 1];
++		break;
++	case 3:
++		/* clock is stopped */
++		clk->parent = NULL;
++		break;
++	}
++
++	clk->ops->recalc(clk);
++
++	return 0;
++}
++
++static void fli7510_clkgena_clk_recalc(struct clk *clk)
++{
++	int num = (int)clk->private_data;
++	unsigned long data;
++	unsigned long src_sel;
++	unsigned long div_cfg = 0;
++	unsigned long ratio;
++
++	data = readl(fli7510_clkgena_base +
++			FLI7510_CKGA_CLKOPSRC_SWITCH_CFG(num / 16));
++	src_sel = (data >> ((num % 16) * 2)) & 0x3;
++
++	switch (src_sel) {
++	case 0:
++		div_cfg = readl(fli7510_clkgena_base +
++				FLI7510_CKGA_OSC_DIV_CFG(num));
++		break;
++	case 1:
++		div_cfg = readl(fli7510_clkgena_base + ((num <= 3) ?
++					FLI7510_CKGA_PLL0HS_DIV_CFG(num) :
++					FLI7510_CKGA_PLL0LS_DIV_CFG(num)));
++		break;
++	case 2:
++		div_cfg = readl(fli7510_clkgena_base +
++				FLI7510_CKGA_PLL1_DIV_CFG(num));
++		break;
++	case 3:
++		clk->rate = 0;
++		return;
++	}
++
++	if (div_cfg & 0x10000)
++		ratio = 1;
++	else
++		ratio = (div_cfg & 0x1f) + 1;
++
++	clk->rate = clk->parent->rate / ratio;
++}
++
++static struct clk_ops fli7510_clkgena_clk_ops = {
++	.init		= fli7510_clkgena_clk_init,
++	.recalc		= fli7510_clkgena_clk_recalc,
++};
++
++#define FLI7510_CLKGENA_CLK(_num, _name) \
++	{ \
++		.name		= _name, \
++		.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES, \
++		.ops		= &fli7510_clkgena_clk_ops, \
++		.private_data	= (void *)_num, \
++		.id		= _num, \
++	}
++
++struct clk fli7510_clkgena_clks[] = {
++	FLI7510_CLKGENA_CLK(CLK_SLIM_FDMA, "slim_fdma"),
++	FLI7510_CLKGENA_CLK(CLK_VCPU, "vcpu"),
++	FLI7510_CLKGENA_CLK(CLK_XP70_TANGO, "xp70_tango"),
++	FLI7510_CLKGENA_CLK(CLK_IC_266, "ic_266"),
++	FLI7510_CLKGENA_CLK(CLK_ST40_HOST_ICK, "st40_host_ick"),
++	FLI7510_CLKGENA_CLK(CLK_ST40_CTL_ICK, "st40_ctl_ick"),
++	FLI7510_CLKGENA_CLK(CLK_ST231_DRA2, "st231_dra2"),
++	FLI7510_CLKGENA_CLK(CLK_ST231_AUD, "st241_aud"),
++	FLI7510_CLKGENA_CLK(CLK_BLT, "blt"),
++	FLI7510_CLKGENA_CLK(CLK_XP70_AATV, "xp70_aatv"),
++	FLI7510_CLKGENA_CLK(CLK_EMI, "emi"),
++	FLI7510_CLKGENA_CLK(CLK_PP, "pp"),
++	FLI7510_CLKGENA_CLK(CLK_ETHERNET, "ethernet"),
++	FLI7510_CLKGENA_CLK(CLK_PCI, "pci"),
++	FLI7510_CLKGENA_CLK(CLK_IC_100, "ic_100"),
++	FLI7510_CLKGENA_CLK(CLK_IC_150, "ic_150"),
++	FLI7510_CLKGENA_CLK(CLK_IC_200, "ic_200"),
++};
++
++#ifdef CONFIG_PM
++void fli7510_clkgena_pm_restore(void)
++{
++	for (i = 0; i < ARRAY_SIZE(fli7510_clkgena_pll_clks); i++)
++		fli7510_clkgena_pll_clk_init(&fli7510_clkgena_pll_clks[i]);
++
++	for (i = 0; i < ARRAY_SIZE(fli7510_clkgena_clks); i++) {
++		if (fli7510_clkgena_clk_setrate(&fli7510_clkgena_clks[i],
++				fli7510_clkgena_clks[i].rate) < 0)
++			fli7510_clkgena_clk_recalc(&fli7510_clkgena_clks[i]);
++	}
++}
++
++int clk_pm_state(pm_message_t state)
++{
++	static int prev_state = PM_EVENT_ON;
++	int i;
++
++	switch (state.event) {
++	case PM_EVENT_ON:
++		if (prev_state == PM_EVENT_FREEZE)
++			fli7510_clkgena_pm_restore();
++	case PM_EVENT_SUSPEND:
++	case PM_EVENT_FREEZE:
++		prev_state = state.event;
++		break;
++	}
++	return 0;
++}
++#endif
++
++
++
++/* SH4 generic clocks ----------------------------------------------------- */
++
++static int fli7510_generic_clk_init(struct clk *clk)
++{
++	clk->parent = clk_get(NULL, "ic_100");
++	BUG_ON(!clk->parent || IS_ERR(clk->parent));
++
++	clk->ops->recalc(clk);
++
++	return 0;
++}
++
++static void fli7510_generic_clk_recalc(struct clk *clk)
++{
++	clk->rate = clk->parent->rate;
++}
++
++static struct clk_ops fli7510_generic_clk_ops = {
++	.init		= fli7510_generic_clk_init,
++	.recalc		= fli7510_generic_clk_recalc,
++};
++
++static struct clk fli7510_generic_module_clk = {
++	.name		= "module_clk",
++	.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++	.ops		= &fli7510_generic_clk_ops,
++};
++
++static struct clk fli7510_generic_comms_clk = {
++	.name		= "comms_clk",
++	.flags		= CLK_ALWAYS_ENABLED,
++	.ops		= &fli7510_generic_clk_ops,
++};
++
++
++
++/* ------------------------------------------------------------------------ */
++
++int __init clk_init(void)
++{
++	int err;
++	int i;
++
++	/* Clockgen A */
++
++	fli7510_clkgena_base = ioremap(FLI7510_CLOCKGENA_BASE_ADDR, 0x50);
++	BUG_ON(!fli7510_clkgena_base);
++
++	err = clk_register(&fli7510_osc_clk);
++	if (err != 0)
++		goto error;
++
++	for (i = 0; i < ARRAY_SIZE(fli7510_clkgena_pll_clks); i++) {
++		err = clk_register(&fli7510_clkgena_pll_clks[i]);
++		if (err != 0)
++			goto error;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(fli7510_clkgena_clks); i++) {
++		err = clk_register(&fli7510_clkgena_clks[i]);
++		if (err != 0)
++			goto error;
++	}
++
++	/* Generic SH-4 clocks */
++
++	err = clk_register(&fli7510_generic_module_clk);
++	if (err != 0)
++		goto error;
++
++	err = clk_register(&fli7510_generic_comms_clk);
++
++error:
++	return err;
++}
+diff --git a/arch/sh/kernel/cpu/sh4/platform-pm-fli7510.c b/arch/sh/kernel/cpu/sh4/platform-pm-fli7510.c
+new file mode 100644
+index 0000000..99fc4fa
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/platform-pm-fli7510.c
+@@ -0,0 +1,64 @@
++/*
++ * Platform PM Capability Freeman 510 (FLI7510)
++ *
++ * Copyright (C) 2009 STMicroelectronics Limited
++ * Author: Pawel Moll <pawel.moll@st.com>
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#include <linux/stm/pm.h>
++#ifdef CONFIG_PM
++static int
++emi_pwr_dwn_req(struct platform_device *dev, int host_phy, int dwn)
++{
++	static struct sysconf_field *sc;
++
++	if (!sc)
++		sc = sysconf_claim(CFG_PWR_DWN_CTL, 0, 0,
++				"global_emipci_pwrdwn_req");
++
++	sysconf_write(sc, (dwn ? 1 : 0));
++
++	return 0;
++}
++
++static int
++emi_pwr_dwn_ack(struct platform_device *dev, int host_phy, int ack)
++{
++	static struct sysconf_field *sc;
++	int i;
++
++	if (!sc)
++		sc = sysconf_claim(CFG_PCI_ROPC_STATUS, 16, 16,
++				"status_emipciss_global_pwrdwn_ack");
++
++	for (i = 5; i; --i) {
++		if (sysconf_read(sc) == ack)
++			return 0;
++		mdelay(10);
++	}
++
++	return -EINVAL;
++}
++
++static int
++usb_pwr_req(struct platform_device *dev, int host_phy, int dwn)
++{
++	static struct sysconf_field *sc;
++
++	if (!sc)
++		sc = sysconf_claim(CFG_COMMS_CONFIG_1, 8, 8,
++				"usb_powerdown_req");
++
++	sysconf_write(sc, (dwn ? 1 : 0));
++
++	return 0;
++}
++
++static struct platform_device_pm stx7105_pm_devices[] = {
++	pm_plat_name("emi", NULL, emi_pwr_dwn_req, emi_pwr_dwn_ack, NULL),
++	pm_plat_dev(&fli7510_usb_device, NULL, usb_pwr_req, NULL, NULL),
++};
++#endif
+diff --git a/arch/sh/kernel/cpu/sh4/probe.c b/arch/sh/kernel/cpu/sh4/probe.c
+index a666270..540847a 100644
+--- a/arch/sh/kernel/cpu/sh4/probe.c
++++ b/arch/sh/kernel/cpu/sh4/probe.c
+@@ -188,6 +188,9 @@ int __init detect_cpu_and_cache_system(void)
+ 			/* 5197 (cut 2.0 = 0x9f02) */
+ 			cpu_data->type = CPU_STX5197;
+ 			break;
++		case 0xa000 ... 0xa0ff:
++			boot_cpu_data.type = CPU_FLI7510;
++			break;
+ 		case 0xa100 ... 0xa1ff:
+ 			boot_cpu_data.type = CPU_STX7106;
+ 			break;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-fli7510.c b/arch/sh/kernel/cpu/sh4/setup-fli7510.c
+new file mode 100644
+index 0000000..18d601f
+--- /dev/null
++++ b/arch/sh/kernel/cpu/sh4/setup-fli7510.c
+@@ -0,0 +1,1246 @@
++/*
++ * Freeman 510 (FLI7510) Setup
++ *
++ * Copyright (C) 2009 STMicroelectronics Limited
++ * Author: Pawel Moll <pawel.moll@st.com>
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#include <linux/delay.h>
++#include <linux/dma-mapping.h>
++#include <linux/gpio.h>
++#include <linux/i2c.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#include <linux/pata_platform.h>
++#include <linux/phy.h>
++#include <linux/platform_device.h>
++#include <linux/serial.h>
++#include <linux/mtd/nand.h>
++#include <linux/mtd/partitions.h>
++#include <linux/stm/emi.h>
++#include <linux/stm/pio.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/soc_init.h>
++#include <linux/stm/sysconf.h>
++#include <asm/irq-ilc.h>
++#include <asm/processor.h>
++
++
++
++/* Returns: 1 if being executed on the "HOST" ST40,
++ *          0 if executed on the "RT" ST40 */
++#define ST40HOST_CORE ((ctrl_inl(CCN_PRR) & (1 << 7)) != 0)
++
++
++
++/* USB resources ---------------------------------------------------------- */
++
++#define AHB2STBUS_WRAPPER_GLUE_OFFSET	0x00000
++#define AHB2STBUS_OHCI_OFFSET		0xffc00
++#define AHB2STBUS_EHCI_OFFSET		0xffe00
++#define AHB2STBUS_PROTOCOL_OFFSET	0xfff00
++
++static u64 st40_dma_mask = DMA_32BIT_MASK;
++
++static struct platform_device fli7510_usb_device =
++	USB_DEVICE(0, 0xfda00000 + AHB2STBUS_EHCI_OFFSET, ILC_IRQ(54),
++			0xfda00000 + AHB2STBUS_OHCI_OFFSET, ILC_IRQ(55),
++			0xfda00000 + AHB2STBUS_WRAPPER_GLUE_OFFSET,
++			0xfda00000 + AHB2STBUS_PROTOCOL_OFFSET,
++			USB_FLAGS_STRAP_16BIT |
++			USB_FLAGS_STRAP_PLL |
++			USB_FLAGS_STBUS_CONFIG_THRESHOLD256);
++
++void __init fli7510_configure_usb(enum fli7510_usb_ovrcur_mode ovrcur_mode)
++{
++	struct sysconf_field *sc;
++
++	sc = sysconf_claim(CFG_COMMS_CONFIG_1, 12, 12,
++			"usba_enable_pad_override");
++	switch (ovrcur_mode) {
++	case fli7510_usb_ovrcur_disabled:
++		sysconf_write(sc, 1);
++		sc = sysconf_claim(CFG_COMMS_CONFIG_1, 13, 13, "usba_ovrcur");
++		sysconf_write(sc, 1);
++		break;
++	default:
++		sysconf_write(sc, 0);
++		sc = sysconf_claim(CFG_COMMS_CONFIG_1, 11, 11,
++				"usba_ovrcur_polarity");
++		switch (ovrcur_mode) {
++		case fli7510_usb_ovrcur_active_high:
++			sysconf_write(sc, 0);
++			break;
++		case fli7510_usb_ovrcur_active_low:
++			sysconf_write(sc, 1);
++			break;
++		default:
++			BUG();
++			break;
++		}
++		break;
++	}
++
++	stpio_request_pin(27, 1, "USB_A_OVRCUR", STPIO_IN);
++	stpio_request_pin(27, 2, "USB_A_PWREN", STPIO_ALT_OUT);
++
++	platform_device_register(&fli7510_usb_device);
++}
++
++
++
++/* FDMA resources --------------------------------------------------------- */
++
++#ifdef CONFIG_STM_DMA
++
++#include <linux/stm/fdma_firmware_7200.h>
++
++static struct stm_plat_fdma_hw fli7510_fdma_hw = {
++	.slim_regs = {
++		.id       = 0x0000 + (0x000 << 2), /* 0x0000 */
++		.ver      = 0x0000 + (0x001 << 2), /* 0x0004 */
++		.en       = 0x0000 + (0x002 << 2), /* 0x0008 */
++		.clk_gate = 0x0000 + (0x003 << 2), /* 0x000c */
++	},
++	.periph_regs = {
++		.sync_reg = 0x8000 + (0xfe2 << 2), /* 0xbf88 */
++		.cmd_sta  = 0x8000 + (0xff0 << 2), /* 0xbfc0 */
++		.cmd_set  = 0x8000 + (0xff1 << 2), /* 0xbfc4 */
++		.cmd_clr  = 0x8000 + (0xff2 << 2), /* 0xbfc8 */
++		.cmd_mask = 0x8000 + (0xff3 << 2), /* 0xbfcc */
++		.int_sta  = 0x8000 + (0xff4 << 2), /* 0xbfd0 */
++		.int_set  = 0x8000 + (0xff5 << 2), /* 0xbfd4 */
++		.int_clr  = 0x8000 + (0xff6 << 2), /* 0xbfd8 */
++		.int_mask = 0x8000 + (0xff7 << 2), /* 0xbfdc */
++	},
++	.dmem_offset = 0x8000,
++	.dmem_size   = 0x800 << 2, /* 2048 * 4 = 8192 */
++	.imem_offset = 0xc000,
++	.imem_size   = 0x1000 << 2, /* 4096 * 4 = 16384 */
++};
++
++static struct stm_plat_fdma_data fli7510_fdma_platform_data = {
++	.hw = &fli7510_fdma_hw,
++	.fw = &stm_fdma_firmware_7200,
++	.min_ch_num = CONFIG_MIN_STM_DMA_CHANNEL_NR,
++	.max_ch_num = CONFIG_MAX_STM_DMA_CHANNEL_NR,
++};
++
++#define fli7510_fdma_platform_data_addr &fli7510_fdma_platform_data
++
++#else
++
++#define fli7510_fdma_platform_data_addr NULL
++
++#endif /* CONFIG_STM_DMA */
++
++static struct platform_device fli7510_fdma_devices[] = {
++	{
++		.name		= "stm-fdma",
++		.id		= 0,
++		.num_resources	= 2,
++		.resource = (struct resource[]) {
++			{
++				.start = 0xfd660000,
++				.end   = 0xfd66ffff,
++				.flags = IORESOURCE_MEM,
++			}, {
++				.start = ILC_IRQ(36),
++				.end   = ILC_IRQ(36),
++				.flags = IORESOURCE_IRQ,
++			},
++		},
++		.dev.platform_data = fli7510_fdma_platform_data_addr,
++	}, {
++		.name		= "stm-fdma",
++		.id		= 1,
++		.num_resources	= 2,
++		.resource = (struct resource[]) {
++			{
++				.start = 0xfd910000,
++				.end   = 0xfd91ffff,
++				.flags = IORESOURCE_MEM,
++			}, {
++				.start = ILC_IRQ(38),
++				.end   = ILC_IRQ(38),
++				.flags = IORESOURCE_IRQ,
++			},
++		},
++		.dev.platform_data = fli7510_fdma_platform_data_addr,
++	}
++};
++
++static struct platform_device fli7510_fdma_xbar_device = {
++	.name		= "fdma-xbar",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd980000,
++			.end	= 0xfd980fff,
++			.flags	= IORESOURCE_MEM,
++		},
++	},
++};
++
++
++
++/* SSC resources ---------------------------------------------------------- */
++
++static char fli7510_i2c_dev_name[] = "i2c_st";
++static char fli7510_spi_dev_name[] = "spi_st_ssc";
++
++static struct platform_device fli7510_ssc_devices[] = {
++	STSSC_DEVICE(0xfdb40000, ILC_IRQ(19), 10, 2, 3, 0xff),
++	STSSC_DEVICE(0xfdb41000, ILC_IRQ(20), 9, 4, 5, 0xff),
++	STSSC_DEVICE(0xfdb42000, ILC_IRQ(21), 9, 6, 7, 0xff),
++	STSSC_DEVICE(0xfdb43000, ILC_IRQ(22), 10, 0, 1, 0xff),
++	STSSC_DEVICE(0xfdb44000, ILC_IRQ(23), 17, 2, 3, 5),
++};
++
++void __init fli7510_configure_ssc(struct plat_ssc_data *data)
++{
++	int num_i2c = 0;
++	int num_spi = 0;
++	int i;
++	int capability = data->capability;
++
++	for (i = 0; i < ARRAY_SIZE(fli7510_ssc_devices); i++,
++			capability >>= SSC_BITS_SIZE) {
++		struct ssc_pio_t *ssc =
++				fli7510_ssc_devices[i].dev.platform_data;
++
++		if (capability & SSC_UNCONFIGURED)
++			continue;
++
++		if (capability & SSC_SPI_CAPABILITY) {
++			fli7510_ssc_devices[i].name = fli7510_spi_dev_name;
++			fli7510_ssc_devices[i].id = num_spi++;
++			ssc->chipselect = data->spi_chipselects[i];
++		} else {
++			/* I2C bus number reservation (to prevent any hot-plug
++			 * device from using it) */
++#ifdef CONFIG_I2C_BOARDINFO
++			i2c_register_board_info(num_i2c, NULL, 0);
++#endif
++			fli7510_ssc_devices[i].name = fli7510_i2c_dev_name;
++			fli7510_ssc_devices[i].id = num_i2c++;
++			if (capability & SSC_I2C_CLK_UNIDIR)
++				ssc->clk_unidir = 1;
++		}
++
++		platform_device_register(&fli7510_ssc_devices[i]);
++	}
++}
++
++
++
++/* PATA resources --------------------------------------------------------- */
++
++/*
++ * EMI A20 = CS1 (active low)
++ * EMI A21 = CS0 (active low)
++ * EMI A19 = DA2
++ * EMI A18 = DA1
++ * EMI A17 = DA0
++ */
++
++static struct resource pata_resources[] = {
++	[0] = {	/* I/O base: CS1=N, CS0=A */
++		.start	= (1<<20),
++		.end	= (1<<20) + (8<<17)-1,
++		.flags	= IORESOURCE_MEM,
++	},
++	[1] = {	/* CTL base: CS1=A, CS0=N, DA2=A, DA1=A, DA0=N */
++		.start	= (1<<21) + (6<<17),
++		.end	= (1<<21) + (6<<17) + 3,
++		.flags	= IORESOURCE_MEM,
++	},
++	[2] = {	/* IRQ */
++		.flags	= IORESOURCE_IRQ,
++	}
++};
++
++static struct pata_platform_info pata_info = {
++	.ioport_shift	= 17,
++};
++
++static struct platform_device pata_device = {
++	.name		= "pata_platform",
++	.id		= -1,
++	.num_resources	= ARRAY_SIZE(pata_resources),
++	.resource	= pata_resources,
++	.dev = {
++		.platform_data = &pata_info,
++	}
++};
++
++void __init fli7510_configure_pata(int bank, int pc_mode, int irq)
++{
++	unsigned long bank_base;
++
++	bank_base = emi_bank_base(bank);
++	pata_resources[0].start += bank_base;
++	pata_resources[0].end   += bank_base;
++	pata_resources[1].start += bank_base;
++	pata_resources[1].end   += bank_base;
++	pata_resources[2].start = irq;
++	pata_resources[2].end   = irq;
++
++	emi_config_pata(bank, pc_mode);
++
++	platform_device_register(&pata_device);
++}
++
++
++
++/* Ethernet MAC resources ------------------------------------------------- */
++
++static void fli7510_gmac_fix_speed(void *priv, unsigned int speed)
++{
++	struct sysconf_field *sc = priv;
++
++	sysconf_write(sc, (speed == SPEED_100) ? 1 : 0);
++}
++
++static struct plat_stmmacenet_data fli7510_gmac_private_data = {
++	.bus_id = 0,
++	.pbl = 32,
++	.has_gmac = 1,
++	.fix_mac_speed = fli7510_gmac_fix_speed,
++};
++
++static struct platform_device fli7510_gmac_device = {
++	.name 		= "stmmaceth",
++	.id		= 1,
++	.num_resources	= 2,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd920000,
++			.end	= 0xfd927fff,
++			.flags	= IORESOURCE_MEM,
++		}, {
++			.name	= "macirq",
++			.start	= ILC_IRQ(40),
++			.end	= ILC_IRQ(40),
++			.flags	= IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.power.can_wakeup = 1,
++		.platform_data = &fli7510_gmac_private_data,
++	}
++};
++
++struct fli7510_gmac_pin {
++	unsigned char port, pin, dir;
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_mii_pins[] __initdata = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_ALT_OUT },	/* MDC */
++	{ 18, 1, STPIO_IN },		/* COL */
++	{ 18, 2, STPIO_IN },		/* CRS */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 2, STPIO_ALT_OUT },	/* TXD[2] */
++	{ 20, 3, STPIO_ALT_OUT },	/* TXD[3] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 20, 6, STPIO_IN },		/* TXCLK */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 2, STPIO_IN },		/* RXD[2] */
++	{ 21, 3, STPIO_IN },		/* RXD[3] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++	{ 21, 6, STPIO_IN },		/* RXCLK */
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_gmii_pins[] __initdata = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_ALT_OUT },	/* MDC */
++	{ 18, 1, STPIO_IN },		/* COL */
++	{ 18, 2, STPIO_IN },		/* CRS */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 2, STPIO_ALT_OUT },	/* TXD[2] */
++	{ 20, 3, STPIO_ALT_OUT },	/* TXD[3] */
++	{ 24, 4, STPIO_ALT_OUT },	/* TXD[4] */
++	{ 24, 5, STPIO_ALT_OUT },	/* TXD[5] */
++	{ 24, 6, STPIO_ALT_OUT },	/* TXD[6] */
++	{ 24, 7, STPIO_ALT_OUT },	/* TXD[7] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 20, 6, STPIO_IN },		/* TXCLK */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 2, STPIO_IN },		/* RXD[2] */
++	{ 21, 3, STPIO_IN },		/* RXD[3] */
++	{ 24, 0, STPIO_IN },		/* RXD[4] */
++	{ 24, 1, STPIO_IN },		/* RXD[5] */
++	{ 24, 2, STPIO_IN },		/* RXD[6] */
++	{ 24, 3, STPIO_IN },		/* RXD[7] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++	{ 21, 6, STPIO_IN },		/* RXCLK */
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_rmii_pins[] __initdata = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_ALT_OUT },	/* MDC */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++};
++
++static struct fli7510_gmac_pin fli7510_gmac_reverse_mii_pins[] __initdata = {
++	{ 18, 5, },			/* PHYCLK */
++	{ 18, 0, STPIO_IN },		/* MDC */
++	{ 18, 1, STPIO_ALT_OUT },	/* COL */
++	{ 18, 2, STPIO_ALT_OUT },	/* CRS */
++	{ 18, 3, STPIO_IN },		/* MDINT */
++	{ 18, 4, STPIO_ALT_BIDIR },	/* MDIO */
++	{ 20, 0, STPIO_ALT_OUT },	/* TXD[0] */
++	{ 20, 1, STPIO_ALT_OUT },	/* TXD[1] */
++	{ 20, 2, STPIO_ALT_OUT },	/* TXD[2] */
++	{ 20, 3, STPIO_ALT_OUT },	/* TXD[3] */
++	{ 20, 4, STPIO_ALT_OUT },	/* TXEN */
++	{ 20, 6, STPIO_IN },		/* TXCLK */
++	{ 21, 0, STPIO_IN },		/* RXD[0] */
++	{ 21, 1, STPIO_IN },		/* RXD[1] */
++	{ 21, 2, STPIO_IN },		/* RXD[2] */
++	{ 21, 3, STPIO_IN },		/* RXD[3] */
++	{ 21, 4, STPIO_IN },		/* RXDV */
++	{ 21, 5, STPIO_IN },		/* RX_ER */
++	{ 21, 6, STPIO_IN },		/* RXCLK */
++};
++
++void __init fli7510_configure_ethernet(enum fli7510_ethernet_mode mode,
++		int ext_clk, int phy_bus)
++{
++	struct sysconf_field *sc;
++	struct fli7510_gmac_pin *pins;
++	int pins_num;
++	unsigned char phy_sel, enmii;
++	int i;
++
++	sc = sysconf_claim(CFG_COMMS_CONFIG_2, 24, 24, "gmac_enable");
++	sysconf_write(sc, 1);
++
++	switch (mode) {
++	case fli7510_ethernet_mii:
++		phy_sel = 0;
++		enmii = 1;
++		pins = fli7510_gmac_mii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_mii_pins);
++		break;
++	case fli7510_ethernet_rmii:
++		phy_sel = 4;
++		enmii = 1;
++		pins = fli7510_gmac_rmii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_rmii_pins);
++		break;
++	case fli7510_ethernet_gmii:
++		phy_sel = 0;
++		enmii = 1;
++		pins = fli7510_gmac_gmii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_gmii_pins);
++		sc = sysconf_claim(CFG_COMMS_CONFIG_1, 17, 18,
++				"conf_pio24_alternate");
++		sysconf_write(sc, 2);
++		break;
++	case fli7510_ethernet_reverse_mii:
++		phy_sel = 0;
++		enmii = 0;
++		pins = fli7510_gmac_reverse_mii_pins;
++		pins_num = ARRAY_SIZE(fli7510_gmac_reverse_mii_pins);
++		break;
++	default:
++		BUG();
++		return;
++	}
++
++	fli7510_gmac_private_data.bsp_priv = sysconf_claim(CFG_COMMS_CONFIG_2,
++			25, 25, "gmac_mac_speed");
++
++	sc = sysconf_claim(CFG_COMMS_CONFIG_2, 26, 28, "phy_intf_sel");
++	sysconf_write(sc, phy_sel);
++
++	sc = sysconf_claim(CFG_COMMS_CONFIG_2, 8, 8, "gmac_mii_enable");
++	sysconf_write(sc, enmii);
++
++	sc = sysconf_claim(CFG_COMMS_CONFIG_2, 9, 9, "gmac_phy_clock_sel");
++	if (ext_clk) {
++		pins[0].dir = STPIO_IN;
++		sysconf_write(sc, 1);
++	} else {
++		pins[0].dir = STPIO_ALT_OUT;
++		sysconf_write(sc, 0);
++	}
++
++	for (i = 0; i < pins_num; i++)
++		stpio_request_pin(pins[i].port, pins[i].pin, "stmmac",
++				pins[i].dir);
++
++	fli7510_gmac_private_data.bus_id = phy_bus;
++
++	platform_device_register(&fli7510_gmac_device);
++}
++
++
++
++/* PWM resources ---------------------------------------------------------- */
++
++static struct platform_device fli7510_pwm_device = {
++	.name		= "stm-pwm",
++	.id		= -1,
++	.num_resources	= 2,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfdb10000,
++			.end	= 0xfdb10067,
++			.flags	= IORESOURCE_MEM
++		}, {
++			.start	= ILC_IRQ(27),
++			.end	= ILC_IRQ(27),
++			.flags	= IORESOURCE_IRQ
++		}
++	},
++};
++
++void fli7510_configure_pwm(struct plat_stm_pwm_data *data)
++{
++	int pwm;
++
++	fli7510_pwm_device.dev.platform_data = data;
++
++	for (pwm = 0; pwm < 4; pwm++)
++		if (data->flags & (1 << pwm))
++			stpio_request_pin(8, 4 + pwm, "pwm", STPIO_ALT_OUT);
++
++	platform_device_register(&fli7510_pwm_device);
++}
++
++
++
++/* Hardware RNG resources ------------------------------------------------- */
++
++static struct platform_device fli7510_devhwrandom_device = {
++	.name		= "stm_hwrandom",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource []) {
++		{
++			.start  = 0xfd3e0000,
++			.end    = 0xfd3e0027,
++			.flags  = IORESOURCE_MEM
++		},
++	}
++};
++
++static struct platform_device fli7510_devrandom_device = {
++	.name		= "stm_rng",
++	.id		= 0,
++	.num_resources	= 1,
++	.resource	= (struct resource []) {
++		{
++			.start  = 0xfd3e0000,
++			.end    = 0xfd3e0027,
++			.flags  = IORESOURCE_MEM
++		},
++	}
++};
++
++
++
++/* ASC resources ---------------------------------------------------------- */
++
++static struct platform_device fli7510_asc_devices[] = {
++	STASC_DEVICE(0xfdb30000, ILC_IRQ(24), 5, 6,
++			9, 3, 2, 1, 0,
++			STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
++	STASC_DEVICE(0xfdb31000, ILC_IRQ(25), 7, 8,
++			25, 5, 4, 3, 2,
++			STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
++	STASC_DEVICE(0xfdb32000, ILC_IRQ(26), 9, 10,
++			25, 7, 6, 0xff, 0xff,
++			STPIO_ALT_OUT, STPIO_IN, STPIO_IN, STPIO_ALT_OUT),
++};
++
++/*
++ * Note these three variables are global, and shared with the stasc driver
++ * for console bring up prior to platform initialisation.
++ */
++
++/* the serial console device */
++int stasc_console_device __initdata;
++
++/* Platform devices to register */
++struct platform_device *stasc_configured_devices[
++		ARRAY_SIZE(fli7510_asc_devices)] __initdata;
++unsigned int stasc_configured_devices_count __initdata = 0;
++
++/* Configure the ASC's for this board.
++ * This has to be called before console_init().
++ */
++void __init fli7510_configure_asc(const int *ascs, int num_ascs, int console)
++{
++	int i;
++
++	for (i = 0; i < num_ascs; i++) {
++		int port;
++		unsigned char flags;
++		struct platform_device *pdev;
++		struct stasc_uart_data *uart_data;
++
++		port = ascs[i] & 0xff;
++		flags = ascs[i] >> 8;
++		pdev = &fli7510_asc_devices[port];
++		uart_data = pdev->dev.platform_data;
++
++		pdev->id = i;
++		((struct stasc_uart_data *)(pdev->dev.platform_data))->flags =
++				flags | STASC_FLAG_TXFIFO_BUG;
++		stasc_configured_devices[stasc_configured_devices_count] = pdev;
++		stasc_configured_devices_count++;
++	}
++
++	stasc_console_device = console;
++	/* the console will be always a wakeup-able device */
++	stasc_configured_devices[console]->dev.power.can_wakeup = 1;
++	device_set_wakeup_enable(&stasc_configured_devices[console]->dev, 0x1);
++}
++
++/* Add platform device as configured by board specific code */
++static int __init fli7510_add_asc(void)
++{
++	return platform_add_devices(stasc_configured_devices,
++				    stasc_configured_devices_count);
++}
++arch_initcall(fli7510_add_asc);
++
++
++
++/* LiRC resources --------------------------------------------------------- */
++
++static struct lirc_pio fli7510_lirc_pios[] = {
++	{
++		.bank  = 26,
++		.pin   = 2,
++		.pinof = 0x00 | LIRC_IR_RX | LIRC_PIO_ON,
++		.dir   = STPIO_IN,
++	},
++};
++
++static struct plat_lirc_data fli7510_lirc_private_info = {
++	/* The clock settings will be calculated by the driver
++	 * from the system clock */
++	.irbclock	= 0, /* use current_cpu data */
++	.irbclkdiv	= 0, /* automatically calculate */
++	.irbperiodmult	= 0,
++	.irbperioddiv	= 0,
++	.irbontimemult	= 0,
++	.irbontimediv	= 0,
++	.irbrxmaxperiod = 0x5000,
++	.sysclkdiv	= 1,
++	.rxpolarity	= 1,
++	.pio_pin_arr  = fli7510_lirc_pios,
++	.num_pio_pins = ARRAY_SIZE(fli7510_lirc_pios),
++#ifdef CONFIG_PM
++	.clk_on_low_power = 1000000,
++#endif
++};
++
++static struct platform_device fli7510_lirc_device = {
++	.name		= "lirc",
++	.id		= -1,
++	.num_resources	= 2,
++	.resource	= (struct resource []) {
++		{
++			.start = 0xfdb18000,
++			.end   = 0xfdb180df,
++			.flags = IORESOURCE_MEM
++		}, {
++			.start = ILC_IRQ(28),
++			.end   = ILC_IRQ(28),
++			.flags = IORESOURCE_IRQ
++		},
++	},
++	.dev = {
++		   .power.can_wakeup = 1,
++		   .platform_data = &fli7510_lirc_private_info
++	}
++};
++
++void __init fli7510_configure_lirc(lirc_scd_t *scd)
++{
++	fli7510_lirc_private_info.scd_info = scd;
++
++	platform_device_register(&fli7510_lirc_device);
++}
++
++
++
++/* PCI Resources ---------------------------------------------------------- */
++
++/* You may pass one of the PCI_PIN_* constants to use dedicated pin or
++ * just pass interrupt number generated with gpio_to_irq() when PIO pads
++ * are used as interrupts or IRLx_IRQ when using external interrupts inputs */
++int fli7510_pcibios_map_platform_irq(struct pci_config_data *pci_config,
++		u8 pin)
++{
++	int result;
++	int type;
++
++	if (pin < 1 || pin > 4)
++		return -1;
++
++	type = pci_config->pci_irq[pin - 1];
++
++	switch (type) {
++	case PCI_PIN_ALTERNATIVE:
++		/* Actually there are no alternative pins... */
++		BUG();
++		result = -1;
++		break;
++	case PCI_PIN_DEFAULT:
++		/* Only INTA/INTB are described as "dedicated" PCI
++		 * interrupts and even if these two are described as that,
++		 * they are actually just "normal" external interrupt
++		 * inputs (INT2 & INT3)... Additionally, depending
++		 * on the spec version, the number below may seem wrong,
++		 * but believe me - they are correct :-) */
++		switch (pin) {
++		case 1 ... 2:
++			result = ILC_IRQ(119 - (pin - 1));
++			/* Configure the ILC input to be active low,
++			 * which is the PCI way... */
++			set_irq_type(result, IRQ_TYPE_LEVEL_LOW);
++			break;
++		default:
++			/* Other should be passed just as interrupt number
++			 * (eg. result of the ILC_IRQ() macro) */
++			BUG();
++			result = -1;
++			break;
++		}
++		break;
++	case PCI_PIN_UNUSED:
++		result = -1; /* Not used */
++		break;
++	default:
++		/* Take whatever interrupt you are told */
++		result = type;
++		break;
++	}
++
++	return result;
++}
++
++static struct platform_device fli7510_pci_device = {
++	.name = "pci_stm",
++	.id = -1,
++	.num_resources = 7,
++	.resource = (struct resource[]) {
++		{
++			.name = "Memory",
++			.start = 0xc0000000,
++			.end = 0xdfffffff, /* 512 MB */
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "IO",
++			.start = 0x0400,
++			.end = 0xffff,
++			.flags = IORESOURCE_IO,
++		}, {
++			.name = "EMISS",
++			.start = 0xfd200000,
++			.end = 0xfd2017fc,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "PCI-AHB",
++			.start = 0xfd080000,
++			.end = 0xfd0800ff,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "DMA",
++			.start = ILC_IRQ(47),
++			.end = ILC_IRQ(47),
++			.flags = IORESOURCE_IRQ,
++		}, {
++			.name = "Error",
++			.start = ILC_IRQ(48),
++			.end = ILC_IRQ(48),
++			.flags = IORESOURCE_IRQ,
++		}, { /* Keep this one last */
++			.name = "SERR",
++			/* .start & .end set in stx7105_configure_pci() */
++			.flags = IORESOURCE_IRQ,
++		}
++	},
++};
++
++void __init fli7510_configure_pci(struct pci_config_data *pci_conf)
++{
++	struct sysconf_field *sc;
++	int i;
++
++	/* Fill in the default values */
++	if (!pci_conf->ad_override_default) {
++		pci_conf->ad_threshold = 5;
++		pci_conf->ad_read_ahead = 1;
++		pci_conf->ad_chunks_in_msg = 0;
++		pci_conf->ad_pcks_in_chunk = 0;
++		pci_conf->ad_trigger_mode = 1;
++		pci_conf->ad_max_opcode = 5;
++		pci_conf->ad_posted = 1;
++	}
++
++	/* The EMI_BUS_REQ[0] pin (also know just as EmiBusReq) is
++	 * internally wired to the arbiter's PCI request 3 line.
++	 * And the answer to the obvious question is: That's right,
++	 * the EMI_BUSREQ[3] is not wired at all... */
++	pci_conf->req0_to_req3 = 1;
++	BUG_ON(pci_conf->req_gnt[3] != PCI_PIN_UNUSED);
++
++	/* Copy over platform specific data to driver */
++	fli7510_pci_device.dev.platform_data = pci_conf;
++
++	/* REQ/GNT[0] are dedicated EMI pins */
++	BUG_ON(pci_conf->req_gnt[0] != PCI_PIN_DEFAULT);
++
++	/* REQ/GNT[1..2] PIOs setup */
++	for (i = 1; i <= 2; i++) {
++		switch (pci_conf->req_gnt[i]) {
++		case PCI_PIN_DEFAULT:
++			/* emiss_bus_req_enable */
++			sc = sysconf_claim(CFG_COMMS_CONFIG_1,
++					24 + (i - 1), 24 + (i - 1), "PCI");
++			sysconf_write(sc, 1);
++			stpio_request_pin(15, (i - 1) * 2, "PCI REQ",
++					STPIO_IN);
++			stpio_request_pin(15, ((i - 1) * 2) + 1, "PCI GNT",
++					STPIO_ALT_OUT);
++			break;
++		case PCI_PIN_UNUSED:
++			/* Unused is unused - nothing to do */
++			break;
++		default:
++			/* No alternative here... */
++			BUG();
++			break;
++		}
++	}
++
++	/* REG/GNT[3] are... unavailable... */
++	BUG_ON(pci_conf->req_gnt[3] != PCI_PIN_UNUSED);
++
++	/* Claim "dedicated" interrupt pins... */
++	for (i = 0; i < 4; i++) {
++		static const char *int_name[] = {
++			"PCI INTA",
++			"PCI INTB",
++		};
++
++		switch (pci_conf->pci_irq[i]) {
++		case PCI_PIN_DEFAULT:
++			if (i > 1) {
++				BUG();
++				break;
++			}
++			stpio_request_pin(25, i, int_name[i], STPIO_IN);
++			break;
++		case PCI_PIN_ALTERNATIVE:
++			/* No alternative here... */
++			BUG();
++			break;
++		default:
++			/* Unused or interrupt number passed, nothing to do */
++			break;
++		}
++	}
++
++	/* Configure the SERR interrupt (if wired up) */
++	switch (pci_conf->serr_irq) {
++	case PCI_PIN_DEFAULT:
++		if (stpio_request_pin(16, 6, "PCI SERR#", STPIO_IN)) {
++			pci_conf->serr_irq = gpio_to_irq(stpio_to_gpio(16, 6));
++			set_irq_type(pci_conf->serr_irq, IRQ_TYPE_LEVEL_LOW);
++		} else {
++			printk(KERN_WARNING "%s(): Failed to claim PCI SERR# "
++					"PIO!\n", __func__);
++			pci_conf->serr_irq = PCI_PIN_UNUSED;
++		}
++		break;
++	case PCI_PIN_ALTERNATIVE:
++		/* No alternative here */
++		BUG();
++		pci_conf->serr_irq = PCI_PIN_UNUSED;
++		break;
++	}
++	if (pci_conf->serr_irq == PCI_PIN_UNUSED) {
++		/* "Disable" the SERR IRQ resource (it's last on the list) */
++		fli7510_pci_device.num_resources--;
++	} else {
++		/* The SERR IRQ resource is last */
++		int res_num = fli7510_pci_device.num_resources - 1;
++		struct resource *res = &fli7510_pci_device.resource[res_num];
++
++		res->start = pci_conf->serr_irq;
++		res->end = pci_conf->serr_irq;
++	}
++
++
++#if defined(CONFIG_PM)
++#warning TODO: PCI Power Management
++#endif
++	/* pci_pwr_dwn_req */
++	sc = sysconf_claim(CFG_PWR_DWN_CTL, 2, 2, "PCI");
++	sysconf_write(sc, 0);
++
++	/* status_pci_pwr_dwn_grant */
++	sc = sysconf_claim(CFG_PCI_ROPC_STATUS, 18, 18, "PCI");
++	while (sysconf_read(sc))
++		cpu_relax();
++
++	platform_device_register(&fli7510_pci_device);
++}
++
++
++
++/* Other resources (ILC, sysconf and PIO) --------------------------------- */
++
++static struct platform_device fli7510_st40host_ilc3_device = {
++	.name		= "ilc3",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd218000,
++			.end	= 0xfd218000 + 0x900,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++};
++
++static struct platform_device fli7510_st40rt_ilc3_device = {
++	.name		= "ilc3",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd210000,
++			.end	= 0xfd210000 + 0x900,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++};
++
++static struct platform_device fli7510_sysconf_devices[] = {
++	{
++		.name		= "sysconf",
++		.id		= 0,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd220000,
++				.end	= 0xfd22001f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				PLAT_SYSCONF_GROUP(PRB_PU_CFG_1, 0),
++			},
++		}
++	}, {
++		.name		= "sysconf",
++		.id		= 1,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd228000,
++				.end	= 0xfd22801f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				PLAT_SYSCONF_GROUP(PRB_PU_CFG_2, 0),
++			},
++		}
++	}, {
++		.name		= "sysconf",
++		.id		= 2,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd9ec000,
++				.end	= 0xfd9ec01f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				PLAT_SYSCONF_GROUP(TRS_PU_CFG_0, 0),
++			},
++		}
++	}, {
++		.name		= "sysconf",
++		.id		= 3,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd9f4000,
++				.end	= 0xfd9f401f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				PLAT_SYSCONF_GROUP(TRS_PU_CFG_1, 0),
++			},
++		}
++	}, {
++		.name		= "sysconf",
++		.id		= 4,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd7a0000,
++				.end	= 0xfd7a001f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				PLAT_SYSCONF_GROUP(VDEC_PU_CFG_0, 0),
++			},
++		}
++	}, {
++		.name		= "sysconf",
++		.id		= 5,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd7c0000,
++				.end	= 0xfd7c001f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				PLAT_SYSCONF_GROUP(VDEC_PU_CFG_1, 0),
++			},
++		}
++	}, {
++		.name		= "sysconf",
++		.id		= 6,
++		.num_resources	= 1,
++		.resource	= (struct resource[]) {
++			{
++				.start	= 0xfd5e8000,
++				.end	= 0xfd5e801f,
++				.flags	= IORESOURCE_MEM
++			}
++		},
++		.dev.platform_data = &(struct plat_sysconf_data) {
++			.groups_num = 1,
++			.groups = (struct plat_sysconf_group []) {
++				PLAT_SYSCONF_GROUP(VOUT_PU_CFG_1, 0),
++			},
++		}
++	}
++};
++
++static struct platform_device fli7510_pio_devices[] = {
++	STPIO_DEVICE(0, 0xfd5c0000, ILC_IRQ(75)),
++	STPIO_DEVICE(1, 0xfd5c4000, ILC_IRQ(76)),
++	STPIO_DEVICE(2, 0xfd5c8000, ILC_IRQ(77)),
++	STPIO_DEVICE(3, 0xfd5cc000, ILC_IRQ(78)),
++	STPIO_DEVICE(4, 0xfd5d0000, ILC_IRQ(79)),
++	STPIO_DEVICE(5, 0xfd5d4000, ILC_IRQ(80)),
++	STPIO_DEVICE(6, 0xfd5d8000, -1),
++	STPIO_DEVICE(7, 0xfd5dc000, -1),
++	STPIO_DEVICE(8, 0xfd5e0000, -1),
++	STPIO_DEVICE(9, 0xfd5e4000, -1),
++	STPIO_DEVICE(10, 0xfd984000, ILC_IRQ(125)),
++	STPIO_DEVICE(11, 0xfd988000, -1),
++	STPIO_DEVICE(12, 0xfd98c000, -1),
++	STPIO_DEVICE(13, 0xfd990000, ILC_IRQ(2)),
++	STPIO_DEVICE(14, 0xfd994000, ILC_IRQ(3)),
++	STPIO_DEVICE(15, 0xfd998000, ILC_IRQ(81)),
++	STPIO_DEVICE(16, 0xfd99c000, ILC_IRQ(82)),
++	STPIO_DEVICE(17, 0xfd9a0000, -1),
++	STPIO_DEVICE(18, 0xfd9a4000, -1),
++	STPIO_DEVICE(19, 0xfd9a8000, -1),
++	STPIO_DEVICE(20, 0xfd9ac000, -1),
++	STPIO_DEVICE(21, 0xfd9b0000, -1),
++	STPIO_DEVICE(22, 0xfd9b4000, ILC_IRQ(83)),
++	STPIO_DEVICE(23, 0xfd9b8000, ILC_IRQ(84)),
++	STPIO_DEVICE(24, 0xfd9bc000, ILC_IRQ(85)),
++	STPIO_DEVICE(25, 0xfd9c0000, -1),
++	STPIO_DEVICE(26, 0xfd9c4000, -1),
++	STPIO_DEVICE(27, 0xfd9c8000, -1),
++};
++
++
++
++/* Early devices initialization ------------------------------------------- */
++
++/* Initialise devices which are required early in the boot process
++ * (called from the board setup file) */
++void __init fli7510_early_device_init(void)
++{
++	struct sysconf_field *sc;
++	unsigned long devid;
++	unsigned long chip_revision;
++
++	/* Initialise PIO and sysconf drivers */
++
++	sysconf_early_init(fli7510_sysconf_devices,
++			ARRAY_SIZE(fli7510_sysconf_devices));
++
++	stpio_early_init(fli7510_pio_devices,
++			ARRAY_SIZE(fli7510_pio_devices),
++			ILC_FIRST_IRQ + ILC_NR_IRQS);
++
++	sc = sysconf_claim(CFG_DEVICE_ID, 0, 31, "devid");
++	devid = sysconf_read(sc);
++	chip_revision = (devid >> 28) + 1;
++	boot_cpu_data.cut_major = chip_revision;
++
++	printk(KERN_INFO "Freeman 510 version %ld.x, ST40%s core\n",
++			chip_revision, ST40HOST_CORE ? "HOST" : "RT");
++
++	/* We haven't configured the LPC, so the sleep instruction may
++	 * do bad things. Thus we disable it here. */
++	disable_hlt();
++}
++
++/* Pre-arch initialisation ------------------------------------------------ */
++
++/* EMI access is required very early */
++static int __init fli7510_postcore_setup(void)
++{
++	int i;
++
++	emi_init(0, 0xfd100000);
++
++	for (i = 0; i < ARRAY_SIZE(fli7510_pio_devices); i++)
++		platform_device_register(&fli7510_pio_devices[i]);
++
++	return 0;
++}
++postcore_initcall(fli7510_postcore_setup);
++
++
++
++/* Late resources --------------------------------------------------------- */
++
++static struct platform_device *fli7510_late_devices[] __initdata = {
++	&fli7510_fdma_devices[0],
++	&fli7510_fdma_devices[1],
++	&fli7510_fdma_xbar_device,
++	&fli7510_sysconf_devices[0],
++	&fli7510_sysconf_devices[1],
++	&fli7510_sysconf_devices[2],
++	&fli7510_sysconf_devices[3],
++	&fli7510_sysconf_devices[4],
++	&fli7510_sysconf_devices[5],
++	&fli7510_sysconf_devices[6],
++	&fli7510_devhwrandom_device,
++	&fli7510_devrandom_device,
++};
++
++#include "./platform-pm-fli7510.c"
++
++static int __init fli7510_devices_setup(void)
++{
++	int result;
++
++	platform_add_pm_devices(fli7510_pm_devices,
++			ARRAY_SIZE(fli7510_pm_devices));
++
++	if (ST40HOST_CORE)
++		result = platform_device_register(
++				&fli7510_st40host_ilc3_device);
++	else
++		result = platform_device_register(&fli7510_st40rt_ilc3_device);
++	if (result != 0)
++		return result;
++
++	return platform_add_devices(fli7510_late_devices,
++				    ARRAY_SIZE(fli7510_late_devices));
++}
++device_initcall(fli7510_devices_setup);
++
++
++
++/* Interrupt initialisation ----------------------------------------------- */
++
++enum {
++	UNUSED = 0,
++
++	/* interrupt sources */
++	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
++	TMU0, TMU1, TMU2, WDT, HUDI,
++};
++
++static struct intc_vect fli7510_intc_vectors[] = {
++	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2, 0x440), INTC_VECT(TMU2, 0x460),
++	INTC_VECT(WDT, 0x560),
++	INTC_VECT(HUDI, 0x600),
++};
++
++static struct intc_prio_reg fli7510_intc_prio_registers[] = {
++					   /*   15-12, 11-8,  7-4,   3-0 */
++	{ 0xffd00004, 0, 16, 4, /* IPRA */     { TMU0, TMU1, TMU2,     0 } },
++	{ 0xffd00008, 0, 16, 4, /* IPRB */     {  WDT,    0,    0,     0 } },
++	{ 0xffd0000c, 0, 16, 4, /* IPRC */     {    0,    0,    0,  HUDI } },
++	{ 0xffd00010, 0, 16, 4, /* IPRD */     { IRL0, IRL1,  IRL2, IRL3 } },
++};
++
++static DECLARE_INTC_DESC(fli7510_intc_desc, "fli7510",
++		fli7510_intc_vectors, NULL,
++		NULL, fli7510_intc_prio_registers, NULL);
++
++void __init plat_irq_setup(void)
++{
++	int irq;
++
++	register_intc_controller(&fli7510_intc_desc);
++
++	/* The ILC outputs (16 lines) are connected to the IRL0..3
++	 * INTC inputs via priority level encoder */
++	for (irq = 0; irq < 16; irq++) {
++		set_irq_chip(irq, &dummy_irq_chip);
++		set_irq_chained_handler(irq, ilc_irq_demux);
++	}
++
++	if (ST40HOST_CORE)
++		ilc_early_init(&fli7510_st40host_ilc3_device);
++	else
++		ilc_early_init(&fli7510_st40rt_ilc3_device);
++
++	ilc_demux_init();
++}
+diff --git a/arch/sh/kernel/setup.c b/arch/sh/kernel/setup.c
+index 852f0a0..1a684b2 100644
+--- a/arch/sh/kernel/setup.c
++++ b/arch/sh/kernel/setup.c
+@@ -329,6 +329,7 @@ static const char *cpu_name[] = {
+ 	[CPU_SH7750S]	= "SH7750S",	[CPU_SH7750R]	= "SH7750R",
+ 	[CPU_SH7751]	= "SH7751",	[CPU_SH7751R]	= "SH7751R",
+ 	[CPU_SH7760]	= "SH7760",
++	[CPU_FLI7510]	= "Freeman 510",
+ 	[CPU_ST40RA]	= "ST40RA",	[CPU_ST40GX1]	= "ST40GX1",
+ 	[CPU_STX5197]	= "STx5197",	[CPU_STX5206]	= "STx5206",
+ 	[CPU_STB7100]	= "STb7100",	[CPU_STX7105]	= "STx7105",
+diff --git a/arch/sh/mm/Kconfig b/arch/sh/mm/Kconfig
+index ddf1c5a..128ff4b 100644
+--- a/arch/sh/mm/Kconfig
++++ b/arch/sh/mm/Kconfig
+@@ -160,6 +160,15 @@ config CPU_SUBTYPE_SH4_202
+ 
+ # ST40 Processor Support
+ 
++config CPU_SUBTYPE_FLI7510
++	bool "Support Freeman 510 (FLI7510) processors"
++	select CPU_ST40_300
++	select SUPPORTS_32BIT
++	select SH_ST_SYNOPSYS_PCI if PCI
++	help
++	  Select this if you have an Freeman 510 (FLI7510).
++	  
++
+ config CPU_SUBTYPE_ST40STB1
+ 	bool "Support ST40STB1/ST40RA processors"
+ 	select CPU_SUBTYPE_ST40
+diff --git a/drivers/usb/Kconfig b/drivers/usb/Kconfig
+index ac796ef..be01c3a 100644
+--- a/drivers/usb/Kconfig
++++ b/drivers/usb/Kconfig
+@@ -42,6 +42,7 @@ config USB_ARCH_HAS_OHCI
+ 	# MIPS:
+ 	default y if SOC_AU1X00
+ 	# SH
++	default y if CPU_SUBTYPE_FLI7510
+ 	default y if CPU_SUBTYPE_STX5197
+ 	default y if CPU_SUBTYPE_STX5206
+ 	default y if CPU_SUBTYPE_STB7100
+@@ -57,6 +58,7 @@ config USB_ARCH_HAS_EHCI
+ 	boolean
+ 	default y if PPC_83xx
+ 	default y if SOC_AU1200
++	default y if CPU_SUBTYPE_FLI7510
+ 	default y if CPU_SUBTYPE_STX5197
+ 	default y if CPU_SUBTYPE_STX5206
+ 	default y if CPU_SUBTYPE_STB7100
+diff --git a/include/asm-sh/irq-ilc.h b/include/asm-sh/irq-ilc.h
+index 2175324..50c1d37 100644
+--- a/include/asm-sh/irq-ilc.h
++++ b/include/asm-sh/irq-ilc.h
+@@ -11,7 +11,11 @@
+ 
+ #include <linux/platform_device.h>
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STX5197)
++#if defined(CONFIG_CPU_SUBTYPE_FLI7510)
++#define ILC_FIRST_IRQ	44
++#define ILC_NR_IRQS	127
++#define ILC_IRQ(x)	(ILC_FIRST_IRQ + (x))
++#elif defined(CONFIG_CPU_SUBTYPE_STX5197)
+ #define ILC_FIRST_IRQ	33
+ #define ILC_NR_IRQS	72
+ #define ILC_IRQ(x)	(ILC_FIRST_IRQ + (x))
+diff --git a/include/asm-sh/processor.h b/include/asm-sh/processor.h
+index e5f2152..1683d5a 100644
+--- a/include/asm-sh/processor.h
++++ b/include/asm-sh/processor.h
+@@ -50,7 +50,9 @@ enum cpu_type {
+ 
+ 	/* SH-4 types */
+ 	CPU_SH7750, CPU_SH7750S, CPU_SH7750R, CPU_SH7751, CPU_SH7751R,
+-	CPU_SH7760, CPU_ST40RA, CPU_ST40GX1, CPU_STI5528, CPU_STM8000,
++	CPU_SH7760,
++	CPU_FLI7510,
++	CPU_ST40RA, CPU_ST40GX1, CPU_STI5528, CPU_STM8000,
+ 	CPU_STX5197, CPU_STX5206,
+ 	CPU_STB7100, CPU_STX7105, CPU_STX7106, CPU_STB7109,
+ 	CPU_STX7111, CPU_STX7141,
+diff --git a/include/linux/stm/pio.h b/include/linux/stm/pio.h
+index be5e688..0578999 100644
+--- a/include/linux/stm/pio.h
++++ b/include/linux/stm/pio.h
+@@ -30,7 +30,7 @@
+ #define STPIO_ALT_BIDIR		7	/* Alt bidir open drain (arch defn) */
+ 
+ /* Constant numbers */
+-#define STPIO_MAX_PORTS		20
++#define STPIO_MAX_PORTS		30
+ #define STPIO_PINS_IN_PORT	8
+ 
+ struct stpio_pin;
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index d153f92..23583f1 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -265,6 +265,8 @@ struct plat_stm_pwm_data {
+ 
+ #define PLAT_STM_PWM_OUT0	(1<<0)
+ #define PLAT_STM_PWM_OUT1	(1<<1)
++#define PLAT_STM_PWM_OUT2	(1<<2)
++#define PLAT_STM_PWM_OUT3	(1<<3)
+ 
+ #ifdef CONFIG_CPU_SUBTYPE_STX7105
+ #define PWM_OUT0_PIO4_4		(0 << 0)
+@@ -513,6 +515,29 @@ struct plat_stmnand_data {
+ 
+ };
+ 
++void fli7510_early_device_init(void);
++void fli7510_configure_asc(const int *ascs, int num_ascs, int console);
++void fli7510_configure_pwm(struct plat_stm_pwm_data *data);
++void fli7510_configure_ssc(struct plat_ssc_data *data);
++enum fli7510_usb_ovrcur_mode {
++	fli7510_usb_ovrcur_disabled,
++	fli7510_usb_ovrcur_active_high,
++	fli7510_usb_ovrcur_active_low,
++};
++void fli7510_configure_usb(enum fli7510_usb_ovrcur_mode ovrcur_mode);
++void fli7510_configure_pata(int bank, int pc_mode, int irq);
++enum fli7510_ethernet_mode {
++	fli7510_ethernet_mii,
++	fli7510_ethernet_gmii,
++	fli7510_ethernet_rmii,
++	fli7510_ethernet_reverse_mii
++};
++void fli7510_configure_ethernet(enum fli7510_ethernet_mode mode,
++		int ext_clk, int phy_bus);
++void fli7510_configure_lirc(lirc_scd_t *scd);
++void fli7510_configure_pci(struct pci_config_data *pci_conf);
++int fli7510_pcibios_map_platform_irq(struct pci_config_data *pci_config,
++		u8 pin);
+ 
+ void stx5197_early_device_init(void);
+ void stx5197_configure_asc(const int *ascs, int num_ascs, int console);
+diff --git a/include/linux/stm/sysconf.h b/include/linux/stm/sysconf.h
+index f146d7b..fcf350f 100644
+--- a/include/linux/stm/sysconf.h
++++ b/include/linux/stm/sysconf.h
+@@ -84,7 +84,74 @@ unsigned long sysconf_mask(struct sysconf_field *field);
+  * Available register types:
+  */
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STX5197)
++#if defined(CONFIG_CPU_SUBTYPE_FLI7510)
++
++#define PRB_PU_CFG_1			0
++#define PRB_PU_CFG_2			1
++#define TRS_PU_CFG_0			2
++#define TRS_PU_CFG_1			3
++#define VDEC_PU_CFG_0			4
++#define VDEC_PU_CFG_1			5
++#define VOUT_PU_CFG_1			6
++
++#define CFG_RESET_CTL			PRB_PU_CFG_1, (0x00 / 4)
++#define CFG_BOOT_CTL			PRB_PU_CFG_1, (0x04 / 4)
++#define CFG_SYS1			PRB_PU_CFG_1, (0x08 / 4)
++#define CFG_MPX_CTL			PRB_PU_CFG_1, (0x0c / 4)
++#define CFG_PWR_DWN_CTL			PRB_PU_CFG_1, (0x10 / 4)
++#define CFG_SYS2			PRB_PU_CFG_1, (0x14 / 4)
++#define CFG_MODE_PIN_STATUS		PRB_PU_CFG_1, (0x18 / 4)
++#define CFG_PCI_ROPC_STATUS		PRB_PU_CFG_1, (0x1c / 4)
++
++#define CFG_ST40_HOST_BOOT_ADDR		PRB_PU_CFG_2, (0x00 / 4)
++#define CFG_ST40_CTL_BOOT_ADDR		PRB_PU_CFG_2, (0x04 / 4)
++#define CFG_SYS10			PRB_PU_CFG_2, (0x08 / 4)
++#define CFG_RNG_BIST_CTL		PRB_PU_CFG_2, (0x0c / 4)
++#define CFG_SYS12			PRB_PU_CFG_2, (0x10 / 4)
++#define CFG_SYS13			PRB_PU_CFG_2, (0x14 / 4)
++#define CFG_SYS14			PRB_PU_CFG_2, (0x18 / 4)
++#define CFG_EMI_ROPC_STATUS		PRB_PU_CFG_2, (0x1c / 4)
++
++#define CFG_COMMS_CONFIG_1		TRS_PU_CFG_0, (0x00 / 4)
++#define CFG_TRS_CONFIG			TRS_PU_CFG_0, (0x04 / 4)
++#define CFG_COMMS_CONFIG_2		TRS_PU_CFG_0, (0x08 / 4)
++#define CFG_USB_SOFT_JTAG		TRS_PU_CFG_0, (0x0c / 4)
++#define CFG_NOTUSED_1			TRS_PU_CFG_0, (0x10 / 4)
++#define CFG_NOTUSED_2			TRS_PU_CFG_0, (0x14 / 4)
++#define CFG_COMMS_TRS_STATUS		TRS_PU_CFG_0, (0x18 / 4)
++#define CFG_EXTRA_ID1_LSB		TRS_PU_CFG_0, (0x1c / 4)
++
++#define CFG_SPARE_1			TRS_PU_CFG_1, (0x00 / 4)
++#define CFG_SPARE_2			TRS_PU_CFG_1, (0x04 / 4)
++#define CFG_SPARE_3			TRS_PU_CFG_1, (0x08 / 4)
++#define CFG_NOTUSED_3			TRS_PU_CFG_1, (0x0c / 4)
++#define CFG_NOTUSED_4			TRS_PU_CFG_1, (0x10 / 4)
++#define CFG_NOTUSED_5			TRS_PU_CFG_1, (0x14 / 4)
++#define CFG_DEVICE_ID			TRS_PU_CFG_1, (0x18 / 4)
++#define CFG_EXTRA_ID1_MSB		TRS_PU_CFG_1, (0x1c / 4)
++
++#define CFG_TOP_SPARE_REG1		VDEC_PU_CFG_0, (0x00 / 4)
++#define CFG_TOP_SPARE_REG2		VDEC_PU_CFG_0, (0x04 / 4)
++#define CFG_TOP_SPARE_REG3		VDEC_PU_CFG_0, (0x08 / 4)
++#define CFG_ST231_DRA2_DEBUG		VDEC_PU_CFG_0, (0x0c / 4)
++#define CFG_ST231_AUD1_DEBUG		VDEC_PU_CFG_0, (0x10 / 4)
++#define CFG_ST231_AUD2_DEBUG		VDEC_PU_CFG_0, (0x14 / 4)
++
++#define CFG_ST231_DRA2_PERIPH_REG1	VDEC_PU_CFG_1, (0x00 / 4)
++#define CFG_ST231_DRA2_BOOT_REG2	VDEC_PU_CFG_1, (0x04 / 4)
++#define CFG_ST231_AUD1_PERIPH_REG3	VDEC_PU_CFG_1, (0x08 / 4)
++#define CFG_ST231_AUD1_BOOT_REG4	VDEC_PU_CFG_1, (0x0c / 4)
++#define CFG_ST231_AUD2_PERIPH_REG5	VDEC_PU_CFG_1, (0x10 / 4)
++#define CFG_ST231_AUD2_BOOT_REG6	VDEC_PU_CFG_1, (0x14 / 4)
++
++#define CFG_REG1_PIO_ALT_DATA_SEL	VOUT_PU_CFG_1, (0x00 / 4)
++#define CFG_REG2_PIO_ALT_DATA_SEL	VOUT_PU_CFG_1, (0x04 / 4)
++#define CFG_REG3_DEBUG_DATA_SEL		VOUT_PU_CFG_1, (0x08 / 4)
++#define CFG_REG4_DAC_CTRL		VOUT_PU_CFG_1, (0x0c / 4)
++#define CFG_REG5_VOUT_DEBUG_CTL		VOUT_PU_CFG_1, (0x10 / 4)
++#define CFG_REG6_TVOUT_DEBUG_CTL	VOUT_PU_CFG_1, (0x14 / 4)
++
++#elif defined(CONFIG_CPU_SUBTYPE_STX5197)
+ 
+ #define HS_CFG 			0
+ #define HD_CFG 			1
+-- 
+1.6.0.6
+

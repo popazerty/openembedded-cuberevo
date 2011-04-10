@@ -1,0 +1,121 @@
+From b80c921c3571eebdb47b5906499ea7b67a56a8cb Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 2 Oct 2009 15:34:21 +0200
+Subject: [PATCH] stm: clk: Update the clk-LLA OS layer
+
+This patch updates the LLA OS layer in the sysconf management
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-oslayer.h |   70 +++++++------------------------
+ 1 files changed, 16 insertions(+), 54 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-oslayer.h b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+index 26a7047..fd345f6 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-oslayer.h
++++ b/arch/sh/kernel/cpu/sh4/clock-oslayer.h
+@@ -27,21 +27,18 @@
+ #define STSYS_ReadRegDev32LE(addr)		ioread32(addr)
+ #define STSYS_WriteRegDev32LE(addr,val)		iowrite32(val, addr)
+ 
+-static inline U32 SYSCONF_READ(unsigned long type, unsigned long num,
+-			       unsigned long lsb, unsigned long msb) {
+-	static struct sysconf_field *sc;
+-	if (!sc)
+-		 sc = sysconf_claim(type, num, lsb, msb, "Clk lla");
+-	 return sysconf_read(sc);;
+-}
+-static inline void SYSCONF_WRITE(unsigned long type,
+-				 unsigned long num, unsigned long lsb,
+-				 unsigned long msb, unsigned long value) {
+-	static struct sysconf_field *sc;
+-	if (!sc)
+-		sc = sysconf_claim(type, num, lsb, msb, "Clk lla");
+-	sysconf_write(sc, value);
+-}
++#define SYSCONF(type, num, lsb, msb)			\
++	static struct sysconf_field *sys_##type##_##num##_##lsb##_##msb
++
++#define SYSCONF_CLAIM(type, num, lsb, msb)		\
++	 sys_##type##_##num##_##lsb##_##msb =		\
++		sysconf_claim(type, num, lsb, msb, "Clk lla")
++
++#define SYSCONF_READ(type, num, lsb, msb)		\
++	sysconf_read(sys_##type##_##num##_##lsb##_##msb)
++
++#define SYSCONF_WRITE(type, num, lsb, msb, value)	\
++	sysconf_write(sys_##type##_##num##_##lsb##_##msb, value)
+ 
+ static inline
+ void PIO_SET_MODE(unsigned long bank, unsigned long line, long mode)
+@@ -102,19 +99,9 @@ static struct clk generic_linux_clks[] =				\
+ 		generic_linux_clks[i].parent->flags |= CLK_RATE_PROPAGATES;\
+ 		if (!clk_register(&generic_linux_clks[i]))		\
+ 			clk_enable(&generic_linux_clks[i]);		\
+-	}	\
++	}								\
+ }
+ 
+-#ifdef CONFIG_CLK_LOW_LEVEL_DEBUG
+-typedef struct clk_ops_dbg {
+-	const char *name;/* Clocks group description ("clockgen A","LMI"...) */
+-} clk_ops_dbg_t;
+-
+-/*
+- *  Clock operation with debug info
+- */
+-
+-/* Clock operation registration macro (used by clock-xxxx.c) */
+ #define REGISTER_OPS(_name, _desc, _init, _setparent, _setfreq, _recalc,\
+ 		     _enable, _disable, _observe, _measure, _obspoint)	\
+ static struct clk_ops  _name= {						\
+@@ -126,9 +113,6 @@ static struct clk_ops  _name= {						\
+ 	.disable = _disable,						\
+ 	.observe = _observe,						\
+ 	.get_measure = _measure,					\
+-	.private_data = (void *) &(clk_ops_dbg_t)			\
+-		{ .name = _desc,					\
+-		  .obs_point = _obspoint },				\
+ }
+ 
+ /* Clock registration macro (used by clock-xxxx.c) */
+@@ -138,33 +122,11 @@ static struct clk_ops  _name= {						\
+ 		 .ops = (_ops),						\
+ 		 .flags = (_flags),					\
+ 		 .nominal_rate = (_nominal),				\
++		 .childs = LIST_HEAD_INIT(clk_clocks[_id].childs),	\
+ }
+-#else
+-/*
+- * CLock Operation without debug info
+- */
+-#define REGISTER_OPS(_name, _desc, _init, _setparent, _setfreq, _recalc,\
+-		     _enable, _disable, _observe, _measure, _obspoint)	\
+-static struct clk_ops  _name= {						\
+-	.init = _init,							\
+-	.set_parent = _setparent,					\
+-	.set_rate = _setfreq,						\
+-	.recalc = _recalc,						\
+-	.enable = _enable,						\
+-	.disable = _disable,						\
+-}
+-
+-/* Clock registration macro (used by clock-xxxx.c) */
+-#define REGISTER_CLK(_id, _ops, _nominal, _flags)			\
+-[_id] = (clk_t){ .name = #_id,						\
+-		 .id = _id,						\
+-		 .ops = (_ops),						\
+-		 .flags=_flags,						\
+-}
+-#endif
+ 
+-#define time_ticks_per_sec()		    CONFIG_HZ
+-#define task_delay(x)			   mdelay((x)/CONFIG_HZ)
++#define time_ticks_per_sec()		CONFIG_HZ
++#define task_delay(x)			mdelay((x)/CONFIG_HZ)
+ 
+ /* Low level API errors */
+ typedef enum clk_err {
+-- 
+1.6.0.6
+

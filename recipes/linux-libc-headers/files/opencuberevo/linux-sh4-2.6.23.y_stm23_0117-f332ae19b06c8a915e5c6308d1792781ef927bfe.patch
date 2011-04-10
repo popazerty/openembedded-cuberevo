@@ -1,0 +1,147 @@
+From f332ae19b06c8a915e5c6308d1792781ef927bfe Mon Sep 17 00:00:00 2001
+From: Francesco VIRLINZI <francesco.virlinzi@st.com>
+Date: Fri, 31 Oct 2008 15:17:15 +0000
+Subject: [PATCH] sh_stm: Fixed the evaluation of sh4_clk frequency on 7200C2
+
+Signed-off-by: Francesco M. Virlinzi <francesco.virlinzi@st.com>
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ arch/sh/kernel/cpu/sh4/clock-stx7200.c   |    6 +++++-
+ arch/sh/kernel/cpu/sh4/cpufreq-stm.c     |   11 ++++++-----
+ arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c |   26 +++++++++++++++++++++-----
+ 3 files changed, 32 insertions(+), 11 deletions(-)
+
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7200.c b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+index 714c407..c17f5ee 100644
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7200.c
+@@ -46,6 +46,7 @@ unsigned long sysclkinalt[3] = { 0,0,0};
+ 
+                                     /* 0  1  2  3  4  5  6     7  */
+ static const unsigned int ratio1[] = { 1, 2, 3, 4, 6, 8, 1024, 1 };
++static const unsigned int ratio2[] = { 0, 1, 2, 1024, 3, 3, 3, 3 };
+ 
+ static unsigned long final_divider(unsigned long input, int div_ratio, int div)
+ {
+@@ -188,7 +189,10 @@ static void sh4_clk_recalc(struct clk *clk)
+ 		break;
+ 	}
+ 
+-	div2 = ratio1[(div_cfg >> sh4clk->shift) & 7];
++	if (cpu_data->cut_major < 2)
++		div2 = ratio1[(div_cfg >> sh4clk->shift) & 7];
++	else
++		div2 = ratio2[(div_cfg >> sh4clk->shift) & 7];
+ 	clk->rate = (clk->parent->rate / div1) / div2;
+ 
+ 	/* Note clk_sh4 and clk_sh4_ic have an extra clock gating
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stm.c b/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
+index 20b8f6f..cda5604 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stm.c
+@@ -183,11 +183,6 @@ static int __init st_cpufreq_module_init(void)
+ 		return -ENODEV;
+ 	}
+ 
+-	if (st_cpufreq_platform_init()) { /* for platform initialization */
+-		printk(KERN_ERR "%s: Error on platform initialization\n",
+-			__FUNCTION__);
+-		return -ENODEV;
+-	}
+ 	for (idx = 0; idx < (ARRAY_SIZE(cpu_freqs)) - 1; ++idx) {
+ 		cpu_freqs[idx].frequency =
+ 		    (clk_get_rate(sh4_clk) / 1000) >> idx;
+@@ -196,6 +191,12 @@ static int __init st_cpufreq_module_init(void)
+ 		idx, cpu_freqs[idx].frequency);
+ 	}
+ 
++	if (st_cpufreq_platform_init()) { /* for platform initialization */
++		printk(KERN_ERR "%s: Error on platform initialization\n",
++			__FUNCTION__);
++		return -ENODEV;
++	}
++
+ 	if (cpufreq_register_driver(&st_cpufreq_driver))
+ 		return -EINVAL;
+ 
+diff --git a/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c b/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c
+index 223bfb6..9b6fb46 100644
+--- a/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c
++++ b/arch/sh/kernel/cpu/sh4/cpufreq-stx7200.c
+@@ -36,6 +36,7 @@ static struct clk *module_clk;
+ #define CLKGNA_DIV_CFG		(clk_iomem + 0x10)
+ #define CKGA_CLKOUT_SEL 	(clk_iomem + 0x18)
+ #define SH4_CLK_MASK		(0x1ff << 1)
++#define SH4_CLK_MASK_C2		(0x3 << 1)
+ /*
+  *	value: 0  1  2  3  4  5  6     7
+  *	ratio: 1, 2, 3, 4, 6, 8, 1024, 1
+@@ -47,6 +48,13 @@ static unsigned long sh4_ratio[] = {
+ 	(3 << 1) | (5 << 4) | (5 << 7)	/* 1:4 - 1:8 - 1:8 */
+ };
+ 
++static unsigned long sh4_ratio_c2[] = { /* ratios for Cut 2.0 */
++/*        cpu   */
++        (1 << 1),
++        (2 << 1),
++};
++
++static unsigned long *ratio;
+ static void st_cpufreq_update_clocks(unsigned int set, int propagate)
+ {
+ 	static unsigned int sh_current_set;
+@@ -66,9 +74,12 @@ static void st_cpufreq_update_clocks(unsigned int set, int propagate)
+ 		if ((set + sh_current_set) == 2)
+ 			l_p_j <<= 1;
+ 	}
++	if (cpu_data->cut_major < 2)
++		clks_value &= ~SH4_CLK_MASK;
++	else
++		clks_value &= ~SH4_CLK_MASK_C2;
+ 
+-	clks_value &= ~SH4_CLK_MASK;
+-	clks_value |= sh4_ratio[set];
++	clks_value |= ratio[set];
+ 
+ 	local_irq_save(flag);
+ 	asm volatile (".balign	32	\n"
+@@ -86,6 +97,7 @@ static void st_cpufreq_update_clocks(unsigned int set, int propagate)
+ 		"st_cpufreq_update_clocks:", "\n");
+ 	sh_current_set = set;
+ 	sh4_clk->rate = (cpu_freqs[set].frequency << 3) * 125;
++
+ 	if (cpu_data->cut_major < 2) {
+ 		sh4_ic_clk->rate = (cpu_freqs[set].frequency << 2) * 125;
+ 		module_clk->rate = clk_get_rate(pll0_clk) >> 3;
+@@ -114,14 +126,15 @@ static void __init st_cpufreq_observe_init(void)
+ static int __init st_cpufreq_platform_init(void)
+ {
+ 	pll0_clk = clk_get(NULL, "pll0_clk");
+-	sh4_ic_clk = clk_get(NULL, "sh4_ic_clk");
+-	module_clk = clk_get(NULL, "module_clk");
+-
++	ratio = sh4_ratio_c2;
+ 	if (!pll0_clk) {
+ 		printk(KERN_ERR "ERROR: on clk_get(pll0_clk)\n");
+ 		return -ENODEV;
+ 	}
+ 	if (cpu_data->cut_major < 2) {
++		ratio = sh4_ratio;
++		sh4_ic_clk = clk_get(NULL, "sh4_ic_clk");
++		module_clk = clk_get(NULL, "module_clk");
+ 		if (!sh4_ic_clk) {
+ 			printk(KERN_ERR "ERROR: on clk_get(sh4_ic_clk)\n");
+ 			return -ENODEV;
+@@ -131,6 +144,9 @@ static int __init st_cpufreq_platform_init(void)
+ 			return -ENODEV;
+ 		}
+ 	}
++	 else
++		/* in the 7200 Cut 2 only two frequencies are supported */
++		cpu_freqs[2].frequency = CPUFREQ_TABLE_END;
+ 
+ 	return 0;
+ }
+-- 
+1.5.3.6
+

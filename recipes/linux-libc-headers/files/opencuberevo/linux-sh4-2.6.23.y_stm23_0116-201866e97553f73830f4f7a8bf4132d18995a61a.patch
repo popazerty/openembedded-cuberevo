@@ -1,0 +1,117 @@
+From 201866e97553f73830f4f7a8bf4132d18995a61a Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 22 Aug 2008 13:22:45 +0100
+Subject: [PATCH] sound_stm: "synchro" component removed as not implemented
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/Makefile  |    2 +-
+ sound/stm/init.c    |    9 ---------
+ sound/stm/synchro.c |   50 --------------------------------------------------
+ 3 files changed, 1 insertions(+), 60 deletions(-)
+ delete mode 100644 sound/stm/synchro.c
+
+diff --git a/sound/stm/Makefile b/sound/stm/Makefile
+index 8198e9b..d22c97d 100644
+--- a/sound/stm/Makefile
++++ b/sound/stm/Makefile
+@@ -1,5 +1,5 @@
+ obj-$(CONFIG_SND_STM) += snd-stm.o
+-snd-stm-y := init.o common.o synchro.o fsynth.o
++snd-stm-y := init.o common.o fsynth.o
+ snd-stm-y += conv.o conv_i2sspdif.o conv_int_dac.o
+ snd-stm-y += pcm_player.o pcm_reader.o spdif_player.o
+ 
+diff --git a/sound/stm/init.c b/sound/stm/init.c
+index 5ac673a..cd21c9c 100644
+--- a/sound/stm/init.c
++++ b/sound/stm/init.c
+@@ -71,12 +71,6 @@ static int __init snd_stm_init(void)
+ 				" failed!\n");
+ 		goto error_conv_i2sspdif;
+ 	}
+-	result = snd_stm_synchro_init();
+-	if (result != 0) {
+-		snd_stm_printe("Synchronisation routines initialization"
+-				" failed!\n");
+-		goto error_synchro;
+-	}
+ 	result = snd_stm_pcm_player_init();
+ 	if (result != 0) {
+ 		snd_stm_printe("PCM player driver initialization failed!\n");
+@@ -100,8 +94,6 @@ error_spdif_player:
+ error_pcm_reader:
+ 	snd_stm_pcm_player_exit();
+ error_pcm_player:
+-	snd_stm_synchro_exit();
+-error_synchro:
+ 	snd_stm_conv_i2sspdif_exit();
+ error_conv_i2sspdif:
+ 	snd_stm_conv_int_dac_exit();
+@@ -122,7 +114,6 @@ static void __exit snd_stm_exit(void)
+ 	snd_stm_spdif_player_exit();
+ 	snd_stm_pcm_reader_exit();
+ 	snd_stm_pcm_player_exit();
+-	snd_stm_synchro_exit();
+ 	snd_stm_conv_i2sspdif_exit();
+ 	snd_stm_conv_int_dac_exit();
+ 	snd_stm_conv_exit();
+diff --git a/sound/stm/synchro.c b/sound/stm/synchro.c
+deleted file mode 100644
+index 96336e0..0000000
+--- a/sound/stm/synchro.c
++++ /dev/null
+@@ -1,50 +0,0 @@
+-/*
+- *   Audio playback synchronization routines for STMicroelectronics' SoCs
+- *
+- *   Copyright (c) 2005-2007 STMicroelectronics Limited
+- *
+- *   Author: Pawel MOLL <pawel.moll@st.com>
+- *
+- *   This program is free software; you can redistribute it and/or modify
+- *   it under the terms of the GNU General Public License as published by
+- *   the Free Software Foundation; either version 2 of the License, or
+- *   (at your option) any later version.
+- *
+- *   This program is distributed in the hope that it will be useful,
+- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *   GNU General Public License for more details.
+- *
+- *   You should have received a copy of the GNU General Public License
+- *   along with this program; if not, write to the Free Software
+- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+- *
+- */
+-
+-#include <linux/init.h>
+-
+-#define COMPONENT synchro
+-#include "common.h"
+-
+-
+-
+-/*
+- * Implementation
+- */
+-
+-/* TODO */
+-
+-
+-
+-/*
+- * Initialization
+- */
+-
+-int snd_stm_synchro_init(void)
+-{
+-	return 0;
+-}
+-
+-void snd_stm_synchro_exit(void)
+-{
+-}
+-- 
+1.5.3.6
+

@@ -1,0 +1,2370 @@
+From 2e4439583739c10bd5b828324e1160a6477c3ba7 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Wed, 11 Nov 2009 15:18:58 +0000
+Subject: [PATCH] sh_stm: PCI rework
+
+This patch reworks STM PCI driver, SOC configuration & board setups.
+
+- STM_MACHINE_VEC macro has been removed completely - to use PCI
+  I/O functions just use STM_PCI_IO_MACHINE_VEC macro in machive
+  vector definition (all relevant board updated)
+- PCI_DEVICE macro has been removed (the name was very unfortunate
+  anyway ;-)
+- "pci_stm" device resources are named now and requested using
+  the names, instead of index
+- SERR input doesn't have a dedicated interrupt (the one called
+  _serr previosly is actually a controller internal error interrupt)
+  so it's declaration is now in hands of SOC and/or board setup
+- mv_ioport_map functions shouldn't be ever called now, so they
+  have been modified to do BUG() and nothing else
+- PCI configuration has been removed from HMP7105 BSP, as this
+  board... doesn't have PCI slot at all!
+- driver is a bit more verbose now in case of error
+- SOC-level configuration is more error-robust after adding a few
+  strategic BUG_ON-s here and there...
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ arch/sh/Kconfig                        |    5 -
+ arch/sh/boards/st/cb104/setup.c        |   20 +-
+ arch/sh/boards/st/hmp7105/setup.c      |   47 +---
+ arch/sh/boards/st/ipidtv7105/setup.c   |  126 +++++----
+ arch/sh/boards/st/mb618/setup.c        |   45 ++-
+ arch/sh/boards/st/mb680/setup.c        |   65 +++--
+ arch/sh/boards/st/mb839/setup.c        |   17 +-
+ arch/sh/boards/st/pdk7105/setup.c      |   72 +++--
+ arch/sh/drivers/pci/Makefile           |    4 +
+ arch/sh/drivers/pci/pci-auto.c         |    1 -
+ arch/sh/drivers/pci/pci-synopsys.c     |  165 ++++++++---
+ arch/sh/kernel/cpu/sh4/clock-stx5197.c |    2 +-
+ arch/sh/kernel/cpu/sh4/clock-stx7105.c |    2 +-
+ arch/sh/kernel/cpu/sh4/clock-stx7111.c |    2 +-
+ arch/sh/kernel/cpu/sh4/clock-stx7141.c |    2 +-
+ arch/sh/kernel/cpu/sh4/setup-stx7105.c |  502 ++++++++++++++++++++------------
+ arch/sh/kernel/cpu/sh4/setup-stx7111.c |  315 ++++++++++++++-------
+ arch/sh/mm/Kconfig                     |    2 +
+ include/linux/stm/soc.h                |   82 +++---
+ include/linux/stm/soc_init.h           |   47 ---
+ 20 files changed, 896 insertions(+), 627 deletions(-)
+
+diff --git a/arch/sh/Kconfig b/arch/sh/Kconfig
+index 10d74d6..83ff212 100644
+--- a/arch/sh/Kconfig
++++ b/arch/sh/Kconfig
+@@ -572,7 +572,6 @@ config SH_ST_MB618
+ 	select SH_ST_EPLD
+ 	select SH_ST_STEM
+ 	select SYS_SUPPORTS_PCI
+-	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select STx7111 Validation if configuring for an
+ 	  STMicroelectronics STx7111 Validation Board (product code:
+@@ -610,7 +609,6 @@ config SH_ST_MB680
+ 	select SH_ST_STEM
+ 	select SH_ST_STPM_HD_V2
+ 	select SYS_SUPPORTS_PCI
+-	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select STx7105 Validation if configuring for an
+ 	  STMicroelectronics STx7105 Validation Board (product code:
+@@ -621,7 +619,6 @@ config SH_ST_PDK7105
+ 	bool "PDK7105-SDK : STi7105 SDK Reference board"
+ 	depends on CPU_SUBTYPE_STX7105
+ 	select SYS_SUPPORTS_PCI
+-	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select PDK7105-SDK if configuring for an
+ 	  STMicroelectronics STi7105 SDK Reference Board.
+@@ -630,7 +627,6 @@ config SH_ST_HMP7105
+ 	bool "HMP7105: STx7105 Reference board"
+ 	depends on CPU_SUBTYPE_STX7105
+ 	select SYS_SUPPORTS_PCI
+-	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select HMP7105 if configuring for an STMicroelectronics
+ 	  HMP7105 reference board.
+@@ -639,7 +635,6 @@ config SH_ST_IPIDTV7105
+ 	bool "ipidtv7105: STx7105 IPTV pluggin board"
+ 	depends on CPU_SUBTYPE_STX7105
+ 	select SYS_SUPPORTS_PCI
+-	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select SH_ST_IPIDTV7105 if configuring for an ipidtv7105 board
+ 
+diff --git a/arch/sh/boards/st/cb104/setup.c b/arch/sh/boards/st/cb104/setup.c
+index f7fcb63..90fa22c 100644
+--- a/arch/sh/boards/st/cb104/setup.c
++++ b/arch/sh/boards/st/cb104/setup.c
+@@ -154,22 +154,18 @@ static int __init device_init(void)
+ }
+ 
+ arch_initcall(device_init);
+-#ifndef CONFIG_GENERIC_IOMAP
++
+ static void __iomem *cb104_ioport_map(unsigned long port, unsigned int size)
+ {
+-	/* However picking somewhere safe isn't as easy as you might think.
+-	 * I used to use external ROM, but that can cause problems if you are
+-	 * in the middle of updating Flash. So I'm now using the processor
+-	 * core version register, which is guaranted to be available,
+-	 * and non-writable. */
+-	return (void __iomem *)CCN_PVR;
++	/* Shouldn't be here! */
++	BUG();
++	return NULL;
+ }
+-#endif
+ 
+-static void __init cb104_init_irq(void)
+-{
+-}
+ 
+ struct sh_machine_vector mv_cb104 __initmv = {
+-	STM_MACHINE_VEC(cb104)
++	.mv_name = "cb104",
++	.mv_setup = cb104_setup,
++	.mv_nr_irqs = NR_IRQS,
++	.mv_ioport_map = cb104_ioport_map,
+ };
+diff --git a/arch/sh/boards/st/hmp7105/setup.c b/arch/sh/boards/st/hmp7105/setup.c
+index fde338a..0abb684 100644
+--- a/arch/sh/boards/st/hmp7105/setup.c
++++ b/arch/sh/boards/st/hmp7105/setup.c
+@@ -233,29 +233,8 @@ lirc_scd_t lirc_scd = {
+ 	.noiserecov = 0,
+ };
+ 
+-/* PCI configuration */
+-
+-static struct pci_config_data  pci_config = {
+-	.pci_irq = {PCI_PIN_DEFAULT, PCI_PIN_DEFAULT, PCI_PIN_DEFAULT,
+-					PCI_PIN_DEFAULT},
+-	.serr_irq = PCI_PIN_UNUSED,
+-	.idsel_lo = 30,
+-	.idsel_hi = 30,
+-	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED,
+-					PCI_PIN_UNUSED},
+-	.pci_clk = 33333333,
+-	.pci_reset_pio = stpio_to_gpio(15, 7)
+-};
+-
+-int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+-{
+-       /* We can use the standard function on this board */
+-       return  stx7105_pcibios_map_platform_irq(&pci_config, pin);
+-}
+-
+ static int __init device_init(void)
+ {
+-	stx7105_configure_pci(&pci_config);
+ 	stx7105_configure_sata();
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+@@ -289,28 +268,16 @@ static int __init device_init(void)
+ arch_initcall(device_init);
+ 
+ 
+-#ifndef CONFIG_GENERIC_IOMAP
+ static void __iomem *hmp7105_ioport_map(unsigned long port, unsigned int size)
+ {
+-	/* However picking somewhere safe isn't as easy as you might think.
+-	 * I used to use external ROM, but that can cause problems if you are
+-	 * in the middle of updating Flash. So I'm now using the processor core
+-	 * version register, which is guaranteed to be available, and
+-	 * non-writable.
+-	 */
+-	return (void __iomem *)CCN_PVR;
+-}
+-#endif
+-
+-static void __init hmp7105_init_irq(void)
+-{
+-#ifndef CONFIG_SH_ST_MB705
+-	/* Configure STEM interrupts as active low. */
+-	set_irq_type(ILC_EXT_IRQ(1), IRQ_TYPE_LEVEL_LOW);
+-	set_irq_type(ILC_EXT_IRQ(2), IRQ_TYPE_LEVEL_LOW);
+-#endif
++	/* Shouldn't be here! */
++	BUG();
++	return NULL;
+ }
+ 
+ struct sh_machine_vector mv_hmp7105 __initmv = {
+-	STM_MACHINE_VEC(hmp7105)
++	.mv_name = "hmp7105",
++	.mv_setup = hmp7105_setup,
++	.mv_nr_irqs = NR_IRQS,
++	.mv_ioport_map = hmp7105_ioport_map,
+ };
+diff --git a/arch/sh/boards/st/ipidtv7105/setup.c b/arch/sh/boards/st/ipidtv7105/setup.c
+index af44e49..d89077e 100644
+--- a/arch/sh/boards/st/ipidtv7105/setup.c
++++ b/arch/sh/boards/st/ipidtv7105/setup.c
+@@ -12,7 +12,6 @@
+ 
+ #include <linux/init.h>
+ #include <linux/platform_device.h>
+-#include <linux/leds.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/emi.h>
+@@ -26,13 +25,22 @@
+ #include <linux/spi/flash.h>
+ #include <linux/stm/soc_init.h>
+ #include <linux/phy.h>
+-#include <linux/gpio_keys.h>
++#include <linux/gpio.h>
+ #include <linux/input.h>
+ #include <asm/irq-ilc.h>
+ #include <asm/irl.h>
+ #include <asm/io.h>
+ #include "../common/common.h"
+ 
++
++
++#define IPIDTV7105_GPIO_FLASH_WP stpio_to_gpio(6, 5)
++#define IPIDTV7105_GPIO_PCI_IDSEL stpio_to_gpio(10, 2)
++#define IPIDTV7105_GPIO_PCI_SERR stpio_to_gpio(15, 4)
++#define IPIDTV7105_GPIO_POWER_ON_ETH stpio_to_gpio(15, 5)
++#define IPIDTV7105_GPIO_PCI_RESET stpio_to_gpio(15, 7)
++
++
+ static int ascs[2] __initdata = { 0, 3 };
+ 
+ static void __init ipidtv7105_setup(char **cmdline_p)
+@@ -74,32 +82,11 @@ static struct usb_init_data usb_init[2] __initdata = {
+ 	}
+ };
+ 
+-static struct platform_device ipidtv7105_leds = {
+-	.name = "leds-gpio",
+-	.id = 0,
+-	.dev.platform_data = &(struct gpio_led_platform_data) {
+-		.num_leds = 2,
+-		.leds = (struct gpio_led[]) {
+-			{
+-				.name = "LD5",
+-				.default_trigger = "heartbeat",
+-				.gpio = stpio_to_gpio(2, 4),
+-			},
+-			{
+-				.name = "LD6",
+-				.gpio = stpio_to_gpio(2, 3),
+-			},
+-		},
+-	},
+-};
+-
+-static struct stpio_pin *phy_reset;
+-
+ static int ipidtv7105_phy_reset(void *bus)
+ {
+-	stpio_set_pin(phy_reset, 0);
++	gpio_set_value(IPIDTV7105_GPIO_POWER_ON_ETH, 0);
+ 	udelay(100);
+-	stpio_set_pin(phy_reset, 1);
++	gpio_set_value(IPIDTV7105_GPIO_POWER_ON_ETH, 1);
+ 	udelay(1);
+ 
+ 	return 1;
+@@ -121,7 +108,7 @@ static struct platform_device ipidtv7105_phy_device = {
+ 	.resource	= (struct resource[]) {
+ 		{
+ 			.name	= "phyirq",
+-			.start	= -1,/*FIXME, should be ILC_EXT_IRQ(6), */
++			.start	= -1, /* FIXME, should be ILC_EXT_IRQ(6) */
+ 			.end	= -1,
+ 			.flags	= IORESOURCE_IRQ,
+ 		},
+@@ -215,7 +202,6 @@ STM_NAND_DEVICE("stm-nand-flex", 0, &nand_config,
+ 		nand_parts, ARRAY_SIZE(nand_parts), NAND_USE_FLASH_BBT);
+ 
+ static struct platform_device *ipidtv7105_devices[] __initdata = {
+-	&ipidtv7105_leds,
+ 	&ipidtv7105_phy_device,
+ 	&spi_pio_device[0],
+ };
+@@ -230,32 +216,54 @@ lirc_scd_t lirc_scd = {
+ };
+ 
+ /* PCI configuration */
+-static struct stpio_pin *pci_idsel;
+ 
+-static struct pci_config_data  pci_config = {
+-	.pci_irq = {PCI_PIN_DEFAULT, PCI_PIN_DEFAULT,
+-		       PCI_PIN_UNUSED, PCI_PIN_UNUSED},
++static struct pci_config_data ipidtv7105_pci_config = {
++	.pci_irq = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED
++	},
+ 	.serr_irq = PCI_PIN_UNUSED,
+ 	.idsel_lo = 30,
+ 	.idsel_hi = 30,
+-	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED,
+-		       PCI_PIN_UNUSED, PCI_PIN_UNUSED},
++	.req_gnt = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED,
++	},
+ 	.pci_clk = 33333333,
+-	.pci_reset_pio = stpio_to_gpio(15, 7)
++	.pci_reset_gpio = IPIDTV7105_GPIO_PCI_RESET,
+ };
+-
++  
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+ {
+        /* We can use the standard function on this board */
+-       return  stx7105_pcibios_map_platform_irq(&pci_config, pin);
++       return stx7105_pcibios_map_platform_irq(&ipidtv7105_pci_config, pin);
+ }
+ 
+ static int __init device_init(void)
+ {
+-	pci_idsel = stpio_request_set_pin(10, 2, "pci_idsel",
+-					  STPIO_OUT, 1);
++ 	/* The IDSEL line is connected to PIO10.2 only... Luckily
++ 	 * there is just one slot, so we can just force 1... */
++ 	if (gpio_request(IPIDTV7105_GPIO_PCI_IDSEL, "PCI_IDSEL") == 0)
++ 		gpio_direction_output(IPIDTV7105_GPIO_PCI_IDSEL, 1);
++ 	else
++ 		printk(KERN_ERR "ipidtv7105: Failed to claim PCI_IDSEL PIO!\n");
++ 	/* Setup the PCI_SERR# PIO */
++ 	if (gpio_request(IPIDTV7105_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
++ 		gpio_direction_input(IPIDTV7105_GPIO_PCI_SERR);
++ 		ipidtv7105_pci_config.serr_irq =
++ 				gpio_to_irq(IPIDTV7105_GPIO_PCI_SERR);
++ 		set_irq_type(ipidtv7105_pci_config.serr_irq,
++ 				IRQ_TYPE_LEVEL_LOW);
++ 	} else {
++ 		printk(KERN_ERR "ipidtv7105: Failed to claim PCI SERR PIO!\n");
++ 	}
++ 	/* And finally! */
++ 	stx7105_configure_pci(&ipidtv7105_pci_config);
+ 
+-	stx7105_configure_pci(&pci_config);
+ 	stx7105_configure_sata();
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+@@ -263,15 +271,21 @@ static int __init device_init(void)
+ 	stx7105_configure_usb(0, &usb_init[0]);
+ 	stx7105_configure_usb(1, &usb_init[1]);
+ 
+-	phy_reset = stpio_request_set_pin(15, 5, "eth_phy_reset",
+-					  STPIO_OUT, 1);
+-
++ 	if (gpio_request(IPIDTV7105_GPIO_POWER_ON_ETH, "POWER_ON_ETH") == 0)
++ 		gpio_direction_output(IPIDTV7105_GPIO_POWER_ON_ETH, 1);
++ 	else
++ 		printk(KERN_ERR "ipidtv7105: Failed to claim POWER_ON_ETH "
++ 				"PIO!\n");
+ 	stx7105_configure_ethernet(0, 0, 0, 0, 0, 0, 0);
++ 	stx7105_configure_audio_pins(1, 0, 0);
++
+ 	stx7105_configure_lirc(&lirc_scd);
+-	stx7105_configure_audio_pins(3, 1, 1);
+ 
+ 	/* just permanetly enable the flash*/
+-	stpio_request_set_pin(6, 5, "FLASH_WP", STPIO_OUT, 1);
++ 	if (gpio_request(IPIDTV7105_GPIO_FLASH_WP, "FLASH_WP") == 0)
++ 		gpio_direction_output(IPIDTV7105_GPIO_FLASH_WP, 1);
++ 	else
++ 		printk(KERN_ERR "ipidtv7105: Failed to claim FLASH_WP PIO!\n");
+ 
+ 	stx7105_configure_nand(&nand_device);
+ 
+@@ -285,23 +299,15 @@ arch_initcall(device_init);
+ static void __iomem *ipidtv7105_ioport_map(unsigned long port,
+ 					   unsigned int size)
+ {
+-	/* However picking somewhere safe isn't as easy as you might think.
+-	 * I used to use external ROM, but that can cause problems if you are
+-	 * in the middle of updating Flash. So I'm now using the processor core
+-	 * version register, which is guaranted to be available, and
+-	 * non-writable.
+-	 */
+-	return (void __iomem *)CCN_PVR;
+-}
+-
+-static void __init ipidtv7105_init_irq(void)
+-{
++	/* Shouldn't be here! */
++	BUG();
++	return NULL;
+ }
+ 
+ struct sh_machine_vector mv_ipidtv7105 __initmv = {
+-	.mv_name	= "ipidtv7105",
+-	.mv_setup	= ipidtv7105_setup,
+-	.mv_nr_irqs	= NR_IRQS,
+-	.mv_init_irq	= ipidtv7105_init_irq,
+-	.mv_ioport_map	= ipidtv7105_ioport_map,
++	.mv_name = "ipidtv7105",
++	.mv_setup = ipidtv7105_setup,
++	.mv_nr_irqs = NR_IRQS,
++	.mv_ioport_map = ipidtv7105_ioport_map,
++	STM_PCI_IO_MACHINE_VEC
+ };
+diff --git a/arch/sh/boards/st/mb618/setup.c b/arch/sh/boards/st/mb618/setup.c
+index baba560..5123424 100644
+--- a/arch/sh/boards/st/mb618/setup.c
++++ b/arch/sh/boards/st/mb618/setup.c
+@@ -254,23 +254,32 @@ static struct plat_stmnand_data mb618_nand_config = {
+ };
+ 
+ 
+-/* We don't bother with INT[BCD] as they are shared with the ssc
+- * J20-A must be removed, J20-B must be 5-6
+- */
+-static struct pci_config_data  pci_config = {
+-	.pci_irq = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
+-	.serr_irq = PCI_PIN_UNUSED,
++static struct pci_config_data mb618_pci_config = {
++	/* We don't bother with INT[BCD] as they are shared with the ssc
++	 * J20-A must be removed, J20-B must be 5-6 */
++	.pci_irq = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED
++	},
++	.serr_irq = PCI_PIN_DEFAULT, /* J32-F fitted */
+ 	.idsel_lo = 30,
+ 	.idsel_hi = 30,
+-	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
++	.req_gnt = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED
++	},
+ 	.pci_clk = 33333333,
+-	.pci_reset_pio = -EINVAL, /* Reset done by EPLD on power on, not PIO */
++	.pci_reset_gpio = -EINVAL, /* Reset done by EPLD on power on, not PIO */
+ };
+ 
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+ {
+        /* We can use the standard function on this board */
+-       return  stx7111_pcibios_map_platform_irq(&pci_config, pin);
++       return stx7111_pcibios_map_platform_irq(&mb618_pci_config, pin);
+ }
+ 
+ static struct platform_device *mb618_devices[] __initdata = {
+@@ -328,7 +337,7 @@ static struct i2c_board_info mb618_scart_audio __initdata = {
+ 
+ static int __init device_init(void)
+ {
+-	stx7111_configure_pci(&pci_config);
++	stx7111_configure_pci(&mb618_pci_config);
+ 	stx7111_configure_pwm(&pwm_private_info);
+ 	stx7111_configure_ssc(&ssc_private_info);
+ 	stx7111_configure_usb(1); /* Enable inverter */
+@@ -355,12 +364,9 @@ arch_initcall(device_init);
+ 
+ static void __iomem *mb618_ioport_map(unsigned long port, unsigned int size)
+ {
+-	/* However picking somewhere safe isn't as easy as you might think.
+-	 * I used to use external ROM, but that can cause problems if you are
+-	 * in the middle of updating Flash. So I'm now using the processor core
+-	 * version register, which is guaranted to be available, and non-writable.
+-	 */
+-	return (void __iomem *)CCN_PVR;
++	/* Shouldn't be here! */
++	BUG();
++	return NULL;
+ }
+ 
+ /*
+@@ -422,5 +428,10 @@ static void __init mb618_init_irq(void)
+ }
+ 
+ struct sh_machine_vector mv_mb618 __initmv = {
+-	STM_MACHINE_VEC(mb618)
++	.mv_name = "mb618",
++	.mv_setup = mb618_setup,
++	.mv_nr_irqs = NR_IRQS,
++	.mv_init_irq = mb618_init_irq,
++	.mv_ioport_map = mb618_ioport_map,
++	STM_PCI_IO_MACHINE_VEC
+ };
+diff --git a/arch/sh/boards/st/mb680/setup.c b/arch/sh/boards/st/mb680/setup.c
+index f2b4ffe..ce9f6ed 100644
+--- a/arch/sh/boards/st/mb680/setup.c
++++ b/arch/sh/boards/st/mb680/setup.c
+@@ -21,6 +21,7 @@
+ #include <linux/mtd/physmap.h>
+ #include <linux/mtd/partitions.h>
+ #include <linux/phy.h>
++#include <linux/gpio.h>
+ #include <linux/gpio_keys.h>
+ #include <linux/input.h>
+ #include <asm/irq-ilc.h>
+@@ -29,6 +30,12 @@
+ #include "../common/common.h"
+ #include "../common/mb705-epld.h"
+ 
++
++
++#define MB680_GPIO_PCI_SERR stpio_to_gpio(6, 4)
++
++
++
+ static int ascs[2] __initdata = { 2, 3 };
+ 
+ static void __init mb680_setup(char** cmdline_p)
+@@ -183,34 +190,52 @@ static void mb705_epld_pci_reset(void)
+ 
+ /* PCI configuration */
+ 
+-static struct pci_config_data  pci_config = {
+-	.pci_irq = {PCI_PIN_DEFAULT, PCI_PIN_DEFAULT, PCI_PIN_DEFAULT, PCI_PIN_DEFAULT},
+-	.serr_irq = PCI_PIN_UNUSED,
++static struct pci_config_data mb680_pci_config = {
++	.pci_irq = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_DEFAULT,
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED
++	},
++	.serr_irq = PCI_PIN_UNUSED, /* Modified in device_init() below */
+ 	.idsel_lo = 30,
+ 	.idsel_hi = 30,
+-	.req_gnt = {PCI_PIN_DEFAULT, PCI_PIN_UNUSED, PCI_PIN_UNUSED, PCI_PIN_UNUSED},
++	.req_gnt = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED
++	},
+ 	.pci_clk = 33333333,
+-	/*
+-	 * When connected to the mb705, PCI reset is controlled by an EPLD
++	/* When connected to the mb705, PCI reset is controlled by an EPLD
+ 	 * register on the mb705. When used standalone a PIO pin is used,
+-	 * and J47-D, J9-G must be fitted.
+-	 */
++	 * and J47-D, J9-G must be fitted. */
+ #ifdef CONFIG_SH_ST_MB705
+ 	.pci_reset = mb705_epld_pci_reset,
+ #else
+-	.pci_reset_pio = stpio_to_gpio(15, 6),
++	.pci_reset_gpio = stpio_to_gpio(15, 6),
+ #endif
+ };
+ 
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+ {
+        /* We can use the standard function on this board */
+-       return  stx7105_pcibios_map_platform_irq(&pci_config, pin);
++       return  stx7105_pcibios_map_platform_irq(&mb680_pci_config, pin);
+ }
+ 
+ static int __init device_init(void)
+ {
+-	stx7105_configure_pci(&pci_config);
++ 	/* Setup the PCI_SERR# PIO
++ 	 * J20-A - open, J27-E - closed */
++ 	if (gpio_request(MB680_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
++ 		gpio_direction_input(MB680_GPIO_PCI_SERR);
++ 		mb680_pci_config.serr_irq = gpio_to_irq(MB680_GPIO_PCI_SERR);
++ 		set_irq_type(mb680_pci_config.serr_irq, IRQ_TYPE_LEVEL_LOW);
++ 	} else {
++ 		printk(KERN_WARNING "mb680: Failed to claim PCI_SERR PIO!\n");
++ 	}
++	stx7105_configure_pci(&mb680_pci_config);
++
+ 	stx7105_configure_sata();
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+@@ -241,17 +266,12 @@ static int __init device_init(void)
+ arch_initcall(device_init);
+ 
+ 
+-#ifndef CONFIG_GENERIC_IOMAP
+ static void __iomem *mb680_ioport_map(unsigned long port, unsigned int size)
+ {
+-	/* However picking somewhere safe isn't as easy as you might think.
+-	 * I used to use external ROM, but that can cause problems if you are
+-	 * in the middle of updating Flash. So I'm now using the processor core
+-	 * version register, which is guaranted to be available, and non-writable.
+-	 */
+-	return (void __iomem *)CCN_PVR;
++	/* Shouldn't be here! */
++	BUG();
++	return NULL;
+ }
+-#endif
+ 
+ static void __init mb680_init_irq(void)
+ {
+@@ -263,5 +283,10 @@ static void __init mb680_init_irq(void)
+ }
+ 
+ struct sh_machine_vector mv_mb680 __initmv = {
+-	STM_MACHINE_VEC(mb680)
++	.mv_name = "mb680",
++	.mv_setup = mb680_setup,
++	.mv_nr_irqs = NR_IRQS,
++	.mv_init_irq = mb680_init_irq,
++	.mv_ioport_map = mb680_ioport_map,
++	STM_PCI_IO_MACHINE_VEC
+ };
+diff --git a/arch/sh/boards/st/mb839/setup.c b/arch/sh/boards/st/mb839/setup.c
+index 94acdc3..ee1865f 100644
+--- a/arch/sh/boards/st/mb839/setup.c
++++ b/arch/sh/boards/st/mb839/setup.c
+@@ -231,17 +231,12 @@ static int __init device_init(void)
+ 
+ arch_initcall(device_init);
+ 
+-#ifndef CONFIG_GENERIC_IOMAP
+ static void __iomem *mb839_ioport_map(unsigned long port, unsigned int size)
+ {
+-	/* However picking somewhere safe isn't as easy as you might think.
+-	 * I used to use external ROM, but that can cause problems if you are
+-	 * in the middle of updating Flash. So I'm now using the processor core
+-	 * version register, which is guaranted to be available, and non-writable.
+-	 */
+-	return (void __iomem *)CCN_PVR;
++	/* Shouldn't be here! */
++	BUG();
++	return NULL;
+ }
+-#endif
+ 
+ static void __init mb839_init_irq(void)
+ {
+@@ -251,5 +246,9 @@ static void __init mb839_init_irq(void)
+ }
+ 
+ struct sh_machine_vector mv_mb839 __initmv = {
+-	STM_MACHINE_VEC(mb839)
++	.mv_name = "mb839",
++	.mv_setup = mb839_setup,
++	.mv_nr_irqs = NR_IRQS,
++	.mv_init_irq = mb839_init_irq,
++	.mv_ioport_map = mb839_ioport_map,
+ };
+diff --git a/arch/sh/boards/st/pdk7105/setup.c b/arch/sh/boards/st/pdk7105/setup.c
+index 0b0a95f..d84e100 100644
+--- a/arch/sh/boards/st/pdk7105/setup.c
++++ b/arch/sh/boards/st/pdk7105/setup.c
+@@ -13,6 +13,7 @@
+ #include <linux/init.h>
+ #include <linux/platform_device.h>
+ #include <linux/leds.h>
++#include <linux/gpio.h>
+ #include <linux/tm1668.h>
+ #include <linux/stm/pio.h>
+ #include <linux/stm/soc.h>
+@@ -33,6 +34,12 @@
+ #include <asm/io.h>
+ #include "../common/common.h"
+ 
++
++
++#define PDK7105_GPIO_PCI_SERR stpio_to_gpio(15, 4)
++
++
++
+ /*
+  * Flash setup depends on whether system is configured as boot-from-NOR
+  * (default) or boot-from-NAND.
+@@ -332,22 +339,30 @@ lirc_scd_t lirc_scd = {
+ };
+ 
+ /* PCI configuration */
+-static struct pci_config_data  pci_config = {
+-	.pci_irq = { PCI_PIN_DEFAULT, PCI_PIN_DEFAULT,
+-			PCI_PIN_UNUSED, PCI_PIN_UNUSED },
+-	.serr_irq = PCI_PIN_UNUSED,
++static struct pci_config_data pdk7105_pci_config = {
++	.pci_irq = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED
++	},
++	.serr_irq = PCI_PIN_UNUSED, /* Modified in device_init() */
+ 	.idsel_lo = 30,
+ 	.idsel_hi = 30,
+-	.req_gnt = { PCI_PIN_DEFAULT, PCI_PIN_UNUSED,
+-			PCI_PIN_UNUSED, PCI_PIN_UNUSED },
++	.req_gnt = {
++		PCI_PIN_DEFAULT,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED,
++		PCI_PIN_UNUSED
++	},
+ 	.pci_clk = 33333333,
+-	.pci_reset_pio = stpio_to_gpio(15, 7)
++	.pci_reset_gpio = stpio_to_gpio(15, 7),
+ };
+ 
+ int pcibios_map_platform_irq(struct pci_dev *dev, u8 slot, u8 pin)
+ {
+ 	/* We can use the standard function on this board */
+-	return  stx7105_pcibios_map_platform_irq(&pci_config, pin);
++ 	return stx7105_pcibios_map_platform_irq(&pdk7105_pci_config, pin);
+ }
+ 
+ static int __init device_init(void)
+@@ -374,7 +389,17 @@ static int __init device_init(void)
+ 		nand_device.id = 0;
+ 	}
+ 
+-	stx7105_configure_pci(&pci_config);
++	/* Setup the PCI_SERR# PIO */
++	if (gpio_request(PDK7105_GPIO_PCI_SERR, "PCI_SERR#") == 0) {
++		gpio_direction_input(PDK7105_GPIO_PCI_SERR);
++		pdk7105_pci_config.serr_irq =
++			gpio_to_irq(PDK7105_GPIO_PCI_SERR);
++		set_irq_type(pdk7105_pci_config.serr_irq, IRQ_TYPE_LEVEL_LOW);
++	} else {
++		printk(KERN_WARNING "pdk7105: Failed to claim PCI SERR PIO!\n");
++	}
++	stx7105_configure_pci(&pdk7105_pci_config);
++
+ 	stx7105_configure_sata();
+ 	stx7105_configure_pwm(&pwm_private_info);
+ 	stx7105_configure_ssc(&ssc_private_info);
+@@ -414,28 +439,15 @@ arch_initcall(device_init);
+ 
+ static void __iomem *pdk7105_ioport_map(unsigned long port, unsigned int size)
+ {
+-	/* However picking somewhere safe isn't as easy as you might think.
+-	 * I used to use external ROM, but that can cause problems if you are
+-	 * in the middle of updating Flash. So I'm now using the processor core
+-	 * version register, which is guaranted to be available, and non-writable.
+-	 */
+-	return (void __iomem *)CCN_PVR;
+-}
+-
+-static void __init pdk7105_init_irq(void)
+-{
+-#ifndef CONFIG_SH_ST_MB705
+-	/* Configure STEM interrupts as active low. */
+-	set_irq_type(ILC_EXT_IRQ(1), IRQ_TYPE_LEVEL_LOW);
+-	set_irq_type(ILC_EXT_IRQ(2), IRQ_TYPE_LEVEL_LOW);
+-#endif
++	/* Shouldn't be here! */
++	BUG();
++	return NULL;
+ }
+ 
+ struct sh_machine_vector mv_pdk7105 __initmv = {
+-	.mv_name		= "pdk7105",
+-	.mv_setup		= pdk7105_setup,
+-	.mv_nr_irqs		= NR_IRQS,
+-	.mv_init_irq		= pdk7105_init_irq,
+-	.mv_ioport_map		= pdk7105_ioport_map,
++	.mv_name = "pdk7105",
++	.mv_setup = pdk7105_setup,
++	.mv_nr_irqs = NR_IRQS,
++	.mv_ioport_map = pdk7105_ioport_map,
++	STM_PCI_IO_MACHINE_VEC
+ };
+-
+diff --git a/arch/sh/drivers/pci/Makefile b/arch/sh/drivers/pci/Makefile
+index 10d2da4..e7e59b4 100644
+--- a/arch/sh/drivers/pci/Makefile
++++ b/arch/sh/drivers/pci/Makefile
+@@ -22,3 +22,7 @@ obj-$(CONFIG_SH_TITAN)			+= ops-titan.o
+ obj-$(CONFIG_SH_LANDISK)		+= ops-landisk.o
+ obj-$(CONFIG_SH_LBOX_RE2)		+= ops-lboxre2.o fixups-lboxre2.o
+ obj-$(CONFIG_SH_7780_SOLUTION_ENGINE)	+= ops-se7780.o fixups-se7780.o
++
++ifeq ($(CONFIG_PCI_DEBUG),y)
++EXTRA_CFLAGS += -DDEBUG
++endif
+diff --git a/arch/sh/drivers/pci/pci-auto.c b/arch/sh/drivers/pci/pci-auto.c
+index 57f2438..93cffeb 100644
+--- a/arch/sh/drivers/pci/pci-auto.c
++++ b/arch/sh/drivers/pci/pci-auto.c
+@@ -45,7 +45,6 @@
+ #include <linux/types.h>
+ #include <linux/pci.h>
+ 
+-#define	DEBUG
+ #ifdef	DEBUG
+ #define	DBG(x...)	printk(x)
+ #else
+diff --git a/arch/sh/drivers/pci/pci-synopsys.c b/arch/sh/drivers/pci/pci-synopsys.c
+index 6cea908..5db3c68 100644
+--- a/arch/sh/drivers/pci/pci-synopsys.c
++++ b/arch/sh/drivers/pci/pci-synopsys.c
+@@ -130,12 +130,28 @@ static inline u32 __pci_csr_read(u32 addr, u32 cmd)
+ static inline u32 pci_csr_read(u32 addr, u32 cmd)
+ {
+ 	unsigned long flags;
+-	u32 val;
++	u32 val, err;
+ 
+ 	spin_lock_irqsave(&stm_pci_io_lock, flags);
+ 
+ 	val = __pci_csr_read(addr, cmd);
+ 
++	/* When transaction fails (eg. no device case) the controller
++	 * sets the error condition... Let's clear it here, before
++	 * everything panics... */
++	err = readl(ahb_pci + PCI_CSR_PCI_ERROR);
++	if (err) {
++		pr_debug("stm_pci: CSR reported PCI error 0x%x - "
++				"cleared now...\n", err);
++		writel(err, ahb_pci + PCI_CSR_PCI_ERROR);
++		/* Read back... */
++		err = readl(ahb_pci + PCI_CSR_PCI_ERROR);
++		/* Should be zero now... */
++		BUG_ON(err);
++		/* The "read" value is 0xf..f */
++		val = ~0;
++	}
++
+ 	spin_unlock_irqrestore(&stm_pci_io_lock, flags);
+ 
+ 	return val;
+@@ -363,39 +379,69 @@ string_out_func(16, w)
+ string_out_func(32, l)
+ 
+ 
+-static void __iomem __devinit *plat_ioremap_region(struct platform_device *pdev, int region)
++static void __iomem __devinit *plat_ioremap_region(struct platform_device *pdev,
++		char *name)
+ {
+ 	struct resource *res;
+ 	unsigned long size;
+ 	void __iomem *p;
+ 
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, region);
+-	if(res == NULL) return NULL;
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, name);
++	if (res == NULL)
++		return NULL;
+ 
+ 	size = res->end - res->start + 1;
+ 
+-	if(!devm_request_mem_region(&pdev->dev, res->start, size, res->name))  return NULL;
++	if (!devm_request_mem_region(&pdev->dev, res->start, size, name))
++		return NULL;
+ 
+ 	p = devm_ioremap_nocache(&pdev->dev,res->start,size);
+ 
+-	if(p == NULL) printk(KERN_ERR "pci-stm: Failed to map address 0x%08lx\n", (unsigned long)res->start);
++	if (p == NULL)
++		printk(KERN_ERR "pci-stm: Failed to map address 0x%08x\n",
++				res->start);
+ 
+ 	return p;
+ }
+ 
+-static irqreturn_t pci_stm_serr_irq(int irq, void *data)
++static irqreturn_t pci_stm_dma_irq(int irq, void *data)
+ {
+-	panic("pci_stm: SERR INTERRUPT RAISED\n");
++	printk(KERN_WARNING "pci_stm: PCI_BRIDGE_INT_DMA_STATUS = 0x%08x\n",
++			readl(emiss + PCI_BRIDGE_INT_DMA_STATUS));
++	printk(KERN_WARNING "pci_stm: Transaction with no associated "
++			"function\n");
++
++	writel(~0, emiss + PCI_BRIDGE_INT_DMA_CLEAR);
+ 
+ 	return IRQ_HANDLED;
+ }
+ 
+-static irqreturn_t pci_stm_dma_irq(int irq, void *data)
++static irqreturn_t pci_stm_error_irq(int irq, void *data)
+ {
++	printk(KERN_ERR "pci_stm: PCI_DEVICEINTMASK_INT_STATUS = 0x%08x\n",
++			readl(emiss + PCI_DEVICEINTMASK_INT_STATUS));
++	printk(KERN_ERR "pci_stm: PCI_PME_STATUSCHG_INT_STATUS = 0x%08x\n",
++			readl(emiss + PCI_PME_STATUSCHG_INT_STATUS));
++	printk(KERN_ERR "pci_stm: PCI_PME_STATECHG_INT_STATUS = 0x%08x\n",
++			readl(emiss + PCI_PME_STATECHG_INT_STATUS));
++
++	printk(KERN_ERR "pci_stm: PCI_CSR_PCI_ERROR = 0x%08x\n",
++			readl(ahb_pci + PCI_CSR_PCI_ERROR));
++	printk(KERN_ERR "pci_stm: PCI_CSR_PCI_ERROR_ADDR = 0x%08x\n",
++			readl(ahb_pci + PCI_CSR_PCI_ERROR_ADDR));
++	printk(KERN_ERR "pci_stm: PCI_CSR_AHB_ERROR = 0x%08x\n",
++			readl(ahb_pci + PCI_CSR_AHB_ERROR));
++	printk(KERN_ERR "pci_stm: PCI_CSR_AHB_ERROR_ADDR = 0x%08x\n",
++			readl(ahb_pci + PCI_CSR_AHB_ERROR_ADDR));
++
++	panic("pci_stm: PCI error interrupt raised\n");
+ 
+-	printk("pci_stm: Transaction with no associated function\n");
++	return IRQ_HANDLED;
++}
+ 
+-	writel(~0, emiss + PCI_BRIDGE_INT_DMA_CLEAR);
++static irqreturn_t pci_stm_serr_irq(int irq, void *data)
++{
++	panic("pci_stm: SERR interrupt raised\n");
+ 
+ 	return IRQ_HANDLED;
+ }
+@@ -476,6 +522,7 @@ static void __devinit pci_stm_setup(struct pci_config_data *pci_config,
+ 
+ 	/* Pass through grant retraction feature for now */
+ 	v = readl(emiss + EMISS_ARBITER_CONFIG);
++
+ 	/* Clear these bits, note the req gnt is a set to 0 to enable */
+ 	v &=  ~(EMISS_ARBITER_CONFIG_BYPASS_ARBITER |
+ 		EMISS_ARBITER_CONFIG_STATIC_NOT_DYNAMIC	|
+@@ -483,7 +530,7 @@ static void __devinit pci_stm_setup(struct pci_config_data *pci_config,
+ 		EMISS_ARBITER_CONFIG_BUS_FREE |
+ 		req_gnt_mask);
+ 
+-	if (!pci_config->req0_to_req3 &&
++	if (!pci_config->req0_emi &&
+ 	    (pci_config->req_gnt[0] != PCI_PIN_UNUSED))
+ 		v |= EMISS_ARBITER_CONFIG_PCI_NOT_EMI;
+ 
+@@ -552,67 +599,91 @@ static void __devinit pci_stm_setup(struct pci_config_data *pci_config,
+ static int __devinit pci_stm_probe(struct platform_device *pdev)
+ {
+ 	struct resource *res;
+-	int ret,irq;
++	int ret, irq;
+ 	unsigned long pci_window_start, pci_window_size;
+ 	struct pci_config_data *pci_config = pdev->dev.platform_data;
+ 	struct clk *pci_clk;
+ 
+-	emiss = plat_ioremap_region(pdev, 0);
+-	if(emiss == NULL)  return -ENOMEM;
+-
+-	ahb_pci = plat_ioremap_region(pdev, 1);
+-	if(ahb_pci == NULL)  return -ENOMEM;
+-
+-	/* We don't use any of the ping-pong wierdness, but sometimes the errors are useful */
+-	irq = platform_get_irq(pdev, 0);
+-	ret = devm_request_irq(&pdev->dev, irq, pci_stm_dma_irq, 0, "PCI DMA", NULL);
+-	if(ret) printk(KERN_ERR "pci-stm: Cannot request irq %d\n",irq);
+-
+-	irq = platform_get_irq(pdev, 1);
+-	/* Don't hook the SERR interrupt if we are told not to */
+-	if(irq > 0 ) {
+-		ret = devm_request_irq(&pdev->dev, irq, pci_stm_serr_irq, 0, "PCI SERR", NULL);
+-		if(ret) printk(KERN_ERR "pci-stm: Cannot request irq %d\n",irq);
++	emiss = plat_ioremap_region(pdev, "EMISS");
++	if (emiss == NULL)
++		return -ENOMEM;
++
++	ahb_pci = plat_ioremap_region(pdev, "PCI-AHB");
++	if (ahb_pci == NULL)
++		return -ENOMEM;
++
++	/* We don't use any of the ping-pong weirdness,
++	 * but sometimes the errors are useful */
++	irq = platform_get_irq_byname(pdev, "DMA");
++	ret = devm_request_irq(&pdev->dev, irq, pci_stm_dma_irq, 0,
++			"PCI DMA", NULL);
++	if (ret)
++		printk(KERN_ERR "pci-stm: Cannot request DMA irq %d\n", irq);
++
++	irq = platform_get_irq_byname(pdev, "Error");
++	ret = devm_request_irq(&pdev->dev, irq, pci_stm_error_irq, 0,
++			"PCI Error", NULL);
++	if (ret)
++		printk(KERN_ERR "pci-stm: Cannot request error irq "
++				"%d\n", irq);
++
++	irq = platform_get_irq_byname(pdev, "SERR");
++	/* Don't hook the error interrupt if we are told not to */
++	if (irq > 0) {
++		ret = devm_request_irq(&pdev->dev, irq, pci_stm_serr_irq, 0,
++				"PCI SERR", NULL);
++		if (ret)
++			printk(KERN_ERR "pci-stm: Cannot request SERR irq "
++					"%d\n", irq);
+ 	}
+ 
+-	pci_clk = clk_get(&pdev->dev,"pci");
+-	if(pci_clk) {
++	if (!pci_config->clk_name)
++		pci_config->clk_name = "pci";
++	pci_clk = clk_get(&pdev->dev, pci_config->clk_name);
++	if (pci_clk && !IS_ERR(pci_clk)) {
+ 		unsigned long pci_clk_rate = (pci_config->pci_clk == 0) ? 33333333 : pci_config->pci_clk;
+-		unsigned long pci_clk_mhz = pci_clk_rate/1000000;
+-		printk("pci_stm: Setting PCI clock to %luMHz\n",pci_clk_mhz);
+-		if(clk_set_rate(pci_clk, pci_clk_rate)) {
+-			printk(KERN_ERR "pci_stm: Unable to set PCI clock to %luMHz\n",pci_clk_mhz);
+-		}
++		unsigned long pci_clk_mhz = pci_clk_rate / 1000000;
++		printk(KERN_INFO "pci_stm: Setting PCI clock to %luMHz\n",
++				pci_clk_mhz);
++		if (clk_set_rate(pci_clk, pci_clk_rate))
++			printk(KERN_ERR "pci_stm: Unable to set PCI clock to "
++					"%luMHz\n", pci_clk_mhz);
+ 	} else {
+ 		printk(KERN_ERR "pci_stm: Unable to find pci clock\n");
+ 	}
+ 
+-	if (!pci_config->pci_reset && pci_config->pci_reset_pio != -EINVAL) {
++	if (!pci_config->pci_reset && pci_config->pci_reset_gpio != -EINVAL) {
+ 		/* We have not been given a reset function by the board layer,
+ 		 * and the PIO is valid.  Assume it is done via PIO. Claim pins
+ 		 * specified in config and use default PIO reset function.
+ 		 */
+-		if (!gpio_request(pci_config->pci_reset_pio, "PCI RST")) {
+-			pci_reset_pin = pci_config->pci_reset_pio;
++		if (!gpio_request(pci_config->pci_reset_gpio, "PCI RST")) {
++			pci_reset_pin = pci_config->pci_reset_gpio;
+ 			pci_config->pci_reset = pci_stm_pio_reset;
+ 		} else {
+ 			printk(KERN_ERR "pci_stm: PIO pin %d specified "
+ 					"for reset, cannot request\n",
+-					pci_config->pci_reset_pio);
++					pci_config->pci_reset_gpio);
+ 		}
+ 	}
+ 
+-	/* Set up the sh board channel stuff to point at the platform data we have passed in */
+-	board_pci_channels[0].mem_resource = pdev->resource + 2;
+-	board_pci_channels[0].io_resource = pdev->resource + 3;
+-
+-	/* Extract where the PCI window is suppossed to be */
+-	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+-	if(res == NULL) return -ENXIO;
++	/* Extract where the PCI memory window is supposed to be */
++	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "Memory");
++	if (res == NULL)
++		return -ENXIO;
+ 
+ 	pci_window_start = res->start;
+ 	pci_window_size = res->end - res->start + 1 ;
+ 
++	/* Set up the sh board channel stuff to point at the platform data
++	 * we have passed in */
++	board_pci_channels[0].mem_resource = res;
++
++	res = platform_get_resource_byname(pdev, IORESOURCE_IO, "IO");
++	if (res == NULL)
++		return -ENXIO;
++	board_pci_channels[0].io_resource = res;
++
+ 	/* Copy over into globals used by config read/write code */
+ 	idsel_lo = pci_config->idsel_lo;
+ 	max_slot = pci_config->idsel_hi - idsel_lo;
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx5197.c b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+index 9ec49e7..08b4410 100755
+--- a/arch/sh/kernel/cpu/sh4/clock-stx5197.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx5197.c
+@@ -203,7 +203,7 @@ int __init clk_init(void)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(clk_clocks); ++i)
+-		if (!clk_register(&clk_clocks[i]))
++		if (clk_clocks[i].name && !clk_register(&clk_clocks[i]))
+ 			clk_enable(&clk_clocks[i]);
+ 
+ 	REGISTER_GENERIC_LINUX_CLKS();
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7105.c b/arch/sh/kernel/cpu/sh4/clock-stx7105.c
+index 002aa2d..bb35569 100755
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7105.c
+@@ -272,7 +272,7 @@ int __init clk_init(void)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(clk_clocks); ++i)
+-		if (!clk_register(&clk_clocks[i]))
++		if (clk_clocks[i].name && !clk_register(&clk_clocks[i]))
+ 			clk_enable(&clk_clocks[i]);
+ 
+ 	REGISTER_GENERIC_LINUX_CLKS();
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7111.c b/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+index ff460c5..da41229 100755
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+@@ -299,7 +299,7 @@ int __init clk_init(void)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(clk_clocks); ++i)
+-		if (!clk_register(&clk_clocks[i]))
++		if (clk_clocks[i].name && !clk_register(&clk_clocks[i]))
+ 			clk_enable(&clk_clocks[i]);
+ 
+ 	REGISTER_GENERIC_LINUX_CLKS();
+diff --git a/arch/sh/kernel/cpu/sh4/clock-stx7141.c b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+index eceb4e2..6ce60c8 100755
+--- a/arch/sh/kernel/cpu/sh4/clock-stx7141.c
++++ b/arch/sh/kernel/cpu/sh4/clock-stx7141.c
+@@ -282,7 +282,7 @@ int __init clk_init(void)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(clk_clocks); ++i)
+-		if (!clk_register(&clk_clocks[i]))
++		if (clk_clocks[i].name && !clk_register(&clk_clocks[i]))
+ 			clk_enable(&clk_clocks[i]);
+ 
+ 	REGISTER_GENERIC_LINUX_CLKS();
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7105.c b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+index b6292f2..cd0a548 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7105.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+@@ -13,6 +13,7 @@
+ #include <linux/serial.h>
+ #include <linux/io.h>
+ #include <linux/i2c.h>
++#include <linux/gpio.h>
+ #include <linux/stm/soc.h>
+ #include <linux/stm/soc_init.h>
+ #include <linux/stm/pio.h>
+@@ -790,33 +791,6 @@ void stx7105_configure_pwm(struct plat_stm_pwm_data *data)
+ 	platform_device_register(&stm_pwm_device);
+ }
+ 
+-/* Hardware RNG resources -------------------------------------------------- */
+-
+-static struct platform_device hwrandom_rng_device = {
+-	.name	   = "stm_hwrandom",
+-	.id	     = -1,
+-	.num_resources  = 1,
+-	.resource       = (struct resource[]){
+-		{
+-			.start  = 0xfe250000,
+-			.end    = 0xfe250fff,
+-			.flags  = IORESOURCE_MEM
+-		},
+-	}
+-};
+-
+-static struct platform_device devrandom_rng_device = {
+-	.name           = "stm_rng",
+-	.id             = 0,
+-	.num_resources  = 1,
+-	.resource       = (struct resource[]){
+-		{
+-			.start  = 0xfe250000,
+-			.end    = 0xfe250fff,
+-			.flags  = IORESOURCE_MEM
+-		},
+-	}
+-};
+ 
+ 
+ /* ASC resources ----------------------------------------------------------- */
+@@ -981,170 +955,310 @@ void __init stx7105_configure_nand(struct platform_device *pdev)
+ 	platform_device_register(pdev);
+ }
+ 
+-/*
+- * PCI Bus initialisation
+- *
+- */
+ 
+ 
+-/*
+- * This function assumes you are using the dedicated pins. Production boards will
+- * more likely use the external interrupt pins and save the PIOs
+- */
++/* PCI Resources ---------------------------------------------------------- */
+ 
+-int stx7105_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin)
++/* You may pass one of the PCI_PIN_* constants to use dedicated pin or
++ * just pass interrupt number generated with gpio_to_irq() when PIO pads
++ * are used as interrupts or IRLx_IRQ when using external interrupts inputs */
++int stx7105_pcibios_map_platform_irq(struct pci_config_data *pci_config,
++		u8 pin)
+ {
+ 	int irq;
+ 	int pin_type;
+ 
+-	if((pin > 4) || (pin < 1)) return -1;
++	if ((pin > 4) || (pin < 1))
++		return -1;
+ 
+ 	pin_type = pci_config->pci_irq[pin - 1];
+ 
+-	switch(pin_type) {
+-		case PCI_PIN_DEFAULT:
+-		case PCI_PIN_ALTERNATIVE:
+-			irq = ILC_EXT_IRQ(pin + 25);
+-			break;
+-		case PCI_PIN_UNUSED:
+-			irq = -1; /* Not used */
++	switch (pin_type) {
++	case PCI_PIN_ALTERNATIVE:
++		/* There is an alternative for the INTA only! */
++		if (pin != 1) {
++			BUG();
++			irq = -1;
+ 			break;
+-		default:
+-			irq = pin_type; /* Take whatever interrupt you are told */
++		}
++		/* Fall through */
++	case PCI_PIN_DEFAULT:
++		/* There are only 3 dedicated interrupt lines! */
++		if (pin == 4) {
++			BUG();
++			irq = -1;
+ 			break;
++		}
++		irq = ILC_EXT_IRQ(pin + 25);
++		break;
++	case PCI_PIN_UNUSED:
++		irq = -1; /* Not used */
++		break;
++	default:
++		irq = pin_type; /* Take whatever interrupt you are told */
++		break;
+ 	}
+ 
+ 	return irq;
+ }
+ 
++static struct platform_device stx7105_pci_device = {
++	.name = "pci_stm",
++	.id = -1,
++	.num_resources = 7,
++	.resource = (struct resource[]) {
++		{
++			.name = "Memory",
+ #ifdef CONFIG_32BIT
+-#define PCI_WINDOW_START 0xc0000000
+-#define PCI_WINDOW_SIZE  0x20000000 /* 512 Megs */
++			.start = 0xc0000000,
++			.end = 0xdfffffff, /* 512 MB */
+ #else
+-#define PCI_WINDOW_START 0x08000000
+-#define PCI_WINDOW_SIZE  0x04000000 /* 64 Megs */
++			.start = 0x08000000,
++			.end = 0x0bffffff, /* 64 MB */
+ #endif
+-
+-/* Various controls bits in sysconfig 5 */
+-/* Relative to the start of the PCI block, so they
+- * can be plugged into sysconf(read/write) calls
+- */
+-
+-#define PCI_DEVICE_NOT_HOST_ENABLE 	(1<<13)
+-#define PCI_CLOCK_MASTER_NOT_SLAVE 	(1<<12)
+-#define PCI_INT0_SRC_SEL		(1<<11)
+-#define PCI_LOCK_IN_SEL			(1<<9)
+-#define PCI_SYS_ERROR_ENABLE		(1<<8)
+-#define PCI_RESETN_ENABLE		(1<<7)
+-#define PCI_INT_TO_HOST_ENABLE		(1<<6)
+-#define PCI_INT_FROM_DEVICE(n)		(1 << (5 - (n)))
+-#define PCI_LOCK_IN_ENABLE		(1<<1)
+-#define PCI_PME_IN_ENABLE		(1<<0)
+-
+-
+-static struct platform_device pci_device =
+-	PCI_DEVICE(0xfe400000, 0xfe560000, PCI_WINDOW_START, PCI_WINDOW_SIZE, evt2irq(0x1280), ILC_IRQ(25));
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "IO",
++			.start = 0x0400,
++			.end = 0xffff,
++			.flags = IORESOURCE_IO,
++		}, {
++			.name = "EMISS",
++			.start = 0xfe400000,
++			.end = 0xfe4017fc,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "PCI-AHB",
++			.start = 0xfe560000,
++			.end = 0xfe5600ff,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "DMA",
++			.start = evt2irq(0x1280),
++			.end = evt2irq(0x1280),
++			.flags = IORESOURCE_IRQ,
++		}, {
++			.name = "Error",
++			.start = ILC_EXT_IRQ(25),
++			.end = ILC_EXT_IRQ(25),
++			.flags = IORESOURCE_IRQ,
++		}, { /* Keep this one last */
++			.name = "SERR",
++			/* .start & .end set in stx7105_configure_pci() */
++			.flags = IORESOURCE_IRQ,
++		}
++	},
++};
+ 
+ void __init stx7105_configure_pci(struct pci_config_data *pci_conf)
+ {
+-#ifndef CONFIG_PCI
+-	return;
+-#else
+-	int i;
+ 	struct sysconf_field *sc;
+-	struct stpio_pin *pin;
+-	static const char *int_name[] = {"PCI INT A","PCI INT B","PCI INT C","PCI INT D"};
+-	static const char *req_name[] = {"PCI REQ 0 ","PCI REQ 1","PCI REQ 2","PCI REQ 3"};
+-	static const char *gnt_name[] = {"PCI GNT 0 ","PCI GNT 1","PCI GNT 2","PCI GNT 3"};
+-	int use_alt_for_int0;
+-	int sys5_int_enables = 0;
+-
+-	/* Cut 3 has req0 wired to req3 to work around NAND problems */
++	int i;
++
++	/* LLA clocks have these horrible names... */
++	pci_conf->clk_name = "CLKA_PCI";
++
++	/* 7105 cut 3 has req0 wired to req3 to work around NAND problems;
++	 * the same story for 7106 */
+ 	pci_conf->req0_to_req3 = (cpu_data->cut_major >= 3);
+ 
++	/* Additionally, we are not supposed to configure the req0/req3
++	 * to PCI mode on ... */
++	pci_conf->req0_emi = (cpu_data->cut_major >= 3);
++
+ 	/* Fill in the default values for the 7105 */
+-	if(!pci_conf->ad_override_default) {
+-		pci_conf->ad_threshold = 5;pci_conf->ad_read_ahead = 1;
+-		pci_conf->ad_chunks_in_msg = 0; pci_conf->ad_pcks_in_chunk = 0;
+-		pci_conf->ad_trigger_mode = 1; pci_conf->ad_max_opcode = 5;
++	if (!pci_conf->ad_override_default) {
++		pci_conf->ad_threshold = 5;
++		pci_conf->ad_read_ahead = 1;
++		pci_conf->ad_chunks_in_msg = 0;
++		pci_conf->ad_pcks_in_chunk = 0;
++		pci_conf->ad_trigger_mode = 1;
++		pci_conf->ad_max_opcode = 5;
+ 		pci_conf->ad_posted = 1;
+ 	}
+ 
+ 	/* Copy over platform specific data to driver */
+-	pci_device.dev.platform_data = pci_conf;
++	stx7105_pci_device.dev.platform_data = pci_conf;
+ 
++#if defined(CONFIG_PM)
++#warning TODO: PCI Power Management
++#endif
+ 	/* Claim and power up the PCI cell */
+ 	sc = sysconf_claim(SYS_CFG, 32, 2, 2, "PCI Power");
+-	sysconf_write(sc, 0); // We will need to stash this somewhere for power management.
+-
++	sysconf_write(sc, 0); /* We will need to stash this somewhere
++				 for power management. */
+ 	sc = sysconf_claim(SYS_STA, 15, 2, 2, "PCI Power status");
+-	while(sysconf_read(sc)); // Loop until powered up
++	while (sysconf_read(sc))
++		cpu_relax(); /* Loop until powered up */
+ 
+ 	/* Claim and set pads into PCI mode */
+ 	sc = sysconf_claim(SYS_CFG, 31, 20, 20, "PCI");
+ 	sysconf_write(sc, 1);
+ 
+-	/* SERR is only an output on Cut2, designed for device mode. So no point in enabling it.
+-	 * LOCK is totally pointless, the SOCs do not support any form of coherency
+-	 */
+-	sc = sysconf_claim(SYS_CFG, 5, 16, 29, "PCI Config");
+-	use_alt_for_int0 = (pci_conf->pci_irq[0] == PCI_PIN_ALTERNATIVE);
+-	sysconf_write(sc, PCI_CLOCK_MASTER_NOT_SLAVE | ( (use_alt_for_int0) ? PCI_INT0_SRC_SEL : 0 ) );
+-
+-	if(use_alt_for_int0 ) {
+-		set_irq_type(ILC_EXT_IRQ(26), IRQ_TYPE_LEVEL_LOW);
+-		pin = stpio_request_pin(15, 3, int_name[0], STPIO_IN);
+-		if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",int_name[0]);
+-		sys5_int_enables |= PCI_INT_FROM_DEVICE(0);
++	/* PCI_CLOCK_MASTER_NOT_SLAVE:
++	 * 0: PCI clock is slave
++	 * 1: PCI clock is master */
++	sc = sysconf_claim(SYS_CFG, 5, 28, 28, "PCI");
++	sysconf_write(sc, 1);
++
++	/* REQ/GNT[0] are dedicated EMI pins */
++	BUG_ON(pci_conf->req_gnt[0] != PCI_PIN_DEFAULT);
++
++	/* Configure the REQ/GNT[1..2], muxed with PIOs */
++	for (i = 1; i < 4; i++) {
++		static const char *req_name[] = {
++			"PCI REQ 0",
++			"PCI REQ 1",
++			"PCI REQ 2",
++			"PCI REQ 3"
++		};
++		static const char *gnt_name[] = {
++			"PCI GNT 0 ",
++			"PCI GNT 1",
++			"PCI GNT 2",
++			"PCI GNT 3"
++		};
++
++		switch (pci_conf->req_gnt[i]) {
++		case PCI_PIN_DEFAULT:
++			/* Is there REQ/GNT[3] at all? */
++			BUG_ON(pci_conf->req0_to_req3 && i == 3);
++
++			if (!stpio_request_pin(6, 4 + i, req_name[i], STPIO_IN))
++				printk(KERN_ERR "Unable to configure PIO for "
++						"%s\n", req_name[i]);
++
++			if (stpio_request_pin(7, i, gnt_name[i], STPIO_ALT_OUT))
++				stx7105_pio_sysconf(7, i, 4, gnt_name[i]);
++			else
++				printk(KERN_ERR "Unable to configure PIO for "
++						"%s\n", gnt_name[i]);
++			break;
++		case PCI_PIN_UNUSED:
++			/* Unused is unused - nothing to do */
++			break;
++		default:
++			/* No alternative here... */
++			BUG();
++			break;
++		}
+ 	}
+ 
+-	for(i = 0; i < 4; i++) {
+-                if(pci_conf->pci_irq[i] == PCI_PIN_DEFAULT) {
++	/* Configure interrupt PIOs */
++	for (i = 0; i < 3; i++) {
++		static const char *int_name[] = {
++			"PCI INT A",
++			"PCI INT B",
++			"PCI INT C",
++		};
++
++		switch (pci_conf->pci_irq[i]) {
++		case PCI_PIN_ALTERNATIVE:
++			if (i != 0) {
++				BUG();
++				break;
++			}
++			/* PCI_INT0_SRC_SEL:
++			 * 0: PCI_INT_FROM_DEVICE[0] is from PIO6[0]
++			 * 1: PCI_INT_FROM_DEVICE[0] is from PIO15[3] */
++			sc = sysconf_claim(SYS_CFG, 5, 27, 27, "PCI");
++			sysconf_write(sc, 1);
++			set_irq_type(ILC_EXT_IRQ(26), IRQ_TYPE_LEVEL_LOW);
++			if (!stpio_request_pin(15, 3, int_name[0], STPIO_IN))
++				printk(KERN_ERR "Unable to claim PIO for "
++						"%s\n", int_name[0]);
++			/* PCI_INT0_FROM_DEVICE:
++			 * 0: Indicates disabled
++			 * 1: Indicates PCI_INT_FROM_DEVICE[0] is enabled */
++			sc = sysconf_claim(SYS_CFG, 5, 21, 21, "PCI");
++			sysconf_write(sc, 1);
++			break;
++		case PCI_PIN_DEFAULT:
++			if (i == 0) {
++				/* PCI_INT0_SRC_SEL:
++				 * 0: PCI_INT_FROM_DEVICE[0] is from PIO6[0]
++				 * 1: PCI_INT_FROM_DEVICE[0] is from PIO15[3] */
++				sc = sysconf_claim(SYS_CFG, 5, 27, 27, "PCI");
++				sysconf_write(sc, 0);
++			}
+ 			set_irq_type(ILC_EXT_IRQ(26 + i), IRQ_TYPE_LEVEL_LOW);
+-			pin = stpio_request_pin(6, i, int_name[i], STPIO_IN);
+-			if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",int_name[i]);
+-			/* Set the alternate function correctly in sysconfig */
+-			sys5_int_enables |= PCI_INT_FROM_DEVICE(i);
+-                }
+-        }
+-
+-	/* Set the approprate enabled interrupts */
+-	sysconf_write(sc, sysconf_read(sc) | sys5_int_enables);
+-
+-	/* REQ/GNT 0 are dedicated pins, so we start  from 1 */
+-	for(i = 1; i < 4; i++ ) {
+-		if(pci_conf->req_gnt[i] == PCI_PIN_DEFAULT) {
+-			pin = stpio_request_pin(6, 4 + i, req_name[i], STPIO_IN);
+-			if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",req_name[i]);
+-			pin = stpio_request_pin(7, i, gnt_name[i], STPIO_ALT_OUT);
+-			if(!pin) printk(KERN_ERR "Unable to configure PIO for %s\n",gnt_name[i]);
+-			stx7105_pio_sysconf_alt(7, i, 0x11, gnt_name[i]);
++			if (!stpio_request_pin(6, i, int_name[i], STPIO_IN))
++				printk(KERN_ERR "Unable to claim PIO for "
++						"%s\n", int_name[i]);
++			/* PCI_INTn_FROM_DEVICE:
++			 * 0: Indicates disabled
++			 * 1: Indicates PCI_INT_FROM_DEVICE[n] is enabled */
++			sc = sysconf_claim(SYS_CFG, 5, 21 - i, 21 - i, "PCI");
++			sysconf_write(sc, 1);
++			break;
++		default:
++			/* Unused or interrupt number passed, nothing to do */
++			break;
+ 		}
+ 	}
+-
+-	/* Enable the SERR interrupt if wired up */
+-	if(pci_conf->serr_irq == PCI_PIN_DEFAULT ) {
+-		/* Use the default */
+-		pin = stpio_request_pin(6, 4, pci_device.resource[5].name, STPIO_IN);
++	BUG_ON(pci_conf->pci_irq[3] != PCI_PIN_UNUSED);
++
++	/* Configure the SERR interrupt (if wired up) */
++	switch (pci_conf->serr_irq) {
++	case PCI_PIN_DEFAULT:
++		if (stpio_request_pin(15, 4, "PCI SERR#", STPIO_IN)) {
++			pci_conf->serr_irq = gpio_to_irq(stpio_to_gpio(15, 4));
++			set_irq_type(pci_conf->serr_irq, IRQ_TYPE_LEVEL_LOW);
++		} else {
++			printk(KERN_WARNING "%s(): Failed to claim PCI SERR# "
++					"PIO!\n", __func__);
++			pci_conf->serr_irq = PCI_PIN_UNUSED;
++		}
++		break;
++	case PCI_PIN_ALTERNATIVE:
++		/* No alternative here */
++		BUG();
++		pci_conf->serr_irq = PCI_PIN_UNUSED;
++		break;
++	}
++	if (pci_conf->serr_irq == PCI_PIN_UNUSED) {
++		/* "Disable" the SERR IRQ resource (it's last on the list) */
++		stx7105_pci_device.num_resources--;
+ 	} else {
+-		pci_device.resource[5].start = 	pci_device.resource[5].end = pci_conf->serr_irq;
++		/* The SERR IRQ resource is last */
++		int res_num = stx7105_pci_device.num_resources - 1;
++		struct resource *res = &stx7105_pci_device.resource[res_num];
++
++		res->start = pci_conf->serr_irq;
++		res->end = pci_conf->serr_irq;
+ 	}
+ 
+-	platform_device_register(&pci_device);
++	/* LOCK is not claimed as is totally pointless, the SOCs do not
++	 * support any form of coherency */
+ 
+-#endif /* CONFIG_PCI */
++	platform_device_register(&stx7105_pci_device);
+ }
+ 
+-/* Early resources (sysconf and PIO) --------------------------------------- */
+ 
+-static struct platform_device sysconf_device = {
++
++/* Other resources -------------------------------------------------------- */
++
++static struct platform_device stx7105_ilc3_device = {
++	.name		= "ilc3",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd000000,
++			.end	= 0xfd000900,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++};
++
++static struct platform_device stx7105_sysconf_device = {
+ 	.name		= "sysconf",
+ 	.id		= -1,
+ 	.num_resources	= 1,
+ 	.resource	= (struct resource[]) {
+ 		{
+ 			.start	= 0xfe001000,
+-			.end	= 0xfe001000 + 0x1df,
++			.end	= 0xfe0011df,
+ 			.flags	= IORESOURCE_MEM
+ 		}
+ 	},
+@@ -1158,7 +1272,7 @@ static struct platform_device sysconf_device = {
+ 	}
+ };
+ 
+-static struct platform_device stpio_devices[] = {
++static struct platform_device stx7105_pio_devices[] = {
+ 	STPIO_DEVICE(0, 0xfd020000, evt2irq(0xc00)),
+ 	STPIO_DEVICE(1, 0xfd021000, evt2irq(0xc80)),
+ 	STPIO_DEVICE(2, 0xfd022000, evt2irq(0xd00)),
+@@ -1166,11 +1280,54 @@ static struct platform_device stpio_devices[] = {
+ 	STPIO_DEVICE(4, 0xfd024000, evt2irq(0x1040)),
+ 	STPIO_DEVICE(5, 0xfd025000, evt2irq(0x1020)),
+ 	STPIO_DEVICE(6, 0xfd026000, evt2irq(0x1000)),
++	/* Standalone PIO at fe01 - fe01ffff */
++	/* Int evt2irq(0xb40)) */
+ 	STPIO10_DEVICE(0xfe010000, evt2irq(0xb40), 7, 10),
+ };
+ 
+-/* Standalone PIO at fe01 - fe01ffff */
+-/* Int evt2irq(0xb40)) */
++static struct platform_device stx7105_rng_dev_hwrandom_device = {
++	.name	   = "stm_hwrandom",
++	.id	     = -1,
++	.num_resources  = 1,
++	.resource       = (struct resource[]){
++		{
++			.start  = 0xfe250000,
++			.end    = 0xfe250fff,
++			.flags  = IORESOURCE_MEM
++		},
++	}
++};
++
++static struct platform_device stx7105_rng_dev_random_device = {
++	.name           = "stm_rng",
++	.id             = 0,
++	.num_resources  = 1,
++	.resource       = (struct resource[]){
++		{
++			.start  = 0xfe250000,
++			.end    = 0xfe250fff,
++			.flags  = IORESOURCE_MEM
++		},
++	}
++};
++
++static struct platform_device stx7105_temp_device = {
++	.name			= "stm-temp",
++	.id			= -1,
++	.dev.platform_data	= &(struct plat_stm_temp_data) {
++		.name = "STx7105/STx7106 chip temperature",
++		.pdn = { SYS_CFG, 41, 4, 4 },
++		.dcorrect = { SYS_CFG, 41, 5, 9 },
++		.overflow = { SYS_STA, 12, 8, 8 },
++		.data = { SYS_STA, 12, 10, 16 },
++	},
++};
++
++static struct platform_device stx7105_emi = STEMI();
++
++
++
++/* Early devices initialization ------------------------------------------- */
+ 
+ /* Initialise devices which are required early in the boot process. */
+ void __init stx7105_early_device_init(void)
+@@ -1181,9 +1338,9 @@ void __init stx7105_early_device_init(void)
+ 
+ 	/* Initialise PIO and sysconf drivers */
+ 
+-	sysconf_early_init(&sysconf_device, 1);
+-	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices),
+-			 ILC_FIRST_IRQ+ILC_NR_IRQS);
++	sysconf_early_init(&stx7105_sysconf_device, 1);
++	stpio_early_init(stx7105_pio_devices, ARRAY_SIZE(stx7105_pio_devices),
++			ILC_FIRST_IRQ + ILC_NR_IRQS);
+ 
+ 	sc = sysconf_claim(SYS_DEV, 0, 0, 31, "devid");
+ 	devid = sysconf_read(sc);
+@@ -1197,78 +1354,37 @@ void __init stx7105_early_device_init(void)
+ 	disable_hlt();
+ }
+ 
+-static void __init pio_late_setup(void)
+-{
+-	int i;
+-	struct platform_device *pdev = stpio_devices;
+-
+-	for (i=0; i<ARRAY_SIZE(stpio_devices); i++,pdev++) {
+-		platform_device_register(pdev);
+-	}
+-}
+-
+-/* Other devices ----------------------------------------------------------- */
+-
+-static struct platform_device ilc3_device = {
+-	.name		= "ilc3",
+-	.id		= -1,
+-	.num_resources	= 1,
+-	.resource	= (struct resource[]) {
+-		{
+-			.start	= 0xfd000000,
+-			.end	= 0xfd000000 + 0x900,
+-			.flags	= IORESOURCE_MEM
+-		}
+-	},
+-};
+ 
+-static struct platform_device stx7105_temp_device = {
+-	.name			= "stm-temp",
+-	.id			= -1,
+-	.dev.platform_data	= &(struct plat_stm_temp_data) {
+-		.name = "STx7105 chip temperature",
+-		.pdn = { SYS_CFG, 41, 4, 4 },
+-		.dcorrect = { SYS_CFG, 41, 5, 9 },
+-		.overflow = { SYS_STA, 12, 8, 8 },
+-		.data = { SYS_STA, 12, 10, 16 },
+-	},
+-};
+ 
+-/* Pre-arch initialisation ------------------------------------------------- */
++/* Pre-arch initialisation ------------------------------------------------ */
+ 
+ static int __init stx7105_postcore_setup(void)
+ {
++	int i;
++
+ 	emi_init(0, 0xfe700000);
+ 
++	for (i = 0; i < ARRAY_SIZE(stx7105_pio_devices); i++)
++		platform_device_register(&stx7105_pio_devices[i]);
++
+ 	return 0;
+ }
+ postcore_initcall(stx7105_postcore_setup);
+ 
+-/* Late resources ---------------------------------------------------------- */
+-
+-static int __init stx7105_subsys_setup(void)
+-{
+-	/* we need to do PIO setup before module init, because some
+-	 * drivers (eg gpio-keys) require that the interrupts
+-	 * are available. */
+-	pio_late_setup();
+ 
+-	return 0;
+-}
+-subsys_initcall(stx7105_subsys_setup);
+ 
+-static struct platform_device emi = STEMI();
++/* Late resources --------------------------------------------------------- */
+ 
+ static struct platform_device *stx7105_devices[] __initdata = {
+ 	&stx7105_fdma_devices[0],
+ 	&stx7105_fdma_devices[1],
+ 	&stx7105_fdma_xbar_device,
+-	&sysconf_device,
+-	&ilc3_device,
+-	&hwrandom_rng_device,
+-	&devrandom_rng_device,
++	&stx7105_sysconf_device,
++	&stx7105_ilc3_device,
++	&stx7105_rng_dev_hwrandom_device,
++	&stx7105_rng_dev_random_device,
+ 	&stx7105_temp_device,
+-	&emi,
++	&stx7105_emi,
+ };
+ 
+ #include "./platform-pm-stx7105.c"
+@@ -1466,7 +1582,7 @@ void __init plat_irq_setup(void)
+ 	unsigned long intc2_base = (unsigned long)ioremap(0xfe001000, 0x400);
+ 	int i;
+ 
+-	ilc_early_init(&ilc3_device);
++	ilc_early_init(&stx7105_ilc3_device);
+ 
+ 	for (i=4; i<=6; i++)
+ 		prio_registers[i].set_reg += intc2_base;
+diff --git a/arch/sh/kernel/cpu/sh4/setup-stx7111.c b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+index 79df6be..e4b69b3 100644
+--- a/arch/sh/kernel/cpu/sh4/setup-stx7111.c
++++ b/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -11,6 +11,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/init.h>
+ #include <linux/serial.h>
++#include <linux/gpio.h>
+ #include <linux/io.h>
+ #include <linux/i2c.h>
+ #include <linux/delay.h>
+@@ -665,113 +666,244 @@ void __init stx7111_configure_nand(struct plat_stmnand_data *data)
+  */
+ 
+ 
+-/* This function assumes you are using the dedicated pins. Production boards will
+- * more likely use the external interrupt pins and save the PIOs
+- */
++/* This function assumes you are using the dedicated pins. Production boards
++ * will more likely use the external interrupt pins and save the PIOs */
+ int stx7111_pcibios_map_platform_irq(struct pci_config_data *pci_config, u8 pin)
+ {
+ 	int irq;
+ 	int pin_type;
+ 
+-	if((pin > 4) || (pin < 1)) return -1;
++	if ((pin > 4) || (pin < 1))
++		return -1;
+ 
+ 	pin_type = pci_config->pci_irq[pin - 1];
+ 
+ 	switch(pin_type) {
+-		case PCI_PIN_DEFAULT:
+-			irq = evt2irq(0xa00 + ( (pin - 1) * 0x20 ));
+-			break;
+-		case PCI_PIN_UNUSED:
+-			irq = -1; /* Not used */
+-			break;
+-		default:
+-			irq = pin_type; /* Take whatever interrupt you are told */
+-			break;
++	case PCI_PIN_DEFAULT:
++		irq = evt2irq(0xa00 + ((pin - 1) * 0x20));
++		break;
++	case PCI_PIN_ALTERNATIVE:
++		/* There is no alternative here ;-) */
++		BUG();
++		irq = -1;
++		break;
++	case PCI_PIN_UNUSED:
++		irq = -1; /* Not used */
++		break;
++	default:
++		/* Take whatever interrupt you are told */
++		irq = pin_type;
++		break;
+ 	}
+ 
+ 	return irq;
+ }
+ 
++static struct platform_device stx7111_pci_device = {
++	.name = "pci_stm",
++	.id = -1,
++	.num_resources = 7,
++	.resource = (struct resource[]) {
++		{
++			.name = "Memory",
+ #ifdef CONFIG_32BIT
+-#define PCI_WINDOW_START 0xc0000000
+-#define PCI_WINDOW_SIZE  0x20000000 /* 512 Megs */
++			.start = 0xc0000000,
++			.end = 0xdfffffff, /* 512 MB */
+ #else
+-#define PCI_WINDOW_START 0x08000000
+-#define PCI_WINDOW_SIZE  0x04000000 /* 64 Megs */
++			.start = 0x08000000,
++			.end = 0x0bffffff, /* 64 MB */
+ #endif
+-
+-static struct platform_device pci_device =
+-	PCI_DEVICE(0xfe400000, 0xfe560000, PCI_WINDOW_START, PCI_WINDOW_SIZE, evt2irq(0x1280), evt2irq(0x1200));
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "IO",
++			.start = 0x0400,
++			.end = 0xffff,
++			.flags = IORESOURCE_IO,
++		}, {
++			.name = "EMISS",
++			.start = 0xfe400000,
++			.end = 0xfe4017fc,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "PCI-AHB",
++			.start = 0xfe560000,
++			.end = 0xfe5600ff,
++			.flags = IORESOURCE_MEM,
++		}, {
++			.name = "DMA",
++			.start = evt2irq(0x1280),
++			.end = evt2irq(0x1280),
++			.flags = IORESOURCE_IRQ,
++		}, {
++			.name = "Error",
++			.start = evt2irq(0x1200),
++			.end = evt2irq(0x1200),
++			.flags = IORESOURCE_IRQ,
++		}, { /* Keep this one last */
++			.name = "SERR",
++			/* .start & .end set in stx7111_configure_pci() */
++			.flags = IORESOURCE_IRQ,
++		}
++	},
++};
+ 
+ void __init stx7111_configure_pci(struct pci_config_data *pci_conf)
+ {
+ 	int i;
+ 	struct sysconf_field *sc;
+ 	struct stpio_pin *pin;
+-	static const char *int_name[] = {"PCI INT A","PCI INT B","PCI INT C","PCI INT D"};
+-	static const char *req_name[] = {"PCI REQ 0 ","PCI REQ 1","PCI REQ 2","PCI REQ 3"};
+-	static const char *gnt_name[] = {"PCI GNT 0 ","PCI GNT 1","PCI GNT 2","PCI GNT 3"};
+-
+ 
+-#ifndef CONFIG_PCI
+-	return;
+-#else
++	/* LLA clocks have these horrible names... */
++	pci_conf->clk_name = "CLKA_PCI";
+ 
+ 	/* Fill in the default values for the 7111 */
+ 	if(!pci_conf->ad_override_default) {
+-		pci_conf->ad_threshold = 5;pci_conf->ad_read_ahead = 1;
+-		pci_conf->ad_chunks_in_msg = 0; pci_conf->ad_pcks_in_chunk = 0;
+-		pci_conf->ad_trigger_mode = 1; pci_conf->ad_max_opcode = 5;
++		pci_conf->ad_threshold = 5;
++		pci_conf->ad_read_ahead = 1;
++		pci_conf->ad_chunks_in_msg = 0;
++		pci_conf->ad_pcks_in_chunk = 0;
++		pci_conf->ad_trigger_mode = 1;
++		pci_conf->ad_max_opcode = 5;
+ 		pci_conf->ad_posted = 1;
+ 	}
+ 
+ 	/* Copy over platform specific data to driver */
+-	pci_device.dev.platform_data = pci_conf;
++	stx7111_pci_device.dev.platform_data = pci_conf;
+ 
++#if defined(CONFIG_PM)
++#warning TODO: PCI Power Management
++#endif
+ 	/* Claim and power up the PCI cell */
+ 	sc = sysconf_claim(SYS_CFG, 32, 2, 2, "PCI Power");
+-	sysconf_write(sc, 0); // We will need to stash this somewhere for power management.
+-
++	sysconf_write(sc, 0);
+ 	sc = sysconf_claim(SYS_STA, 15, 2, 2, "PCI Power status");
+-	while(sysconf_read(sc)); // Loop until powered up
++	while (sysconf_read(sc))
++		cpu_relax(); /* Loop until powered up */
+ 
+ 	/* Claim and set pads into PCI mode */
+ 	sc = sysconf_claim(SYS_CFG, 31, 20, 20, "PCI");
+ 	sysconf_write(sc, 1);
+ 
+-	for(i = 0; i < 4; i++) {
+-                if(pci_conf->pci_irq[i] == PCI_PIN_DEFAULT) {
++	/* REQ/GNT[0] are dedicated EMI pins */
++	BUG_ON(pci_conf->req_gnt[0] != PCI_PIN_DEFAULT);
++
++	/* Configure the REQ/GNT[1..3], muxed with PIOs */
++	for (i = 1; i < 4; i++) {
++		static const char *req_name[] = {
++			"PCI REQ 0",
++			"PCI REQ 1",
++			"PCI REQ 2",
++			"PCI REQ 3"
++		};
++		static const char *gnt_name[] = {
++			"PCI GNT 0",
++			"PCI GNT 1",
++			"PCI GNT 2",
++			"PCI GNT 3"
++		};
++
++		switch (pci_conf->req_gnt[i]) {
++		case PCI_PIN_DEFAULT:
++			if (!stpio_request_pin(0, ((3 - i) * 2) + 2,
++					req_name[i], STPIO_IN))
++				printk(KERN_ERR "Unable to configure PIO for "
++						"%s\n", req_name[i]);
++			if (!stpio_request_pin(2, (3 - i) + 5 ,
++					gnt_name[i], STPIO_ALT_OUT))
++				printk(KERN_ERR "Unable to configure PIO for "
++						"%s\n", gnt_name[i]);
++			sc = sysconf_claim(SYS_CFG, 5, (3 - i) + 2,
++					(3 - i) + 2, req_name[i]);
++			sysconf_write(sc, 1);
++			break;
++		case PCI_PIN_UNUSED:
++			/* Unused is unused - nothing to do */
++			break;
++		default:
++			/* No alternative here... */
++			BUG();
++			break;
++		}
++	}
++
++	/* Configure interrupt PIOs */
++	for (i = 0; i < 4; i++) {
++		static const char *int_name[] = {
++			"PCI INT A",
++			"PCI INT B",
++			"PCI INT C",
++			"PCI INT D"
++		};
++
++                switch (pci_conf->pci_irq[i]) {
++		case PCI_PIN_ALTERNATIVE:
++			/* No alternative here... */
++			BUG();
++			break;
++		case PCI_PIN_DEFAULT:
+ 			/* Set the alternate function correctly in sysconfig */
+-			pin = stpio_request_pin(3, (i == 0) ? 7 : (3 - i), int_name[i], STPIO_IN);
+-			sc = sysconf_claim(SYS_CFG, 5, 9 + i, 9 + i, int_name[i]);
++			pin = stpio_request_pin(3, (i == 0) ? 7 : (3 - i),
++					int_name[i], STPIO_IN);
++			sc = sysconf_claim(SYS_CFG, 5, 9 + i, 9 + i,
++					int_name[i]);
+ 			sysconf_write(sc, 1);
+-                }
++			break;
++		default:
++			/* Unused or interrupt number passed, nothing to do */
++			break;
++		}
+         }
+ 
+-	/* REQ/GNT 0 are dedicated pins */
+-	for( i = 1; i < 4; i++ ) {
+-		if(pci_conf->req_gnt[i] == PCI_PIN_DEFAULT) {
+-			pin = stpio_request_pin(0, ((3 - i) * 2) + 2, req_name[i], STPIO_IN);
+-			pin = stpio_request_pin(2, (3 - i) + 5 , gnt_name[i], STPIO_ALT_OUT);
+-			sc = sysconf_claim(SYS_CFG, 5, (3 - i) + 2,  (3 - i) + 2, req_name[i]);
+-			sysconf_write(sc, 1);
++	/* Configure the SERR interrupt (if wired up) */
++	switch (pci_conf->serr_irq) {
++	case PCI_PIN_DEFAULT:
++		if (stpio_request_pin(5, 5, "PCI SERR#", STPIO_IN)) {
++			pci_conf->serr_irq = gpio_to_irq(stpio_to_gpio(5, 5));
++			set_irq_type(pci_conf->serr_irq, IRQ_TYPE_LEVEL_LOW);
++		} else {
++			printk(KERN_WARNING "%s(): Failed to claim PCI SERR# "
++					"PIO!\n", __func__);
++			pci_conf->serr_irq = PCI_PIN_UNUSED;
+ 		}
++		break;
++	case PCI_PIN_ALTERNATIVE:
++		/* No alternative here */
++		BUG();
++		pci_conf->serr_irq = PCI_PIN_UNUSED;
++		break;
+ 	}
+-
+-	/* Enable the SERR interrupt if wired up */
+-	if(pci_conf->serr_irq == PCI_PIN_DEFAULT ) {
+-		/* Use the default */
+-		pin = stpio_request_pin(5, 5, pci_device.resource[5].name, STPIO_IN);
++	if (pci_conf->serr_irq == PCI_PIN_UNUSED) {
++		/* "Disable" the SERR IRQ resource (it's last on the list) */
++		stx7111_pci_device.num_resources--;
+ 	} else {
+-		pci_device.resource[5].start = 	pci_device.resource[5].end = pci_conf->serr_irq;
++		/* The SERR IRQ resource is last */
++		int res_num = stx7111_pci_device.num_resources - 1;
++		struct resource *res = &stx7111_pci_device.resource[res_num];
++
++		res->start = pci_conf->serr_irq;
++		res->end = pci_conf->serr_irq;
+ 	}
+ 
+-	platform_device_register(&pci_device);
+-#endif
++	platform_device_register(&stx7111_pci_device);
+ }
+ 
+ 
+-/* Early resources (sysconf and PIO) --------------------------------------- */
++
++
++/* Other resources -------------------------------------------------------- */
++
++static struct platform_device ilc3_device = {
++	.name		= "ilc3",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd000000,
++			.end	= 0xfd000000 + 0x900,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++};
+ 
+ static struct platform_device sysconf_device = {
+ 	.name		= "sysconf",
+@@ -804,6 +936,24 @@ static struct platform_device stpio_devices[] = {
+ 	STPIO_DEVICE(6, 0xfd026000, evt2irq(0x1000)),
+ };
+ 
++static struct platform_device stx7111_temp_device = {
++	.name			= "stm-temp",
++	.id			= -1,
++	.dev.platform_data	= &(struct plat_stm_temp_data) {
++		.name = "STx7111 chip temperature",
++		.pdn = { SYS_CFG, 41, 4, 4 },
++		.dcorrect = { SYS_CFG, 41, 5, 9 },
++		.overflow = { SYS_STA, 12, 8, 8 },
++		.data = { SYS_STA, 12, 10, 16 },
++	},
++};
++
++static struct platform_device emi = STEMI();
++
++
++
++/* Early devices initialization ------------------------------------------- */
++
+ /* Initialise devices which are required early in the boot process. */
+ void __init stx7111_early_device_init(void)
+ {
+@@ -829,67 +979,26 @@ void __init stx7111_early_device_init(void)
+ 	disable_hlt();
+ }
+ 
+-static void __init pio_late_setup(void)
+-{
+-	int i;
+-	struct platform_device *pdev = stpio_devices;
+ 
+-	for (i=0; i<ARRAY_SIZE(stpio_devices); i++,pdev++) {
+-		platform_device_register(pdev);
+-	}
+-}
+ 
+-/* Other devices ----------------------------------------------------------- */
+-
+-static struct platform_device ilc3_device = {
+-	.name		= "ilc3",
+-	.id		= -1,
+-	.num_resources	= 1,
+-	.resource	= (struct resource[]) {
+-		{
+-			.start	= 0xfd000000,
+-			.end	= 0xfd000000 + 0x900,
+-			.flags	= IORESOURCE_MEM
+-		}
+-	},
+-};
+-
+-static struct platform_device stx7111_temp_device = {
+-	.name			= "stm-temp",
+-	.id			= -1,
+-	.dev.platform_data	= &(struct plat_stm_temp_data) {
+-		.name = "STx7111 chip temperature",
+-		.pdn = { SYS_CFG, 41, 4, 4 },
+-		.dcorrect = { SYS_CFG, 41, 5, 9 },
+-		.overflow = { SYS_STA, 12, 8, 8 },
+-		.data = { SYS_STA, 12, 10, 16 },
+-	},
+-};
+-
+-/* Pre-arch initialisation ------------------------------------------------- */
++/* Pre-arch initialisation ------------------------------------------------ */
+ 
+ static int __init stx7111_postcore_setup(void)
+ {
++	int i;
++
+ 	emi_init(0, 0xfe700000);
+ 
++	for (i = 0; i < ARRAY_SIZE(stpio_devices); i++)
++		platform_device_register(&stpio_devices[i]);
++
+ 	return 0;
+ }
+ postcore_initcall(stx7111_postcore_setup);
+ 
+-/* Late resources ---------------------------------------------------------- */
+-
+-static int __init stx7111_subsys_setup(void)
+-{
+-	/* we need to do PIO setup before module init, because some
+-	 * drivers (eg gpio-keys) require that the interrupts
+-	 * are available. */
+-	pio_late_setup();
+ 
+-	return 0;
+-}
+-subsys_initcall(stx7111_subsys_setup);
+ 
+-static struct platform_device emi = STEMI();
++/* Late resources --------------------------------------------------------- */
+ 
+ static struct platform_device *stx7111_devices[] __initdata = {
+ 	&stx7111_fdma_devices[0],
+diff --git a/arch/sh/mm/Kconfig b/arch/sh/mm/Kconfig
+index a2062ad..dd1d780 100644
+--- a/arch/sh/mm/Kconfig
++++ b/arch/sh/mm/Kconfig
+@@ -191,6 +191,7 @@ config CPU_SUBTYPE_STX7105
+ 	bool "Support STx7105 processors"
+ 	select CPU_ST40_300
+ 	select SUPPORTS_32BIT
++	select SH_ST_SYNOPSYS_PCI if PCI
+ 	select STM_PIO10
+ 	help
+ 	  Select STX7105 if you have an STx7105 CPU.
+@@ -199,6 +200,7 @@ config CPU_SUBTYPE_STX7111
+ 	bool "Support STx7111 processors"
+ 	select CPU_ST40_300
+ 	select SUPPORTS_32BIT
++	select SH_ST_SYNOPSYS_PCI if PCI
+ 	help
+ 	  Select STX7111 if you have an STx7111 CPU.
+ 
+diff --git a/include/linux/stm/soc.h b/include/linux/stm/soc.h
+index fc00e9e..8e9989e 100644
+--- a/include/linux/stm/soc.h
++++ b/include/linux/stm/soc.h
+@@ -116,35 +116,44 @@ struct plat_ssc_data {
+ #define SPI_NO_CHIPSELECT	(spi_set_cs(19, 7) + 1)
+ 
+ 
+-#define PCI_PIN_ALTERNATIVE -2 	/* Use alternative PIO rather than default */
+-#define PCI_PIN_DEFAULT -1 	/* Use whatever the default is for that pin */
+-#define PCI_PIN_UNUSED   0	/* Pin not in use */
++#define PCI_PIN_ALTERNATIVE -3 	/* Use alternative PIO rather than default */
++#define PCI_PIN_DEFAULT     -2 	/* Use whatever the default is for that pin */
++#define PCI_PIN_UNUSED      -1	/* Pin not in use */
+ 
+ /* In the board setup, you can pass in the external interrupt numbers instead
+  * if you have wired up your board that way. It has the advantage that the PIO
+- * pins freed up can then be used for something else
+- */
++ * pins freed up can then be used for something else. */
+ struct pci_config_data {
+-	int pci_irq[4]; /* PCI_PIN_DEFAULT/PCI_PIN_UNUSED. Other IRQ can be passed in */
+-	int serr_irq;   /* As above for SERR */
+-	char idsel_lo;	/* Lowest address line connected to an idsel  - slot 0 */
+-	char idsel_hi;	/* Highest address line connected to an idsel - slot n */
+-	char req_gnt[4]; /* Set to PCI_PIN_DEFAULT if the corresponding req/gnt lines are in use */
+-	unsigned long pci_clk; /* PCI clock in Hz. If zero default to 33MHz */
+-
+-	/* If you supply a pci_reset() function, that will be used to reset the
+-	 * PCI bus.  Otherwise it is assumed that the reset is done via PIO,
+-	 * the number is specified here. Specify -EINVAL if no PIO reset is
+-	 * required either, for example if the PCI reset is done as part of
+-	 * power on reset.
+-	 */
+-	unsigned pci_reset_pio;
++	/* PCI_PIN_DEFAULT/PCI_PIN_UNUSED. Other IRQ can be passed in */
++	int pci_irq[4];
++	/* As above for SERR */
++	int serr_irq;
++	/* Lowest address line connected to an idsel  - slot 0 */
++	char idsel_lo;
++	/* Highest address line connected to an idsel - slot n */
++	char idsel_hi;
++	/* Set to PCI_PIN_DEFAULT if the corresponding req/gnt lines are
++	 * in use */
++	char req_gnt[4];
++	/* PCI clock in Hz. If zero default to 33MHz */
++	unsigned long pci_clk;
++
++	/* If you supply a pci_reset() function, that will be used to reset
++	 * the PCI bus.  Otherwise it is assumed that the reset is done via
++	 * PIO, the number is specified here. Specify -EINVAL if no PIO reset
++	 * is required either, for example if the PCI reset is done as part
++	 * of power on reset. */
++	unsigned pci_reset_gpio;
+ 	void (*pci_reset)(void);
+ 
+-	/* Various PCI tuning parameters. Set by SOC layer. You don't have to specify
+-	 * these as the defaults are usually fine. However, if you need to change them, you
+-	 * can set ad_override_default and plug in your own values
+-	 */
++	/* You may define a PCI clock name. If NULL it will fall
++	 * back to "pci" */
++	const char *clk_name;
++
++	/* Various PCI tuning parameters. Set by SOC layer. You don't have
++	 * to specify these as the defaults are usually fine. However, if
++	 * you need to change them, you can set ad_override_default and
++	 * plug in your own values. */
+ 	unsigned ad_threshold:4;
+ 	unsigned ad_chunks_in_msg:5;
+ 	unsigned ad_pcks_in_chunk:5;
+@@ -152,14 +161,15 @@ struct pci_config_data {
+ 	unsigned ad_posted:1;
+ 	unsigned ad_max_opcode:4;
+ 	unsigned ad_read_ahead:1;
++	/* Set to override default values for your board */
++	unsigned ad_override_default:1;
+ 
+-	unsigned ad_override_default:1; /* Set to override default values for your board */
+-
+-	/* Cut3 7105/ cut 2 7141 connected req0 pin to req3 to work around some
+-	 * problems with nand. This bit will be auto-probed by the chip layer,
+-	 * the board layer should NOT have to set this
+-	 */
++	/* Some SOCs have req0 pin connected to req3 signal to work around
++	 * some problems with NAND. Also the PCI_NOT_EMI bit should NOT be
++	 * set sometimes. These bits will be set by the chip layer, the
++	 * board layer should NOT touch this. */
+ 	unsigned req0_to_req3:1;
++	unsigned req0_emi:1;
+ };
+ 
+ u8 pci_synopsys_inb(unsigned long port);
+@@ -187,7 +197,7 @@ void pci_synopsys_outsw(unsigned long port, const void *src, unsigned long count
+ void pci_synopsys_outsl(unsigned long port, const void *src, unsigned long count);
+ 
+ /* Macro used to fill in the IO machine vector at the board level */
+-#ifdef CONFIG_SH_ST_SYNOPSYS_PCI
++
+ /* We have to hook all the in/out functions as they cannot be memory
+  * mapped with the synopsys PCI IP
+  *
+@@ -195,7 +205,8 @@ void pci_synopsys_outsl(unsigned long port, const void *src, unsigned long count
+  * not need the ioport_map function, instead using the generic cookie
+  * based implementation.
+  */
+-#define STM_PCI_IO_MACHINE_VEC(board)		\
++#ifdef CONFIG_SH_ST_SYNOPSYS_PCI
++#define STM_PCI_IO_MACHINE_VEC			\
+ 	.mv_inb = pci_synopsys_inb,		\
+         .mv_inw = pci_synopsys_inw,		\
+         .mv_inl = pci_synopsys_inl,		\
+@@ -215,16 +226,9 @@ void pci_synopsys_outsl(unsigned long port, const void *src, unsigned long count
+         .mv_outsw = pci_synopsys_outsw,		\
+         .mv_outsl = pci_synopsys_outsl,
+ #else
+-#define STM_PCI_IO_MACHINE_VEC(board)	board##_ioport_map,
++#define STM_PCI_IO_MACHINE_VEC
+ #endif
+ 
+-#define STM_MACHINE_VEC(board)				\
+-	.mv_name		= #board,		\
+-	.mv_setup		= board##_setup,	\
+-	.mv_nr_irqs		= NR_IRQS,		\
+-	.mv_init_irq		= board##_init_irq,	\
+-	STM_PCI_IO_MACHINE_VEC(board)
+-
+ /* Private data for the SATA driver */
+ struct plat_sata_data {
+ 	unsigned long phy_init;
+diff --git a/include/linux/stm/soc_init.h b/include/linux/stm/soc_init.h
+index 439d855..3beec98 100644
+--- a/include/linux/stm/soc_init.h
++++ b/include/linux/stm/soc_init.h
+@@ -279,50 +279,3 @@
+ 		}							\
+ 	}								\
+ }
+-
+-
+-#define PCI_DEVICE(_emiss_addr, _ahb_pci_addr, _pci_window_addr, _pci_window_size, _dma_irq, _irq_serr) \
+-{											\
+-	.name = "pci_stm",								\
+-	.id = 0,									\
+-	.num_resources = 6,								\
+-	.resource = (struct resource[]) {						\
+-		[0] = {									\
+-			.start = _emiss_addr,						\
+-			.end = (_emiss_addr) + 0x17fc,					\
+-			.flags = IORESOURCE_MEM,					\
+-		},									\
+-		[1] = {									\
+-			.start = _ahb_pci_addr,						\
+-			.end = (_ahb_pci_addr) + 0xff,					\
+-			.flags = IORESOURCE_MEM,					\
+-		},									\
+-		[2] = {									\
+-			.start = _pci_window_addr,					\
+-			.end = (_pci_window_addr) + (_pci_window_size) - 1,		\
+-			.flags = IORESOURCE_MEM,					\
+-		},									\
+-		[3] = {									\
+-			.start = 0x1024,						\
+-			.end = 0xffff,							\
+-			.flags = IORESOURCE_IO,						\
+-		},									\
+-		[4] = {									\
+-				.name = "PCI DMA",					\
+-				.start = _dma_irq,					\
+-				.end = _dma_irq,					\
+-				.flags= IORESOURCE_IRQ,					\
+-		},									\
+-		[5] = {									\
+-				.name = "PCI SERR",					\
+-				.start = _irq_serr,					\
+-				.end = _irq_serr,					\
+-				.flags= IORESOURCE_IRQ,					\
+-		}									\
+-	}										\
+-}
+-
+-
+-
+-
+-
+-- 
+1.6.0.6
+

@@ -1,0 +1,972 @@
+Add kprobes support for sh.
+
+Signed-off-by: Chris Smith <chris.smith@st.com>
+Index: linux-sh4/arch/sh/Kconfig
+===================================================================
+--- linux-sh4.orig/arch/sh/Kconfig	2007-11-02 21:10:10.000000000 +0000
++++ linux-sh4/arch/sh/Kconfig	2007-11-06 13:58:57.000000000 +0000
+@@ -906,6 +906,20 @@
+ 
+ source "arch/sh/oprofile/Kconfig"
+ 
++menu "Instrumention Support"
++
++config KPROBES
++	bool "Kprobes (EXPERIMENTAL)"
++	depends on EXPERIMENTAL
++	help
++	  Kprobes allows you to trap at almost any kernel address and
++	  execute a callback function.  register_kprobe() establishes
++	  a probepoint and specifies the callback.  Kprobes is useful
++	  for kernel debugging, non-intrusive instrumentation and testing.
++	  If in doubt, say "N".
++
++endmenu
++
+ source "arch/sh/Kconfig.debug"
+ 
+ source "security/Kconfig"
+Index: linux-sh4/arch/sh/kernel/kprobes.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4/arch/sh/kernel/kprobes.c	2007-11-06 13:57:10.000000000 +0000
+@@ -0,0 +1,594 @@
++/*
++ *  Kernel Probes (KProbes)
++ *  arch/sh/kernel/kprobes.c
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2
++ * as published by the Free Software Foundation
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ *
++ * Copyright (C) IBM Corporation, 2002, 2004
++ *
++ * 2002-Oct	Created by Vamsi Krishna S <vamsi_krishna@in.ibm.com> Kernel
++ *		Probes initial implementation ( includes contributions from
++ *		Rusty Russell).
++ * 2004-July	Suparna Bhattacharya <suparna@in.ibm.com> added jumper probes
++ *		interface to access function arguments.
++ * 2005-May	Hien Nguyen <hien@us.ibm.com>, Jim Keniston
++ *		<jkenisto@us.ibm.com> and Prasanna S Panchamukhi
++ *		<prasanna@in.ibm.com> added function-return probes.
++ * 2006-Mar	Create SH kprobe by Lineo Solutions, Inc.
++ *			(based on arch/i386/kernel/kprobes.c)
++ * 2007-Mar	Chris Smith <chris.smith@st.com> completed sh work
++ */
++
++#include <linux/kprobes.h>
++#include <linux/module.h>
++#include <linux/ptrace.h>
++#include <linux/preempt.h>
++#include <linux/kdebug.h>
++#include <asm/cacheflush.h>
++#include <asm/uaccess.h>
++
++void jprobe_return_end(void);
++
++DEFINE_PER_CPU(struct kprobe *, current_kprobe) = NULL;
++DEFINE_PER_CPU(struct kprobe_ctlblk, kprobe_ctlblk);
++
++static struct kprobe saved_current_opcode;
++static struct kprobe saved_next_opcode;
++static struct kprobe saved_next_opcode2;
++
++#define OPCODE_JMP(x)	(((x) & 0xF0FF) == 0x402b)
++#define OPCODE_JSR(x)	(((x) & 0xF0FF) == 0x400b)
++#define OPCODE_BRA(x)	(((x) & 0xF000) == 0xa000)
++#define OPCODE_BRAF(x)	(((x) & 0xF0FF) == 0x0023)
++#define OPCODE_BSR(x)	(((x) & 0xF000) == 0xb000)
++#define OPCODE_BSRF(x)	(((x) & 0xF0FF) == 0x0003)
++
++#define OPCODE_BF_S(x)	(((x) & 0xFF00) == 0x8f00)
++#define OPCODE_BT_S(x)	(((x) & 0xFF00) == 0x8d00)
++
++#define OPCODE_BF(x)	(((x) & 0xFF00) == 0x8b00)
++#define OPCODE_BT(x)	(((x) & 0xFF00) == 0x8900)
++
++#define OPCODE_RTS(x)	(((x) & 0x000F) == 0x000b)
++#define OPCODE_RTE(x)	(((x) & 0xFFFF) == 0x002b)
++
++int __kprobes arch_prepare_kprobe(struct kprobe *p)
++{
++	kprobe_opcode_t opcode = *(kprobe_opcode_t *) (p->addr);
++
++	if (OPCODE_RTE(opcode)) {
++		return -EFAULT;	/* Bad breakpoint */
++	}
++
++	p->opcode = opcode;
++
++	return 0;
++}
++
++void __kprobes arch_copy_kprobe(struct kprobe *p)
++{
++	memcpy(p->ainsn.insn, p->addr, MAX_INSN_SIZE * sizeof(kprobe_opcode_t));
++	p->opcode = *p->addr;
++}
++
++void __kprobes arch_arm_kprobe(struct kprobe *p)
++{
++	*p->addr = BREAKPOINT_INSTRUCTION;
++	flush_icache_range((unsigned long)p->addr,
++			   (unsigned long)p->addr + sizeof(kprobe_opcode_t));
++}
++
++void __kprobes arch_disarm_kprobe(struct kprobe *p)
++{
++	*p->addr = p->opcode;
++	flush_icache_range((unsigned long)p->addr,
++			   (unsigned long)p->addr + sizeof(kprobe_opcode_t));
++}
++
++int __kprobes arch_trampoline_kprobe(struct kprobe *p)
++{
++	if (*p->addr == BREAKPOINT_INSTRUCTION)
++		return 1;
++
++	return 0;
++}
++
++/**
++ * If an illegal slot instruction exception occurs for an address
++ * containing a kprobe, remove the probe.
++ *
++ * Returns 0 if the exception was handled successfully, 1 otherwise.
++ */
++int __kprobes kprobe_handle_illslot(unsigned long pc)
++{
++	struct kprobe *p = get_kprobe((kprobe_opcode_t *) pc + 1);
++
++	if (p != NULL) {
++		printk("Warning: removing kprobe from delay slot: 0x%.8x\n",
++		       (unsigned int)pc + 2);
++		unregister_kprobe(p);
++		return 0;
++	}
++
++	return 1;
++}
++
++void __kprobes arch_remove_kprobe(struct kprobe *p)
++{
++	if (saved_next_opcode.addr != 0x0) {
++		arch_disarm_kprobe(p);
++		arch_disarm_kprobe(&saved_next_opcode);
++		saved_next_opcode.addr = 0x0;
++		saved_next_opcode.opcode = 0x0;
++
++		if (saved_next_opcode2.addr != 0x0) {
++			arch_disarm_kprobe(&saved_next_opcode2);
++			saved_next_opcode2.addr = 0x0;
++			saved_next_opcode2.opcode = 0x0;
++		}
++	}
++}
++
++static inline void save_previous_kprobe(struct kprobe_ctlblk *kcb)
++{
++	kcb->prev_kprobe.kp = kprobe_running();
++	kcb->prev_kprobe.status = kcb->kprobe_status;
++}
++
++static inline void restore_previous_kprobe(struct kprobe_ctlblk *kcb)
++{
++	__get_cpu_var(current_kprobe) = kcb->prev_kprobe.kp;
++	kcb->kprobe_status = kcb->prev_kprobe.status;
++}
++
++static inline void set_current_kprobe(struct kprobe *p, struct pt_regs *regs,
++				      struct kprobe_ctlblk *kcb)
++{
++	__get_cpu_var(current_kprobe) = p;
++}
++
++/*
++ * Singlestep is implemented by disabling the current kprobe and setting one
++ * on the next instruction, following branches. Two probes are set if the
++ * branch is conditional.
++ */
++static inline void prepare_singlestep(struct kprobe *p, struct pt_regs *regs)
++{
++	kprobe_opcode_t *addr = NULL;
++	saved_current_opcode.addr = (kprobe_opcode_t *) (regs->pc);
++	addr = saved_current_opcode.addr;
++
++	if (p != NULL) {
++		arch_disarm_kprobe(p);
++
++		if (OPCODE_JSR(p->opcode) || OPCODE_JMP(p->opcode)) {
++			unsigned int reg_nr = ((p->opcode >> 8) & 0x000F);
++			saved_next_opcode.addr =
++			    (kprobe_opcode_t *) regs->regs[reg_nr];
++		} else if (OPCODE_BRA(p->opcode) || OPCODE_BSR(p->opcode)) {
++			unsigned long disp = (p->opcode & 0x0FFF);
++			saved_next_opcode.addr =
++			    (kprobe_opcode_t *) (regs->pc + 4 + disp * 2);
++
++		} else if (OPCODE_BRAF(p->opcode) || OPCODE_BSRF(p->opcode)) {
++			unsigned int reg_nr = ((p->opcode >> 8) & 0x000F);
++			saved_next_opcode.addr =
++			    (kprobe_opcode_t *) (regs->pc + 4 +
++						 regs->regs[reg_nr]);
++
++		} else if (OPCODE_RTS(p->opcode)) {
++			saved_next_opcode.addr = (kprobe_opcode_t *) regs->pr;
++
++		} else if (OPCODE_BF(p->opcode) || OPCODE_BT(p->opcode)) {
++			unsigned long disp = (p->opcode & 0x00FF);
++			/* case 1 */
++			saved_next_opcode.addr = p->addr + 1;
++			/* case 2 */
++			saved_next_opcode2.addr =
++			    (kprobe_opcode_t *) (regs->pc + 4 + disp * 2);
++			saved_next_opcode2.opcode = *(saved_next_opcode2.addr);
++			arch_arm_kprobe(&saved_next_opcode2);
++
++		} else if (OPCODE_BF_S(p->opcode) || OPCODE_BT_S(p->opcode)) {
++			unsigned long disp = (p->opcode & 0x00FF);
++			/* case 1 */
++			saved_next_opcode.addr = p->addr + 2;
++			/* case 2 */
++			saved_next_opcode2.addr =
++			    (kprobe_opcode_t *) (regs->pc + 4 + disp * 2);
++			saved_next_opcode2.opcode = *(saved_next_opcode2.addr);
++			arch_arm_kprobe(&saved_next_opcode2);
++
++		} else {
++			saved_next_opcode.addr = p->addr + 1;
++		}
++
++		saved_next_opcode.opcode = *(saved_next_opcode.addr);
++		arch_arm_kprobe(&saved_next_opcode);
++	}
++}
++
++/* Called with kretprobe_lock held */
++void __kprobes arch_prepare_kretprobe(struct kretprobe_instance *ri,
++				      struct pt_regs *regs)
++{
++	ri->ret_addr = (kprobe_opcode_t *) regs->pr;
++
++	/* Replace the return addr with trampoline addr */
++	regs->pr = (unsigned long)kretprobe_trampoline;
++}
++
++static int __kprobes kprobe_handler(struct pt_regs *regs)
++{
++	struct kprobe *p;
++	int ret = 0;
++	kprobe_opcode_t *addr = NULL;
++	struct kprobe_ctlblk *kcb;
++
++	/*
++	 * We don't want to be preempted for the entire
++	 * duration of kprobe processing
++	 */
++	preempt_disable();
++	kcb = get_kprobe_ctlblk();
++
++	addr = (kprobe_opcode_t *) (regs->pc);
++
++	/* Check we're not actually recursing */
++	if (kprobe_running()) {
++		p = get_kprobe(addr);
++		if (p) {
++			if (kcb->kprobe_status == KPROBE_HIT_SS &&
++			    *p->ainsn.insn == BREAKPOINT_INSTRUCTION) {
++				goto no_kprobe;
++			}
++			/* We have reentered the kprobe_handler(), since
++			 * another probe was hit while within the handler.
++			 * We here save the original kprobes variables and
++			 * just single step on the instruction of the new probe
++			 * without calling any user handlers.
++			 */
++			save_previous_kprobe(kcb);
++			set_current_kprobe(p, regs, kcb);
++			kprobes_inc_nmissed_count(p);
++			prepare_singlestep(p, regs);
++			kcb->kprobe_status = KPROBE_REENTER;
++			return 1;
++		} else {
++			p = __get_cpu_var(current_kprobe);
++			if (p->break_handler && p->break_handler(p, regs)) {
++				goto ss_probe;
++			}
++		}
++		goto no_kprobe;
++	}
++
++	p = get_kprobe(addr);
++	if (!p) {
++		/* Not one of ours: let kernel handle it */
++		goto no_kprobe;
++	}
++
++	set_current_kprobe(p, regs, kcb);
++	kcb->kprobe_status = KPROBE_HIT_ACTIVE;
++
++	if (p->pre_handler && p->pre_handler(p, regs))
++		/* handler has already set things up, so skip ss setup */
++		return 1;
++
++      ss_probe:
++	prepare_singlestep(p, regs);
++	kcb->kprobe_status = KPROBE_HIT_SS;
++	return 1;
++
++      no_kprobe:
++	preempt_enable_no_resched();
++	return ret;
++}
++
++/*
++ * For function-return probes, init_kprobes() establishes a probepoint
++ * here. When a retprobed function returns, this probe is hit and
++ * trampoline_probe_handler() runs, calling the kretprobe's handler.
++ */
++void kretprobe_trampoline_holder(void)
++{
++	asm volatile ("kretprobe_trampoline: \n" "nop\n");
++}
++
++/*
++ * Called when we hit the probe point at kretprobe_trampoline
++ */
++int __kprobes trampoline_probe_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	struct kretprobe_instance *ri = NULL;
++	struct hlist_head *head, empty_rp;
++	struct hlist_node *node, *tmp;
++	unsigned long flags, orig_ret_address = 0;
++	unsigned long trampoline_address = (unsigned long)&kretprobe_trampoline;
++
++	INIT_HLIST_HEAD(&empty_rp);
++	spin_lock_irqsave(&kretprobe_lock, flags);
++	head = kretprobe_inst_table_head(current);
++
++	/*
++	 * It is possible to have multiple instances associated with a given
++	 * task either because an multiple functions in the call path
++	 * have a return probe installed on them, and/or more then one return
++	 * return probe was registered for a target function.
++	 *
++	 * We can handle this because:
++	 *     - instances are always inserted at the head of the list
++	 *     - when multiple return probes are registered for the same
++	 *       function, the first instance's ret_addr will point to the
++	 *       real return address, and all the rest will point to
++	 *       kretprobe_trampoline
++	 */
++	hlist_for_each_entry_safe(ri, node, tmp, head, hlist) {
++		if (ri->task != current)
++			/* another task is sharing our hash bucket */
++			continue;
++
++		if (ri->rp && ri->rp->handler) {
++			__get_cpu_var(current_kprobe) = &ri->rp->kp;
++			ri->rp->handler(ri, regs);
++			__get_cpu_var(current_kprobe) = NULL;
++		}
++
++		orig_ret_address = (unsigned long)ri->ret_addr;
++		recycle_rp_inst(ri, &empty_rp);
++
++		if (orig_ret_address != trampoline_address)
++			/*
++			 * This is the real return address. Any other
++			 * instances associated with this task are for
++			 * other calls deeper on the call stack
++			 */
++			break;
++	}
++
++	kretprobe_assert(ri, orig_ret_address, trampoline_address);
++
++	regs->pc = orig_ret_address;
++	spin_unlock_irqrestore(&kretprobe_lock, flags);
++
++	preempt_enable_no_resched();
++
++	hlist_for_each_entry_safe(ri, node, tmp, &empty_rp, hlist) {
++		hlist_del(&ri->hlist);
++		kfree(ri);
++	}
++
++	return orig_ret_address;
++}
++
++static inline int post_kprobe_handler(struct pt_regs *regs)
++{
++	struct kprobe *cur = kprobe_running();
++	struct kprobe_ctlblk *kcb = get_kprobe_ctlblk();
++	kprobe_opcode_t *addr = NULL;
++	struct kprobe *p = NULL;
++
++	if (!cur)
++		return 0;
++
++	if ((kcb->kprobe_status != KPROBE_REENTER) && cur->post_handler) {
++		kcb->kprobe_status = KPROBE_HIT_SSDONE;
++		cur->post_handler(cur, regs, 0);
++	}
++
++	if (saved_next_opcode.addr != 0x0) {
++		arch_disarm_kprobe(&saved_next_opcode);
++		saved_next_opcode.addr = 0x0;
++		saved_next_opcode.opcode = 0x0;
++
++		addr = saved_current_opcode.addr;
++		saved_current_opcode.addr = 0x0;
++
++		p = get_kprobe(addr);
++		arch_arm_kprobe(p);
++
++		if (saved_next_opcode2.addr != 0x0) {
++			arch_disarm_kprobe(&saved_next_opcode2);
++			saved_next_opcode2.addr = 0x0;
++			saved_next_opcode2.opcode = 0x0;
++		}
++	}
++
++	/*Restore back the original saved kprobes variables and continue. */
++	if (kcb->kprobe_status == KPROBE_REENTER) {
++		restore_previous_kprobe(kcb);
++		goto out;
++	}
++	reset_current_kprobe();
++
++      out:
++	preempt_enable_no_resched();
++
++	return 1;
++}
++
++static inline int kprobe_fault_handler(struct pt_regs *regs, int trapnr)
++{
++	struct kprobe *cur = kprobe_running();
++	struct kprobe_ctlblk *kcb = get_kprobe_ctlblk();
++	const struct exception_table_entry *entry;
++
++	switch (kcb->kprobe_status) {
++	case KPROBE_HIT_SS:
++	case KPROBE_REENTER:
++		/*
++		 * We are here because the instruction being single
++		 * stepped caused a page fault. We reset the current
++		 * kprobe, point the pc back to the probe address
++		 * and allow the page fault handler to continue as a
++		 * normal page fault.
++		 */
++		regs->pc = (unsigned long)cur->addr;
++		if (kcb->kprobe_status == KPROBE_REENTER)
++			restore_previous_kprobe(kcb);
++		else
++			reset_current_kprobe();
++		preempt_enable_no_resched();
++		break;
++	case KPROBE_HIT_ACTIVE:
++	case KPROBE_HIT_SSDONE:
++		/*
++		 * We increment the nmissed count for accounting,
++		 * we can also use npre/npostfault count for accounting
++		 * these specific fault cases.
++		 */
++		kprobes_inc_nmissed_count(cur);
++
++		/*
++		 * We come here because instructions in the pre/post
++		 * handler caused the page_fault, this could happen
++		 * if handler tries to access user space by
++		 * copy_from_user(), get_user() etc. Let the
++		 * user-specified handler try to fix it first.
++		 */
++		if (cur->fault_handler && cur->fault_handler(cur, regs, trapnr))
++			return 1;
++
++		/*
++		 * In case the user-specified fault handler returned
++		 * zero, try to fix up.
++		 */
++		if ((entry = search_exception_tables(regs->pc)) != NULL) {
++			regs->pc = entry->fixup;
++			return 1;
++		}
++
++		/*
++		 * fixup_exception() could not handle it,
++		 * Let do_page_fault() fix it.
++		 */
++		break;
++	default:
++		break;
++	}
++	return 0;
++}
++
++/*
++ * Wrapper routine to for handling exceptions.
++ */
++int __kprobes kprobe_exceptions_notify(struct notifier_block *self,
++				       unsigned long val, void *data)
++{
++	struct kprobe *p = NULL;
++	struct die_args *args = (struct die_args *)data;
++	int ret = NOTIFY_DONE;
++	kprobe_opcode_t *addr = NULL;
++	struct kprobe_ctlblk *kcb = get_kprobe_ctlblk();
++
++	addr = (kprobe_opcode_t *) (args->regs->pc);
++	if (val == DIE_TRAP) {
++		if (!kprobe_running()) {
++			if (kprobe_handler(args->regs)) {
++				ret = NOTIFY_STOP;
++			} else {
++				/* Not a kprobe trap */
++				force_sig(SIGTRAP, current);
++			}
++		} else {
++			p = get_kprobe(addr);
++			if ((kcb->kprobe_status == KPROBE_HIT_SS) ||
++			    (kcb->kprobe_status == KPROBE_REENTER)) {
++				if (post_kprobe_handler(args->regs))
++					ret = NOTIFY_STOP;
++			} else {
++				if (kprobe_handler(args->regs)) {
++					ret = NOTIFY_STOP;
++				} else {
++					p = __get_cpu_var(current_kprobe);
++					if (p->break_handler
++					    && p->break_handler(p, args->regs))
++						ret = NOTIFY_STOP;
++				}
++			}
++		}
++	}
++
++	return ret;
++}
++
++int __kprobes setjmp_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	struct jprobe *jp = container_of(p, struct jprobe, kp);
++	unsigned long addr;
++	struct kprobe_ctlblk *kcb = get_kprobe_ctlblk();
++
++	kcb->jprobe_saved_regs = *regs;
++	kcb->jprobe_saved_r15 = regs->regs[15];
++	addr = kcb->jprobe_saved_r15;
++
++	/*
++	 * TBD: As Linus pointed out, gcc assumes that the callee
++	 * owns the argument space and could overwrite it, e.g.
++	 * tailcall optimization. So, to be absolutely safe
++	 * we also save and restore enough stack bytes to cover
++	 * the argument area.
++	 */
++	memcpy(kcb->jprobes_stack, (kprobe_opcode_t *) addr,
++	       MIN_STACK_SIZE(addr));
++
++	regs->pc = (unsigned long)(jp->entry);
++
++	return 1;
++}
++
++void __kprobes jprobe_return(void)
++{
++	__asm("trapa #-1\n\t" "jprobe_return_end:\n\t" "nop\n\t");
++
++}
++
++int __kprobes longjmp_break_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	struct kprobe_ctlblk *kcb = get_kprobe_ctlblk();
++	u8 *addr = (u8 *) regs->pc;
++	unsigned long stack_addr = kcb->jprobe_saved_r15;
++
++	if ((addr >= (u8 *) jprobe_return)
++	    && (addr <= (u8 *) jprobe_return_end)) {
++		*regs = kcb->jprobe_saved_regs;
++
++		memcpy((kprobe_opcode_t *) stack_addr, kcb->jprobes_stack,
++		       MIN_STACK_SIZE(stack_addr));
++
++		kcb->kprobe_status = KPROBE_HIT_SS;
++		return 1;
++	}
++	return 0;
++}
++
++static struct kprobe trampoline_p = {
++	.addr = (kprobe_opcode_t *) & kretprobe_trampoline,
++	.pre_handler = trampoline_probe_handler
++};
++
++int __init arch_init_kprobes(void)
++{
++	saved_next_opcode.addr = 0x0;
++	saved_next_opcode.opcode = 0x0;
++
++	saved_current_opcode.addr = 0x0;
++	saved_current_opcode.opcode = 0x0;
++
++	saved_next_opcode2.addr = 0x0;
++	saved_next_opcode2.opcode = 0x0;
++
++	return register_kprobe(&trampoline_p);
++}
+Index: linux-sh4/arch/sh/kernel/Makefile
+===================================================================
+--- linux-sh4.orig/arch/sh/kernel/Makefile	2007-11-02 21:10:10.000000000 +0000
++++ linux-sh4/arch/sh/kernel/Makefile	2007-11-06 13:58:22.000000000 +0000
+@@ -18,6 +18,9 @@
+ obj-$(CONFIG_SH_CPU_FREQ)	+= cpufreq.o
+ obj-$(CONFIG_MODULES)		+= sh_ksyms.o module.o
+ obj-$(CONFIG_EARLY_PRINTK)	+= early_printk.o
++#KPROBE-SH
++obj-$(CONFIG_KPROBES)		+= kprobes.o
++#KPROBE-SH
+ obj-$(CONFIG_KEXEC)		+= machine_kexec.o relocate_kernel.o
+ obj-$(CONFIG_CRASH_DUMP)	+= crash_dump.o
+ obj-$(CONFIG_PM_SH3_FRQCR)	+= pm.o
+Index: linux-sh4/arch/sh/kernel/process.c
+===================================================================
+--- linux-sh4.orig/arch/sh/kernel/process.c	2007-11-02 21:10:10.000000000 +0000
++++ linux-sh4/arch/sh/kernel/process.c	2007-11-06 13:57:10.000000000 +0000
+@@ -80,7 +80,7 @@
+ 
+ 	/* endless idle loop with no priority at all */
+ 	while (1) {
+-		void (*idle)(void) = pm_idle;
++		void (*idle) (void) = pm_idle;
+ 
+ 		if (!idle)
+ 			idle = default_idle;
+@@ -97,11 +97,11 @@
+ 	}
+ }
+ 
+-void machine_restart(char * __unused)
++void machine_restart(char *__unused)
+ {
+ 	/* SR.BL=1 and invoke address error to let CPU reset (manual reset) */
+-	asm volatile("ldc %0, sr\n\t"
+-		     "mov.l @%1, %0" : : "r" (0x10000000), "r" (0x80000001));
++	asm volatile ("ldc %0, sr\n\t"
++		      "mov.l @%1, %0"::"r" (0x10000000), "r"(0x80000001));
+ }
+ 
+ void machine_halt(void)
+@@ -118,7 +118,7 @@
+ 		pm_power_off();
+ }
+ 
+-void show_regs(struct pt_regs * regs)
++void show_regs(struct pt_regs *regs)
+ {
+ 	printk("\n");
+ 	printk("Pid : %d, Comm: %20s\n", current->pid, current->comm);
+@@ -133,17 +133,13 @@
+ 	printk("%s\n", print_tainted());
+ 
+ 	printk("R0  : %08lx R1  : %08lx R2  : %08lx R3  : %08lx\n",
+-	       regs->regs[0],regs->regs[1],
+-	       regs->regs[2],regs->regs[3]);
++	       regs->regs[0], regs->regs[1], regs->regs[2], regs->regs[3]);
+ 	printk("R4  : %08lx R5  : %08lx R6  : %08lx R7  : %08lx\n",
+-	       regs->regs[4],regs->regs[5],
+-	       regs->regs[6],regs->regs[7]);
++	       regs->regs[4], regs->regs[5], regs->regs[6], regs->regs[7]);
+ 	printk("R8  : %08lx R9  : %08lx R10 : %08lx R11 : %08lx\n",
+-	       regs->regs[8],regs->regs[9],
+-	       regs->regs[10],regs->regs[11]);
++	       regs->regs[8], regs->regs[9], regs->regs[10], regs->regs[11]);
+ 	printk("R12 : %08lx R13 : %08lx R14 : %08lx\n",
+-	       regs->regs[12],regs->regs[13],
+-	       regs->regs[14]);
++	       regs->regs[12], regs->regs[13], regs->regs[14]);
+ 	printk("MACH: %08lx MACL: %08lx GBR : %08lx PR  : %08lx\n",
+ 	       regs->mach, regs->macl, regs->gbr, regs->pr);
+ 
+@@ -213,7 +209,7 @@
+ }
+ 
+ /* Fill in the fpu structure for a core dump.. */
+-int dump_fpu(struct pt_regs *regs, elf_fpregset_t *fpu)
++int dump_fpu(struct pt_regs *regs, elf_fpregset_t * fpu)
+ {
+ 	int fpvalid = 0;
+ 
+Index: linux-sh4/arch/sh/kernel/traps.c
+===================================================================
+--- linux-sh4.orig/arch/sh/kernel/traps.c	2007-11-06 13:56:56.000000000 +0000
++++ linux-sh4/arch/sh/kernel/traps.c	2007-11-06 13:57:10.000000000 +0000
+@@ -37,6 +37,10 @@
+ #define CHK_REMOTE_DEBUG(regs)
+ #endif
+ 
++#ifdef CONFIG_KPROBES
++extern int kprobe_handle_illslot(unsigned long pc);
++#endif
++
+ #ifdef CONFIG_CPU_SH2
+ # define TRAP_RESERVED_INST	4
+ # define TRAP_ILLEGAL_SLOT_INST	6
+@@ -762,6 +766,11 @@
+ 	struct pt_regs *regs = RELOC_HIDE(&__regs, 0);
+ 	unsigned long error_code;
+ 	struct task_struct *tsk = current;
++#ifdef CONFIG_KPROBES
++	if (kprobe_handle_illslot(regs->pc) == 0)
++		return;
++#endif
++
+ #ifdef CONFIG_SH_FPU_EMU
+ 	unsigned short inst = 0;
+ 
+Index: linux-sh4/arch/sh/kernel/vmlinux.lds.S
+===================================================================
+--- linux-sh4.orig/arch/sh/kernel/vmlinux.lds.S	2007-11-02 21:10:10.000000000 +0000
++++ linux-sh4/arch/sh/kernel/vmlinux.lds.S	2007-11-06 13:57:10.000000000 +0000
+@@ -30,6 +30,9 @@
+ 	TEXT_TEXT
+ 	SCHED_TEXT
+ 	LOCK_TEXT
++#if defined(CONFIG_KPROBES)	/* KPROBE-SH */
++	KPROBES_TEXT
++#endif	/* KPROBE-SH */
+ 	*(.fixup)
+ 	*(.gnu.warning)
+ 	} = 0x0009
+Index: linux-sh4/drivers/char/Kconfig
+===================================================================
+--- linux-sh4.orig/drivers/char/Kconfig	2007-11-02 21:10:10.000000000 +0000
++++ linux-sh4/drivers/char/Kconfig	2007-11-06 13:57:10.000000000 +0000
+@@ -1066,5 +1066,11 @@
+ 
+ source "drivers/s390/char/Kconfig"
+ 
++#KPROBE-SH
++config KPROBE_EXAMPLE
++        tristate "kprobe example"
++	depends on KPROBES
++#KPROBE-SH
++
+ endmenu
+ 
+Index: linux-sh4/drivers/char/kprobe_example.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4/drivers/char/kprobe_example.c	2007-11-06 13:57:10.000000000 +0000
+@@ -0,0 +1,72 @@
++/*kprobe_example.c*/
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/kprobes.h>
++#include <linux/kallsyms.h>
++#include <linux/sched.h>
++
++/*For each probe you need to allocate a kprobe structure*/
++static struct kprobe kp;
++
++/*kprobe pre_handler: called just before the probed instruction is executed*/
++int handler_pre(struct kprobe *p, struct pt_regs *regs)
++{
++#if 1				/* KPROBE-SH */
++	printk("pre_handler: p->addr=0x%p\n", p->addr);
++#else				/* KPROBE-SH */
++	printk("pre_handler: p->addr=0x%p, eip=%lx, eflags=0x%lx\n",
++	       p->addr, regs->eip, regs->eflags);
++#endif				/* KPROBE-SH */
++	dump_stack();
++	return 0;
++}
++
++/*kprobe post_handler: called after the probed instruction is executed*/
++void handler_post(struct kprobe *p, struct pt_regs *regs, unsigned long flags)
++{
++#if 1				/* KPROBE-SH */
++	printk("post_handler: p->addr=0x%p\n", p->addr);
++#else				/* KPROBE-SH */
++	printk("post_handler: p->addr=0x%p, eflags=0x%lx\n",
++	       p->addr, regs->eflags);
++#endif				/* KPROBE-SH */
++}
++
++/* fault_handler: this is called if an exception is generated for any
++ * instruction within the pre- or post-handler, or when Kprobes
++ * single-steps the probed instruction.
++ */
++int handler_fault(struct kprobe *p, struct pt_regs *regs, int trapnr)
++{
++	printk("fault_handler: p->addr=0x%p, trap #%dn", p->addr, trapnr);
++	/* Return 0 because we don't handle the fault. */
++	return 0;
++}
++
++int init_module(void)
++{
++	int ret;
++	kp.pre_handler = handler_pre;
++	kp.post_handler = handler_post;
++	kp.fault_handler = handler_fault;
++	kp.addr = (kprobe_opcode_t *) kallsyms_lookup_name("do_fork");
++	/* register the kprobe now */
++	if (!kp.addr) {
++		printk("Couldn't find %s to plant kprobe\n", "do_fork");
++		return -3;
++	}
++	if ((ret = register_kprobe(&kp) < 0)) {
++		printk("register_kprobe failed, returned %d\n", ret);
++		return -2;
++	}
++	printk("kprobe registered\n");
++	return 0;
++}
++
++void cleanup_module(void)
++{
++	unregister_kprobe(&kp);
++	printk("kprobe unregistered\n");
++}
++
++MODULE_LICENSE("GPL");
+Index: linux-sh4/drivers/char/Makefile
+===================================================================
+--- linux-sh4.orig/drivers/char/Makefile	2007-11-02 21:10:10.000000000 +0000
++++ linux-sh4/drivers/char/Makefile	2007-11-06 13:57:10.000000000 +0000
+@@ -56,6 +56,10 @@
+ obj-$(CONFIG_MMTIMER)		+= mmtimer.o
+ obj-$(CONFIG_VIOCONS)		+= viocons.o
+ obj-$(CONFIG_VIOTAPE)		+= viotape.o
++#KPROBE-SH
++obj-$(CONFIG_KPROBE_EXAMPLE)    += kprobe_example.o
++#KPROBE-SH
++
+ obj-$(CONFIG_HVCS)		+= hvcs.o
+ obj-$(CONFIG_SGI_MBCS)		+= mbcs.o
+ obj-$(CONFIG_BRIQ_PANEL)	+= briq_panel.o
+Index: linux-sh4/include/asm-sh/kprobes.h
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux-sh4/include/asm-sh/kprobes.h	2007-11-06 13:57:10.000000000 +0000
+@@ -0,0 +1,72 @@
++#ifndef _ASM_KPROBES_H
++#define _ASM_KPROBES_H
++/*
++ *  Kernel Probes (KProbes)
++ *  include/asm-sh/kprobes.h
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ *
++ * Copyright (C) IBM Corporation, 2002, 2004
++ *
++ * 2002-Oct	Created by Vamsi Krishna S <vamsi_krishna@in.ibm.com> Kernel
++ *		Probes initial implementation ( includes suggestions from
++ *		Rusty Russell).
++ * 2006-Mar	Create SH kprobe header by Lineo Solutions, Inc.
++ *			(based on include/asm-i386/kprobes.h)
++ */
++#include <linux/types.h>
++#include <linux/ptrace.h>
++
++struct pt_regs;
++
++typedef u16 kprobe_opcode_t;
++#define BREAKPOINT_INSTRUCTION	0xc3ff
++#define MAX_INSN_SIZE 16
++#define MAX_STACK_SIZE 64
++#define MIN_STACK_SIZE(ADDR) (((MAX_STACK_SIZE) < \
++	(((unsigned long)current_thread_info()) + THREAD_SIZE - (ADDR))) \
++	? (MAX_STACK_SIZE) \
++	: (((unsigned long)current_thread_info()) + THREAD_SIZE - (ADDR)))
++
++#define ARCH_SUPPORTS_KRETPROBES
++#define  ARCH_INACTIVE_KPROBE_COUNT 0
++#define flush_insn_slot(p)      do { } while (0)
++
++void kretprobe_trampoline(void);
++
++/* Architecture specific copy of original instruction*/
++struct arch_specific_insn {
++	/* copy of the original instruction */
++	kprobe_opcode_t insn[MAX_INSN_SIZE];
++};
++
++struct prev_kprobe {
++	struct kprobe *kp;
++	unsigned long status;
++};
++
++/* per-cpu kprobe control block */
++struct kprobe_ctlblk {
++	unsigned long kprobe_status;
++	unsigned long jprobe_saved_r15;
++	struct pt_regs jprobe_saved_regs;
++	kprobe_opcode_t jprobes_stack[MAX_STACK_SIZE];
++	struct prev_kprobe prev_kprobe;
++};
++
++
++extern int kprobe_exceptions_notify(struct notifier_block *self,
++				    unsigned long val, void *data);
++#endif				/* _ASM_KPROBES_H */
+Index: linux-sh4/include/linux/kprobes.h
+===================================================================
+--- linux-sh4.orig/include/linux/kprobes.h	2007-10-12 17:43:44.000000000 +0100
++++ linux-sh4/include/linux/kprobes.h	2007-11-06 13:57:10.000000000 +0000
+@@ -181,6 +181,7 @@
+ extern int arch_prepare_kprobe(struct kprobe *p);
+ extern void arch_arm_kprobe(struct kprobe *p);
+ extern void arch_disarm_kprobe(struct kprobe *p);
++extern void arch_remove_kprobe(struct kprobe *p);
+ extern int arch_init_kprobes(void);
+ extern void show_registers(struct pt_regs *regs);
+ extern kprobe_opcode_t *get_insn_slot(void);
+Index: linux-sh4/include/asm-sh/kdebug.h
+===================================================================
+--- linux-sh4.orig/include/asm-sh/kdebug.h	2007-10-12 17:43:44.000000000 +0100
++++ linux-sh4/include/asm-sh/kdebug.h	2007-11-06 13:57:10.000000000 +0000
+@@ -3,6 +3,20 @@
+ 
+ #include <linux/notifier.h>
+ 
++/*
++ * These are only here because kprobes.c wants them to implement a
++ * blatant layering violation.  Will hopefully go away soon once all
++ * architectures are updated.
++ */
++static inline int register_page_fault_notifier(struct notifier_block *nb)
++{
++        return 0;
++}
++static inline int unregister_page_fault_notifier(struct notifier_block *nb)
++{
++        return 0;
++}
++
+ /* Grossly misnamed. */
+ enum die_val {
+ 	DIE_TRAP,

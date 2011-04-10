@@ -1,0 +1,104 @@
+From 77fce0e5f807d97a5ab24b03fbd2beaf6685bd78 Mon Sep 17 00:00:00 2001
+From: Giuseppe CAVALLARO <peppe.cavallaro@st.com>
+Date: Mon, 13 Jul 2009 08:40:26 +0200
+Subject: [PATCH] tiny-linux: add net stuff
+
+This patch enables various size reductions for networking (NET_SMALL).
+The idea behind comes from the Linux Tiny project: http://elinux.org/Linux_Tiny
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+---
+ include/net/af_unix.h  |    4 ++++
+ include/net/protocol.h |    5 ++++-
+ init/Kconfig           |    7 +++++++
+ net/core/flow.c        |    4 ++++
+ net/sunrpc/cache.c     |    5 +++++
+ 5 files changed, 24 insertions(+), 1 deletions(-)
+
+diff --git a/include/net/af_unix.h b/include/net/af_unix.h
+index 0864a77..f5ca498 100644
+--- a/include/net/af_unix.h
++++ b/include/net/af_unix.h
+@@ -10,7 +10,11 @@ extern void unix_inflight(struct file *fp);
+ extern void unix_notinflight(struct file *fp);
+ extern void unix_gc(void);
+ 
++#ifdef CONFIG_NET_SMALL
++#define UNIX_HASH_SIZE	16
++#else
+ #define UNIX_HASH_SIZE	256
++#endif
+ 
+ extern atomic_t unix_tot_inflight;
+ 
+diff --git a/include/net/protocol.h b/include/net/protocol.h
+index 105bf12..143d711 100644
+--- a/include/net/protocol.h
++++ b/include/net/protocol.h
+@@ -29,8 +29,11 @@
+ #include <linux/ipv6.h>
+ #endif
+ 
++#ifdef CONFIG_NET_SMALL
++#define MAX_INET_PROTOS 32
++#else
+ #define MAX_INET_PROTOS	256		/* Must be a power of 2		*/
+-
++#endif
+ 
+ /* This is used to register protocols. */
+ struct net_protocol {
+diff --git a/init/Kconfig b/init/Kconfig
+index 01f6628..3fd3b83 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -492,6 +492,13 @@ config BASE_FULL
+ 	  kernel data structures. This saves memory on small machines,
+ 	  but may reduce performance.
+ 
++config NET_SMALL
++	default n
++	bool "Enable various size reductions for networking" if EMBEDDED
++	help
++	  This reduces the size of miscellaneous networking data structures.
++          Currently a placeholder.
++
+ config FUTEX
+ 	bool "Enable futex support" if EMBEDDED
+ 	default y
+diff --git a/net/core/flow.c b/net/core/flow.c
+index 0ab5234..26693fb 100644
+--- a/net/core/flow.c
++++ b/net/core/flow.c
+@@ -351,7 +351,11 @@ static int __init flow_cache_init(void)
+ 					sizeof(struct flow_cache_entry),
+ 					0, SLAB_HWCACHE_ALIGN|SLAB_PANIC,
+ 					NULL);
++#ifdef CONFIG_NET_SMALL
++	flow_hash_shift = 3;
++#else
+ 	flow_hash_shift = 10;
++#endif
+ 	flow_lwm = 2 * flow_hash_size;
+ 	flow_hwm = 4 * flow_hash_size;
+ 
+diff --git a/net/sunrpc/cache.c b/net/sunrpc/cache.c
+index ebe344f..e32fca2 100644
+--- a/net/sunrpc/cache.c
++++ b/net/sunrpc/cache.c
+@@ -515,7 +515,12 @@ void cache_purge(struct cache_detail *detail)
+  * it to be revisited when cache info is available
+  */
+ 
++#ifdef CONFIG_NET_SMALL
++#define	DFR_HASHSIZE	(512/sizeof(struct list_head))
++#else
+ #define	DFR_HASHSIZE	(PAGE_SIZE/sizeof(struct list_head))
++#endif
++
+ #define	DFR_HASH(item)	((((long)item)>>4 ^ (((long)item)>>13)) % DFR_HASHSIZE)
+ 
+ #define	DFR_MAX	300	/* ??? */
+-- 
+1.6.0.6
+

@@ -1,0 +1,20 @@
+From b744bfb8378d7c8e16dad6d5fbe4ff95a9b57023 Mon Sep 17 00:00:00 2001
+From: Stuart Menefy <stuart.menefy@st.com>
+Date: Fri, 28 Aug 2009 12:16:16 +0100
+Subject: [PATCH] sh_stm: STMicroelectronics STLinux 2.3 kernel release 122
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+---
+ localversion-stm |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/localversion-stm b/localversion-stm
+index 574ae04..ea56787 100644
+--- a/localversion-stm
++++ b/localversion-stm
+@@ -1 +1 @@
+-_stm23_0121
++_stm23_0122
+-- 
+1.6.0.6
+

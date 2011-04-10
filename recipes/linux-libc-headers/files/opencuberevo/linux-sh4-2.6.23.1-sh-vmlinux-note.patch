@@ -1,0 +1,20 @@
+[SH] vmlinux.lds.S: Handle note sections
+
+Store any note sections after the exception tables like the other
+architectures do.  This is required for .note.gnu.build-id emitted from
+binutils 2.18 onwards if nothing else.
+
+Signed-off-by: Stuart Menefy <stuart.menefy@st.com>
+Index: linux-2.6.23.1-stm/arch/sh/kernel/vmlinux.lds.S
+===================================================================
+--- linux-2.6.23.1-stm.orig/arch/sh/kernel/vmlinux.lds.S
++++ linux-2.6.23.1-stm/arch/sh/kernel/vmlinux.lds.S
+@@ -44,6 +44,8 @@ SECTIONS
+ 
+   _etext = .;			/* End of text section */
+ 
++  NOTES
++
+   RODATA
+ 
+   BUG_TABLE

@@ -1,0 +1,129 @@
+RNG fix to actually register platform information (extended for all SoCs now)
+
+Signed-off-by: Carl Shaw <carl.shaw@st.com>
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2008-05-15 13:59:08.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2008-05-16 08:18:20.000000000 +0100
+@@ -681,11 +681,6 @@
+ 	}
+ };
+ 
+-void __init stx7100_configure_hwrng(void)
+-{
+-        platform_device_register(&hwrandom_rng_device);
+-}
+-
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+@@ -895,6 +890,7 @@
+ 	&sysconf_device,
+ 	&ilc3_device,
+ 	&rtc_device,
++	&hwrandom_rng_device,
+ };
+ 
+ static int __init stx710x_devices_setup(void)
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stx7105.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stx7105.c	2008-05-15 14:02:53.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/setup-stx7105.c	2008-05-15 14:06:01.000000000 +0100
+@@ -605,6 +605,21 @@
+ 
+ #endif
+ 
++/* Hardware RNG resources -------------------------------------------------- */
++
++static struct platform_device hwrandom_rng_device = {
++	.name	   = "stm_hwrandom",
++	.id	     = -1,
++	.num_resources  = 1,
++	.resource       = (struct resource[]){
++		{
++			.start  = 0xfe250000,
++			.end    = 0xfe250fff,
++			.flags  = IORESOURCE_MEM
++		},
++	}
++};
++
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+@@ -996,6 +1011,7 @@
+ 	//&fdma_xbar_device,
+ 	&sysconf_device,
+ 	&ilc3_device,
++	&hwrandom_rng_device,
+ };
+ 
+ static int __init stx7105_devices_setup(void)
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stx7111.c	2008-05-15 14:06:14.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/setup-stx7111.c	2008-05-15 14:07:45.000000000 +0100
+@@ -380,6 +380,21 @@
+ 	platform_device_register(&stm_pwm_device);
+ }
+ 
++/* Hardware RNG resources -------------------------------------------------- */
++
++static struct platform_device hwrandom_rng_device = {
++	.name	   = "stm_hwrandom",
++	.id	     = -1,
++	.num_resources  = 1,
++	.resource       = (struct resource[]){
++		{
++			.start  = 0xfe250000,
++			.end    = 0xfe250fff,
++			.flags  = IORESOURCE_MEM
++		},
++	}
++};
++
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+@@ -785,6 +800,7 @@
+ 	&fdma_xbar_device,
+ 	&sysconf_device,
+ 	&ilc3_device,
++	&hwrandom_rng_device,
+ };
+ 
+ static int __init stx7111_devices_setup(void)
+Index: linux/arch/sh/kernel/cpu/sh4/setup-stx7200.c
+===================================================================
+--- linux.orig/arch/sh/kernel/cpu/sh4/setup-stx7200.c	2008-05-15 14:07:59.000000000 +0100
++++ linux/arch/sh/kernel/cpu/sh4/setup-stx7200.c	2008-05-15 14:09:28.000000000 +0100
+@@ -1007,6 +1007,21 @@
+ 	platform_device_register(&nand_flash[emi_bank]);
+ }
+ 
++/* Hardware RNG resources -------------------------------------------------- */
++
++static struct platform_device hwrandom_rng_device = {
++	.name	   = "stm_hwrandom",
++	.id	     = -1,
++	.num_resources  = 1,
++	.resource       = (struct resource[]){
++		{
++			.start  = 0xfdb70000,
++			.end    = 0xfdb70fff,
++			.flags  = IORESOURCE_MEM
++		},
++	}
++};
++
+ /* ASC resources ----------------------------------------------------------- */
+ 
+ static struct platform_device stm_stasc_devices[] = {
+@@ -1248,6 +1263,7 @@
+ 	&sysconf_device,
+ 	&ilc3_device,
+         &rtc_device,
++	&hwrandom_rng_device,
+ };
+ 
+ static int __init stx7200_devices_setup(void)

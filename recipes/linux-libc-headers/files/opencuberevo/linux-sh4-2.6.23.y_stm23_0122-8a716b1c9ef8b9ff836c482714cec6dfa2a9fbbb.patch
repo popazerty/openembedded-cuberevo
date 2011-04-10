@@ -1,0 +1,210 @@
+From 8a716b1c9ef8b9ff836c482714cec6dfa2a9fbbb Mon Sep 17 00:00:00 2001
+From: Francesco Virlinzi <francesco.virlinzi@st.com>
+Date: Fri, 13 Nov 2009 10:30:45 +0100
+Subject: [PATCH] stm: clk: Update the clk framework (to manage corrently the TMU2)
+
+This patch updates the ST clk frmwrk to use correctly the TMU2
+ currently registered as clk instead of as device.
+
+Signed-off-by: Francesco Virlinzi <francesco.virlinzi@st.com>
+---
+ drivers/stm/clk.c |   82 +++++++++++++++++++++++++++++++++++------------------
+ 1 files changed, 54 insertions(+), 28 deletions(-)
+
+diff --git a/drivers/stm/clk.c b/drivers/stm/clk.c
+index baa63a9..c1054d7 100644
+--- a/drivers/stm/clk.c
++++ b/drivers/stm/clk.c
+@@ -45,6 +45,32 @@ enum child_event {
+ };
+ 
+ /*
++ * The CLK_ENABLED flag is used to set/reset the enabled clock flag
++ * unfortunatelly the rate == or != zero isn't enough because
++ * the TMU2 used by the STMac need to be set (as rate) before it's enabled
++ *
++ * In the future when the TMU will be registered as device this constraint
++ * can be removed and enabled/disabled clock will be checked only with
++ * the rate equal or not to zero
++ */
++#define CLK_ENABLED (1 << 15)
++static inline int clk_is_enabled(struct clk *clk)
++{
++	return (clk->flags & CLK_ENABLED);
++}
++
++static inline void clk_set_enabled(struct clk *clk)
++{
++	clk->flags |= CLK_ENABLED;
++}
++
++static inline void clk_set_disabled(struct clk *clk)
++{
++	clk->flags &= ~CLK_ENABLED;
++}
++
++
++/*
+  * All the __clk_xxxx operation will not raise propagation system
+  */
+ static int
+@@ -55,7 +81,7 @@ __clk_operation(struct clk *clk, unsigned long data, enum clk_ops_id id_ops)
+ 	if (likely(ops_fns && ops_fns[id_ops])) {
+ 		int (*fns)(struct clk *clk, unsigned long rate)
+ 			= (void *)ops_fns[id_ops];
+-		unsigned long flags;
++		long flags;
+ 		spin_lock_irqsave(&clk->lock, flags);
+ 		ret = fns(clk, data);
+ 		spin_unlock_irqrestore(&clk->lock, flags);
+@@ -88,10 +114,9 @@ static inline int __clk_set_parent(struct clk *clk, struct clk *parent)
+ 	return __clk_operation(clk, (unsigned long)parent, _CLK_SET_PARENT);
+ }
+ 
+-static inline int __clk_recalc_rate(struct clk *clk)
++static inline void __clk_recalc_rate(struct clk *clk)
+ {
+ 	__clk_operation(clk, 0, _CLK_RECALC);
+-	return 0;
+ }
+ 
+ static inline int __clk_observe(struct clk *clk, unsigned long value)
+@@ -151,7 +176,7 @@ static void clk_propagate_rate(struct clk *clk)
+ 	struct clk *clkp;
+ 
+ 	list_for_each_entry(clkp, &clk->childs, childs_node) {
+-		__clk_recalc_rate(clk);
++		__clk_recalc_rate(clkp);
+ 		if (likely(clk_wants_propagate(clkp)))
+ 			clk_propagate_rate(clkp);
+ 	}
+@@ -167,17 +192,21 @@ int clk_enable(struct clk *clk)
+ 	if (clk_is_always_enabled(clk))
+ 		/* No enable required! */
+ 		return 0;
++
+ /*
+ 	if (clk_get_rate(clk))
+-		clock already enabled
+ 		return 0;
+ */
++	if (clk_is_enabled(clk))
++		return 0;
++
+ 	clk_notify_to_parent(_CHILD_CLK_ENABLED, clk->parent);
+ 
+ 	ret = __clk_enable(clk);
+-	if (!ret)
++	if (!ret) {
++		clk_set_enabled(clk);
+ 		clk_notify_to_parent(_CHILD_CLK_DISABLED, clk->parent);
+-
++	}
+ 	return ret;
+ }
+ EXPORT_SYMBOL(clk_enable);
+@@ -195,11 +224,15 @@ void clk_disable(struct clk *clk)
+ 	if (clk_is_always_enabled(clk))
+ 		/* this clock can not be disabled */
+ 		return;
++/*
+ 	if (!clk_get_rate(clk))
+-		/* clock already disabled */
++		return;
++*/
++	if (!clk_is_enabled(clk))
+ 		return;
+ 
+ 	__clk_disable(clk);
++	clk_set_disabled(clk);
+ 	clk_notify_to_parent(_CHILD_CLK_DISABLED, clk->parent);
+ }
+ EXPORT_SYMBOL(clk_disable);
+@@ -217,8 +250,6 @@ int clk_register(struct clk *clk)
+ 
+ 	clk->nr_active_clocks = 0;
+ 
+-	__clk_init(clk);
+-
+ 	if (clk->parent)
+ 		list_add_tail(&clk->childs_node, &clk->parent->childs);
+ 
+@@ -226,9 +257,12 @@ int clk_register(struct clk *clk)
+ 
+ 	mutex_unlock(&global_list_sem);
+ 
+-	if (clk_is_always_enabled(clk))
+-		__clk_enable(clk);
++	__clk_init(clk);
+ 
++	if (clk_is_always_enabled(clk)) {
++		__clk_enable(clk);
++		clk_set_enabled(clk);
++	}
+ 	return 0;
+ }
+ EXPORT_SYMBOL(clk_register);
+@@ -341,22 +375,8 @@ EXPORT_SYMBOL(clk_observe);
+ struct clk *clk_get(struct device *dev, const char *name)
+ {
+ 	struct clk *clkp, *clk = ERR_PTR(-ENOENT);
+-	int idno;
+-
+-	if (dev == NULL || dev->bus != &platform_bus_type)
+-		idno = -1;
+-	else
+-		idno = to_platform_device(dev)->id;
+ 
+ 	mutex_lock(&global_list_sem);
+-	list_for_each_entry(clkp, &global_list, node) {
+-		if (clkp->id == idno &&
+-		    strcmp(name, clkp->name) == 0 &&
+-		    try_module_get(clkp->owner)) {
+-			clk = clkp;
+-			goto found;
+-		}
+-	}
+ 
+ 	list_for_each_entry(clkp, &global_list, node) {
+ 		if (strcmp(name, clkp->name) == 0 &&
+@@ -366,7 +386,6 @@ struct clk *clk_get(struct device *dev, const char *name)
+ 		}
+ 	}
+ 
+-found:
+ 	mutex_unlock(&global_list_sem);
+ 
+ 	return clk;
+@@ -446,6 +465,8 @@ static int clk_seq_show(struct seq_file *s, void *v)
+ 	seq_printf(s, "[%ld.%02ldMHz] - ", clk->nominal_rate / 1000000,
+ 		(clk->nominal_rate % 1000000) / 10000);
+ 	seq_printf(s, "[0x%p]", clk);
++	if (clk_is_enabled(clk))
++		seq_printf(s, " - enabled");
+ 
+ 	if (clk->parent)
+ 		seq_printf(s, " - [%s]", clk->parent->name);
+@@ -482,6 +503,7 @@ static int __init clk_proc_init(void)
+ 	struct proc_dir_entry *p;
+ 
+ 	p = create_proc_entry("clocks", S_IRUGO, NULL);
++
+ 	if (unlikely(!p))
+ 		return -EINVAL;
+ 
+@@ -558,7 +580,11 @@ static int clk_on_standby(struct clk *clk, void *data)
+ {
+ 	if (!clk->ops)
+ 		return 0;
+-	if (!clk->rate) /* already disabled */
++/*
++	if (!clk->rate) already disabled
++		return 0;
++*/
++	if (!clk_is_enabled(clk)) /* already disabled */
+ 		return 0;
+ 
+ 	pm_clk_set(clk, 1);	/* set as modified */
+-- 
+1.6.0.6
+

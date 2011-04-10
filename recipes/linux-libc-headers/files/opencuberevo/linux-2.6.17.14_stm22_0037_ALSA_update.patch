@@ -1,0 +1,761 @@
+
+This is the next cumulative update for stb710x 
+alsa drivers, it fixes a number of problems arising 
+from 7109C3 IP changes and also addresses outstanding 
+issues regarding playback quality
+
+Bug Fixes
+	High pitched distortion on 7109C3 & > PCM players 	
+	
+	Intermittent high pitched squeal when resuming from pause on HDMI whilst using the I2s converter.
+	
+	Unable to umute from a pause in encoded SPDIF mode.
+
+	Removes audible judder when pausing in SPDIF pcm mode
+	
+Additions
+	Added a IP FIFO checking mode which will register under / overflows where available for each player and 
+	printf a  warning			
+
+
+
+Signed off by Mark Glaisher <mark.glaisher@st.com>
+
+
+Index: linux/sound/stm/Kconfig
+===================================================================
+--- linux.orig/sound/stm/Kconfig	2006-12-14 15:17:35.492678000 +0000
++++ linux/sound/stm/Kconfig	2007-01-26 12:53:10.056794000 +0000
+@@ -24,9 +24,16 @@
+ 	  will be called snd-stb710x.
+ 
+ config STB7100_IEC_DEBUG
+-	tristate "STB710x ALSA driver IEC debug"
++	bool "STB710x ALSA driver IEC debug"
+ 	depends on CPU_SUBTYPE_STB7100 && STM_DMA
+ 	select SND_PCM
+ 	help
+ 	  Say Y here for ALSA-IEC debugging on the STb710x.
++
++config STB7100_FIFO_DEBUG
++	bool "STb710x Player FIFO under/overflow checking"
++	depends on SND_STB710X
++	select SND_PCM
++	help
++	  Say Y here for runtime checking of FIFO status
+ endmenu
+Index: linux/sound/stm/stb7100_i2s_spdif.c
+===================================================================
+--- linux.orig/sound/stm/stb7100_i2s_spdif.c	2006-12-14 15:17:35.500677000 +0000
++++ linux/sound/stm/stb7100_i2s_spdif.c	2007-01-26 12:53:10.096791000 +0000
+@@ -69,6 +69,13 @@
+ 	writel(reg,chip->pcm_converter+AUD_SPDIF_PR_CFG);
+ }
+ 
++static void reset_converter_fifo(snd_pcm_substream_t * substream)
++{
++	pcm_hw_t * chip = snd_pcm_substream_chip(substream);
++	unsigned long reg =readl(chip->pcm_converter+AUD_SPDIF_PR_CFG);
++	writel((reg & ~PR_CFG_FIFO_ENABLE),chip->pcm_converter+AUD_SPDIF_PR_CFG);
++	writel(reg |=PR_CFG_FIFO_ENABLE ,chip->pcm_converter+AUD_SPDIF_PR_CFG);
++}
+ 
+ static inline void bit_duplicate(u32 bits, u32 *word1, u32 *word2)
+ {
+@@ -135,8 +142,8 @@
+ {
+ 	unsigned long val;
+ 	unsigned long handled= IRQ_NONE;
+-	unsigned long reg;
+ 	pcm_hw_t *chip = dev_id;
++
+         /* Read and clear interrupt status */
+ 	spin_lock(&chip->lock);
+ 	val = readl(chip->pcm_converter + AUD_SPDIF_PR_INT_STA);
+@@ -148,11 +155,12 @@
+ 		wake_up(&software_reset_wq);
+ 		handled = IRQ_HANDLED;
+ 	}
+-
++	if(val & PR_UNDERFLOW_INT){
++		printk("%s I2S Converter PLayer FIFO Underflow detected\n",__FUNCTION__);
++		handled = IRQ_HANDLED;
++	}
+ 	if(val & PR_I2S_FIFO_OVERRUN_INT){
+-		reg = readl(chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-		writel((reg & ~PR_CFG_FIFO_ENABLE),chip->pcm_converter+AUD_SPDIF_PR_CFG);
+-		writel(reg,chip->pcm_converter+AUD_SPDIF_PR_CFG);
++		printk("%s I2S Converter PLayer FIFO Overflow detected\n",__FUNCTION__);
+ 		handled = IRQ_HANDLED;
+ 	}
+ 	if(val & PR_AUDIO_SAMPLES_FULLY_READ_INT){
+@@ -163,6 +171,17 @@
+ 	return handled;
+ }
+ 
++static void stb7100_converter_unpause_playback(snd_pcm_substream_t *substream)
++{
++ 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
++	writel((chip->pcmplayer_control|PCMP_ON), chip->pcm_player+STM_PCMP_CONTROL);
++}
++
++static void stb7100_converter_pause_playback(snd_pcm_substream_t *substream)
++{
++        pcm_hw_t *chip = snd_pcm_substream_chip(substream);
++	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
++}
+ 
+ static void stb7100_converter_stop_playback(snd_pcm_substream_t *substream)
+ {
+@@ -177,6 +196,8 @@
+ 	reg = readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
+ 	writel((reg|PR_CTRL_OFF), chip->pcm_converter+AUD_SPDIF_PR_SPDIF_CTRL);
+ 
++	reset_converter_fifo(substream);
++
+ 	writel(0         , chip->pcm_converter + AUD_SPDIF_PR_INT_EN);
+ 	writel(0xffffffff, chip->pcm_converter + AUD_SPDIF_PR_INT_CLR);
+ 
+@@ -194,18 +215,9 @@
+ static void stb7100_converter_start_playback(snd_pcm_substream_t *substream)
+ {
+ 	pcm_hw_t     *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
+-
+-	int res = dma_xfer_list(chip->fdma_channel,&chip->dmap);
+-	if(res !=0)
+-		printk("%s FDMA_CH %d failed to start %d\n",__FUNCTION__,chip->fdma_channel,res);
+-
+-	reg = readl(chip->pcm_converter +AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
+-	writel(reg | PR_CTRL_AUDIO_DATA_MODE,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
+-
+-	reg = readl(chip->pcm_converter + AUD_SPDIF_PR_CFG) | PR_CFG_DEVICE_ENABLE;
+-	writel(reg, chip->pcm_converter + AUD_SPDIF_PR_CFG );
+-
++	unsigned long cfg_reg;
++	unsigned long ctrl_reg;
++	int res = 0;
+ 	/*
+ 	 * We appear to need to reset the PCM player otherwise we end up
+ 	 * with channel data sent to the wrong channels when starting up for
+@@ -213,52 +225,26 @@
+ 	 */
+ 	stb7100_reset_pcm_player(chip);
+ 
+-	writel((chip->pcmplayer_control | PCMP_ON), chip->pcm_player + STM_PCMP_CONTROL);
+-
+-}
+-
+-
+-static void stb7100_converter_unpause_playback(snd_pcm_substream_t *substream)
+-{
+- 	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
+-
+-        spin_lock(&chip->lock);
+-	reg = readl(chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
+-	writel(reg | PR_CTRL_AUDIO_DATA_MODE,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
+-
+-	reg = readl(chip->pcm_converter + AUD_SPDIF_PR_CFG) | PR_CFG_DEVICE_ENABLE;
+-	writel(reg, chip->pcm_converter + AUD_SPDIF_PR_CFG );
+-
+-	writel((chip->pcmplayer_control|PCMP_ON), chip->pcm_player+STM_PCMP_CONTROL);
+-	spin_unlock(&chip->lock);
+-}
+-
+-
+-static void stb7100_converter_pause_playback(snd_pcm_substream_t *substream)
+-{
+-        pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-	unsigned long reg=0;
++	res=dma_xfer_list(chip->fdma_channel,&chip->dmap);
++	if(res !=0)
++		printk("%s FDMA_CH %d failed to start %d\n",__FUNCTION__,chip->fdma_channel,res);
+ 
+-	spin_lock(&chip->lock);
+-	reg = readl(chip->pcm_converter + AUD_SPDIF_PR_CFG) & ~PR_CFG_DEVICE_ENABLE;
+-	writel(reg, chip->pcm_converter + AUD_SPDIF_PR_CFG );
++	cfg_reg = readl(chip->pcm_converter + AUD_SPDIF_PR_CFG) ;
++	ctrl_reg = readl(chip->pcm_converter +AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
++
++	writel(ctrl_reg | PR_CTRL_AUDIO_DATA_MODE,chip->pcm_converter + AUD_SPDIF_PR_SPDIF_CTRL);
++	writel(cfg_reg  | PR_CFG_DEVICE_ENABLE, chip->pcm_converter + AUD_SPDIF_PR_CFG );
+ 
+-	reg = readl(chip->pcm_converter +AUD_SPDIF_PR_SPDIF_CTRL) & ~0x7L; /* mask bottom three bits */
+-	writel(reg|PR_CTRL_MUTE_PCM_NULL_DATA, chip->pcm_converter+AUD_SPDIF_PR_SPDIF_CTRL);
++	writel((chip->pcmplayer_control | PCMP_ON), chip->pcm_player + STM_PCMP_CONTROL);
+ 
+-	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
+-	spin_unlock(&chip->lock);
+ }
+ 
+-
+ static int stb7100_converter_program_player(snd_pcm_substream_t * substream)
+ {
+ 	unsigned long cfg_reg = 0;
+ 	unsigned long ctl_reg = 0;
+ 	unsigned long interrupt_list = (PR_INTERRUPT_ENABLE             |
+ 					PR_SOFT_RESET_INT_ENABLE        |
+-					PR_I2S_FIFO_OVERRUN_INT         |
+ 					PR_AUDIO_SAMPLES_FULLY_READ_INT);
+ 	unsigned long flags=0;
+ 
+@@ -266,6 +252,9 @@
+ 	pcm_hw_t          * chip    = snd_pcm_substream_chip(substream);
+ 	int val =0;
+ 
++	if(chip->fifo_check_mode)
++		interrupt_list |= (PR_I2S_FIFO_OVERRUN_INT | PR_UNDERFLOW_INT);
++
+ 	/*we only ever call from the stm7100_pcm program func,
+ 	 * therefore we assume we already own the chip lock*/
+ 	spin_lock_irqsave(&chip->lock,flags);
+@@ -334,6 +323,7 @@
+ 	/*this reset will cause us to de-schedule, then well get an IRQ when
+ 	 * the reset has completed, so make sure we dont hold any locks by now*/
+ 	reset_pcm_converter(substream);
++	return 0;
+ }
+ 
+ 
+Index: linux/sound/stm/stb7100_spdif.c
+===================================================================
+--- linux.orig/sound/stm/stb7100_spdif.c	2006-12-14 15:17:35.511676000 +0000
++++ linux/sound/stm/stb7100_spdif.c	2007-01-26 12:53:10.113791000 +0000
+@@ -67,7 +67,7 @@
+ static void stb7100_iec61937_deferred_unpause(pcm_hw_t * chip)
+ {
+ 	spin_lock(&chip->lock);
+-	writel(SPDIF_INT_STATUS_EOPD ,chip->pcm_player +STM_PCMP_IRQ_EN_CLR);
++	writel(SPDIF_INT_STATUS_EODBURST ,chip->pcm_player +STM_PCMP_IRQ_EN_CLR);
+ 	writel((chip->pcmplayer_control|chip->spdif_player_mode),
+ 		chip->pcm_player+STM_PCMP_CONTROL);
+ 	spin_unlock(&chip->lock);
+@@ -92,14 +92,16 @@
+ 		snd_pcm_period_elapsed(stb7100->current_substream);
+ 		status =  IRQ_HANDLED;
+ 	}
++	if((int_status & SPDIF_INT_STATUS_UNF)==SPDIF_INT_STATUS_UNF) {
++		printk("%s SPDIF PLayer FIFO Underflow detected\n",__FUNCTION__);
++		status = IRQ_HANDLED;
++	}
+ 	if((int_status & SPDIF_INT_STATUS_EOLATENCY) == SPDIF_INT_STATUS_EOLATENCY){
+ 		status =  IRQ_HANDLED;
+-	}
+-	if((int_status & SPDIF_INT_STATUS_EOPD) == SPDIF_INT_STATUS_EOPD){
+-
++	}
++	if((int_status & SPDIF_INT_STATUS_EODBURST) == SPDIF_INT_STATUS_EODBURST){
+ 		stb7100->iec61937.pause_count = ((stb7100->iec61937.pause_count+1)
+ 						%stb7100->iec61937.frame_size);
+-
+ 		/*we have to wait until we have completed an entire iec91637 burst length
+ 		 * before we stop emitting bursts, so we have to wait for mod(iec61937_frame_size)*/
+ 		if((stb7100->iec61937.pause_count==0) && (stb7100->iec61937.unpause_flag==1)){
+@@ -121,9 +123,16 @@
+ 		 * frames of latency value*/
+ 		chip->iec61937.pause_count = chip->iec60958_output_count;
+ 		chip->iec60958_output_count=0;
+-		writel(chip->irq_mask | SPDIF_INT_STATUS_EOPD,chip->pcm_player+STM_PCMP_IRQ_EN_SET);
++		writel(chip->irq_mask | SPDIF_INT_STATUS_EODBURST,chip->pcm_player+STM_PCMP_IRQ_EN_SET);
+     	}
+-
++	else{
++		 /*the SPDIF IP will always at least complete the next 192 frame
++		  * burst - this gives an audible delay between an analogue and digital
++		  * pause, so here we want to flush out that buffer, the only way to do this
++		  * is throw a reset.*/
++		 reset_spdif_on(chip);
++		 reset_spdif_off(chip);
++	}
+ 	spin_lock(&chip->lock);
+ 	writel((chip->pcmplayer_control|chip->iec61937.pause_mode),
+ 		chip->pcm_player+STM_PCMP_CONTROL);
+@@ -135,14 +144,12 @@
+ static inline void stb7100_spdif_unpause_playback(snd_pcm_substream_t *substream)
+ {
+  	pcm_hw_t *chip = snd_pcm_substream_chip(substream);
+-
+ 	/*we are doing pause burst, must count %frame_size*/
+-
+ 	if(chip->iec_encoding_mode != ENCODING_IEC60958){
+ 		/*first we need to check if pause burst are enable,
+ 		 * otherwise we will deadlock here
+ 		 * */
+-		if(readl(chip->pcm_player+STM_PCMP_IRQ_ENABLE) & ENABLE_INT_EOPD){
++		if(readl(chip->pcm_player+STM_PCMP_IRQ_ENABLE) & ENABLE_INT_EODBURST){
+ 			chip->iec61937.unpause_flag=1;
+ 			return;
+ 		}
+@@ -283,6 +290,9 @@
+ 	reg =(runtime->period_size * runtime->channels) << SPDIF_SAMPLES_SHIFT;
+ 	reg |= SPDIF_SW_STUFFING | SPDIF_BIT16_DATA_NOROUND;
+ 
++	if(chip->fifo_check_mode)
++		irq_enable |= SPDIF_INT_STATUS_UNF;
++
+ 	spin_lock_irqsave(&chip->lock,flags);
+ 	switch(chip->oversampling_frequency)
+ 	{
+@@ -349,7 +359,7 @@
+ 					__FUNCTION__,chip->iec_encoding_mode);
+ 				break;
+ 		}
+-		val = chip->iec61937.mute_rep & 0x0000ffff;
++		val =( 1 <<16)  | (chip->iec61937.mute_rep & 0x0000ffff);
+ 		writel(val,chip->pcm_player + AUD_SPDIF_FRA_LEN_BST);
+ 
+ 		val = (IEC61937_PA <<16)| IEC61937_PB ;
+@@ -371,6 +381,7 @@
+ 
+ 	chip->pcmplayer_control = reg;
+ 	chip->irq_mask = irq_enable;
++	writel(0,chip->pcm_player +STM_PCMP_IRQ_EN_SET);
+ 	writel(chip->irq_mask,chip->pcm_player +STM_PCMP_IRQ_EN_SET);
+ 	spin_unlock_irqrestore(&chip->lock,flags);
+ 
+Index: linux/sound/stm/stm7100_pcm.c
+===================================================================
+--- linux.orig/sound/stm/stm7100_pcm.c	2006-12-14 15:17:35.520677000 +0000
++++ linux/sound/stm/stm7100_pcm.c	2007-01-26 12:53:10.138791000 +0000
+@@ -319,6 +319,11 @@
+ 
+ 	spin_lock(&chip->lock);
+ 
++	/*if we have fifo checking turned on we must also stop this interrupt first to
++	 * prevent an error condition being generated as the player is disabled*/
++	if(chip->fifo_check_mode)
++		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_CLR);
++
+ 	if(chip->card_data->major == PCM1_DEVICE){
+ 		reg = readl(chip->pcm_clock_reg+AUD_ADAC_CTL_REG) | DAC_SOFTMUTE;
+ 		writel(reg, chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+@@ -379,6 +384,10 @@
+ 		udelay(100);
+ 		writel((reg & ~DAC_SOFTMUTE),chip->pcm_clock_reg+AUD_ADAC_CTL_REG); /* Unmute */
+ 	}
++	/*again we enable this err-checking interrput last to prevent an err condiftion
++	 * as the device is programmed */
++	if(chip->fifo_check_mode)
++		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
+ 
+ 	spin_unlock(&chip->lock);
+ }
+@@ -394,6 +403,8 @@
+ 		reg = readl(chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+ 		writel((reg & ~DAC_SOFTMUTE),chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+         }
++	if(chip->fifo_check_mode)
++		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_SET);
+ 
+ 	writel((chip->pcmplayer_control|PCMP_ON),chip->pcm_player+STM_PCMP_CONTROL);
+ 	spin_unlock(&chip->lock);
+@@ -411,6 +422,10 @@
+ 	        writel((reg | DAC_SOFTMUTE),chip->pcm_clock_reg+AUD_ADAC_CTL_REG);
+ 	}
+ 	writel((chip->pcmplayer_control|PCMP_MUTE),chip->pcm_player+STM_PCMP_CONTROL);
++
++	if(chip->fifo_check_mode)
++		writel( ENABLE_INT_UNDERFLOW,chip->pcm_player + STM_PCMP_IRQ_EN_CLR);
++
+ 	spin_unlock(&chip->lock);
+ }
+ 
+@@ -440,8 +455,14 @@
+ 	writel(val,stb7100->pcm_player + STM_PCMP_ITS_CLR);
+ 	spin_unlock(&stb7100->lock);
+ 
+-	if(val & PCMP_INT_STATUS_ALLREAD){
+-		/*Inform higher layer that we have completed a period */
++	if(unlikely((val & ENABLE_INT_UNDERFLOW ) == ENABLE_INT_UNDERFLOW)){
++		printk("%s PCM PLayer #%d FIFO Underflow detected\n",
++			__FUNCTION__,
++			stb7100->current_substream->pcm->card->number);
++		res = IRQ_HANDLED;
++	}
++	if(likely(val & PCMP_INT_STATUS_ALLREAD)){
++		/*Inform higher layer that we have completed a period */
+ 		snd_pcm_period_elapsed(stb7100->current_substream);
+ 		res=  IRQ_HANDLED;
+ 	}
+@@ -557,9 +578,9 @@
+ 	unsigned long flags=0;
+ 
+ 	fmtreg = PCMP_FORMAT_32  | PCMP_ALIGN_START       | PCMP_MSB_FIRST  |
+-		 PCMP_CLK_RISING | PCMP_LRLEVEL_LEFT_HIGH | PCMP_PADDING_ON;
++		 chip->i2s_sampling_edge | PCMP_LRLEVEL_LEFT_HIGH | PCMP_PADDING_ON;
+ 
+-	ctrlreg = (runtime->period_size * runtime->channels) << PCMP_SAMPLES_SHIFT;
++	ctrlreg = (runtime->period_size * runtime->channels) << PCMP_SAMPLES_SHIFT;
+ 
+ 	/*
+ 	 * The PCM data format is set to be I2S.
+@@ -767,7 +788,7 @@
+ 	const char * dmac_id =STM_DMAC_ID;
+ 	const char * lb_cap_channel = STM_DMA_CAP_LOW_BW;
+ 	const char * hb_cap_channel = STM_DMA_CAP_HIGH_BW;
+-	printk("%s in\n",__FUNCTION__);
++
+ 	if(chip->fdma_channel <0){
+ 		if((err=request_dma_bycap(
+ 					&dmac_id,
+@@ -977,7 +998,7 @@
+ }
+ 
+ 
+-static int register_platform_driver(struct platform_device *platform_dev,pcm_hw_t *chip)
++static int register_platform_driver(struct platform_device *platform_dev,pcm_hw_t *chip, int dev_nr)
+ {
+ 	static struct resource *res;
+ 	if (!platform_dev){
+@@ -996,6 +1017,15 @@
+ 	if(res!=NULL)
+ 		chip->fdma_req = res->start;
+ 	else return -ENOSYS;
++
++	/*we only care about this var for the analogue devices*/
++	if(dev_nr < SPDIF_DEVICE){
++		res = platform_get_resource(platform_dev, IORESOURCE_IRQ,2);
++		if(res!=NULL)
++			chip->i2s_sampling_edge =
++				(res->start ==1 ? PCMP_CLK_FALLING:PCMP_CLK_RISING);
++		else return -ENOSYS;
++	}
+ 	return 0;
+ }
+ 
+@@ -1044,8 +1074,8 @@
+               	printk(" snd card free on main alloc device\n");
+                	snd_card_free(*card);
+        		return err;
+-       }
+-
++        }
++	return 0;
+ }
+ 
+ static int __init snd_pcm_card_probe(int dev)
+@@ -1058,10 +1088,15 @@
+         	return -ENOMEM;
+ 
+ 	snd_pcm_card_generic_probe(&card,chip,dev);
++#if defined(CONFIG_STB7100_FIFO_DEBUG)
++	chip->fifo_check_mode=1;
++#else
++	chip->fifo_check_mode=0;
++#endif
+ 
+ 	switch(card_list[dev].major){
+         	case SPDIF_DEVICE:
+-			if(register_platform_driver(spdif_platform_device,chip)!=0)
++			if(register_platform_driver(spdif_platform_device,chip,card_list[dev].major)!=0)
+ 				goto err_exit;
+ 
+ 			if((err = stb7100_create_spdif_device(chip,&card))<0)
+@@ -1069,7 +1104,7 @@
+ 			return err;
+ 
+             	case PROTOCOL_CONVERTER_DEVICE:
+-			if(register_platform_driver(cnv_platform_device,chip)!=0)
++			if(register_platform_driver(cnv_platform_device,chip,card_list[dev].major)!=0)
+ 				goto err_exit;
+ 
+             		if((err=  stb7100_create_converter_device(chip,&card))<0)
+@@ -1077,7 +1112,7 @@
+   			return err;
+ 
+             	case PCM0_DEVICE:
+-			if(register_platform_driver(pcm0_platform_device,chip)!=0)
++			if(register_platform_driver(pcm0_platform_device,chip,card_list[dev].major)!=0)
+ 				goto err_exit;
+ 
+                		if((err = stb7100_create_lpcm_device(chip,&card)) <0)
+@@ -1085,7 +1120,7 @@
+                 	return err;
+ 
+             	case PCM1_DEVICE:
+-			if(register_platform_driver(pcm1_platform_device,chip)!=0)
++			if(register_platform_driver(pcm1_platform_device,chip,card_list[dev].major)!=0)
+ 				goto err_exit;
+ 
+                		if((err = stb7100_create_lpcm_device(chip,&card)) <0)
+Index: linux/sound/stm/st_pcm.h
+===================================================================
+--- linux.orig/sound/stm/st_pcm.h	2006-12-14 15:17:35.537678000 +0000
++++ linux/sound/stm/st_pcm.h	2007-01-26 12:53:10.153791000 +0000
+@@ -255,6 +255,8 @@
+ 	int 			max_ch;
+ 	int 			fdma_req;
+ 	struct 	stm_dma_params  dmap;
++	int 			i2s_sampling_edge;
++	int			fifo_check_mode;
+ #if defined(CONFIG_CPU_SUBTYPE_STB7100)
+ 	int 			spdif_player_mode;
+ 	int			fdma_channel;
+Index: linux/arch/sh/boards/st/stb7100mboard/setup.c
+===================================================================
+--- linux.orig/arch/sh/boards/st/stb7100mboard/setup.c	2007-01-25 17:19:07.299568000 +0000
++++ linux/arch/sh/boards/st/stb7100mboard/setup.c	2007-01-26 12:53:10.273793000 +0000
+@@ -741,7 +741,7 @@
+ };
+ 
+ 
+-static struct resource alsa_710x_resource_pcm0[2] = {
++static struct resource alsa_710x_resource_pcm0[3] = {
+ 
+ 	[0] = {/* allocatable channels*/
+ 		/*.start = runtime dependant*/
+@@ -752,10 +752,15 @@
+ 		/*.start = runtime dependant*/
+ 		/*.end   = runtime dependant*/
+ 		.flags = IORESOURCE_IRQ
++	},
++	[2] = {/*rising or falling edge I2s clocking*/
++		 /*.start = runtime dependant*/
++		 /*.end = runtime dependant*/
++		.flags = IORESOURCE_IRQ
+ 	}};
+ 
+ 
+-static struct resource alsa_710x_resource_pcm1[2] = {
++static struct resource alsa_710x_resource_pcm1[3] = {
+ 
+ 	[0] = {/* allocatable channels*/
+ 		/*.start = runtime dependant*/
+@@ -766,6 +771,11 @@
+ 		/*.start = runtime dependant*/
+ 		/*.end   = runtime dependant*/
+ 		.flags = IORESOURCE_IRQ,
++	},
++	[2] = {/*rising or falling edge I2s clocking*/
++		 /*.start = runtime dependant*/
++		 /*.end = runtime dependant*/
++		.flags = IORESOURCE_IRQ
+ 	}};
+ 
+ static struct resource alsa_710x_resource_spdif[2] = {
+@@ -884,13 +894,34 @@
+ 		switch (chip_revision) {
+ 		case 1:
+ 			fdma_710x_device.dev.platform_data =(void*) &stb7109_C1_fdma_plat_data;
++			alsa_710x_resource_pcm0[2].start =0;
++			alsa_710x_resource_pcm0[2].end = 0;
++
++			alsa_710x_resource_pcm1[2].start =0;
++			alsa_710x_resource_pcm1[2].end = 0;
+ 			break;
+ 		case 2:
+ 			fdma_710x_device.dev.platform_data =(void*) &stb7109_C2_fdma_plat_data;
++			alsa_710x_resource_pcm0[2].start =0;
++			alsa_710x_resource_pcm0[2].end = 0;
++
++			alsa_710x_resource_pcm1[2].start =0;
++			alsa_710x_resource_pcm1[2].end = 0;
+ 			break;
+ 		default:
+ 			/* 7109 cut >= 3.0 */
++			BUG_ON(chip_revision < 2);
++
+ 			fdma_710x_device.dev.platform_data =(void*) &stb7109_C3_fdma_plat_data;
++			/*here we are telling the ALSA drivers whetther to use rising or falling
++			 * edge I2s sampling to DAC.  I want to aviod including ALSA headers into
++			 * this file hence the cyptic value.*/
++			alsa_710x_resource_pcm0[2].start =1;
++			alsa_710x_resource_pcm0[2].end = 1;
++
++			alsa_710x_resource_pcm1[2].start =1;
++			alsa_710x_resource_pcm1[2].end = 1;
++
+ 			break;
+ 		}
+ 
+@@ -946,6 +977,13 @@
+ 
+ 		alsa_710x_resource_cnv[1].start = STB7100_FDMA_REQ_PCM_0;
+ 		alsa_710x_resource_cnv[1].end = STB7100_FDMA_REQ_PCM_0;
++
++		alsa_710x_resource_pcm0[2].start =0;
++		alsa_710x_resource_pcm0[2].end = 0;
++
++		alsa_710x_resource_pcm1[2].start =0;
++		alsa_710x_resource_pcm1[2].end = 0;
++
+ 	}
+ 	ret = platform_add_devices(stb7100mboard_devices, ARRAY_SIZE(stb7100mboard_devices));
+ 	return ret;
+Index: linux/arch/sh/boards/st/stb7100ref/setup.c
+===================================================================
+--- linux.orig/arch/sh/boards/st/stb7100ref/setup.c	2007-01-25 17:19:07.352570000 +0000
++++ linux/arch/sh/boards/st/stb7100ref/setup.c	2007-01-26 12:53:10.346794000 +0000
+@@ -739,7 +739,7 @@
+ };
+ 
+ 
+-static struct resource alsa_710x_resource_pcm0[2] = {
++static struct resource alsa_710x_resource_pcm0[3] = {
+ 
+ 	[0] = {/* allocatable channels*/
+ 		/*.start = runtime dependant*/
+@@ -750,10 +750,17 @@
+ 		/*.start = runtime dependant*/
+ 		/*.end   = runtime dependant*/
+ 		.flags = IORESOURCE_IRQ
++	},
++	[2] = {/*rising or falling edge I2s clocking
++		1 == FALLING_EDGE
++		0 == RISING EDGE */
++		 /*.start = runtime dependant*/
++		 /*.end = runtime dependant*/
++		.flags = IORESOURCE_IRQ
+ 	}};
+ 
+ 
+-static struct resource alsa_710x_resource_pcm1[2] = {
++static struct resource alsa_710x_resource_pcm1[3] = {
+ 
+ 	[0] = {/* allocatable channels*/
+ 		/*.start = runtime dependant*/
+@@ -764,6 +771,13 @@
+ 		/*.start = runtime dependant*/
+ 		/*.end   = runtime dependant*/
+ 		.flags = IORESOURCE_IRQ,
++	},
++	[2] = {/*rising or falling edge I2s clocking
++		1 == FALLING_EDGE
++		0 == RISING EDGE */
++		 /*.start = runtime dependant*/
++		 /*.end = runtime dependant*/
++		.flags = IORESOURCE_IRQ
+ 	}};
+ 
+ static struct resource alsa_710x_resource_spdif[2] = {
+@@ -870,23 +884,35 @@
+ 
+ 	/* Configure the ethernet MAC PBL depending on the cut of the chip */
+ 	if (chip_7109){
+-	       if (chip_revision == 1){
+-			eth7109_private_data.pbl = 1;
+-		} else {
+-			eth7109_private_data.pbl = 32;
+-		}
++		eth7109_private_data.pbl = 1;
+ 	}
+ 
+ 	if(chip_7109){
+ 		switch (chip_revision) {
+ 		case 1:
+ 			fdma_710x_device.dev.platform_data =(void*) &stb7109_C1_fdma_plat_data;
++			alsa_710x_resource_pcm0[2].start =0;
++			alsa_710x_resource_pcm0[2].end = 0;
++
++			alsa_710x_resource_pcm1[2].start =0;
++			alsa_710x_resource_pcm1[2].end = 0;
+ 			break;
+ 		case 2:
++			alsa_710x_resource_pcm0[2].start =0;
++			alsa_710x_resource_pcm0[2].end = 0;
++
++			alsa_710x_resource_pcm1[2].start =0;
++			alsa_710x_resource_pcm1[2].end = 0;
+ 			fdma_710x_device.dev.platform_data =(void*) &stb7109_C2_fdma_plat_data;
+ 			break;
+ 		default:
+ 			/* 7109 cut >= 3.0 */
++			BUG_ON(chip_revision < 2);
++			alsa_710x_resource_pcm0[2].start =1;
++			alsa_710x_resource_pcm0[2].end = 1;
++
++			alsa_710x_resource_pcm1[2].start =1;
++			alsa_710x_resource_pcm1[2].end = 1;
+ 			fdma_710x_device.dev.platform_data =(void*) &stb7109_C3_fdma_plat_data;
+ 			break;
+ 		}
+@@ -943,6 +969,13 @@
+ 
+ 		alsa_710x_resource_cnv[1].start = STB7100_FDMA_REQ_PCM_0;
+ 		alsa_710x_resource_cnv[1].end = STB7100_FDMA_REQ_PCM_0;
++
++		alsa_710x_resource_pcm0[2].start =0;
++		alsa_710x_resource_pcm0[2].end = 0;
++
++		alsa_710x_resource_pcm1[2].start =0;
++		alsa_710x_resource_pcm1[2].end = 0;
++
+ 	}
+ 	ret = platform_add_devices(stb7100ref_devices, ARRAY_SIZE(stb7100ref_devices));
+ 	return ret;
+Index: linux/arch/sh/boards/st/stb7109eref/setup.c
+===================================================================
+--- linux.orig/arch/sh/boards/st/stb7109eref/setup.c	2006-12-14 15:17:35.215676000 +0000
++++ linux/arch/sh/boards/st/stb7109eref/setup.c	2007-01-26 12:53:10.408795000 +0000
+@@ -592,7 +592,7 @@
+         .id             = -1,
+ };
+ 
+-static struct resource alsa_710x_resource_pcm0[2] = {
++static struct resource alsa_710x_resource_pcm0[3] = {
+ 
+ 	[0] = {/* allocatable channels*/
+ 		.start =2,
+@@ -603,10 +603,15 @@
+ 		.start = STB7109_FDMA_REQ_PCM_0,
+ 		.end   = STB7109_FDMA_REQ_PCM_0,
+ 		.flags = IORESOURCE_IRQ
++	},
++	[2] = {/*rising or falling edge I2s clocking*/
++		 /*.start = runtime dependant*/
++		 /*.end = runtime dependant*/
++		.flags = IORESOURCE_IRQ
+ 	}};
+ 
+ 
+-static struct resource alsa_710x_resource_pcm1[2] = {
++static struct resource alsa_710x_resource_pcm1[3] = {
+ 
+ 	[0] = {/* allocatable channels*/
+ 		.start = 2,
+@@ -617,6 +622,13 @@
+ 		.start =STB7109_FDMA_REQ_PCM_1,
+ 		.end   =STB7109_FDMA_REQ_PCM_1,
+ 		.flags = IORESOURCE_IRQ,
++	},
++	[2] = {/*rising or falling edge I2s clocking
++		1 == FALLING_EDGE
++		0 == RISING EDGE */
++		 /*.start = runtime dependant*/
++		 /*.end = runtime dependant*/
++		.flags = IORESOURCE_IRQ
+ 	}};
+ 
+ static struct resource alsa_710x_resource_spdif[2] = {
+@@ -719,13 +731,30 @@
+ 
+ 	switch (chip_revision) {
+ 	case 1:
++		alsa_710x_resource_pcm0[2].start =0;
++		alsa_710x_resource_pcm0[2].end = 0;
++
++		alsa_710x_resource_pcm0[2].start =0;
++		alsa_710x_resource_pcm0[2].end = 0;
+ 		fdma_710x_device.dev.platform_data = (void*)&stb7109_C1_fdma_plat_data;
+ 		break;
+ 	case 2:
++		alsa_710x_resource_pcm0[2].start =0;
++		alsa_710x_resource_pcm0[2].end = 0;
++
++		alsa_710x_resource_pcm0[2].start =0;
++		alsa_710x_resource_pcm0[2].end = 0;
++
+ 		fdma_710x_device.dev.platform_data =(void*) &stb7109_C2_fdma_plat_data;
+ 		break;
+ 	default:
+ 		/* 7109 cut >= 3.0 */
++		BUG_ON(chip_revision < 2);
++		alsa_710x_resource_pcm0[2].start =1;
++		alsa_710x_resource_pcm0[2].end = 1;
++
++		alsa_710x_resource_pcm0[2].start =1;
++		alsa_710x_resource_pcm0[2].end = 1;
+ 		fdma_710x_device.dev.platform_data =(void*) &stb7109_C3_fdma_plat_data;
+ 		break;
+ 	}

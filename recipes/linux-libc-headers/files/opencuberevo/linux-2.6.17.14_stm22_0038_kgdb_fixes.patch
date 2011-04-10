@@ -1,0 +1,563 @@
+This patch updates the KGDB2-4 core-lite to the latest version (1.126).
+
+It also fixes the following:
+ kernel debugger configuration (removed useless macros)
+ kgdb_activate_sw_breakpoints function: 
+  added a condition check in order to guarantee a right memory access when 
+  the kernel starts and KGDB is invoked using the "kgdbwait" option. 
+
+linux/Documentation/DocBook/kgdb.tmpl
+linux/kernel/kgdb.c
+linux/kernel/Makefile
+linux/include/linux/kgdb.h
+linux/kernel/kgdbarchlib.c [NEW]
+linux/lib/Kconfig.debug
+
+Signed-off-by: Giuseppe Cavallaro <peppe.cavallaro@st.com>
+
+Index: linux/Documentation/DocBook/kgdb.tmpl
+===================================================================
+--- linux.orig/Documentation/DocBook/kgdb.tmpl	2006-12-14 15:17:36.224666000 +0000
++++ linux/Documentation/DocBook/kgdb.tmpl	2007-02-15 10:47:19.962758000 +0000
+@@ -124,10 +124,6 @@
+     serial driver, pass in: <constant>kgdbwait</constant>.
+     </para>
+     <para>
+-    To specify the values of the SH SCI(F) serial port at boot:
+-    <constant>kgdbsci=0,115200</constant>.
+-    </para>
+-    <para>
+     To specify the values of the serial port at boot:
+     <constant>kgdb8250=io,3f8,115200,3</constant>.
+     On IA64 this could also be:
+@@ -185,18 +181,6 @@
+     application program.
+     </para>
+   </chapter>
+-  <chapter id="ArchitectureNotes">
+-    <title>Architecture specific notes</title>
+-      <para>
+-      SuperH: The NMI switch found on some boards can be used to trigger an
+-      initial breakpoint.  Subsequent triggers do nothing.  If console
+-      is enabled on the SCI(F) serial port, and that is the port being used
+-      for KGDB, then you must trigger a breakpoint via sysrq, NMI, or
+-      some other method prior to connecting, or echo a control-c to the
+-      serial port.  Also, to use the SCI(F) port for KGDB, the
+-      <symbol>CONFIG_SERIAL_SH_SCI</symbol> driver must be enabled.
+-      </para>
+-  </chapter>
+   <chapter id="CommonBackEndReq">
+     <title>The common backend (required)</title>
+       <para>
+@@ -245,6 +229,5 @@
+       to these functions must be wrapped in #ifdefs for the driver in
+       question.
+       </para>
+-!Idrivers/serial/8250_kgdb.c
+    </chapter>
+ </book>
+Index: linux/kernel/kgdb.c
+===================================================================
+--- linux.orig/kernel/kgdb.c	2006-12-14 15:17:36.357667000 +0000
++++ linux/kernel/kgdb.c	2007-02-15 10:47:20.044758000 +0000
+@@ -93,8 +93,6 @@
+  */
+ struct kgdb_bkpt kgdb_break[MAX_BREAKPOINTS];
+ 
+-struct kgdb_arch *kgdb_ops = &arch_kgdb_ops;
+-
+ static const char hexchars[] = "0123456789abcdef";
+ 
+ static spinlock_t slavecpulocks[NR_CPUS];
+@@ -134,201 +132,6 @@
+ 	.priority       = INT_MAX,
+ };
+ 
+-/**
+- *	kgdb_arch_init - Perform any architecture specific initalization.
+- *
+- *	RETURN:
+- *	The return value is ignored.
+- *
+- *	This function will handle the initalization of any architecture
+- *	specific hooks.
+- */
+-int __attribute__ ((weak))
+-    kgdb_arch_init(void)
+-{
+-	return 0;
+-}
+-
+-/**
+- *	kgdb_disable_hw_debug - Disable hardware debugging while we in kgdb.
+- *	@regs: Current &struct pt_regs.
+- *
+- *	This function will be called if the particular architecture must
+- *	disable hardware debugging while it is processing gdb packets or
+- *	handling exception.
+- */
+-void __attribute__ ((weak))
+-    kgdb_disable_hw_debug(struct pt_regs *regs)
+-{
+-}
+-
+-/*
+- * Skip an int3 exception when it occurs after a breakpoint has been
+- * removed. Backtrack eip by 1 since the int3 would have caused it to
+- * increment by 1.
+- */
+-int __attribute__ ((weak))
+-	kgdb_skipexception(int exception, struct pt_regs *regs)
+-{
+-	return 0;
+-}
+-
+-/**
+- *	kgdb_set_hw_break - Set a hardware breakpoint at @addr.
+- *	@addr: The address to set a hardware breakpoint at.
+- */
+-int __attribute__ ((weak))
+-    kgdb_set_hw_break(unsigned long addr)
+-{
+-	return 0;
+-}
+-
+-/**
+- *	kgdb_remove_hw_break - Remove a hardware breakpoint at @addr.
+- *	@addr: The address to remove a hardware breakpoint from.
+- */
+-int __attribute__ ((weak))
+-    kgdb_remove_hw_break(unsigned long addr)
+-{
+-	return 0;
+-}
+-
+-/**
+- *	kgdb_remove_all_hw_break - Clear all hardware breakpoints.
+- */
+-void __attribute__ ((weak))
+-    kgdb_remove_all_hw_break(void)
+-{
+-}
+-
+-/**
+- *	kgdb_correct_hw_break - Correct hardware breakpoints.
+- *
+- *	A hook to allow for changes to the hardware breakpoint, called
+- *	after a single step (s) or continue (c) packet, and once we're about
+- *	to let the kernel continue running.
+- *
+- *	This is used to set the hardware breakpoint registers for all the
+- *	slave cpus on an SMP configuration. This must be called after any
+- *	changes are made to the hardware breakpoints (such as by a single
+- *	step (s) or continue (c) packet. This is only required on
+- *	architectures that support SMP and every processor has its own set
+- *	of breakpoint registers.
+- */
+-void __attribute__ ((weak))
+-    kgdb_correct_hw_break(void)
+-{
+-}
+-
+-/**
+- *	kgdb_post_master_code - Save error vector/code numbers.
+- *	@regs: Original pt_regs.
+- *	@e_vector: Original error vector.
+- *	@err_code: Original error code.
+- *
+- *	This is needed on architectures which support SMP and KGDB.
+- *	This function is called after all the slave cpus have been put
+- *	to a know spin state and the master CPU has control over KGDB.
+- */
+-
+-void __attribute__ ((weak))
+-    kgdb_post_master_code(struct pt_regs *regs, int e_vector, int err_code)
+-{
+-}
+-
+-/**
+- * 	kgdb_roundup_cpus - Get other CPUs into a holding pattern
+- * 	@flags: Current IRQ state
+- *
+- * 	On SMP systems, we need to get the attention of the other CPUs
+- * 	and get them be in a known state.  This should do what is needed
+- * 	to get the other CPUs to call kgdb_wait(). Note that on some arches,
+- *	the NMI approach is not used for rounding up all the CPUs. For example,
+- *	in case of MIPS, smp_call_function() is used to roundup CPUs. In
+- *	this case, we have to make sure that interrupts are enabled before
+- *	calling smp_call_function(). The argument to this function is
+- *	the flags that will be used when restoring the interrupts. There is
+- *	local_irq_save() call before kgdb_roundup_cpus().
+- */
+-void __attribute__ ((weak))
+-    kgdb_roundup_cpus(unsigned long flags)
+-{
+-}
+-
+-/**
+- *	kgdb_shadowinfo - Get shadowed information on @threadid.
+- *	@regs: The &struct pt_regs of the current process.
+- *	@buffer: A buffer of %BUFMAX size.
+- *	@threadid: The thread id of the shadowed process to get information on.
+- */
+-void __attribute__ ((weak))
+-    kgdb_shadowinfo(struct pt_regs *regs, char *buffer, unsigned threadid)
+-{
+-}
+-
+-/**
+- *	kgdb_get_shadow_thread - Get the shadowed &task_struct of @threadid.
+- *	@regs: The &struct pt_regs of the current thread.
+- *	@threadid: The thread id of the shadowed process to get information on.
+- *
+- *	RETURN:
+- *	This returns a pointer to the &struct task_struct of the shadowed
+- *	thread, @threadid.
+- */
+-struct task_struct __attribute__ ((weak))
+-    * kgdb_get_shadow_thread(struct pt_regs *regs, int threadid)
+-{
+-	return NULL;
+-}
+-
+-/**
+- *	kgdb_shadow_regs - Return the shadowed registers of @threadid.
+- *	@regs: The &struct pt_regs of the current thread.
+- *	@threadid: The thread id we want the &struct pt_regs for.
+- *
+- *	RETURN:
+- *	The a pointer to the &struct pt_regs of the shadowed thread @threadid.
+- */
+-struct pt_regs __attribute__ ((weak))
+-    * kgdb_shadow_regs(struct pt_regs *regs, int threadid)
+-{
+-	return NULL;
+-}
+-
+-int __attribute__ ((weak))
+-     kgdb_validate_break_address(unsigned long addr)
+-{
+-	int error = 0;
+-	char tmp_variable[BREAK_INSTR_SIZE];
+-	error = kgdb_get_mem((char *)addr, tmp_variable, BREAK_INSTR_SIZE);
+-	return error;
+-}
+-
+-int __attribute__ ((weak))
+-     kgdb_arch_set_breakpoint(unsigned long addr, char *saved_instr)
+-{
+-	int error = 0;
+-	if ((error = kgdb_get_mem((char *)addr,
+-		saved_instr, BREAK_INSTR_SIZE)) < 0)
+-			return error;
+-
+-	if ((error = kgdb_set_mem((char *)addr, kgdb_ops->gdb_bpt_instr,
+-		BREAK_INSTR_SIZE)) < 0)
+-			return error;
+-	return 0;
+-}
+-
+-int __attribute__ ((weak))
+-     kgdb_arch_remove_breakpoint(unsigned long addr, char *bundle)
+-{
+-
+-	int error = 0;
+-	if ((error =kgdb_set_mem((char *)addr, (char *)bundle,
+-		BREAK_INSTR_SIZE)) < 0)
+-			return error;
+-	return 0;
+-}
+-
+ static int hex(char ch)
+ {
+ 	if ((ch >= 'a') && (ch <= 'f'))
+@@ -824,16 +627,18 @@
+ 		if ((error = kgdb_arch_set_breakpoint(addr,
+ 					kgdb_break[i].saved_instr)))
+ 			return error;
+-#if 0
+-		if (CACHE_FLUSH_IS_SAFE) {
+-			if (current->mm && addr < TASK_SIZE)
+-				flush_cache_range(current->mm->mmap_cache,
++
++		if (current->mm){
++			if (CACHE_FLUSH_IS_SAFE) {
++				if (addr < TASK_SIZE)
++					flush_cache_range(
++						current->mm->mmap_cache,
+ 						addr, addr + BREAK_INSTR_SIZE);
+-			else
+-				flush_icache_range(addr, addr +
++				else
++					flush_icache_range(addr, addr +
+ 						BREAK_INSTR_SIZE);
++			}
+ 		}
+-#endif
+ 
+ 		kgdb_break[i].state = bp_active;
+         }
+@@ -1807,6 +1612,7 @@
+ 	/* If kgdb_initialized is -1 then we were passed kgdbwait. */
+ 	if (kgdb_initialized == -1)
+ 		need_break = 1;
++
+ 	/*
+ 	 * If we haven't tried to initialize KGDB yet, we need to call
+ 	 * kgdb_arch_init before moving onto the I/O.
+Index: linux/kernel/Makefile
+===================================================================
+--- linux.orig/kernel/Makefile	2006-12-14 15:17:36.367667000 +0000
++++ linux/kernel/Makefile	2007-02-15 10:47:20.065758000 +0000
+@@ -32,7 +32,7 @@
+ obj-$(CONFIG_AUDIT) += audit.o auditfilter.o
+ obj-$(CONFIG_AUDITSYSCALL) += auditsc.o
+ obj-$(CONFIG_KPROBES) += kprobes.o
+-obj-$(CONFIG_KGDB) += kgdb.o
++obj-$(CONFIG_KGDB) += kgdb.o kgdbarchlib.o
+ obj-$(CONFIG_SYSFS) += ksysfs.o
+ obj-$(CONFIG_DETECT_SOFTLOCKUP) += softlockup.o
+ obj-$(CONFIG_GENERIC_HARDIRQS) += irq/
+Index: linux/include/linux/kgdb.h
+===================================================================
+--- linux.orig/include/linux/kgdb.h	2006-12-14 15:17:36.308666000 +0000
++++ linux/include/linux/kgdb.h	2007-02-15 10:47:20.172758000 +0000
+@@ -266,6 +266,7 @@
+ extern void kgdb_nmihook(int cpu, void *regs);
+ extern int debugger_step;
+ extern atomic_t debugger_active;
++extern struct kgdb_arch *kgdb_ops;
+ #else
+ /* Stubs for when KGDB is not set. */
+ static const atomic_t debugger_active = ATOMIC_INIT(0);
+Index: linux/kernel/kgdbarchlib.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ linux/kernel/kgdbarchlib.c	2007-02-15 10:47:20.178758000 +0000
+@@ -0,0 +1,199 @@
++#include <linux/kernel.h>
++#include <linux/kgdb.h>
++
++struct kgdb_arch *kgdb_ops = &arch_kgdb_ops;
++
++/**
++ *	kgdb_arch_init - Perform any architecture specific initalization.
++ *
++ *	RETURN:
++ *	The return value is ignored.
++ *
++ *	This function will handle the initalization of any architecture
++ *	specific hooks.
++ */
++int __attribute__ ((weak))
++    kgdb_arch_init(void)
++{
++	return 0;
++}
++
++/**
++ *	kgdb_disable_hw_debug - Disable hardware debugging while we in kgdb.
++ *	@regs: Current &struct pt_regs.
++ *
++ *	This function will be called if the particular architecture must
++ *	disable hardware debugging while it is processing gdb packets or
++ *	handling exception.
++ */
++void __attribute__ ((weak))
++    kgdb_disable_hw_debug(struct pt_regs *regs)
++{
++}
++
++/*
++ * Skip an int3 exception when it occurs after a breakpoint has been
++ * removed. Backtrack eip by 1 since the int3 would have caused it to
++ * increment by 1.
++ */
++int __attribute__ ((weak))
++	kgdb_skipexception(int exception, struct pt_regs *regs)
++{
++	return 0;
++}
++
++/**
++ *	kgdb_set_hw_break - Set a hardware breakpoint at @addr.
++ *	@addr: The address to set a hardware breakpoint at.
++ */
++int __attribute__ ((weak))
++    kgdb_set_hw_break(unsigned long addr)
++{
++	return 0;
++}
++
++/**
++ *	kgdb_remove_hw_break - Remove a hardware breakpoint at @addr.
++ *	@addr: The address to remove a hardware breakpoint from.
++ */
++int __attribute__ ((weak))
++    kgdb_remove_hw_break(unsigned long addr)
++{
++	return 0;
++}
++
++/**
++ *	kgdb_remove_all_hw_break - Clear all hardware breakpoints.
++ */
++void __attribute__ ((weak))
++    kgdb_remove_all_hw_break(void)
++{
++}
++
++/**
++ *	kgdb_correct_hw_break - Correct hardware breakpoints.
++ *
++ *	A hook to allow for changes to the hardware breakpoint, called
++ *	after a single step (s) or continue (c) packet, and once we're about
++ *	to let the kernel continue running.
++ *
++ *	This is used to set the hardware breakpoint registers for all the
++ *	slave cpus on an SMP configuration. This must be called after any
++ *	changes are made to the hardware breakpoints (such as by a single
++ *	step (s) or continue (c) packet. This is only required on
++ *	architectures that support SMP and every processor has its own set
++ *	of breakpoint registers.
++ */
++void __attribute__ ((weak))
++    kgdb_correct_hw_break(void)
++{
++}
++
++/**
++ *	kgdb_post_master_code - Save error vector/code numbers.
++ *	@regs: Original pt_regs.
++ *	@e_vector: Original error vector.
++ *	@err_code: Original error code.
++ *
++ *	This is needed on architectures which support SMP and KGDB.
++ *	This function is called after all the slave cpus have been put
++ *	to a know spin state and the master CPU has control over KGDB.
++ */
++
++void __attribute__ ((weak))
++    kgdb_post_master_code(struct pt_regs *regs, int e_vector, int err_code)
++{
++}
++
++/**
++ * 	kgdb_roundup_cpus - Get other CPUs into a holding pattern
++ * 	@flags: Current IRQ state
++ *
++ * 	On SMP systems, we need to get the attention of the other CPUs
++ * 	and get them be in a known state.  This should do what is needed
++ * 	to get the other CPUs to call kgdb_wait(). Note that on some arches,
++ *	the NMI approach is not used for rounding up all the CPUs. For example,
++ *	in case of MIPS, smp_call_function() is used to roundup CPUs. In
++ *	this case, we have to make sure that interrupts are enabled before
++ *	calling smp_call_function(). The argument to this function is
++ *	the flags that will be used when restoring the interrupts. There is
++ *	local_irq_save() call before kgdb_roundup_cpus().
++ */
++void __attribute__ ((weak))
++    kgdb_roundup_cpus(unsigned long flags)
++{
++}
++
++/**
++ *	kgdb_shadowinfo - Get shadowed information on @threadid.
++ *	@regs: The &struct pt_regs of the current process.
++ *	@buffer: A buffer of %BUFMAX size.
++ *	@threadid: The thread id of the shadowed process to get information on.
++ */
++void __attribute__ ((weak))
++    kgdb_shadowinfo(struct pt_regs *regs, char *buffer, unsigned threadid)
++{
++}
++
++/**
++ *	kgdb_get_shadow_thread - Get the shadowed &task_struct of @threadid.
++ *	@regs: The &struct pt_regs of the current thread.
++ *	@threadid: The thread id of the shadowed process to get information on.
++ *
++ *	RETURN:
++ *	This returns a pointer to the &struct task_struct of the shadowed
++ *	thread, @threadid.
++ */
++struct task_struct __attribute__ ((weak))
++    * kgdb_get_shadow_thread(struct pt_regs *regs, int threadid)
++{
++	return NULL;
++}
++
++/**
++ *	kgdb_shadow_regs - Return the shadowed registers of @threadid.
++ *	@regs: The &struct pt_regs of the current thread.
++ *	@threadid: The thread id we want the &struct pt_regs for.
++ *
++ *	RETURN:
++ *	The a pointer to the &struct pt_regs of the shadowed thread @threadid.
++ */
++struct pt_regs __attribute__ ((weak))
++    * kgdb_shadow_regs(struct pt_regs *regs, int threadid)
++{
++	return NULL;
++}
++
++int __attribute__ ((weak))
++     kgdb_validate_break_address(unsigned long addr)
++{
++	int error = 0;
++	char tmp_variable[BREAK_INSTR_SIZE];
++	error = kgdb_get_mem((char *)addr, tmp_variable, BREAK_INSTR_SIZE);
++	return error;
++}
++
++int __attribute__ ((weak))
++     kgdb_arch_set_breakpoint(unsigned long addr, char *saved_instr)
++{
++	int error = 0;
++	if ((error = kgdb_get_mem((char *)addr,
++		saved_instr, BREAK_INSTR_SIZE)) < 0)
++			return error;
++
++	if ((error = kgdb_set_mem((char *)addr, kgdb_ops->gdb_bpt_instr,
++		BREAK_INSTR_SIZE)) < 0)
++			return error;
++	return 0;
++}
++
++int __attribute__ ((weak))
++     kgdb_arch_remove_breakpoint(unsigned long addr, char *bundle)
++{
++
++	int error = 0;
++	if ((error =kgdb_set_mem((char *)addr, (char *)bundle,
++		BREAK_INSTR_SIZE)) < 0)
++			return error;
++	return 0;
++}
+Index: linux/lib/Kconfig.debug
+===================================================================
+--- linux.orig/lib/Kconfig.debug	2006-12-14 15:17:36.462666000 +0000
++++ linux/lib/Kconfig.debug	2007-02-15 10:47:20.225759000 +0000
+@@ -258,7 +258,7 @@
+ choice
+ 	prompt "Method for KGDB communication"
+ 	depends on KGDB
+-	default KGDB_ST_DCU
++	default KGDB_ST_ASC
+ 	help
+ 	  There are a number of different ways in which you can communicate
+ 	  with KGDB.  The most common is via serial, with the 8250 driver
+@@ -269,13 +269,6 @@
+ 	  kernel for debugging as the kernel is booting, or using only
+ 	  kernel modules.
+ 
+-config KGDB_ST_DCU
+-        bool "KGDB: On ST DCU interface"
+-        depends on CPU_SUBTYPE_ST40
+-        help
+-	  It is a new method available for the STM architectures.
+-          It uses the Micro-connect interface as communication port.
+-
+ config KGDBOE
+         bool "KGDB: On ethernet"
+         select NETPOLL

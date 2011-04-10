@@ -1,0 +1,4515 @@
+Basic chip and board support for the STx7111 and mb618.
+
+TODO:
+	NAND ready not busy signal through the NAND controller
+	LiRC
+	External interrupts
+	PATA platform
+	GMAC
+	SMSC911x STEM card
+	EPLD version printing
+	Coprocessor support
+
+Signed-off-by: Stuart Menefy <stuart.mebnefy@st.com>
+Index: linux-2.6.23-stm/arch/sh/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/Kconfig
++++ linux-2.6.23-stm/arch/sh/Kconfig
+@@ -339,6 +339,15 @@ config SH_ST_MB448
+ 	  ST board ID: mb448). More information at:
+ 	  <http://www.stlinux.com/boards/mb448/>
+ 
++config SH_ST_MB618
++	bool "mb618: STx7111 Validation board"
++	depends on CPU_SUBTYPE_STX7111
++	help
++	  Select STx7111 Validation if configuring for an
++	  STMicroelectronics STx7111 Validation Board (product code: STB7111-MBOARD,
++	  ST board ID: mb618). More information at:
++	  <http://www.stlinux.com/boards/mb618/>
++
+ config SH_ST_CB101
+ 	bool "cb101: ST Customer board 101"
+ 	depends on CPU_SUBTYPE_STX7200
+Index: linux-2.6.23-stm/arch/sh/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/Makefile
++++ linux-2.6.23-stm/arch/sh/Makefile
+@@ -112,6 +112,7 @@ machdir-$(CONFIG_SH_ST_MB374)		+= st/mb3
+ machdir-$(CONFIG_SH_ST_MB411)		+= st/mb411 st/harp-common
+ machdir-$(CONFIG_SH_ST_MB442)		+= st/mb442
+ machdir-$(CONFIG_SH_ST_MB448)		+= st/mb448
++machdir-$(CONFIG_SH_ST_MB618)		+= st/mb618
+ machdir-$(CONFIG_SH_HMS1)			+= st/hms1
+ machdir-$(CONFIG_SH_ST_MB519)			+= st/mb519
+ machdir-$(CONFIG_SH_ST_CB101)			+= st/cb101
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb618/Makefile
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/boards/st/mb618/Makefile
+@@ -0,0 +1,5 @@
++#
++# Makefile for STMicroelectronics STx7211 Mboard (mb618) board
++#
++
++obj-y := setup.o
+Index: linux-2.6.23-stm/arch/sh/boards/st/mb618/setup.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/boards/st/mb618/setup.c
+@@ -0,0 +1,262 @@
++/*
++ * arch/sh/boards/st/mb618/setup.c
++ *
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy (stuart.menefy@st.com)
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * STMicroelectronics STx7111 Mboard support.
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/stm/pio.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/emi.h>
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/physmap.h>
++#include <linux/mtd/partitions.h>
++#include <linux/phy.h>
++#include <asm/irq-ilc.h>
++#include <asm/irl.h>
++#include <asm/io.h>
++
++/* Whether the hardware supports NOR or NAND Flash depends on J34.
++ * In position 1-2 CSA selects NAND, in position 2-3 is selects NOR.
++ */
++#define FLASH_NOR
++
++static int ascs[2] __initdata = { 2, 3 };
++
++static void __init mb618_setup(char** cmdline_p)
++{
++	printk("STMicroelectronics STx7111 Mboard initialisation\n");
++
++	stx7111_early_device_init();
++	stx7111_configure_asc(ascs, 2, 0);
++}
++
++static struct plat_stm_pwm_data pwm_private_info = {
++	.flags		= PLAT_STM_PWM_OUT0,
++};
++
++static struct plat_ssc_data ssc_private_info = {
++	.capability  =
++		ssc0_has(SSC_SPI_CAPABILITY) |
++		ssc1_has(SSC_I2C_CAPABILITY) |
++		ssc2_has(SSC_I2C_CAPABILITY) |
++		ssc3_has(SSC_I2C_CAPABILITY),
++};
++
++/* J34 must be in the 2-3 position to enable NOR Flash */
++static struct stpio_pin *vpp_pio;
++
++static void set_vpp(struct map_info * info, int enable)
++{
++	stpio_set_pin(vpp_pio, enable);
++}
++
++static struct mtd_partition mtd_parts_table[3] = {
++	{
++		.name = "Boot firmware",
++		.size = 0x00040000,
++		.offset = 0x00000000,
++	}, {
++		.name = "Kernel",
++		.size = 0x00100000,
++		.offset = 0x00040000,
++	}, {
++		.name = "Root FS",
++		.size = MTDPART_SIZ_FULL,
++		.offset = 0x00140000,
++	}
++};
++
++static struct physmap_flash_data physmap_flash_data = {
++	.width		= 2,
++	.set_vpp	= set_vpp,
++	.nr_parts	= ARRAY_SIZE(mtd_parts_table),
++	.parts		= mtd_parts_table
++};
++
++static struct platform_device physmap_flash = {
++	.name		= "physmap-flash",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start		= 0x00000000,
++			.end		= 32*1024*1024 - 1,
++			.flags		= IORESOURCE_MEM,
++		}
++	},
++	.dev		= {
++		.platform_data	= &physmap_flash_data,
++	},
++};
++
++static struct plat_stmmacphy_data phy_private_data = {
++	/* SMSC LAN 8700 */
++	.bus_id = 0,
++	.phy_addr = 0,
++	.phy_mask = 0,
++	.interface = PHY_INTERFACE_MODE_MII,
++};
++
++static struct platform_device mb618_phy_device = {
++	.name		= "stmmacphy",
++	.id		= 0,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.name	= "phyirq",
++			.start	= -1,/*FIXME*/
++			.end	= -1,
++			.flags	= IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = &phy_private_data,
++	}
++};
++
++#if 0
++static struct platform_device epld_device = {
++	.name		= "harp-epld",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= EPLD_BASE,
++			.end	= EPLD_BASE + EPLD_SIZE - 1,
++			.flags	= IORESOURCE_MEM,
++		}
++	},
++	.dev.platform_data = &(struct plat_epld_data) {
++		 .opsize = 16,
++	},
++};
++#endif
++
++/* J34 must be in the 1-2 position to enable NOR Flash */
++static struct mtd_partition nand_partitions[] = {
++	{
++		.name	= "NAND root",
++		.offset	= 0,
++		.size 	= 0x00800000
++	}, {
++		.name	= "NAND home",
++		.offset	= MTDPART_OFS_APPEND,
++		.size	= MTDPART_SIZ_FULL
++	},
++};
++
++static struct nand_config_data mb618_nand_config = {
++	.emi_bank		= 0,
++	.emi_withinbankoffset	= 0,
++
++	/* Timings for NAND512W3A */
++	.emi_timing_data = &(struct emi_timing_data) {
++		.rd_cycle_time	= 40,		 /* times in ns */
++		.rd_oee_start	= 0,
++		.rd_oee_end	= 10,
++		.rd_latchpoint	= 10,
++		.busreleasetime = 0,
++
++		.wr_cycle_time	= 40,
++		.wr_oee_start	= 0,
++		.wr_oee_end	= 10,
++	},
++
++	.chip_delay		= 40,		/* time in us */
++	.mtd_parts		= nand_partitions,
++	.nr_parts		= ARRAY_SIZE(nand_partitions),
++};
++
++static struct platform_device *mb618_devices[] __initdata = {
++	//&epld_device,
++#ifdef FLASH_NOR
++	&physmap_flash,
++#endif
++	&mb618_phy_device,
++};
++
++static int __init device_init(void)
++{
++#if 0
++	unsigned int epld_rev;
++	unsigned int pcb_rev;
++
++	epld_rev = epld_read(EPLD_EPLDVER);
++	pcb_rev = epld_read(EPLD_PCBVER);
++	printk("mb618 PCB rev %X EPLD rev %dr%d\n",
++	       pcb_rev,
++	       epld_rev >> 4, epld_rev & 0xf);
++
++#endif
++	stx7111_configure_pwm(&pwm_private_info);
++	stx7111_configure_ssc(&ssc_private_info);
++	stx7111_configure_usb();
++	stx7111_configure_ethernet(1, 0, 0, 0);
++#if 0
++	// stx7200_configure_ethernet(1, 0, 1, 1);
++        stx7200_configure_lirc();
++	stx7200_configure_pata(1, ILC_IRQ(6));	/* irq_ilc_ext_in[2] */
++#endif
++
++	vpp_pio = stpio_request_pin(3,4, "VPP", STPIO_OUT);
++
++#ifndef FLASH_NOR
++	stx7111_configure_nand(&mb618_nand_config);
++	/* The MTD NAND code doesn't understand the concept of VPP,
++	 * (or hardware write protect) so permanently enable it.
++	 */
++	stpio_set_pin(vpp_pio, 1);
++#endif
++
++	return platform_add_devices(mb618_devices, ARRAY_SIZE(mb618_devices));
++}
++arch_initcall(device_init);
++
++static void __iomem *mb618_ioport_map(unsigned long port, unsigned int size)
++{
++	/* However picking somewhere safe isn't as easy as you might think.
++	 * I used to use external ROM, but that can cause problems if you are
++	 * in the middle of updating Flash. So I'm now using the processor core
++	 * version register, which is guaranted to be available, and non-writable.
++	 */
++	return (void __iomem *)CCN_PVR;
++}
++
++static void __init mb618_init_irq(void)
++{
++#if 0
++	epld_early_init(&epld_device);
++
++	/* The off chip interrupts on the mb618 are a mess. The external
++	 * EPLD priority encodes them, but because they pass through the ILC3
++	 * there is no way to decode them.
++	 *
++	 * So here we bodge it as well. Only enable the STEM INTR0 signal,
++	 * and hope nothing else goes active. This will result in
++	 * SYSITRQ[3..0] = 0100.
++	 *
++	 * Note that the mapping of STEM_notINTR0 changed between EPLD
++	 * rev 1r2 and 1r3. This is correct for 1r3 which should be the
++	 * most common now.
++	 */
++	epld_write(0x00, EPLD_INTMASK0);
++	epld_write(0x00, EPLD_INTMASK1);
++	epld_write(1<<4, EPLD_INTMASK0SET); /* IntPriority(4) <= not STEM_notINTR0 */
++#endif
++}
++
++struct sh_machine_vector mv_mb618 __initmv = {
++	.mv_name		= "mb618",
++	.mv_setup		= mb618_setup,
++	.mv_nr_irqs		= NR_IRQS,
++	.mv_init_irq		= mb618_init_irq,
++	.mv_ioport_map		= mb618_ioport_map,
++};
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/Makefile
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/Makefile
+@@ -18,5 +18,6 @@ obj-y	+= irq/ init.o clock.o
+ # new clock architecture in their own processor specific code.
+ archclock-y					:= clock-cpg.o
+ archclock-$(CONFIG_CPU_SUBTYPE_STB7100)	:=
++archclock-$(CONFIG_CPU_SUBTYPE_STX7111)	:=
+ archclock-$(CONFIG_CPU_SUBTYPE_STX7200)	:=
+ obj-y	+= $(archclock-y)
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/irq/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/irq/Makefile
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/irq/Makefile
+@@ -6,4 +6,5 @@ obj-y	+= imask.o intc.o
+ obj-$(CONFIG_CPU_HAS_IPR_IRQ)		+= ipr.o
+ obj-$(CONFIG_CPU_HAS_MASKREG_IRQ)	+= maskreg.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= st40_ilc_sti5528.o ilc3_common.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= st40_ilc_sti5528.o ilc3_common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= st40_ilc_stx7200.o ilc3_common.o
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/Makefile
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/Makefile
+@@ -20,12 +20,14 @@ obj-$(CONFIG_CPU_SUBTYPE_SH7760)	+= setu
+ obj-$(CONFIG_CPU_SUBTYPE_SH4_202)	+= setup-sh4-202.o
+ obj-$(CONFIG_CPU_SUBTYPE_ST40STB1)	+= setup-st40ra.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= setup-stb7100.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= setup-stx7111.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= setup-stx7200.o
+ 
+ # Primary on-chip clocks (common)
+ ifndef CONFIG_CPU_SH4A
+ clock-$(CONFIG_CPU_SH4)			:= clock-sh4.o
+ clock-$(CONFIG_CPU_SUBTYPE_STB7100)	:= clock-stb7100.o
++clock-$(CONFIG_CPU_SUBTYPE_STX7111)	:= clock-stx7111.o
+ clock-$(CONFIG_CPU_SUBTYPE_STX7200)	:= clock-stx7200.o
+ endif
+ 
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/clock-stx7111.c
+@@ -0,0 +1,397 @@
++/*
++ * Copyright (C) 2008 STMicroelectronics Limited
++ *
++ * May be copied or modified under the terms of the GNU General Public
++ * License.  See linux/COPYING for more information.
++ *
++ * Code to handle the clockgen hardware on the STx7111.
++ */
++
++#include <linux/init.h>
++#include <linux/kernel.h>
++#include <linux/stm/sysconf.h>
++#include <asm/clock.h>
++#include <asm/freq.h>
++#include <asm/io.h>
++
++/* Values for mb618 */
++#define SYSACLKIN	30000000
++#define SYSBCLKIN	30000000
++#define SYSAALTCLKIN	0
++
++#define CLOCKGENA_BASE_ADDR	0xfe213000	/* Clockgen A */
++#define CLOCKGENB_BASE_ADDR	0xfe000000	/* Clockgen B */
++
++/* Definitions taken from targetpack sti7111_clockgena_regs.xml */
++#define CKGA_PLL0_CFG			0x000
++#define CKGA_PLL1_CFG			0x004
++#define CKGA_POWER_CFG			0x010
++#define CKGA_CLKOPSRC_SWITCH_CFG(x)	(0x014+((x)*0x10))
++#define CKGA_CLKOBS_MUX1_CFG		0x030
++#define CKGA_CLKOBS_MUX2_CFG		0x048
++/* All the following appear to be offsets into clkgen B, despite the name */
++#define CKGA_OSC_DIV_CFG(x)		(0x800+((x)*4))
++#define CKGA_PLL0HS_DIV_CFG(x)		(0x900+((x)*4))
++#define CKGA_PLL0LS_DIV_CFG(x)		(0xa10+(((x)-4)*4))
++#define CKGA_PLL1_DIV_CFG(x)		(0xb00+((x)*4))
++
++/* Definitions taken from targetpack sti7111_clockgenb_regs.xml */
++#define CLOCKGENB_FS0_CTRL		0x14
++#define CLOCKGENB_FS0_MD1		0x18
++#define CLOCKGENB_FS0_PE1		0x1c
++#define CLOCKGENB_FS0_EN_PRG1		0x20
++#define CLOCKGENB_FS0_SDIV1		0x24
++#define CLOCKGENB_FS0_MD2		0x28
++#define CLOCKGENB_FS0_PE2		0x2c
++#define CLOCKGENB_FS0_EN_PRG2		0x30
++#define CLOCKGENB_FS0_SDIV2		0x34
++#define CLOCKGENB_FS0_MD3		0x38
++#define CLOCKGENB_FS0_PE3		0x3c
++#define CLOCKGENB_FS0_EN_PRG3		0x40
++#define CLOCKGENB_FS0_SDIV3		0x44
++#define CLOCKGENB_FS0_CLOCKOUT_CTRL	0x58
++#define CLOCKGENB_FS1_CTRL		0x5c
++#define CLOCKGENB_FS1_MD1		0x60
++#define CLOCKGENB_FS1_PE1		0x64
++#define CLOCKGENB_FS1_EN_PRG1		0x68
++#define CLOCKGENB_FS1_SDIV1		0x6c
++#define CLOCKGENB_FS1_MD2		0x70
++#define CLOCKGENB_FS1_PE2		0x74
++#define CLOCKGENB_FS1_EN_PRG2		0x78
++#define CLOCKGENB_FS1_SDIV2		0x7c
++#define CLOCKGENB_FS1_MD3		0x80
++#define CLOCKGENB_FS1_PE3		0x84
++#define CLOCKGENB_FS1_EN_PRG3		0x88
++#define CLOCKGENB_FS1_SDIV3		0x8c
++#define CLOCKGENB_FS1_MD4		0x90
++#define CLOCKGENB_FS1_PE4		0x94
++#define CLOCKGENB_FS1_EN_PRG4		0x98
++#define CLOCKGENB_FS1_SDIV4		0x9c
++#define CLOCKGENB_FS1_CLOCKOUT_CTRL	0xa0
++#define CLOCKGENB_DISPLAY_CFG		0xa4
++#define CLOCKGENB_FS_SELECT		0xa8
++#define CLOCKGENB_POWER_DOWN		0xac
++#define CLOCKGENB_POWER_ENABLE		0xb0
++#define CLOCKGENB_OUT_CTRL		0xb4
++#define CLOCKGENB_CRISTAL_SEL		0xb8
++
++
++#if 0
++#define CLOCKGEN_PLL_CFG(pll)	(CLOCKGEN_BASE_ADDR + ((pll)*0x4))
++#define   CLOCKGEN_PLL_CFG_BYPASS		(1<<20)
++#define CLOCKGEN_MUX_CFG	(CLOCKGEN_BASE_ADDR + 0x0c)
++#define   CLOCKGEN_MUX_CFG_SYSCLK_SRC		(1<<0)
++#define   CLOCKGEN_MUX_CFG_PLL_SRC(pll)		(1<<((pll)+1))
++#define   CLOCKGEN_MUX_CFG_DIV_SRC(pll)		(1<<((pll)+4))
++#define   CLOCKGEN_MUX_CFG_FDMA_SRC(fdma)	(1<<((fdma)+7))
++#define   CLOCKGEN_MUX_CFG_IC_REG_SRC		(1<<9)
++#define CLOCKGEN_DIV_CFG	(CLOCKGEN_BASE_ADDR + 0x10)
++#define CLOCKGEN_DIV2_CFG	(CLOCKGEN_BASE_ADDR + 0x14)
++#define CLOCKGEN_CLKOBS_MUX_CFG	(CLOCKGEN_BASE_ADDR + 0x18)
++#define CLOCKGEN_POWER_CFG	(CLOCKGEN_BASE_ADDR + 0x1c)
++
++#define CLOCKGENB_PLL0_CFG	(CLOCKGENB_BASE_ADDR + 0x3c)
++#define CLOCKGENB_IN_MUX_CFG	(CLOCKGENB_BASE_ADDR + 0x44)
++#define   CLOCKGENB_IN_MUX_CFG_PLL_SRC		(1<<0)
++#define CLOCKGENB_OUT_MUX_CFG	(CLOCKGENB_BASE_ADDR + 0x48)
++#define   CLOCKGENB_OUT_MUX_CFG_DIV_SRC		(1<<0)
++#define CLOCKGENB_DIV2_CFG	(CLOCKGENB_BASE_ADDR + 0x50)
++
++#endif
++
++static unsigned long clkin[4] = {
++	SYSACLKIN,	/* clk_osc_a */
++	SYSBCLKIN,	/* clk_osc_b */
++	SYSAALTCLKIN,	/* clk_osc_c */
++	0		/* clk_osc_d */
++};
++
++static struct sysconf_field *clkgena_clkosc_sel_sc;
++
++static void __iomem *clkgena_base, *clkgenb_base;
++
++#if 0
++
++                                    /* 0  1  2  3  4  5  6     7  */
++static const unsigned int ratio1[] = { 1, 2, 3, 4, 6, 8, 1024, 1 };
++
++static unsigned long final_divider(unsigned long input, int div_ratio, int div)
++{
++	switch (div_ratio) {
++	case 1:
++		return input / 1024;
++	case 2:
++	case 3:
++		return input / div;
++	}
++
++	return 0;
++}
++
++#endif
++
++
++/* Clkgen A clk_osc -------------------------------------------------------- */
++
++static void clkgena_clk_osc_init(struct clk *clk)
++{
++	clk->rate = clkin[sysconf_read(clkgena_clkosc_sel_sc)];
++}
++
++static struct clk_ops clkgena_clk_osc_ops = {
++	.init		= clkgena_clk_osc_init,
++};
++
++static struct clk clkgena_clk_osc = {
++	.name		= "clkgena_clk_osc",
++	.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++	.ops		= &clkgena_clk_osc_ops,
++};
++
++/* Clkgen A PLLs ----------------------------------------------------------- */
++
++static unsigned long pll800_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, pdiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0xff;
++	ndiv = (cfg >>  8) & 0xff;
++	pdiv = (cfg >> 16) & 0x7;
++	freq = (((2 * (input / 1000) * ndiv) / mdiv) /
++		(1 << pdiv)) * 1000;
++
++	return freq;
++}
++
++static unsigned long pll1600_freq(unsigned long input, unsigned long cfg)
++{
++	unsigned long freq, ndiv, mdiv;
++
++	mdiv = (cfg >>  0) & 0x7;
++	ndiv = (cfg >>  8) & 0xff;
++	freq = (((input / 1000) * ndiv) / mdiv) * 1000;
++
++	return freq;
++}
++
++static unsigned long clkgena_pll_freq(unsigned long clk_osc, int pll_num)
++{
++	unsigned long data;
++
++	switch (pll_num) {
++	case 0:
++		data = readl(clkgena_base + CKGA_PLL0_CFG);
++		return pll1600_freq(clk_osc, data);
++	case 1:
++		data = readl(clkgena_base + CKGA_PLL1_CFG);
++		return pll800_freq(clk_osc, data);
++	}
++
++	return 0;
++}
++
++struct pllclk
++{
++	struct clk clk;
++	unsigned long pll_num;
++};
++
++static void pll_clk_recalc(struct clk *clk)
++{
++	struct pllclk *pllclk = container_of(clk, struct pllclk, clk);
++
++	clk->rate = clkgena_pll_freq(clk->parent->rate, pllclk->pll_num);
++}
++
++static struct clk_ops pll_clk_ops = {
++	.recalc		= pll_clk_recalc,
++};
++
++static struct pllclk pllclks[2] = {
++	{
++		.clk = {
++			.name		= "clkgena_pll0_clk",
++			.parent		= &clkgena_clk_osc,
++			.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++			.ops		= &pll_clk_ops,
++		},
++		.pll_num = 0
++	}, {
++		.clk = {
++			.name		= "clkgena_pll1_clk",
++			.parent		= &clkgena_clk_osc,
++			.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
++			.ops		= &pll_clk_ops,
++		},
++		.pll_num = 1
++	}
++};
++
++/* Clkgen A clocks --------------------------------------------------------- */
++
++struct clkgenaclk
++{
++	struct clk clk;
++	unsigned long num;
++};
++
++static void clkgena_clk_init(struct clk *clk)
++{
++	struct clkgenaclk *clkgenaclk = container_of(clk, struct clkgenaclk, clk);
++	unsigned long num = clkgenaclk->num;
++	unsigned long data;
++	unsigned long src_sel;
++
++	data = readl(clkgena_base + CKGA_CLKOPSRC_SWITCH_CFG(num >> 4));
++	src_sel = (data >> ((num & 0xf) * 2)) & 3;
++
++	switch (src_sel) {
++	case 0:
++		clk->parent = &clkgena_clk_osc;
++		break;
++	case 1:
++		clk->parent = &pllclks[0].clk;
++		break;
++	case 2:
++		clk->parent = &pllclks[1].clk;
++		break;
++	case 3:
++		/* clock is stopped */
++		clk->parent = NULL;
++		break;
++	}
++}
++
++static void clkgena_clk_recalc(struct clk *clk)
++{
++	struct clkgenaclk *clkgenaclk = container_of(clk, struct clkgenaclk, clk);
++	unsigned long num = clkgenaclk->num;
++	unsigned long data;
++	unsigned long src_sel;
++	unsigned long div_cfg = 0;
++	unsigned long ratio;
++
++	data = readl(clkgena_base + CKGA_CLKOPSRC_SWITCH_CFG(num >> 4));
++	src_sel = (data >> ((num & 0xf) * 2)) & 3;
++
++	switch (src_sel) {
++	case 0:
++		div_cfg = readl(clkgena_base + CKGA_OSC_DIV_CFG(num));
++		break;
++	case 1:
++		div_cfg = readl(clkgena_base +
++				((num <= 3) ? CKGA_PLL0HS_DIV_CFG(num) :
++				              CKGA_PLL0LS_DIV_CFG(num)));
++		break;
++	case 2:
++		div_cfg = readl(clkgena_base + CKGA_PLL1_DIV_CFG(num));
++		break;
++	case 3:
++		clk->rate = 0;
++		return;
++	}
++
++	if (div_cfg & 0x10000)
++		ratio = 1;
++	else
++		ratio = (div_cfg & 0x1F) + 1;
++
++	clk->rate = clk->parent->rate / ratio;
++}
++
++static struct clk_ops clkgena_clk_ops = {
++	.init		= clkgena_clk_init,
++	.recalc		= clkgena_clk_recalc,
++};
++
++#define CLKGENA_CLK(_num, _name)				\
++	{							\
++		.clk = {					\
++			.name		= _name,		\
++			.flags		= CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,	\
++			.ops		= &clkgena_clk_ops,	\
++		},						\
++		.num = _num,					\
++	 }
++
++static struct clkgenaclk clkgenaclks[] = {
++	CLKGENA_CLK(0, "ic_STNOC"),
++	CLKGENA_CLK(1, "fdma0"),
++	CLKGENA_CLK(2, "fdma1"),
++	/* 3 not used */
++	CLKGENA_CLK(4, "sh4ick"),
++	CLKGENA_CLK(5, "ic_if_100"),
++	CLKGENA_CLK(6, "lx_dmu_cpu"),
++	CLKGENA_CLK(7, "lx_aud_cpu"),
++	CLKGENA_CLK(8, "ic_bdisp_200"),
++	CLKGENA_CLK(9, "ic_disp_200"),
++	CLKGENA_CLK(10, "ic_ts_200"),
++	CLKGENA_CLK(11, "disp_pipe_200"),
++	CLKGENA_CLK(12, "blit_proc"),	/* Note duplicate clock 12 */
++	CLKGENA_CLK(12, "ic_delta_200"),/* Note duplicate clock 12 */
++	CLKGENA_CLK(13, "ethernet_phy"),
++	CLKGENA_CLK(14, "pci"),
++	CLKGENA_CLK(15, "emi_master"),
++	CLKGENA_CLK(16, "ic_compo_200"),
++	CLKGENA_CLK(17, "ic_if_200"),
++};
++
++/* SH4 generic clocks ------------------------------------------------------ */
++
++static void generic_clk_recalc(struct clk *clk)
++{
++	clk->rate = clk->parent->rate;
++}
++
++static struct clk_ops generic_clk_ops = {
++	.recalc		= generic_clk_recalc,
++};
++
++static struct clk generic_module_clk = {
++	.name		= "module_clk",
++	.parent		= &clkgenaclks[4].clk, /* ic_if_100 */
++	.flags		= CLK_ALWAYS_ENABLED,
++	.ops		= &generic_clk_ops,
++};
++
++static struct clk generic_comms_clk = {
++	.name		= "comms_clk",
++	.parent		= &clkgenaclks[4].clk, /* ic_if_100 */
++	.flags		= CLK_ALWAYS_ENABLED,
++	.ops		= &generic_clk_ops,
++};
++
++int __init clk_init(void)
++{
++	int i, ret;
++
++	/* Clockgen A */
++
++	clkgena_clkosc_sel_sc = sysconf_claim(SYS_STA, 1, 0, 1, "clkgena");
++	clkgena_base = ioremap(CLOCKGENA_BASE_ADDR, 0x50);
++	clkgenb_base = ioremap(CLOCKGENB_BASE_ADDR, 0xc00);
++
++	ret = clk_register(&clkgena_clk_osc);
++	clk_enable(&clkgena_clk_osc);
++
++	for (i=0; i<2; i++) {
++		ret |= clk_register(&pllclks[i].clk);
++		clk_enable(&pllclks[i].clk);
++	}
++
++	for (i=0; i<ARRAY_SIZE(clkgenaclks); i++) {
++		ret |= clk_register(&clkgenaclks[i].clk);
++		clk_enable(&clkgenaclks[i].clk);
++	}
++
++	ret = clk_register(&generic_module_clk);
++	clk_enable(&generic_module_clk);
++	ret = clk_register(&generic_comms_clk);
++	clk_enable(&generic_comms_clk);
++
++	/* Propagate the clk osc value down */
++	clk_set_rate(&clkgena_clk_osc, clk_get_rate(&clkgena_clk_osc));
++	clk_put(&clkgena_clk_osc);
++
++	return ret;
++}
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/probe.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/cpu/sh4/probe.c
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/probe.c
+@@ -17,7 +17,7 @@
+ 
+ int __init detect_cpu_and_cache_system(void)
+ {
+-	unsigned long pvr, prr, cvr;
++	unsigned long pvr, prr_all, prr, cvr, ramcr;
+ 	unsigned long size;
+ 
+ 	static unsigned long sizes[16] = {
+@@ -29,7 +29,8 @@ int __init detect_cpu_and_cache_system(v
+ 	};
+ 
+ 	pvr = (ctrl_inl(CCN_PVR) >> 8) & 0xffffff;
+-	prr = (ctrl_inl(CCN_PRR) >> 4) & 0xff;
++	prr_all = ctrl_inl(CCN_PRR);
++	prr = (prr_all >> 4) & 0xff;
+ 	cvr = (ctrl_inl(CCN_CVR));
+ 
+ 	/*
+@@ -155,6 +156,26 @@ int __init detect_cpu_and_cache_system(v
+ 		boot_cpu_data.type = CPU_ST40GX1;
+ 		boot_cpu_data.flags |= CPU_HAS_FPU;
+ 		break;
++	case 0x9090 ... 0x9091:
++		/* ST40-300 core */
++		switch (prr_all) {
++		case 0x9500 ... 0x95ff:
++			/* CPU_STX7200_300; */
++			cpu_data->type = CPU_SH_NONE;
++			break;
++		case 0x9a10:
++			/* STx7111 */
++			boot_cpu_data.type = CPU_ST40_300;
++			break;
++		default:
++			cpu_data->type = CPU_SH_NONE;
++			break;
++		}
++		cpu_data->flags |= CPU_HAS_FPU;
++		ramcr = ctrl_inl(CCN_RAMCR);
++		boot_cpu_data.icache.ways = (ramcr & (1<<7)) ? 2 : 4;
++		boot_cpu_data.dcache.ways = (ramcr & (1<<6)) ? 2 : 4;
++		break;
+ 	case 0x700:
+ 		boot_cpu_data.type = CPU_SH4_501;
+ 		boot_cpu_data.icache.ways = 2;
+@@ -175,6 +196,17 @@ int __init detect_cpu_and_cache_system(v
+ 		boot_cpu_data.flags |= CPU_HAS_FPU;
+ 		break;
+ 	case 0x690:
++#if 0
++		/* When we tidy up this code... */
++		switch (prr_all) {
++		case 0x9500 ... 0x95ff:
++			cpu_data->type = CPU_STX7200_210;
++			break;
++		default:
++			cpu_data->type = CPU_SH_NONE;
++			break;
++		}
++#endif
+ 		boot_cpu_data.type = CPU_STX7200;
+ 		boot_cpu_data.icache.ways = 2;
+ 		boot_cpu_data.dcache.ways = 2;
+Index: linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/kernel/cpu/sh4/setup-stx7111.c
+@@ -0,0 +1,938 @@
++/*
++ * STx7111 Setup
++ *
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * This file is subject to the terms and conditions of the GNU General Public
++ * License.  See the file "COPYING" in the main directory of this archive
++ * for more details.
++ */
++#include <linux/platform_device.h>
++#include <linux/init.h>
++#include <linux/serial.h>
++#include <linux/io.h>
++#include <linux/stm/soc.h>
++#include <linux/stm/soc_init.h>
++#include <linux/stm/pio.h>
++#include <linux/phy.h>
++#include <linux/stm/sysconf.h>
++#include <linux/stm/emi.h>
++#include <linux/pata_platform.h>
++#include <linux/stm/fdma-plat.h>
++#include <linux/stm/fdma-reqs.h>
++#include <linux/mtd/nand.h>
++#include <linux/mtd/partitions.h>
++#include <asm/irq-ilc.h>
++
++static struct sysconf_field *sc7_3;
++static u64 st40_dma_mask = 0xfffffff;
++
++
++/* USB resources ----------------------------------------------------------- */
++
++/*
++ * Defines for the controller register offsets
++ */
++#define UHOST2C_BASE			0xfe100000
++#define AHB2STBUS_WRAPPER_GLUE_BASE	(UHOST2C_BASE)
++#define AHB2STBUS_RESERVED1_BASE	(UHOST2C_BASE + 0x000e0000)
++#define AHB2STBUS_RESERVED2_BASE	(UHOST2C_BASE + 0x000f0000)
++#define AHB2STBUS_OHCI_BASE		(UHOST2C_BASE + 0x000ffc00)
++#define AHB2STBUS_EHCI_BASE		(UHOST2C_BASE + 0x000ffe00)
++#define AHB2STBUS_PROTOCOL_BASE		(UHOST2C_BASE + 0x000fff00)
++
++static struct resource st40_ohci_resources[] = {
++	[0] = {
++		.start	= 0xfe100000 + 0xffc00,
++		.end	= 0xfe100000 + 0xffcff,
++		.flags	= IORESOURCE_MEM,
++	},
++	[1] = {
++		.start	= evt2irq(0x1700), /* 168, */
++		.end	= evt2irq(0x1700),
++		.flags	= IORESOURCE_IRQ,
++	}
++};
++static struct resource st40_ehci_resources[] = {
++	[0] =  {
++		.start	= 0xfe100000 + 0xffe00,
++		.end	= 0xfe100000 + 0xffeff,
++		.flags	= IORESOURCE_MEM,
++	},
++	[1] = {
++		.start	= evt2irq(0x1720), /* 169, */
++		.end	= evt2irq(0x1720),
++		.flags	= IORESOURCE_IRQ,
++	},
++};
++
++static struct plat_usb_data usb_wrapper = {
++	.ahb2stbus_wrapper_glue_base = AHB2STBUS_WRAPPER_GLUE_BASE,
++	.ahb2stbus_protocol_base = AHB2STBUS_PROTOCOL_BASE,
++	.initialised = 0,
++	.port_number = 0,
++};
++
++static struct platform_device  st40_ohci_device = {
++	.name = "stm-ohci",
++	.id=1,
++	.dev = {
++		.dma_mask = &st40_dma_mask,
++		.coherent_dma_mask = 0xffffffful,
++		.platform_data = &usb_wrapper,
++	},
++	.num_resources = ARRAY_SIZE(st40_ohci_resources),
++	.resource = st40_ohci_resources,
++};
++
++static struct platform_device  st40_ehci_device = {
++	.name = "stm-ehci",
++	.id=2,
++	.dev = {
++		.dma_mask = &st40_dma_mask,
++		.coherent_dma_mask = 0xffffffful,
++		.platform_data = &usb_wrapper,
++	},
++	.num_resources = ARRAY_SIZE(st40_ehci_resources),
++	.resource = st40_ehci_resources,
++};
++
++void __init stx7111_configure_usb(void)
++{
++	static struct stpio_pin *pin;
++	struct sysconf_field *sc;
++
++	/* Power on USB */
++	sc = sysconf_claim(SYS_CFG, 32, 4,4, "USB");
++	sysconf_write(sc, 0);
++
++	/* Work around for USB over-current detection chip being
++	 * active low, and the 7111 being active high.
++	 * Note this is an undocumented bit, which apparently enables
++	 * an inverter on the overcurrent signal.
++	 */
++	sc = sysconf_claim(SYS_CFG, 6, 29,29, "USB");
++	sysconf_write(sc, 1);
++
++	pin = stpio_request_pin(5,6, "USBOC", STPIO_IN);
++	pin = stpio_request_pin(5,7, "USBPWR", STPIO_ALT_OUT);
++
++	platform_device_register(&st40_ohci_device);
++	platform_device_register(&st40_ehci_device);
++}
++
++/* FDMA resources ---------------------------------------------------------- */
++
++#ifdef CONFIG_STM_DMA
++
++#include <linux/stm/7200_cut1_fdma2_firmware.h>
++
++static struct fdma_regs stx7111_fdma_regs = {
++	.fdma_id= FDMA2_ID,
++	.fdma_ver = FDAM2_VER,
++	.fdma_en = FDMA2_ENABLE_REG,
++	.fdma_clk_gate = FDMA2_CLOCKGATE,
++	.fdma_rev_id = FDMA2_REV_ID,
++	.fdma_cmd_statn = STB7200_FDMA_CMD_STATn_REG,
++	.fdma_ptrn = STB7200_FDMA_PTR_REG,
++	.fdma_cntn = STB7200_FDMA_COUNT_REG,
++	.fdma_saddrn = STB7200_FDMA_SADDR_REG,
++	.fdma_daddrn = STB7200_FDMA_DADDR_REG,
++	.fdma_req_ctln = STB7200_FDMA_REQ_CTLn_REG,
++	.fdma_cmd_sta = FDMA2_CMD_MBOX_STAT_REG,
++	.fdma_cmd_set = FDMA2_CMD_MBOX_SET_REG,
++	.fdma_cmd_clr = FDMA2_CMD_MBOX_CLR_REG,
++	.fdma_cmd_mask = FDMA2_CMD_MBOX_MASK_REG,
++	.fdma_int_sta = FDMA2_INT_STAT_REG,
++	.fdma_int_set = FDMA2_INT_SET_REG,
++	.fdma_int_clr= FDMA2_INT_CLR_REG,
++	.fdma_int_mask= FDMA2_INT_MASK_REG,
++	.fdma_sync_reg= FDMA2_SYNCREG,
++	.fdma_dmem_region = STX7111_DMEM_OFFSET,
++	.fdma_imem_region = STX7111_IMEM_OFFSET,
++};
++
++static struct fdma_platform_device_data stx7111_fdma0_plat_data = {
++	.registers_ptr = &stx7111_fdma_regs,
++	.min_ch_num = CONFIG_MIN_STM_DMA_CHANNEL_NR,
++	.max_ch_num = CONFIG_MAX_STM_DMA_CHANNEL_NR,
++	.fw_device_name = "stb7200_v1.4.bin",
++	.fw.data_reg = (unsigned long*)&STB7200_DMEM_REGION,
++	.fw.imem_reg = (unsigned long*)&STB7200_IMEM_REGION,
++	.fw.imem_fw_sz = STB7200_IMEM_FIRMWARE_SZ,
++	.fw.dmem_fw_sz = STB7200_DMEM_FIRMWARE_SZ,
++	.fw.dmem_len = STB7200_DMEM_REGION_LENGTH,
++	.fw.imem_len = STB7200_IMEM_REGION_LENGTH
++};
++
++
++static struct fdma_platform_device_data stx7111_fdma1_plat_data = {
++	.registers_ptr = &stx7111_fdma_regs,
++	.min_ch_num = CONFIG_MIN_STM_DMA_CHANNEL_NR,
++	.max_ch_num = CONFIG_MAX_STM_DMA_CHANNEL_NR,
++	.fw_device_name = "stb7200_v1.4.bin",
++	.fw.data_reg = (unsigned long*)&STB7200_DMEM_REGION,
++	.fw.imem_reg = (unsigned long*)&STB7200_IMEM_REGION,
++	.fw.imem_fw_sz = STB7200_IMEM_FIRMWARE_SZ,
++	.fw.dmem_fw_sz = STB7200_DMEM_FIRMWARE_SZ,
++	.fw.dmem_len = STB7200_DMEM_REGION_LENGTH,
++	.fw.imem_len = STB7200_IMEM_REGION_LENGTH
++};
++
++#define stx7111_fdma0_plat_data_addr &stx7111_fdma0_plat_data
++#define stx7111_fdma1_plat_data_addr &stx7111_fdma1_plat_data
++#else
++#define stx7111_fdma0_plat_data_addr NULL
++#define stx7111_fdma1_plat_data_addr NULL
++#endif /* CONFIG_STM_DMA */
++
++static struct platform_device fdma0_device = {
++	.name		= "stmfdma",
++	.id		= 0,
++	.num_resources	= 2,
++	.resource = (struct resource[2]) {
++		[0] = {
++			.start = STX7111_FDMA0_BASE,
++			.end   = STX7111_FDMA0_BASE + 0xffff,
++			.flags = IORESOURCE_MEM,
++		},
++		[1] = {
++			.start = LINUX_FDMA0_STX7111_IRQ_VECT,
++			.end   = LINUX_FDMA0_STX7111_IRQ_VECT,
++			.flags = IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = stx7111_fdma0_plat_data_addr,
++	},
++};
++
++static struct platform_device fdma1_device = {
++	.name		= "stmfdma",
++	.id		= 1,
++	.resource = (struct resource[2]) {
++		[0] = {
++			.start = STX7111_FDMA1_BASE,
++			.end   = STX7111_FDMA1_BASE + 0xffff,
++			.flags = IORESOURCE_MEM,
++		},
++		[1] = {
++			.start = LINUX_FDMA1_STX7111_IRQ_VECT,
++			.end   = LINUX_FDMA1_STX7111_IRQ_VECT,
++			.flags = IORESOURCE_IRQ,
++		},
++	},
++	.dev = {
++		.platform_data = stx7111_fdma1_plat_data_addr,
++	},
++};
++
++static struct platform_device fdma_xbar_device = {
++	.name		= "fdma-xbar",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[1]) {
++		{
++			.start	= STX7111_XBAR_BASE,
++			.end	= STX7111_XBAR_BASE+(4*1024)-1,
++			.flags	= IORESOURCE_MEM,
++		},
++	},
++};
++
++/* SSC resources ----------------------------------------------------------- */
++
++static char i2c_st[] = "i2c_st";
++static char spi_st[] = "spi_st";
++
++static struct platform_device stssc_devices[] = {
++	STSSC_DEVICE(0xfd040000, evt2irq(0x10e0), 2, 0, 1, 2),
++	STSSC_DEVICE(0xfd041000, evt2irq(0x10c0), 3, 0, 1, 2),
++	STSSC_DEVICE(0xfd042000, evt2irq(0x10a0), 4, 0, 1, 0xff),
++	STSSC_DEVICE(0xfd043000, evt2irq(0x1080), 0xff, 0xff, 0xff, 0xff),
++};
++
++void __init stx7111_configure_ssc(struct plat_ssc_data *data)
++{
++	int num_i2c=0;
++	int num_spi=0;
++	int i;
++	int capability = data->capability;
++	struct sysconf_field* ssc_sc;
++
++	for (i=0; i < ARRAY_SIZE(stssc_devices); i++, capability >>= 2){
++		if(capability & SSC_UNCONFIGURED)
++			continue;
++
++		switch (i) {
++		case 0:
++			/* spi_boot_not_comm = 0 */
++			/* This is a signal from SPI block */
++			/* Hope this is set correctly by default */
++			break;
++
++		case 1:
++			/* dvo_out=0 */
++			ssc_sc = sysconf_claim(SYS_CFG, 7, 10, 10, "ssc");
++			sysconf_write(ssc_sc, 0);
++
++			/* Select SSC1 instead of PCI interrupts */
++			ssc_sc = sysconf_claim(SYS_CFG, 5, 9, 11, "ssc");
++			sysconf_write(ssc_sc, 0);
++
++			break;
++
++		case 2:
++			break;
++		}
++
++		/* SSCx_mux_sel */
++		ssc_sc = sysconf_claim(SYS_CFG, 7, i+1, i+1, "ssc");
++
++		if(capability & SSC_SPI_CAPABILITY){
++			stssc_devices[i].name = spi_st;
++			sysconf_write(ssc_sc, 1);
++			stssc_devices[i].id = num_spi++;
++		} else {
++			stssc_devices[i].name = i2c_st;
++			sysconf_write(ssc_sc, 0);
++			stssc_devices[i].id = num_i2c++;
++		}
++
++		platform_device_register(&stssc_devices[i]);
++	}
++}
++
++/* Ethernet MAC resources -------------------------------------------------- */
++
++static struct sysconf_field *mac_speed_sc;
++
++static void fix_mac_speed(void* priv, unsigned int speed)
++{
++	sysconf_write(mac_speed_sc, (speed == SPEED_100) ? 0 : 1);
++}
++
++/* Hopefully I can remove this now */
++static void stx7111eth_hw_setup_null(void)
++{
++}
++
++static struct plat_stmmacenet_data stx7111eth_private_data = {
++	.bus_id = 0,
++	.pbl = 32,
++	.has_gmac = 1,
++	.fix_mac_speed = fix_mac_speed,
++	.hw_setup = stx7111eth_hw_setup_null,
++};
++
++static struct platform_device stx7111eth_device = {
++        .name           = "stmmaceth",
++        .id             = 0,
++        .num_resources  = 2,
++        .resource       = (struct resource[]) {
++        	{
++	                .start = 0xfd110000,
++        	        .end   = 0xfd117fff,
++                	.flags  = IORESOURCE_MEM,
++        	},
++        	{
++			.name   = "macirq",
++                	.start  = evt2irq(0x12a0), /* 133, */
++                	.end    = evt2irq(0x12a0),
++                	.flags  = IORESOURCE_IRQ,
++        	},
++	},
++	.dev = {
++		.platform_data = &stx7111eth_private_data,
++	}
++};
++
++
++void stx7111_configure_ethernet(int en_mii, int sel, int ext_clk, int phy_bus)
++{
++	struct sysconf_field *sc;
++	unsigned long  value;
++
++	stx7111eth_private_data.bus_id = phy_bus;
++
++	/* Ethernet ON */
++	sc = sysconf_claim(SYS_CFG, 7, 16, 16, "stmmac");
++	sysconf_write(sc, 1);
++
++	/* PHY EXT CLOCK: 0: provided by STX7111S; 1: external */
++	sc = sysconf_claim(SYS_CFG, 7, 19, 19, "stmmac");
++	sysconf_write(sc, ext_clk ? 1 : 0);
++
++	/* MAC speed*/
++	mac_speed_sc = sysconf_claim(SYS_CFG, 7, 20, 20, "stmmac");
++
++	/* Default GMII/MII slection */
++	sc = sysconf_claim(SYS_CFG, 7, 24, 26, "stmmac");
++	sysconf_write(sc, sel & 0x7);
++
++	/* MII mode */
++	sc = sysconf_claim(SYS_CFG, 7, 27, 27, "stmmac");
++	sysconf_write(sc, en_mii ? 1 : 0);
++
++	platform_device_register(&stx7111eth_device);
++}
++
++
++/* PWM resources ----------------------------------------------------------- */
++
++static struct resource stm_pwm_resource[]= {
++	[0] = {
++		.start	= 0xfd010000,
++		.end	= 0xfd010000 + 0x67,
++		.flags	= IORESOURCE_MEM
++	},
++	[1] = {
++		.start	= evt2irq(0x11c0),
++		.end	= evt2irq(0x11c0),
++		.flags	= IORESOURCE_IRQ
++	}
++};
++
++static struct platform_device stm_pwm_device = {
++	.name		= "stm-pwm",
++	.id		= -1,
++	.num_resources	= ARRAY_SIZE(stm_pwm_resource),
++	.resource	= stm_pwm_resource,
++};
++
++void stx7111_configure_pwm(struct plat_stm_pwm_data *data)
++{
++	stm_pwm_device.dev.platform_data = data;
++
++	if (data->flags & PLAT_STM_PWM_OUT0) {
++		/* Route UART2 (in and out) and PWM_OUT0 instead of SCI to pins
++		 * ssc2_mux_sel = 0 */
++		if (!sc7_3)
++			sc7_3 = sysconf_claim(SYS_CFG, 7, 3, 3, "pwm");
++		sysconf_write(sc7_3, 0);
++		stpio_request_pin(4, 6, "PWM", STPIO_ALT_OUT);
++	}
++
++	if (data->flags & PLAT_STM_PWM_OUT1) {
++		stpio_request_pin(4, 7, "PWM", STPIO_ALT_OUT);
++	}
++
++	platform_device_register(&stm_pwm_device);
++}
++
++/* ASC resources ----------------------------------------------------------- */
++
++static struct platform_device stm_stasc_devices[] = {
++	STASC_DEVICE(0xfd030000, evt2irq(0x1160), 11, 15,
++		     0, 0, 1, 4, 7), /* oe pin: 6 */
++	STASC_DEVICE(0xfd031000, evt2irq(0x1140), 12, 16,
++		     1, 0, 1, 4, 5), /* oe pin: 6 */
++	STASC_DEVICE(0xfd032000, evt2irq(0x1120), 13, 17,
++		     4, 3, 2, 4, 5),
++	STASC_DEVICE(0xfd033000, evt2irq(0x1100), 14, 18,
++		     5, 0, 1, 2, 3),
++};
++
++/* the serial console device */
++struct platform_device *asc_default_console_device;
++
++/* Platform devices to register */
++static struct platform_device *stasc_configured_devices[ARRAY_SIZE(stm_stasc_devices)] __initdata;
++static int stasc_configured_devices_count __initdata = 0;
++
++/* Configure the ASC's for this board.
++ * This has to be called before console_init().
++ */
++void __init stx7111_configure_asc(const int *ascs, int num_ascs, int console)
++{
++	int i;
++
++	for (i=0; i<num_ascs; i++) {
++		int port;
++		struct platform_device *pdev;
++		struct sysconf_field *sc;
++
++		port = ascs[i];
++		pdev = &stm_stasc_devices[port];
++
++		switch (ascs[i]) {
++		case 0:
++			/* Route UART0 instead of PDES to pins.
++			 * pdes_scmux_out = 0 */
++
++			/* According to note against against SYSCFG7[7]
++			 * this bit is in the PDES block.
++			 * Lets just hope it powers up in UART mode! */
++
++			/* Route CTS instead of emiss_bus_request[2] to pins. */
++			sc = sysconf_claim(SYS_CFG, 5,3,3, "asc");
++			sysconf_write(sc, 0);
++
++			break;
++
++		case 1:
++			/* Route CTS instead of emiss_bus_free_accesspend_in to pins */
++			sc = sysconf_claim(SYS_CFG, 5, 6, 6, "asc");
++			sysconf_write(sc, 0);
++
++			/* Route RTS instead of PCI_PME_OUT to pins */
++			sc = sysconf_claim(SYS_CFG, 5, 7, 7, "asc");
++			sysconf_write(sc, 0);
++
++			/* What about SYS_CFG5[23]? */
++
++			break;
++
++		case 2:
++			/* Route UART2 (in and out) instead of SCI to pins.
++			 * ssc2_mux_sel = 0 */
++			if (!sc7_3)
++				sc7_3 = sysconf_claim(SYS_CFG, 7, 3, 3, "asc");
++			sysconf_write(sc7_3, 0);
++
++			break;
++
++		case 3:
++			/* Nothing to do! */
++			break;
++		}
++
++		pdev->id = i;
++		stasc_configured_devices[stasc_configured_devices_count++] = pdev;
++	}
++
++	asc_default_console_device = stasc_configured_devices[console];
++}
++
++/* Add platform device as configured by board specific code */
++static int __init stb7111_add_asc(void)
++{
++	return platform_add_devices(stasc_configured_devices,
++				    stasc_configured_devices_count);
++}
++arch_initcall(stb7111_add_asc);
++
++/* NAND Resources ---------------------------------------------------------- */
++
++static void nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
++{
++	struct nand_chip *this = mtd->priv;
++
++	if (ctrl & NAND_CTRL_CHANGE) {
++
++		if (ctrl & NAND_CLE) {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
++						   (unsigned int)(1 << 17));
++		}
++		else {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
++						   ~(unsigned int)(1 << 17));
++		}
++
++		if (ctrl & NAND_ALE) {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W |
++						   (unsigned int)(1 << 18));
++		}
++		else {
++			this->IO_ADDR_W = (void *)((unsigned int)this->IO_ADDR_W &
++						   ~(unsigned int)(1 << 18));
++		}
++	}
++
++	if (cmd != NAND_CMD_NONE) {
++		writeb(cmd, this->IO_ADDR_W);
++	}
++}
++
++static void nand_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* write buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		writeb(*buf++, chip->IO_ADDR_W);
++		len--;
++	}
++
++	writesl(chip->IO_ADDR_W, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++) {
++		writeb(buf[i], chip->IO_ADDR_W);
++	}
++}
++
++static void nand_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
++{
++	int i;
++	struct nand_chip *chip = mtd->priv;
++
++	/* read buf up to 4-byte boundary */
++	while ((unsigned int)buf & 0x3) {
++		*buf++ = readb(chip->IO_ADDR_R);
++		len--;
++	}
++
++	readsl(chip->IO_ADDR_R, buf, len/4);
++
++	/* mop up trailing bytes */
++	for (i = (len & ~0x3); i < len; i++) {
++		buf[i] = readb(chip->IO_ADDR_R);
++	}
++}
++
++static const char *nand_part_probes[] = { "cmdlinepart", NULL };
++
++static struct platform_device nand_flash[] = {
++	EMI_NAND_DEVICE(0),
++	EMI_NAND_DEVICE(1),
++	EMI_NAND_DEVICE(2),
++	EMI_NAND_DEVICE(3),
++	EMI_NAND_DEVICE(4),
++ };
++
++
++/*
++ * stx7111_configure_nand - Configures NAND support for the STx7111
++ *
++ * Requires generic platform NAND driver (CONFIG_MTD_NAND_PLATFORM).
++ * Uses 'gen_nand.x' as ID for specifying MTD partitions on the kernel
++ * command line.
++ */
++void __init stx7111_configure_nand(struct nand_config_data *data)
++{
++	unsigned int bank_base, bank_end;
++	unsigned int emi_bank = data->emi_bank;
++
++	struct platform_nand_data *nand_private_data =
++		nand_flash[emi_bank].dev.platform_data;
++
++	emi_init(0, 0xfe700000);
++	bank_base = emi_bank_base(emi_bank) + data->emi_withinbankoffset;
++	if (emi_bank == 4)
++		bank_end = 0x07ffffff;
++	else
++		bank_end = emi_bank_base(emi_bank+1) - 1;
++
++	printk("Configuring EMI Bank%d for NAND device\n", emi_bank);
++	emi_config_nand(data->emi_bank, data->emi_timing_data);
++
++	nand_flash[emi_bank].resource[0].start = bank_base;
++	nand_flash[emi_bank].resource[0].end = bank_end;
++
++	nand_private_data->chip.chip_delay = data->chip_delay;
++	nand_private_data->chip.partitions = data->mtd_parts;
++	nand_private_data->chip.nr_partitions = data->nr_parts;
++
++	platform_device_register(&nand_flash[emi_bank]);
++}
++
++/* Early resources (sysconf and PIO) --------------------------------------- */
++
++static struct platform_device sysconf_device = {
++	.name		= "sysconf",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfe001000,
++			.end	= 0xfe001000 + 0x1df,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++	.dev = {
++		.platform_data = &(struct plat_sysconf_data) {
++			.sys_device_offset = 0,
++			.sys_sta_offset = 8,
++			.sys_cfg_offset = 0x100,
++		}
++	}
++};
++
++static struct platform_device stpio_devices[] = {
++	STPIO_DEVICE(0, 0xfd020000, evt2irq(0xc00)),
++	STPIO_DEVICE(1, 0xfd021000, evt2irq(0xc80)),
++	STPIO_DEVICE(2, 0xfd022000, evt2irq(0xd00)),
++	STPIO_DEVICE(3, 0xfd023000, evt2irq(0x1060)),
++	STPIO_DEVICE(4, 0xfd024000, evt2irq(0x1040)),
++	STPIO_DEVICE(5, 0xfd025000, evt2irq(0x1020)),
++	STPIO_DEVICE(6, 0xfd026000, evt2irq(0x1000)),
++};
++
++/* Initialise devices which are required early in the boot process. */
++void __init stx7111_early_device_init(void)
++{
++	struct sysconf_field *sc;
++	unsigned long devid;
++	unsigned long chip_revision;
++
++	/* Initialise PIO and sysconf drivers */
++
++	sysconf_early_init(&sysconf_device);
++	stpio_early_init(stpio_devices, ARRAY_SIZE(stpio_devices));
++
++	sc = sysconf_claim(SYS_DEV, 0, 0, 31, "devid");
++	devid = sysconf_read(sc);
++	chip_revision = (devid >> 28) +1;
++	boot_cpu_data.cut_major = chip_revision;
++
++	printk("STx7111 version %ld.x\n", chip_revision);
++
++	/* We haven't configured the LPC, so the sleep instruction may
++	 * do bad things. Thus we disable it here. */
++	disable_hlt();
++}
++
++static void __init pio_late_setup(void)
++{
++	int i;
++	struct platform_device *pdev = stpio_devices;
++
++	for (i=0; i<ARRAY_SIZE(stpio_devices); i++,pdev++) {
++		platform_device_register(pdev);
++	}
++}
++
++static struct platform_device ilc3_device = {
++	.name		= "ilc3",
++	.id		= -1,
++	.num_resources	= 1,
++	.resource	= (struct resource[]) {
++		{
++			.start	= 0xfd804000,
++			.end	= 0xfd804000 + 0x900,
++			.flags	= IORESOURCE_MEM
++		}
++	},
++};
++
++/* Late resources ---------------------------------------------------------- */
++
++static struct platform_device *stx7111_devices[] __initdata = {
++	&fdma0_device,
++	//&fdma1_device,
++	&fdma_xbar_device,
++	&sysconf_device,
++	&ilc3_device,
++};
++
++static int __init stx7111_devices_setup(void)
++{
++	pio_late_setup();
++
++	return platform_add_devices(stx7111_devices,
++				    ARRAY_SIZE(stx7111_devices));
++}
++device_initcall(stx7111_devices_setup);
++
++/* Interrupt initialisation ------------------------------------------------ */
++
++enum {
++	UNUSED = 0,
++
++	/* interrupt sources */
++	IRL0, IRL1, IRL2, IRL3, /* only IRLM mode described here */
++	TMU0, TMU1, TMU2_TUNI, TMU2_TICPI,
++	WDT,
++	HUDI,
++
++	PCI_DEV0, PCI_DEV1, PCI_DEV2, PCI_DEV3,		/* Group 0 */
++	I2S2SPDIF1, I2S2SPDIF2, I2S2SPDIF3,
++	AUX_VDP_END_PROC, AUX_VDP_FIFO_EMPTY,
++	COMPO_CAP_BF, COMPO_CAP_TF,
++	STANDALONE_PIO,
++	PIO0, PIO1, PIO2,
++	PIO6, PIO5, PIO4, PIO3,				/* Group 1 */
++	SSC3, SSC2, SSC1, SSC0,				/* Group 2 */
++	UART3, UART2, UART1, UART0,			/* Group 3 */
++	IRB_WAKEUP, IRB, PWM, MAFE,			/* Group 4 */
++	PCI_ERROR, FE900, DAA, TTXT,			/* Group 5 */
++	EMPI_PCI_DMA, GMAC, TS_MERGER,			/* Group 6 */
++	LX_DELTAMU, LX_AUD, DCXO, PMT,			/* Group 7 */
++	FDMA0, FDMA1, I2S2SPDIF, HDMI_CEC,		/* Group 8 */
++	PCMPLYR0, PCMPLYR1, PCMRDR, SPDIFPLYR,		/* Group 9 */
++	DELPHI_PRE0, NAND, DELPHI_MBE,			/* Group 10 */
++	MAIN_VDP_FIFO_EMPTY, MAIN_VDP_END_PROCESSING,	/* Group 11 */
++	MAIN_VTG, AUX_VTG,
++	BDISP_AQ, DVP, HDMI, HDCP,			/* Group 12 */
++	PTI,						/* Group 13 */
++	OHCI, EHCI, BDISP_CQ,				/* Group 15 */
++	KEY_SCANNER,					/* Group 16 */
++
++	/* interrupt groups */
++	TMU2, RTC,
++	GROUP0_1, GROUP0_2, GROUP1, GROUP2, GROUP3,
++	GROUP4, GROUP5, GROUP6, GROUP7,
++	GROUP8, GROUP9, GROUP10, GROUP11,
++	GROUP12, GROUP13, GROUP14, GROUP15,
++	GROUP16
++};
++
++static struct intc_vect vectors[] = {
++	INTC_VECT(TMU0, 0x400), INTC_VECT(TMU1, 0x420),
++	INTC_VECT(TMU2_TUNI, 0x440), INTC_VECT(TMU2_TICPI, 0x460),
++	INTC_VECT(WDT, 0x560),
++	INTC_VECT(HUDI, 0x600),
++
++	INTC_VECT(PCI_DEV0, 0xa00), INTC_VECT(PCI_DEV1, 0xa20),
++	INTC_VECT(PCI_DEV2, 0xa40), INTC_VECT(PCI_DEV3, 0xa60),
++	INTC_VECT(I2S2SPDIF1, 0xa80), INTC_VECT(I2S2SPDIF2, 0xb00),
++	INTC_VECT(I2S2SPDIF3, 0xb20),
++	INTC_VECT(AUX_VDP_END_PROC, 0xb40), INTC_VECT(AUX_VDP_FIFO_EMPTY, 0xb60),
++	INTC_VECT(COMPO_CAP_BF, 0xb80), INTC_VECT(COMPO_CAP_TF, 0xba0),
++	INTC_VECT(STANDALONE_PIO, 0xbc0),
++	INTC_VECT(PIO0, 0xc00), INTC_VECT(PIO1, 0xc80),
++	INTC_VECT(PIO2, 0xd00),
++	INTC_VECT(PIO6, 0x1000), INTC_VECT(PIO5, 0x1020),
++	INTC_VECT(PIO4, 0x1040), INTC_VECT(PIO3, 0x1060),
++	INTC_VECT(SSC3, 0x1080), INTC_VECT(SSC2, 0x10a0),
++	INTC_VECT(SSC1, 0x10c0), INTC_VECT(SSC0, 0x10e0),
++	INTC_VECT(UART3, 0x1100), INTC_VECT(UART2, 0x1120),
++	INTC_VECT(UART1, 0x1140), INTC_VECT(UART0, 0x1160),
++	INTC_VECT(IRB_WAKEUP, 0x1180), INTC_VECT(IRB, 0x11a0),
++	INTC_VECT(PWM, 0x11c0), INTC_VECT(MAFE, 0x11e0),
++	INTC_VECT(PCI_ERROR, 0x1200), INTC_VECT(FE900, 0x1220),
++	INTC_VECT(DAA, 0x1240), INTC_VECT(TTXT, 0x1260),
++	INTC_VECT(EMPI_PCI_DMA, 0x1280), INTC_VECT(GMAC, 0x12a0),
++	INTC_VECT(TS_MERGER, 0x12c0),
++	INTC_VECT(LX_DELTAMU, 0x1300), INTC_VECT(LX_AUD, 0x1320),
++	INTC_VECT(DCXO, 0x1340), INTC_VECT(PMT, 0x1360),
++	INTC_VECT(FDMA0, 0x1380), INTC_VECT(FDMA1, 0x13a0),
++	INTC_VECT(I2S2SPDIF, 0x13c0), INTC_VECT(HDMI_CEC, 0x13e0),
++	INTC_VECT(PCMPLYR0, 0x1400), INTC_VECT(PCMPLYR1, 0x1420),
++	INTC_VECT(PCMRDR, 0x1440), INTC_VECT(SPDIFPLYR, 0x1460),
++	INTC_VECT(DELPHI_PRE0, 0x14a0), INTC_VECT(NAND, 0x14c0),
++	INTC_VECT(DELPHI_MBE, 0x14e0),
++	INTC_VECT(MAIN_VDP_FIFO_EMPTY, 0x1500), INTC_VECT(MAIN_VDP_END_PROCESSING, 0x1520),
++	INTC_VECT(MAIN_VTG, 0x1540), INTC_VECT(AUX_VTG, 0x1560),
++	INTC_VECT(BDISP_AQ, 0x1580), INTC_VECT(DVP, 0x15a0),
++	INTC_VECT(HDMI, 0x15c0), INTC_VECT(HDCP, 0x15e0),
++	INTC_VECT(PTI, 0x1600),
++	INTC_VECT(OHCI, 0x1700), INTC_VECT(EHCI, 0x1720),
++	INTC_VECT(BDISP_CQ, 0x1760),
++	INTC_VECT(KEY_SCANNER, 0x17c0),
++};
++
++static struct intc_group groups[] = {
++	INTC_GROUP(TMU2, TMU2_TUNI, TMU2_TICPI),
++
++	/* PCI_DEV0 is not grouped */
++	INTC_GROUP(GROUP0_1, PCI_DEV1, PCI_DEV2, PCI_DEV3,
++		   I2S2SPDIF1),
++	INTC_GROUP(GROUP0_2, I2S2SPDIF2, I2S2SPDIF3,
++		   AUX_VDP_END_PROC, AUX_VDP_FIFO_EMPTY,
++		   COMPO_CAP_BF, COMPO_CAP_TF, STANDALONE_PIO),
++	/* PIO0, PIO1, PIO2 are not part of any group */
++	INTC_GROUP(GROUP1, PIO6, PIO5, PIO4, PIO3),
++	INTC_GROUP(GROUP2, SSC3, SSC2, SSC1, SSC0),
++	INTC_GROUP(GROUP3, UART3, UART2, UART1, UART0),
++	INTC_GROUP(GROUP4, IRB_WAKEUP, IRB, PWM, MAFE),
++	INTC_GROUP(GROUP5, PCI_ERROR, FE900, DAA, TTXT),
++	INTC_GROUP(GROUP6, EMPI_PCI_DMA, GMAC, TS_MERGER),
++	INTC_GROUP(GROUP7, LX_DELTAMU, LX_AUD, DCXO, PMT),
++	INTC_GROUP(GROUP8, FDMA0, FDMA1, I2S2SPDIF, HDMI_CEC),
++	INTC_GROUP(GROUP9, PCMPLYR0, PCMPLYR1, PCMRDR, SPDIFPLYR),
++	INTC_GROUP(GROUP10, DELPHI_PRE0, NAND, DELPHI_MBE),
++	INTC_GROUP(GROUP11, MAIN_VDP_FIFO_EMPTY, MAIN_VDP_END_PROCESSING,
++		   MAIN_VTG, AUX_VTG),
++	INTC_GROUP(GROUP12, BDISP_AQ, DVP, HDMI, HDCP),
++	INTC_GROUP(GROUP13, PTI),
++	INTC_GROUP(GROUP15, OHCI, EHCI, BDISP_CQ),
++	INTC_GROUP(GROUP16, KEY_SCANNER),
++};
++
++static struct intc_prio priorities[] = {
++};
++
++static struct intc_prio_reg prio_registers[] = {
++					   /*   15-12, 11-8,  7-4,   3-0 */
++	{ 0xffd00004, 0, 16, 4, /* IPRA */     { TMU0, TMU1, TMU2,       } },
++	{ 0xffd00008, 0, 16, 4, /* IPRB */     {  WDT,    0,    0,     0 } },
++	{ 0xffd0000c, 0, 16, 4, /* IPRC */     {    0,    0,    0,  HUDI } },
++	{ 0xffd00010, 0, 16, 4, /* IPRD */     { IRL0, IRL1,  IRL2, IRL3 } },
++						/* 31-28,   27-24,   23-20,   19-16 */
++						/* 15-12,    11-8,     7-4,     3-0 */
++	{ 0x00000300, 0, 32, 4, /* INTPRI00 */ {       0,       0,    PIO2,    PIO1,
++						    PIO0, GROUP0_2, GROUP0_1, PCI_DEV0 } },
++	{ 0x00000304, 0, 32, 4, /* INTPRI04 */ {  GROUP8,  GROUP7,  GROUP6,  GROUP5,
++						  GROUP4,  GROUP3,  GROUP2,  GROUP1 } },
++	{ 0x00000308, 0, 32, 4, /* INTPRI08 */ { GROUP16, GROUP15, GROUP14, GROUP13,
++						 GROUP12, GROUP11, GROUP10,  GROUP9 } },
++};
++
++static struct intc_mask_reg mask_registers[] = {
++	{ 0x00000340, 0x00000360, 32, /* INTMSK00 / INTMSKCLR00 */
++	  { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	/* 31..16 */
++	    0, PIO2, PIO1, PIO0,				/* 15..12 */
++	    STANDALONE_PIO, COMPO_CAP_TF, COMPO_CAP_BF,	AUX_VDP_FIFO_EMPTY, /* 11...8 */
++	    AUX_VDP_END_PROC, I2S2SPDIF3, I2S2SPDIF2, I2S2SPDIF1, /*  7...4 */
++	    PCI_DEV3, PCI_DEV2, PCI_DEV1, PCI_DEV0 } },		/*  3...0 */
++	{ 0x00000344, 0x00000364, 32, /* INTMSK04 / INTMSKCLR04 */
++	  { HDMI_CEC, I2S2SPDIF, FDMA1, FDMA0,			/* 31..28 */
++	    PMT, DCXO, LX_AUD, LX_DELTAMU,			/* 27..24 */
++	    0, TS_MERGER, GMAC, EMPI_PCI_DMA,			/* 23..20 */
++	    TTXT, DAA, FE900, PCI_ERROR,			/* 19..16 */
++	    MAFE, PWM, IRB, IRB_WAKEUP,				/* 15..12 */
++	    UART0, UART1, UART2, UART3,				/* 11...8 */
++	    SSC0, SSC1, SSC2, SSC3,				/*  7...4 */
++	    PIO3, PIO4, PIO5, PIO6 } },				/*  3...0 */
++	{ 0x00000348, 0x00000368, 32, /* INTMSK08 / INTMSKCLR08 */
++	  { 0, KEY_SCANNER, 0, 0,				/* 31..28 */
++	    BDISP_CQ, 0, EHCI, OHCI,				/* 27..24 */
++	    0, 0, 0, 0,						/* 23..20 */
++	    0, 0, 0, PTI,					/* 19..16 */
++	    HDCP, HDMI, DVP, BDISP_AQ,				/* 15..12 */
++	    AUX_VTG, MAIN_VTG, MAIN_VDP_END_PROCESSING, MAIN_VDP_FIFO_EMPTY, /* 11...8 */
++	    DELPHI_MBE, NAND, DELPHI_PRE0, 0,			/*  7...4 */
++	    SPDIFPLYR, PCMRDR, PCMPLYR1, PCMPLYR0 } }		/*  3...0 */
++};
++
++static DECLARE_INTC_DESC(intc_desc, "stx7111", vectors, groups,
++			 priorities, mask_registers, prio_registers, NULL);
++
++static struct intc_vect vectors_irlm[] = {
++	INTC_VECT(IRL0, 0x240), INTC_VECT(IRL1, 0x2a0),
++	INTC_VECT(IRL2, 0x300), INTC_VECT(IRL3, 0x360),
++};
++
++static DECLARE_INTC_DESC(intc_desc_irlm, "stx7111_irlm", vectors_irlm, NULL,
++			 priorities, NULL, prio_registers, NULL);
++
++void __init plat_irq_setup(void)
++{
++	struct sysconf_field *sc;
++	unsigned long intc2_base = (unsigned long)ioremap(0xfe001000, 0x400);
++	int i;
++
++	ilc_early_init(&ilc3_device);
++
++	for (i=4; i<=6; i++)
++		prio_registers[i].set_reg += intc2_base;
++	for (i=0; i<=2; i++) {
++		mask_registers[i].set_reg += intc2_base;
++		mask_registers[i].clr_reg += intc2_base;
++	}
++
++	/* Configure the external interrupt pins as inputs */
++	sc = sysconf_claim(SYS_CFG, 10, 0, 3, "irq");
++	sysconf_write(sc, 0xf);
++
++	register_intc_controller(&intc_desc);
++}
++
++#define INTC_ICR	0xffd00000UL
++#define INTC_ICR_IRLM   (1<<7)
++
++void __init plat_irq_setup_pins(int mode)
++{
++	switch (mode) {
++	case IRQ_MODE_IRQ: /* individual interrupt mode for IRL3-0 */
++		register_intc_controller(&intc_desc_irlm);
++		ctrl_outw(ctrl_inw(INTC_ICR) | INTC_ICR_IRLM, INTC_ICR);
++		break;
++	default:
++		BUG();
++	}
++}
+Index: linux-2.6.23-stm/arch/sh/kernel/setup.c
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/kernel/setup.c
++++ linux-2.6.23-stm/arch/sh/kernel/setup.c
+@@ -325,7 +325,7 @@ static const char *cpu_name[] = {
+ 	[CPU_SH7760]	= "SH7760",
+ 	[CPU_ST40RA]	= "ST40RA",	[CPU_ST40GX1]	= "ST40GX1",
+ 	[CPU_STB7100]	= "STb7100",	[CPU_STB7109]	= "STb7109",
+-	[CPU_STX7200]	= "STx7200",
++	[CPU_STX7200]	= "STx7200",    [CPU_ST40_300]	= "ST40-300",
+ 	[CPU_SH4_202]	= "SH4-202",	[CPU_SH4_501]	= "SH4-501",
+ 	[CPU_SH7770]	= "SH7770",	[CPU_SH7780]	= "SH7780",
+ 	[CPU_SH7781]	= "SH7781",	[CPU_SH7343]	= "SH7343",
+Index: linux-2.6.23-stm/arch/sh/mm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/arch/sh/mm/Kconfig
++++ linux-2.6.23-stm/arch/sh/mm/Kconfig
+@@ -174,6 +174,13 @@ config CPU_SUBTYPE_STB7100
+ 	help
+ 	  Select STB7100 if you have an STb7100 or STb7109 CPU.
+ 
++config CPU_SUBTYPE_STX7111
++	bool "Support STx7111 processors"
++	select CPU_SUBTYPE_ST40
++	select SUPPORTS_32BIT
++	help
++	  Select STX7111 if you have an STx7111 CPU.
++
+ config CPU_SUBTYPE_STX7200
+ 	bool "Support STx7200 processor"
+ 	select CPU_SUBTYPE_ST40
+Index: linux-2.6.23-stm/drivers/leds/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/leds/Kconfig
++++ linux-2.6.23-stm/drivers/leds/Kconfig
+@@ -108,6 +108,13 @@ config LEDS_MB374
+ 	  This option enables support for the LEDs on the STMicroelectronics
+ 	  mb374 (ST40RA Starter board).
+ 
++config LEDS_MB618
++	tristate "LED Support for STMicroelectronics mb618 LEDs"
++	depends on LEDS_CLASS && SH_ST_MB618
++	help
++	  This option enables support for the LEDs on the STMicroelectronics
++	  mb618 (STx7111 Mboard).
++
+ comment "LED Triggers"
+ 
+ config LEDS_TRIGGERS
+Index: linux-2.6.23-stm/drivers/leds/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/leds/Makefile
++++ linux-2.6.23-stm/drivers/leds/Makefile
+@@ -21,6 +21,7 @@ obj-$(CONFIG_LEDS_MB374)		+= leds-mb374.
+ obj-$(CONFIG_SH_ST_MB411)		+= leds-mb411.o
+ obj-$(CONFIG_SH_ST_MB411)		+= leds-mb411.o
+ obj-$(CONFIG_SH_ST_MB519)		+= leds-mb519.o
++obj-$(CONFIG_SH_ST_MB618)		+= leds-mb618.o
+ 
+ # LED Triggers
+ obj-$(CONFIG_LEDS_TRIGGER_TIMER)	+= ledtrig-timer.o
+Index: linux-2.6.23-stm/drivers/leds/leds-mb618.c
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/drivers/leds/leds-mb618.c
+@@ -0,0 +1,71 @@
++/*
++ * linux/drivers/leds/leds-mb618.c
++ *
++ * Copyright (C) 2008 STMicroelectronics Limited
++ * Author: Stuart Menefy <stuart.menefy@st.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#include <linux/module.h>
++#include <linux/types.h>
++#include <linux/kernel.h>
++#include <linux/device.h>
++#include <linux/leds.h>
++#include <linux/stm/pio.h>
++#include <asm/io.h>
++
++struct mb618_led {
++	struct led_classdev cdev;
++	struct stpio_pin *pio;
++};
++
++static void mb618_led_set(struct led_classdev *led_cdev, enum led_brightness brightness)
++{
++	struct mb618_led *led_dev =
++		container_of(led_cdev, struct mb618_led, cdev);
++	stpio_set_pin(led_dev->pio, brightness);
++}
++
++static struct mb618_led mb618_leds[2] = {
++	{
++		.cdev = {
++			.name = "mb618-led:green",
++			.brightness_set = mb618_led_set,
++			.default_trigger = "heartbeat",
++		}
++	}, {
++		.cdev = {
++			.name = "mb618-led:red",
++			.brightness_set = mb618_led_set,
++		}
++	}
++};
++
++static int __init mb618_led_init(void)
++{
++	int i;
++	for (i=0; i<ARRAY_SIZE(mb618_leds); i++) {
++		mb618_leds[i].pio = stpio_request_set_pin(6, i, "LED",
++							  STPIO_OUT, 0);
++		if (mb618_leds[i].pio != NULL)
++			led_classdev_register(NULL, &mb618_leds[i].cdev);
++	}
++}
++
++static void __exit mb618_led_exit(void)
++{
++	int i;
++	for (i=0; i<ARRAY_SIZE(mb618_leds); i++) {
++		led_classdev_unregister(&mb618_leds[i].cdev);
++	}
++}
++
++module_init(mb618_led_init);
++module_exit(mb618_led_exit);
++
++MODULE_LICENSE("GPL");
++MODULE_DESCRIPTION("LED support for STMicroelectronics mb618");
++MODULE_AUTHOR("Stuart Menefy <stuart.menefy@st.com>");
+Index: linux-2.6.23-stm/drivers/usb/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/Kconfig
++++ linux-2.6.23-stm/drivers/usb/Kconfig
+@@ -43,6 +43,7 @@ config USB_ARCH_HAS_OHCI
+ 	default y if SOC_AU1X00
+ 	# SH
+ 	default y if CPU_SUBTYPE_STB7100
++	default y if CPU_SUBTYPE_STX7111
+ 	default y if CPU_SUBTYPE_STX7200
+ 	# more:
+ 	default PCI
+@@ -53,6 +54,7 @@ config USB_ARCH_HAS_EHCI
+ 	default y if PPC_83xx
+ 	default y if SOC_AU1200
+ 	default y if CPU_SUBTYPE_STB7100
++	default y if CPU_SUBTYPE_STX7111
+ 	default y if CPU_SUBTYPE_STX7200
+ 	default PCI
+ 
+Index: linux-2.6.23-stm/drivers/usb/host/Makefile
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/Makefile
++++ linux-2.6.23-stm/drivers/usb/host/Makefile
+@@ -17,4 +17,5 @@ obj-$(CONFIG_USB_SL811_CS)	+= sl811_cs.o
+ obj-$(CONFIG_USB_U132_HCD)	+= u132-hcd.o
+ obj-$(CONFIG_USB_R8A66597_HCD)	+= r8a66597-hcd.o
+ obj-$(CONFIG_CPU_SUBTYPE_STB7100)	+= stb7100-common.o
++obj-$(CONFIG_CPU_SUBTYPE_STX7111)	+= stb7100-common.o
+ obj-$(CONFIG_CPU_SUBTYPE_STX7200)	+= stb7100-common.o
+Index: linux-2.6.23-stm/drivers/usb/host/ehci-hcd.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/ehci-hcd.c
++++ linux-2.6.23-stm/drivers/usb/host/ehci-hcd.c
+@@ -950,7 +950,9 @@ MODULE_LICENSE ("GPL");
+ #define	PLATFORM_DRIVER		ehci_hcd_au1xxx_driver
+ #endif
+ 
+-#if defined(CONFIG_CPU_SUBTYPE_STB7100) || defined(CONFIG_CPU_SUBTYPE_STX7200)
++#if defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++    defined(CONFIG_CPU_SUBTYPE_STX7111) || \
++    defined(CONFIG_CPU_SUBTYPE_STX7200)
+ #include "ehci-stcore.c"
+ #define	PLATFORM_DRIVER		ehci_hcd_st40_driver
+ #endif
+Index: linux-2.6.23-stm/drivers/usb/host/ohci-hcd.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/ohci-hcd.c
++++ linux-2.6.23-stm/drivers/usb/host/ohci-hcd.c
+@@ -916,6 +916,7 @@ MODULE_LICENSE ("GPL");
+ #endif
+ 
+ #if defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7111) || \
+ 	defined(CONFIG_CPU_SUBTYPE_STX7200)
+ #include "ohci-stcore.c"
+ #define PLATFORM_DRIVER		ohci_hcd_stm_driver
+Index: linux-2.6.23-stm/include/asm-sh/processor.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/asm-sh/processor.h
++++ linux-2.6.23-stm/include/asm-sh/processor.h
+@@ -26,6 +26,7 @@
+ #define CCN_PVR		0xff000030
+ #define CCN_CVR		0xff000040
+ #define CCN_PRR		0xff000044
++#define CCN_RAMCR	0xff000074	/* ST40-300 */
+ 
+ /*
+  *  CPU type and hardware bug flags. Kept separately for each CPU.
+@@ -50,7 +51,8 @@ enum cpu_type {
+ 	/* SH-4 types */
+ 	CPU_SH7750, CPU_SH7750S, CPU_SH7750R, CPU_SH7751, CPU_SH7751R,
+ 	CPU_SH7760, CPU_ST40RA, CPU_ST40GX1, CPU_STI5528, CPU_STM8000,
+-	CPU_STB7100, CPU_STB7109, CPU_STX7200, CPU_SH4_202, CPU_SH4_501,
++	CPU_STB7100, CPU_STB7109, CPU_STX7200, CPU_ST40_300,
++	CPU_SH4_202, CPU_SH4_501,
+ 
+ 	/* SH-4A types */
+ 	CPU_SH7770, CPU_SH7780, CPU_SH7781, CPU_SH7785, CPU_SHX3,
+Index: linux-2.6.23-stm/include/linux/stm/soc.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/soc.h
++++ linux-2.6.23-stm/include/linux/stm/soc.h
+@@ -184,6 +184,14 @@ void stx7100_configure_audio(struct plat
+ 		struct plat_audio_config *pcm_player_0_config,
+ 		struct plat_audio_config *pcm_player_1_config);
+ 
++void stx7111_early_device_init(void);
++void stx7111_configure_asc(const int *ascs, int num_ascs, int console);
++void stx7111_configure_pwm(struct plat_stm_pwm_data *data);
++void stx7111_configure_ssc(struct plat_ssc_data *data);
++void stx7111_configure_usb(void);
++void stx7111_configure_ethernet(int en_mii, int sel, int ext_clk, int phy_bus);
++void stx7111_configure_nand(struct nand_config_data *data);
++
+ void stx7200_early_device_init(void);
+ void stx7200_configure_asc(const int *ascs, int num_ascs, int console);
+ 
+Index: linux-2.6.23-stm/drivers/net/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/net/Kconfig
++++ linux-2.6.23-stm/drivers/net/Kconfig
+@@ -2496,10 +2496,10 @@ config ATL1
+ 	  will be called atl1.
+ 
+ config STMMAC_ETH
+-	tristate "MAC 10/100/1000 Ethernet driver"
++	tristate "STMicroelectronics 10/100/1000 Ethernet driver"
+ 	select MII
+ 	select PHYLIB
+-	depends on NETDEVICES && (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200)
++	depends on NETDEVICES && (CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7200)
+ 	---help---
+ 	  This is the driver for the MAC 10/100/1000 on-chip Ethernet 
+ 	  controller (Synopsys Core).
+Index: linux-2.6.23-stm/drivers/i2c/busses/i2c-stm.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/i2c/busses/i2c-stm.c
++++ linux-2.6.23-stm/drivers/i2c/busses/i2c-stm.c
+@@ -561,7 +561,7 @@ static int iic_stm_xfer(struct i2c_adapt
+ 	if (unlikely(transaction.status_error != IIC_E_NO_ERROR || timeout <= 0)) {
+ 		/* There was some problem */
+ 		if(timeout<=0){
+-			/* There was a timeout !!!
++			/* There was a timeout or signal.
+ 			   - disable the interrupt
+ 			   - generate a stop condition on the bus
+ 			   all this task are done without interrupt....
+Index: linux-2.6.23-stm/drivers/stm/Kconfig
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/stm/Kconfig
++++ linux-2.6.23-stm/drivers/stm/Kconfig
+@@ -20,7 +20,7 @@ config STM_PIO
+ 
+ config STM_DMA
+ 	bool "STMicroelectronics DMA API"
+-	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7200
++	depends on CPU_SUBTYPE_STB7100 || CPU_SUBTYPE_STX7111 || CPU_SUBTYPE_STX7200
+ 	select SH_DMA_API
+ 	default y
+ 	---help---
+Index: linux-2.6.23-stm/drivers/usb/host/stb7100-common.c
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/stb7100-common.c
++++ linux-2.6.23-stm/drivers/usb/host/stb7100-common.c
+@@ -38,7 +38,7 @@ int ST40_start_host_control(struct platf
+ 		usb_wrapper->ahb2stbus_wrapper_glue_base;
+ 	unsigned long ahb2stbus_protocol_base =
+ 		usb_wrapper->ahb2stbus_protocol_base;
+-	unsigned long reg;
++	unsigned long reg, req_reg;
+ 	int retval;
+ 	void *wrapper_base;
+ 	void *protocol_base;
+@@ -83,6 +83,9 @@ int ST40_start_host_control(struct platf
+ 	       wrapper_base + AHB2STBUS_STRAP_OFFSET);
+ 	mdelay(100);
+ 
++#if	defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7200)
++
+ 	/* Set the STBus Opcode Config for load/store 32 */
+ 	writel(AHB2STBUS_STBUS_OPC_32BIT,
+ 	       protocol_base + AHB2STBUS_STBUS_OPC_OFFSET);
+@@ -94,7 +97,26 @@ int ST40_start_host_control(struct platf
+ 	writel(CHUNKSIZE,
+ 	       protocol_base + AHB2STBUS_CHUNKSIZE_OFFSET);
+ 
+-	usb_wrapper->power_up(pdev);
++#elif defined(CONFIG_CPU_SUBTYPE_STX7111)
++
++	req_reg =
++		(1<<21) |  /* Turn on read-ahead */
++		(5<<16) |  /* Opcode is store/load 32 */
++		(0<<15) |  /* Turn off write posting */
++		(1<<14) |  /* Enable threshold */
++		(3<<9)  |  /* 2**3 Packets in a chunk */
++		(0<<4)  |  /* No messages */
++		(8<<0);    /* Threshold is 256 */
++
++	do {
++		writel(req_reg, protocol_base + AHB2STBUS_STBUS_CONFIG);
++		reg = readl(protocol_base + AHB2STBUS_STBUS_CONFIG);
++	} while ((reg & 0x7FFFFFFF) != req_reg);
++
++#endif
++
++	if (usb_wrapper->power_up)
++		usb_wrapper->power_up(pdev);
+ 
+ 	usb_wrapper->initialised = 1;
+ 
+Index: linux-2.6.23-stm/drivers/usb/host/stb7100-common.h
+===================================================================
+--- linux-2.6.23-stm.orig/drivers/usb/host/stb7100-common.h
++++ linux-2.6.23-stm/drivers/usb/host/stb7100-common.h
+@@ -11,6 +11,9 @@
+  * Some of these register are described in ADCS 7518758.
+  */
+ 
++#if	defined(CONFIG_CPU_SUBTYPE_STB7100) || \
++	defined(CONFIG_CPU_SUBTYPE_STX7200)
++
+ /* The transaction opcode is programmed in this register */
+ #define AHB2STBUS_STBUS_OPC_OFFSET	0x00	/* From AHB2STBUS_PROTOCOL_BASE */
+ #define AHB2STBUS_STBUS_OPC_4BIT	0x00
+@@ -46,6 +49,12 @@
+ #define AHB2STBUS_PC_STATUS		(AHB2STBUS_PROTOCOL_BASE + 0x10)
+ #define AHB2STBUS_PC_STATUS_IDLE	1
+ 
++#elif defined(CONFIG_CPU_SUBTYPE_STX7111)
++
++/* No documentation for this */
++#define AHB2STBUS_STBUS_CONFIG		0x04	/* From AHB2STBUS_PROTOCOL_BASE */
++
++#endif
+ 
+ /* This register implements interrupt status for the OHCI controller */
+ #define AHB2STBUS_OHCI_INT_STS		(AHB2STBUS_WRAPPER_GLUE_BASE + 0x08)
+Index: linux-2.6.23-stm/include/linux/stm/fdma-plat.h
+===================================================================
+--- linux-2.6.23-stm.orig/include/linux/stm/fdma-plat.h
++++ linux-2.6.23-stm/include/linux/stm/fdma-plat.h
+@@ -17,8 +17,12 @@
+ #define STB7109_DMEM_OFFSET					STB7100_DMEM_OFFSET
+ #define STB7109_IMEM_OFFSET					STB7100_IMEM_OFFSET
+ 
+-#define STB7200_DMEM_OFFSET					STB7100_DMEM_OFFSET
+-#define STB7200_IMEM_OFFSET					STB7100_IMEM_OFFSET
++#define STX7111_FDMA0_BASE					0xfe220000
++#define STX7111_FDMA1_BASE					0xfe410000
++#define STX7111_XBAR_BASE					0xfe420000
++
++#define STX7111_IMEM_OFFSET					STB7100_IMEM_OFFSET
++#define STX7111_DMEM_OFFSET					STB7100_DMEM_OFFSET
+ 
+ #define STB7200_FDMA0_BASE					0xFD810000
+ #define STB7200_FDMA1_BASE					0xFD820000
+@@ -74,6 +78,8 @@
+ 
+ #define LINUX_FDMA_STB7100_IRQ_VECT			140
+ #define LINUX_FDMA_STB7109_IRQ_VECT			LINUX_FDMA_STB7100_IRQ_VECT
++#define LINUX_FDMA0_STX7111_IRQ_VECT			evt2irq(0x1380)
++#define LINUX_FDMA1_STX7111_IRQ_VECT			evt2irq(0x13a0)
+ #define LINUX_FDMA0_STB7200_IRQ_VECT			ILC_IRQ(13)
+ #define LINUX_FDMA1_STB7200_IRQ_VECT			ILC_IRQ(15)
+ 
+Index: linux-2.6.23-stm/arch/sh/configs/mb618_defconfig
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/configs/mb618_defconfig
+@@ -0,0 +1,1173 @@
++#
++# Automatically generated make config: don't edit
++# Linux kernel version: 2.6.23.13
++# Mon Jan 28 12:18:51 2008
++#
++CONFIG_SUPERH=y
++CONFIG_RWSEM_GENERIC_SPINLOCK=y
++CONFIG_GENERIC_BUG=y
++CONFIG_GENERIC_FIND_NEXT_BIT=y
++CONFIG_GENERIC_HWEIGHT=y
++CONFIG_GENERIC_HARDIRQS=y
++CONFIG_GENERIC_IRQ_PROBE=y
++CONFIG_GENERIC_CALIBRATE_DELAY=y
++CONFIG_GENERIC_TIME=y
++CONFIG_GENERIC_CLOCKEVENTS=y
++CONFIG_STACKTRACE_SUPPORT=y
++CONFIG_LOCKDEP_SUPPORT=y
++# CONFIG_ARCH_HAS_ILOG2_U32 is not set
++# CONFIG_ARCH_HAS_ILOG2_U64 is not set
++CONFIG_ARCH_NO_VIRT_TO_BUS=y
++CONFIG_ARCH_SUPPORTS_LTT_CLOCK=y
++CONFIG_ARCH_NEEDS_LTT_SYNTHETIC_TSC=y
++CONFIG_DEFCONFIG_LIST="/lib/modules/$UNAME_RELEASE/.config"
++
++#
++# General setup
++#
++CONFIG_EXPERIMENTAL=y
++CONFIG_BROKEN_ON_SMP=y
++CONFIG_LOCK_KERNEL=y
++CONFIG_INIT_ENV_ARG_LIMIT=32
++CONFIG_LOCALVERSION="-mb618"
++# CONFIG_LOCALVERSION_AUTO is not set
++CONFIG_SWAP=y
++CONFIG_SYSVIPC=y
++CONFIG_SYSVIPC_SYSCTL=y
++# CONFIG_POSIX_MQUEUE is not set
++# CONFIG_BSD_PROCESS_ACCT is not set
++# CONFIG_TASKSTATS is not set
++# CONFIG_USER_NS is not set
++# CONFIG_AUDIT is not set
++CONFIG_IKCONFIG=y
++CONFIG_IKCONFIG_PROC=y
++CONFIG_LOG_BUF_SHIFT=14
++CONFIG_SYSFS_DEPRECATED=y
++# CONFIG_RELAY is not set
++CONFIG_BLK_DEV_INITRD=y
++CONFIG_INITRAMFS_SOURCE=""
++# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_SYSCTL=y
++CONFIG_EMBEDDED=y
++CONFIG_UID16=y
++CONFIG_SYSCTL_SYSCALL=y
++CONFIG_KALLSYMS=y
++# CONFIG_KALLSYMS_EXTRA_PASS is not set
++CONFIG_HOTPLUG=y
++CONFIG_PRINTK=y
++CONFIG_BUG=y
++CONFIG_ELF_CORE=y
++CONFIG_BASE_FULL=y
++CONFIG_FUTEX=y
++CONFIG_ANON_INODES=y
++CONFIG_EPOLL=y
++CONFIG_SIGNALFD=y
++CONFIG_EVENTFD=y
++CONFIG_SHMEM=y
++CONFIG_VM_EVENT_COUNTERS=y
++CONFIG_SLAB=y
++# CONFIG_SLUB is not set
++# CONFIG_SLOB is not set
++CONFIG_RT_MUTEXES=y
++# CONFIG_TINY_SHMEM is not set
++CONFIG_BASE_SMALL=0
++CONFIG_MODULES=y
++CONFIG_MODULE_UNLOAD=y
++# CONFIG_MODULE_FORCE_UNLOAD is not set
++# CONFIG_MODVERSIONS is not set
++# CONFIG_MODULE_SRCVERSION_ALL is not set
++CONFIG_KMOD=y
++CONFIG_BLOCK=y
++# CONFIG_LBD is not set
++# CONFIG_BLK_DEV_IO_TRACE is not set
++# CONFIG_LSF is not set
++# CONFIG_BLK_DEV_BSG is not set
++
++#
++# IO Schedulers
++#
++CONFIG_IOSCHED_NOOP=y
++CONFIG_IOSCHED_AS=y
++CONFIG_IOSCHED_DEADLINE=y
++CONFIG_IOSCHED_CFQ=y
++CONFIG_DEFAULT_AS=y
++# CONFIG_DEFAULT_DEADLINE is not set
++# CONFIG_DEFAULT_CFQ is not set
++# CONFIG_DEFAULT_NOOP is not set
++CONFIG_DEFAULT_IOSCHED="anticipatory"
++
++#
++# System type
++#
++CONFIG_CPU_SH4=y
++CONFIG_CPU_SUBTYPE_ST40=y
++# CONFIG_CPU_SUBTYPE_SH7619 is not set
++# CONFIG_CPU_SUBTYPE_SH7206 is not set
++# CONFIG_CPU_SUBTYPE_SH7705 is not set
++# CONFIG_CPU_SUBTYPE_SH7706 is not set
++# CONFIG_CPU_SUBTYPE_SH7707 is not set
++# CONFIG_CPU_SUBTYPE_SH7708 is not set
++# CONFIG_CPU_SUBTYPE_SH7709 is not set
++# CONFIG_CPU_SUBTYPE_SH7710 is not set
++# CONFIG_CPU_SUBTYPE_SH7712 is not set
++# CONFIG_CPU_SUBTYPE_SH7720 is not set
++# CONFIG_CPU_SUBTYPE_SH7750 is not set
++# CONFIG_CPU_SUBTYPE_SH7091 is not set
++# CONFIG_CPU_SUBTYPE_SH7750R is not set
++# CONFIG_CPU_SUBTYPE_SH7750S is not set
++# CONFIG_CPU_SUBTYPE_SH7751 is not set
++# CONFIG_CPU_SUBTYPE_SH7751R is not set
++# CONFIG_CPU_SUBTYPE_SH7760 is not set
++# CONFIG_CPU_SUBTYPE_SH4_202 is not set
++# CONFIG_CPU_SUBTYPE_ST40STB1 is not set
++# CONFIG_CPU_SUBTYPE_ST40GX1 is not set
++# CONFIG_CPU_SUBTYPE_STB7100 is not set
++CONFIG_CPU_SUBTYPE_STX7111=y
++# CONFIG_CPU_SUBTYPE_STX7200 is not set
++# CONFIG_CPU_SUBTYPE_SH7770 is not set
++# CONFIG_CPU_SUBTYPE_SH7780 is not set
++# CONFIG_CPU_SUBTYPE_SH7785 is not set
++# CONFIG_CPU_SUBTYPE_SHX3 is not set
++# CONFIG_CPU_SUBTYPE_SH7343 is not set
++# CONFIG_CPU_SUBTYPE_SH7722 is not set
++
++#
++# Memory management options
++#
++CONFIG_QUICKLIST=y
++CONFIG_MMU=y
++CONFIG_PAGE_OFFSET=0x80000000
++CONFIG_MEMORY_START=0x0c000000
++CONFIG_MEMORY_SIZE=0x08000000
++CONFIG_SUPPORTS_32BIT=y
++# CONFIG_32BIT is not set
++# CONFIG_VSYSCALL is not set
++CONFIG_ARCH_FLATMEM_ENABLE=y
++CONFIG_ARCH_SPARSEMEM_ENABLE=y
++CONFIG_ARCH_SPARSEMEM_DEFAULT=y
++CONFIG_MAX_ACTIVE_REGIONS=1
++CONFIG_ARCH_POPULATES_NODE_MAP=y
++CONFIG_ARCH_SELECT_MEMORY_MODEL=y
++CONFIG_PAGE_SIZE_4KB=y
++# CONFIG_PAGE_SIZE_8KB is not set
++# CONFIG_PAGE_SIZE_64KB is not set
++CONFIG_SELECT_MEMORY_MODEL=y
++CONFIG_FLATMEM_MANUAL=y
++# CONFIG_DISCONTIGMEM_MANUAL is not set
++# CONFIG_SPARSEMEM_MANUAL is not set
++CONFIG_FLATMEM=y
++CONFIG_FLAT_NODE_MEM_MAP=y
++CONFIG_SPARSEMEM_STATIC=y
++CONFIG_SPLIT_PTLOCK_CPUS=4
++# CONFIG_RESOURCES_64BIT is not set
++CONFIG_ZONE_DMA_FLAG=0
++CONFIG_NR_QUICK=2
++# CONFIG_BPA2 is not set
++
++#
++# Cache configuration
++#
++# CONFIG_SH_DIRECT_MAPPED is not set
++CONFIG_CACHE_WRITEBACK=y
++# CONFIG_CACHE_WRITETHROUGH is not set
++# CONFIG_CACHE_OFF is not set
++
++#
++# Processor features
++#
++CONFIG_CPU_LITTLE_ENDIAN=y
++# CONFIG_CPU_BIG_ENDIAN is not set
++CONFIG_SH_FPU=y
++# CONFIG_SH_STORE_QUEUES is not set
++CONFIG_CPU_HAS_INTEVT=y
++CONFIG_CPU_HAS_SR_RB=y
++CONFIG_CPU_HAS_FPU=y
++# CONFIG_SH_GRB is not set
++
++#
++# Board support
++#
++CONFIG_SH_ST_MB618=y
++
++#
++# Timer and clock configuration
++#
++CONFIG_SH_TMU=y
++CONFIG_SH_TIMER_IRQ=16
++CONFIG_SH_PCLK_FREQ=66000000
++# CONFIG_TICK_ONESHOT is not set
++# CONFIG_NO_HZ is not set
++# CONFIG_HIGH_RES_TIMERS is not set
++# CONFIG_SH_FAST_HZ is not set
++
++#
++# CPU Frequency scaling
++#
++# CONFIG_CPU_FREQ is not set
++
++#
++# DMA support
++#
++CONFIG_SH_DMA_API=y
++
++#
++# Companion Chips
++#
++
++#
++# Additional SuperH Device Drivers
++#
++# CONFIG_HEARTBEAT is not set
++# CONFIG_PUSH_SWITCH is not set
++
++#
++# Kernel features
++#
++# CONFIG_HZ_100 is not set
++CONFIG_HZ_250=y
++# CONFIG_HZ_300 is not set
++# CONFIG_HZ_1000 is not set
++CONFIG_HZ=250
++# CONFIG_KEXEC is not set
++# CONFIG_CRASH_DUMP is not set
++# CONFIG_PREEMPT_NONE is not set
++# CONFIG_PREEMPT_VOLUNTARY is not set
++CONFIG_PREEMPT=y
++CONFIG_PREEMPT_BKL=y
++CONFIG_GUSA=y
++
++#
++# Boot options
++#
++CONFIG_ZERO_PAGE_OFFSET=0x00001000
++CONFIG_BOOT_LINK_OFFSET=0x00800000
++# CONFIG_UBC_WAKEUP is not set
++# CONFIG_CMDLINE_BOOL is not set
++
++#
++# Bus options
++#
++# CONFIG_ARCH_SUPPORTS_MSI is not set
++
++#
++# PCCARD (PCMCIA/CardBus) support
++#
++# CONFIG_PCCARD is not set
++
++#
++# Executable file formats
++#
++CONFIG_BINFMT_ELF=y
++# CONFIG_BINFMT_MISC is not set
++# CONFIG_PM_SH3_FRQCR is not set
++
++#
++# Networking
++#
++CONFIG_NET=y
++
++#
++# Networking options
++#
++CONFIG_PACKET=y
++# CONFIG_PACKET_MMAP is not set
++CONFIG_UNIX=y
++CONFIG_XFRM=y
++# CONFIG_XFRM_USER is not set
++# CONFIG_XFRM_SUB_POLICY is not set
++# CONFIG_XFRM_MIGRATE is not set
++# CONFIG_NET_KEY is not set
++CONFIG_INET=y
++# CONFIG_IP_MULTICAST is not set
++# CONFIG_IP_ADVANCED_ROUTER is not set
++CONFIG_IP_FIB_HASH=y
++CONFIG_IP_PNP=y
++# CONFIG_IP_PNP_DHCP is not set
++# CONFIG_IP_PNP_BOOTP is not set
++# CONFIG_IP_PNP_RARP is not set
++# CONFIG_NET_IPIP is not set
++# CONFIG_NET_IPGRE is not set
++# CONFIG_ARPD is not set
++# CONFIG_SYN_COOKIES is not set
++# CONFIG_INET_AH is not set
++# CONFIG_INET_ESP is not set
++# CONFIG_INET_IPCOMP is not set
++# CONFIG_INET_XFRM_TUNNEL is not set
++# CONFIG_INET_TUNNEL is not set
++CONFIG_INET_XFRM_MODE_TRANSPORT=y
++CONFIG_INET_XFRM_MODE_TUNNEL=y
++CONFIG_INET_XFRM_MODE_BEET=y
++CONFIG_INET_DIAG=y
++CONFIG_INET_TCP_DIAG=y
++# CONFIG_TCP_CONG_ADVANCED is not set
++CONFIG_TCP_CONG_CUBIC=y
++CONFIG_DEFAULT_TCP_CONG="cubic"
++# CONFIG_TCP_MD5SIG is not set
++# CONFIG_IP_VS is not set
++# CONFIG_IPV6 is not set
++# CONFIG_INET6_XFRM_TUNNEL is not set
++# CONFIG_INET6_TUNNEL is not set
++# CONFIG_NETWORK_SECMARK is not set
++CONFIG_NETFILTER=y
++# CONFIG_NETFILTER_DEBUG is not set
++
++#
++# Core Netfilter Configuration
++#
++# CONFIG_NETFILTER_NETLINK is not set
++# CONFIG_NF_CONNTRACK_ENABLED is not set
++# CONFIG_NF_CONNTRACK is not set
++# CONFIG_NETFILTER_XTABLES is not set
++
++#
++# IP: Netfilter Configuration
++#
++# CONFIG_IP_NF_QUEUE is not set
++# CONFIG_IP_NF_IPTABLES is not set
++# CONFIG_IP_NF_ARPTABLES is not set
++# CONFIG_IP_DCCP is not set
++# CONFIG_IP_SCTP is not set
++# CONFIG_TIPC is not set
++# CONFIG_ATM is not set
++# CONFIG_BRIDGE is not set
++# CONFIG_VLAN_8021Q is not set
++# CONFIG_DECNET is not set
++# CONFIG_LLC2 is not set
++# CONFIG_IPX is not set
++# CONFIG_ATALK is not set
++# CONFIG_X25 is not set
++# CONFIG_LAPB is not set
++# CONFIG_ECONET is not set
++# CONFIG_WAN_ROUTER is not set
++
++#
++# QoS and/or fair queueing
++#
++# CONFIG_NET_SCHED is not set
++
++#
++# Network testing
++#
++# CONFIG_NET_PKTGEN is not set
++# CONFIG_HAMRADIO is not set
++# CONFIG_IRDA is not set
++# CONFIG_BT is not set
++# CONFIG_AF_RXRPC is not set
++
++#
++# Wireless
++#
++# CONFIG_CFG80211 is not set
++# CONFIG_WIRELESS_EXT is not set
++# CONFIG_MAC80211 is not set
++# CONFIG_IEEE80211 is not set
++# CONFIG_RFKILL is not set
++# CONFIG_NET_9P is not set
++
++#
++# Device Drivers
++#
++
++#
++# Generic Driver Options
++#
++CONFIG_STANDALONE=y
++CONFIG_PREVENT_FIRMWARE_BUILD=y
++CONFIG_FW_LOADER=y
++# CONFIG_SYS_HYPERVISOR is not set
++# CONFIG_CONNECTOR is not set
++CONFIG_MTD=y
++# CONFIG_MTD_DEBUG is not set
++# CONFIG_MTD_CONCAT is not set
++CONFIG_MTD_PARTITIONS=y
++# CONFIG_MTD_REDBOOT_PARTS is not set
++CONFIG_MTD_CMDLINE_PARTS=y
++
++#
++# User Modules And Translation Layers
++#
++CONFIG_MTD_CHAR=y
++CONFIG_MTD_BLKDEVS=y
++CONFIG_MTD_BLOCK=y
++# CONFIG_FTL is not set
++# CONFIG_NFTL is not set
++# CONFIG_INFTL is not set
++# CONFIG_RFD_FTL is not set
++# CONFIG_SSFDC is not set
++
++#
++# RAM/ROM/Flash chip drivers
++#
++CONFIG_MTD_CFI=y
++# CONFIG_MTD_JEDECPROBE is not set
++CONFIG_MTD_GEN_PROBE=y
++# CONFIG_MTD_CFI_ADV_OPTIONS is not set
++CONFIG_MTD_MAP_BANK_WIDTH_1=y
++CONFIG_MTD_MAP_BANK_WIDTH_2=y
++CONFIG_MTD_MAP_BANK_WIDTH_4=y
++# CONFIG_MTD_MAP_BANK_WIDTH_8 is not set
++# CONFIG_MTD_MAP_BANK_WIDTH_16 is not set
++# CONFIG_MTD_MAP_BANK_WIDTH_32 is not set
++CONFIG_MTD_CFI_I1=y
++CONFIG_MTD_CFI_I2=y
++# CONFIG_MTD_CFI_I4 is not set
++# CONFIG_MTD_CFI_I8 is not set
++CONFIG_MTD_CFI_INTELEXT=y
++# CONFIG_MTD_CFI_AMDSTD is not set
++# CONFIG_MTD_CFI_STAA is not set
++CONFIG_MTD_CFI_UTIL=y
++# CONFIG_MTD_RAM is not set
++# CONFIG_MTD_ROM is not set
++# CONFIG_MTD_ABSENT is not set
++
++#
++# Mapping drivers for chip access
++#
++# CONFIG_MTD_COMPLEX_MAPPINGS is not set
++CONFIG_MTD_PHYSMAP=y
++CONFIG_MTD_PHYSMAP_START=0x0
++CONFIG_MTD_PHYSMAP_LEN=0
++CONFIG_MTD_PHYSMAP_BANKWIDTH=0
++# CONFIG_MTD_PLATRAM is not set
++
++#
++# Self-contained MTD device drivers
++#
++# CONFIG_MTD_SLRAM is not set
++# CONFIG_MTD_PHRAM is not set
++# CONFIG_MTD_MTDRAM is not set
++# CONFIG_MTD_BLOCK2MTD is not set
++
++#
++# Disk-On-Chip Device Drivers
++#
++# CONFIG_MTD_DOC2000 is not set
++# CONFIG_MTD_DOC2001 is not set
++# CONFIG_MTD_DOC2001PLUS is not set
++CONFIG_MTD_NAND=y
++# CONFIG_MTD_NAND_VERIFY_WRITE is not set
++# CONFIG_MTD_NAND_ECC_SMC is not set
++# CONFIG_MTD_NAND_MUSEUM_IDS is not set
++CONFIG_MTD_NAND_IDS=y
++# CONFIG_MTD_NAND_DISKONCHIP is not set
++# CONFIG_MTD_NAND_NANDSIM is not set
++CONFIG_MTD_NAND_PLATFORM=y
++# CONFIG_MTD_ONENAND is not set
++
++#
++# UBI - Unsorted block images
++#
++# CONFIG_MTD_UBI is not set
++# CONFIG_PARPORT is not set
++CONFIG_BLK_DEV=y
++# CONFIG_BLK_DEV_COW_COMMON is not set
++# CONFIG_BLK_DEV_LOOP is not set
++# CONFIG_BLK_DEV_NBD is not set
++# CONFIG_BLK_DEV_UB is not set
++CONFIG_BLK_DEV_RAM=y
++CONFIG_BLK_DEV_RAM_COUNT=16
++CONFIG_BLK_DEV_RAM_SIZE=4096
++CONFIG_BLK_DEV_RAM_BLOCKSIZE=1024
++# CONFIG_CDROM_PKTCDVD is not set
++# CONFIG_ATA_OVER_ETH is not set
++CONFIG_MISC_DEVICES=y
++# CONFIG_EEPROM_93CX6 is not set
++# CONFIG_IDE is not set
++
++#
++# SCSI device support
++#
++# CONFIG_RAID_ATTRS is not set
++CONFIG_SCSI=y
++CONFIG_SCSI_DMA=y
++# CONFIG_SCSI_TGT is not set
++# CONFIG_SCSI_NETLINK is not set
++# CONFIG_SCSI_PROC_FS is not set
++
++#
++# SCSI support type (disk, tape, CD-ROM)
++#
++CONFIG_BLK_DEV_SD=y
++# CONFIG_CHR_DEV_ST is not set
++# CONFIG_CHR_DEV_OSST is not set
++# CONFIG_BLK_DEV_SR is not set
++# CONFIG_CHR_DEV_SG is not set
++# CONFIG_CHR_DEV_SCH is not set
++
++#
++# Some SCSI devices (e.g. CD jukebox) support multiple LUNs
++#
++# CONFIG_SCSI_MULTI_LUN is not set
++# CONFIG_SCSI_CONSTANTS is not set
++# CONFIG_SCSI_LOGGING is not set
++# CONFIG_SCSI_SCAN_ASYNC is not set
++CONFIG_SCSI_WAIT_SCAN=m
++
++#
++# SCSI Transports
++#
++# CONFIG_SCSI_SPI_ATTRS is not set
++# CONFIG_SCSI_FC_ATTRS is not set
++# CONFIG_SCSI_ISCSI_ATTRS is not set
++# CONFIG_SCSI_SAS_LIBSAS is not set
++CONFIG_SCSI_LOWLEVEL=y
++# CONFIG_ISCSI_TCP is not set
++# CONFIG_SCSI_DEBUG is not set
++# CONFIG_ATA is not set
++# CONFIG_MD is not set
++CONFIG_NETDEVICES=y
++# CONFIG_NETDEVICES_MULTIQUEUE is not set
++# CONFIG_DUMMY is not set
++# CONFIG_BONDING is not set
++# CONFIG_MACVLAN is not set
++# CONFIG_EQUALIZER is not set
++# CONFIG_TUN is not set
++# CONFIG_NWHW_CONFIG is not set
++CONFIG_PHYLIB=y
++
++#
++# PHY device drivers
++#
++# CONFIG_MARVELL_PHY is not set
++# CONFIG_DAVICOM_PHY is not set
++# CONFIG_QSEMI_PHY is not set
++# CONFIG_LXT_PHY is not set
++# CONFIG_CICADA_PHY is not set
++# CONFIG_VITESSE_PHY is not set
++# CONFIG_SMSC_PHY is not set
++# CONFIG_BROADCOM_PHY is not set
++# CONFIG_ICPLUS_PHY is not set
++# CONFIG_STE10XP is not set
++# CONFIG_LAN8700 is not set
++# CONFIG_FIXED_PHY is not set
++CONFIG_NET_ETHERNET=y
++CONFIG_MII=y
++# CONFIG_STNIC is not set
++# CONFIG_SMSC911x is not set
++# CONFIG_SMC91X is not set
++CONFIG_NETDEV_1000=y
++# CONFIG_STMMAC_ETH is not set
++CONFIG_NETDEV_10000=y
++
++#
++# Wireless LAN
++#
++# CONFIG_WLAN_PRE80211 is not set
++# CONFIG_WLAN_80211 is not set
++
++#
++# USB Network Adapters
++#
++# CONFIG_USB_CATC is not set
++# CONFIG_USB_KAWETH is not set
++# CONFIG_USB_PEGASUS is not set
++CONFIG_USB_RTL8150=y
++CONFIG_USB_USBNET_MII=y
++CONFIG_USB_USBNET=y
++CONFIG_USB_NET_AX8817X=y
++# CONFIG_USB_NET_CDCETHER is not set
++# CONFIG_USB_NET_DM9601 is not set
++# CONFIG_USB_NET_GL620A is not set
++# CONFIG_USB_NET_NET1080 is not set
++# CONFIG_USB_NET_PLUSB is not set
++# CONFIG_USB_NET_MCS7830 is not set
++# CONFIG_USB_NET_RNDIS_HOST is not set
++# CONFIG_USB_NET_CDC_SUBSET is not set
++# CONFIG_USB_NET_ZAURUS is not set
++# CONFIG_WAN is not set
++# CONFIG_PPP is not set
++# CONFIG_SLIP is not set
++# CONFIG_SHAPER is not set
++# CONFIG_NETCONSOLE is not set
++# CONFIG_NETPOLL is not set
++# CONFIG_NET_POLL_CONTROLLER is not set
++# CONFIG_ISDN is not set
++# CONFIG_PHONE is not set
++
++#
++# Input device support
++#
++CONFIG_INPUT=y
++# CONFIG_INPUT_FF_MEMLESS is not set
++# CONFIG_INPUT_POLLDEV is not set
++
++#
++# Userland interfaces
++#
++CONFIG_INPUT_MOUSEDEV=y
++CONFIG_INPUT_MOUSEDEV_PSAUX=y
++CONFIG_INPUT_MOUSEDEV_SCREEN_X=1024
++CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
++# CONFIG_INPUT_JOYDEV is not set
++# CONFIG_INPUT_TSDEV is not set
++# CONFIG_INPUT_EVDEV is not set
++# CONFIG_INPUT_EVBUG is not set
++
++#
++# Input Device Drivers
++#
++CONFIG_INPUT_KEYBOARD=y
++# CONFIG_KEYBOARD_ATKBD is not set
++# CONFIG_KEYBOARD_SUNKBD is not set
++# CONFIG_KEYBOARD_LKKBD is not set
++# CONFIG_KEYBOARD_XTKBD is not set
++# CONFIG_KEYBOARD_NEWTON is not set
++# CONFIG_KEYBOARD_STOWAWAY is not set
++CONFIG_INPUT_MOUSE=y
++# CONFIG_MOUSE_PS2 is not set
++# CONFIG_MOUSE_SERIAL is not set
++# CONFIG_MOUSE_APPLETOUCH is not set
++# CONFIG_MOUSE_VSXXXAA is not set
++# CONFIG_INPUT_JOYSTICK is not set
++# CONFIG_INPUT_TABLET is not set
++# CONFIG_INPUT_TOUCHSCREEN is not set
++# CONFIG_INPUT_MISC is not set
++
++#
++# Hardware I/O ports
++#
++CONFIG_SERIO=y
++# CONFIG_SERIO_I8042 is not set
++CONFIG_SERIO_SERPORT=y
++# CONFIG_SERIO_LIBPS2 is not set
++# CONFIG_SERIO_RAW is not set
++# CONFIG_GAMEPORT is not set
++
++#
++# Character devices
++#
++CONFIG_VT=y
++# CONFIG_VT_CONSOLE is not set
++CONFIG_HW_CONSOLE=y
++# CONFIG_VT_HW_CONSOLE_BINDING is not set
++# CONFIG_SERIAL_NONSTANDARD is not set
++
++#
++# Serial drivers
++#
++# CONFIG_SERIAL_8250 is not set
++
++#
++# Non-8250 serial port support
++#
++# CONFIG_SERIAL_SH_SCI is not set
++CONFIG_SERIAL_CORE=y
++CONFIG_SERIAL_CORE_CONSOLE=y
++CONFIG_SERIAL_ST_ASC=y
++CONFIG_SERIAL_ST_ASC_CONSOLE=y
++# CONFIG_SERIAL_ST_ASC_DMA is not set
++CONFIG_UNIX98_PTYS=y
++# CONFIG_LEGACY_PTYS is not set
++
++#
++# Linux InfraRed Controller
++#
++# CONFIG_LIRC_SUPPORT is not set
++# CONFIG_IPMI_HANDLER is not set
++# CONFIG_WATCHDOG is not set
++CONFIG_HW_RANDOM=y
++# CONFIG_R3964 is not set
++# CONFIG_RAW_DRIVER is not set
++# CONFIG_TCG_TPM is not set
++CONFIG_I2C=y
++CONFIG_I2C_BOARDINFO=y
++CONFIG_I2C_CHARDEV=y
++
++#
++# I2C Algorithms
++#
++CONFIG_I2C_ALGOBIT=y
++# CONFIG_I2C_ALGOPCF is not set
++# CONFIG_I2C_ALGOPCA is not set
++
++#
++# I2C Hardware Bus support
++#
++# CONFIG_I2C_OCORES is not set
++# CONFIG_I2C_PARPORT_LIGHT is not set
++# CONFIG_I2C_SIMTEC is not set
++# CONFIG_I2C_TAOS_EVM is not set
++# CONFIG_I2C_STUB is not set
++# CONFIG_I2C_TINY_USB is not set
++# CONFIG_I2C_ST40_PIO is not set
++CONFIG_I2C_STM=y
++# CONFIG_I2C_STM_HW_FIFO is not set
++# CONFIG_I2C_STM_GLITCH_SUPPORT is not set
++
++#
++# Miscellaneous I2C Chip support
++#
++# CONFIG_SENSORS_DS1337 is not set
++# CONFIG_SENSORS_DS1374 is not set
++# CONFIG_DS1682 is not set
++# CONFIG_I2C_AT24C is not set
++# CONFIG_SENSORS_EEPROM is not set
++# CONFIG_SENSORS_PCF8574 is not set
++# CONFIG_SENSORS_PCA9539 is not set
++# CONFIG_SENSORS_PCF8591 is not set
++# CONFIG_SENSORS_MAX6875 is not set
++# CONFIG_SENSORS_TSL2550 is not set
++# CONFIG_I2C_DEBUG_CORE is not set
++# CONFIG_I2C_DEBUG_ALGO is not set
++# CONFIG_I2C_DEBUG_BUS is not set
++# CONFIG_I2C_DEBUG_CHIP is not set
++
++#
++# SPI support
++#
++# CONFIG_SPI is not set
++# CONFIG_SPI_MASTER is not set
++# CONFIG_W1 is not set
++# CONFIG_POWER_SUPPLY is not set
++CONFIG_HWMON=y
++# CONFIG_HWMON_VID is not set
++# CONFIG_SENSORS_ABITUGURU is not set
++# CONFIG_SENSORS_ABITUGURU3 is not set
++# CONFIG_SENSORS_AD7418 is not set
++# CONFIG_SENSORS_ADM1021 is not set
++# CONFIG_SENSORS_ADM1025 is not set
++# CONFIG_SENSORS_ADM1026 is not set
++# CONFIG_SENSORS_ADM1029 is not set
++# CONFIG_SENSORS_ADM1031 is not set
++# CONFIG_SENSORS_ADM9240 is not set
++# CONFIG_SENSORS_ASB100 is not set
++# CONFIG_SENSORS_ATXP1 is not set
++# CONFIG_SENSORS_DS1621 is not set
++# CONFIG_SENSORS_F71805F is not set
++# CONFIG_SENSORS_FSCHER is not set
++# CONFIG_SENSORS_FSCPOS is not set
++# CONFIG_SENSORS_GL518SM is not set
++# CONFIG_SENSORS_GL520SM is not set
++# CONFIG_SENSORS_IT87 is not set
++# CONFIG_SENSORS_LM63 is not set
++# CONFIG_SENSORS_LM75 is not set
++# CONFIG_SENSORS_LM77 is not set
++# CONFIG_SENSORS_LM78 is not set
++# CONFIG_SENSORS_LM80 is not set
++# CONFIG_SENSORS_LM83 is not set
++# CONFIG_SENSORS_LM85 is not set
++# CONFIG_SENSORS_LM87 is not set
++# CONFIG_SENSORS_LM90 is not set
++# CONFIG_SENSORS_LM92 is not set
++# CONFIG_SENSORS_LM93 is not set
++# CONFIG_SENSORS_MAX1619 is not set
++# CONFIG_SENSORS_MAX6650 is not set
++# CONFIG_SENSORS_PC87360 is not set
++# CONFIG_SENSORS_PC87427 is not set
++# CONFIG_SENSORS_DME1737 is not set
++# CONFIG_SENSORS_SMSC47M1 is not set
++# CONFIG_SENSORS_SMSC47M192 is not set
++# CONFIG_SENSORS_SMSC47B397 is not set
++# CONFIG_SENSORS_THMC50 is not set
++CONFIG_SENSORS_STM_PWM=y
++# CONFIG_SENSORS_VT1211 is not set
++# CONFIG_SENSORS_W83781D is not set
++# CONFIG_SENSORS_W83791D is not set
++# CONFIG_SENSORS_W83792D is not set
++# CONFIG_SENSORS_W83793 is not set
++# CONFIG_SENSORS_W83L785TS is not set
++# CONFIG_SENSORS_W83627HF is not set
++# CONFIG_SENSORS_W83627EHF is not set
++# CONFIG_HWMON_DEBUG_CHIP is not set
++
++#
++# Multifunction device drivers
++#
++# CONFIG_MFD_SM501 is not set
++
++#
++# Multimedia devices
++#
++# CONFIG_VIDEO_DEV is not set
++# CONFIG_DVB_CORE is not set
++CONFIG_DAB=y
++# CONFIG_USB_DABUSB is not set
++
++#
++# Graphics support
++#
++# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
++
++#
++# Display device support
++#
++# CONFIG_DISPLAY_SUPPORT is not set
++# CONFIG_VGASTATE is not set
++# CONFIG_VIDEO_OUTPUT_CONTROL is not set
++# CONFIG_FB is not set
++
++#
++# Console display driver support
++#
++CONFIG_DUMMY_CONSOLE=y
++
++#
++# Sound
++#
++# CONFIG_SOUND is not set
++# CONFIG_HID_SUPPORT is not set
++CONFIG_USB_SUPPORT=y
++CONFIG_USB_ARCH_HAS_HCD=y
++CONFIG_USB_ARCH_HAS_OHCI=y
++CONFIG_USB_ARCH_HAS_EHCI=y
++CONFIG_USB=y
++CONFIG_USB_DEBUG=y
++
++#
++# Miscellaneous USB options
++#
++CONFIG_USB_DEVICEFS=y
++CONFIG_USB_DEVICE_CLASS=y
++# CONFIG_USB_DYNAMIC_MINORS is not set
++# CONFIG_USB_OTG is not set
++
++#
++# USB Host Controller Drivers
++#
++CONFIG_USB_EHCI_HCD=y
++# CONFIG_USB_EHCI_SPLIT_ISO is not set
++# CONFIG_USB_EHCI_ROOT_HUB_TT is not set
++# CONFIG_USB_EHCI_TT_NEWSCHED is not set
++# CONFIG_USB_ISP116X_HCD is not set
++CONFIG_USB_OHCI_HCD=y
++# CONFIG_USB_OHCI_BIG_ENDIAN_DESC is not set
++# CONFIG_USB_OHCI_BIG_ENDIAN_MMIO is not set
++CONFIG_USB_OHCI_LITTLE_ENDIAN=y
++# CONFIG_USB_SL811_HCD is not set
++# CONFIG_USB_R8A66597_HCD is not set
++
++#
++# USB Device Class drivers
++#
++# CONFIG_USB_ACM is not set
++# CONFIG_USB_PRINTER is not set
++
++#
++# NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support'
++#
++
++#
++# may also be needed; see USB_STORAGE Help for more information
++#
++# CONFIG_USB_STORAGE is not set
++# CONFIG_USB_LIBUSUAL is not set
++
++#
++# USB Imaging devices
++#
++# CONFIG_USB_MDC800 is not set
++# CONFIG_USB_MICROTEK is not set
++CONFIG_USB_MON=y
++
++#
++# USB port drivers
++#
++
++#
++# USB Serial Converter support
++#
++# CONFIG_USB_SERIAL is not set
++
++#
++# USB Miscellaneous drivers
++#
++# CONFIG_USB_EMI62 is not set
++# CONFIG_USB_EMI26 is not set
++# CONFIG_USB_ADUTUX is not set
++# CONFIG_USB_AUERSWALD is not set
++# CONFIG_USB_RIO500 is not set
++# CONFIG_USB_LEGOTOWER is not set
++# CONFIG_USB_LCD is not set
++# CONFIG_USB_BERRY_CHARGE is not set
++# CONFIG_USB_LED is not set
++# CONFIG_USB_CYPRESS_CY7C63 is not set
++# CONFIG_USB_CYTHERM is not set
++# CONFIG_USB_PHIDGET is not set
++# CONFIG_USB_IDMOUSE is not set
++# CONFIG_USB_FTDI_ELAN is not set
++# CONFIG_USB_APPLEDISPLAY is not set
++# CONFIG_USB_SISUSBVGA is not set
++# CONFIG_USB_LD is not set
++# CONFIG_USB_TRANCEVIBRATOR is not set
++# CONFIG_USB_IOWARRIOR is not set
++# CONFIG_USB_TEST is not set
++
++#
++# USB DSL modem support
++#
++
++#
++# USB Gadget Support
++#
++# CONFIG_USB_GADGET is not set
++# CONFIG_MMC is not set
++CONFIG_NEW_LEDS=y
++CONFIG_LEDS_CLASS=y
++
++#
++# LED drivers
++#
++CONFIG_LEDS_MB618=y
++
++#
++# LED Triggers
++#
++CONFIG_LEDS_TRIGGERS=y
++# CONFIG_LEDS_TRIGGER_TIMER is not set
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
++# CONFIG_RTC_CLASS is not set
++
++#
++# DMA Engine support
++#
++# CONFIG_DMA_ENGINE is not set
++
++#
++# DMA Clients
++#
++
++#
++# DMA Devices
++#
++
++#
++# Userspace I/O
++#
++# CONFIG_UIO is not set
++CONFIG_STM_DRIVERS=y
++
++#
++# STM specific devices
++#
++CONFIG_STM_PIO=y
++CONFIG_STM_DMA=y
++CONFIG_MIN_STM_DMA_CHANNEL_NR=0
++CONFIG_MAX_STM_DMA_CHANNEL_NR=15
++# CONFIG_STM_DMA_DEBUG is not set
++# CONFIG_STM_DMA_FW_USERSPACE is not set
++CONFIG_STM_DMA_FW_KERNEL=y
++# CONFIG_STM_SPI is not set
++
++#
++# File systems
++#
++CONFIG_EXT2_FS=y
++CONFIG_EXT2_FS_XATTR=y
++# CONFIG_EXT2_FS_POSIX_ACL is not set
++# CONFIG_EXT2_FS_SECURITY is not set
++# CONFIG_EXT2_FS_XIP is not set
++CONFIG_EXT3_FS=y
++CONFIG_EXT3_FS_XATTR=y
++# CONFIG_EXT3_FS_POSIX_ACL is not set
++# CONFIG_EXT3_FS_SECURITY is not set
++# CONFIG_EXT4DEV_FS is not set
++CONFIG_JBD=y
++# CONFIG_JBD_DEBUG is not set
++CONFIG_FS_MBCACHE=y
++# CONFIG_REISERFS_FS is not set
++# CONFIG_JFS_FS is not set
++# CONFIG_FS_POSIX_ACL is not set
++# CONFIG_XFS_FS is not set
++# CONFIG_GFS2_FS is not set
++# CONFIG_OCFS2_FS is not set
++# CONFIG_MINIX_FS is not set
++CONFIG_ROMFS_FS=y
++CONFIG_INOTIFY=y
++CONFIG_INOTIFY_USER=y
++# CONFIG_QUOTA is not set
++CONFIG_DNOTIFY=y
++# CONFIG_AUTOFS_FS is not set
++# CONFIG_AUTOFS4_FS is not set
++# CONFIG_FUSE_FS is not set
++
++#
++# CD-ROM/DVD Filesystems
++#
++CONFIG_ISO9660_FS=y
++CONFIG_JOLIET=y
++# CONFIG_ZISOFS is not set
++CONFIG_UDF_FS=y
++CONFIG_UDF_NLS=y
++
++#
++# DOS/FAT/NT Filesystems
++#
++CONFIG_FAT_FS=y
++CONFIG_MSDOS_FS=y
++CONFIG_VFAT_FS=y
++CONFIG_FAT_DEFAULT_CODEPAGE=437
++CONFIG_FAT_DEFAULT_IOCHARSET="iso8859-1"
++# CONFIG_NTFS_FS is not set
++
++#
++# Pseudo filesystems
++#
++CONFIG_PROC_FS=y
++CONFIG_PROC_KCORE=y
++CONFIG_PROC_SYSCTL=y
++CONFIG_SYSFS=y
++CONFIG_TMPFS=y
++# CONFIG_TMPFS_POSIX_ACL is not set
++# CONFIG_HUGETLBFS is not set
++# CONFIG_HUGETLB_PAGE is not set
++CONFIG_RAMFS=y
++# CONFIG_CONFIGFS_FS is not set
++
++#
++# Miscellaneous filesystems
++#
++# CONFIG_ADFS_FS is not set
++# CONFIG_AFFS_FS is not set
++# CONFIG_HFS_FS is not set
++# CONFIG_HFSPLUS_FS is not set
++# CONFIG_BEFS_FS is not set
++# CONFIG_BFS_FS is not set
++# CONFIG_EFS_FS is not set
++CONFIG_JFFS2_FS=y
++CONFIG_JFFS2_FS_DEBUG=0
++CONFIG_JFFS2_FS_WRITEBUFFER=y
++# CONFIG_JFFS2_SUMMARY is not set
++# CONFIG_JFFS2_FS_XATTR is not set
++# CONFIG_JFFS2_COMPRESSION_OPTIONS is not set
++CONFIG_JFFS2_ZLIB=y
++CONFIG_JFFS2_RTIME=y
++# CONFIG_JFFS2_RUBIN is not set
++CONFIG_CRAMFS=y
++# CONFIG_SQUASHFS is not set
++# CONFIG_VXFS_FS is not set
++# CONFIG_HPFS_FS is not set
++# CONFIG_QNX4FS_FS is not set
++# CONFIG_SYSV_FS is not set
++# CONFIG_UFS_FS is not set
++
++#
++# Network File Systems
++#
++CONFIG_NFS_FS=y
++CONFIG_NFS_V3=y
++# CONFIG_NFS_V3_ACL is not set
++# CONFIG_NFS_V4 is not set
++# CONFIG_NFS_DIRECTIO is not set
++# CONFIG_NFSD is not set
++CONFIG_ROOT_NFS=y
++CONFIG_LOCKD=y
++CONFIG_LOCKD_V4=y
++CONFIG_NFS_COMMON=y
++CONFIG_SUNRPC=y
++# CONFIG_SUNRPC_BIND34 is not set
++# CONFIG_RPCSEC_GSS_KRB5 is not set
++# CONFIG_RPCSEC_GSS_SPKM3 is not set
++# CONFIG_SMB_FS is not set
++# CONFIG_CIFS is not set
++# CONFIG_NCP_FS is not set
++# CONFIG_CODA_FS is not set
++# CONFIG_AFS_FS is not set
++
++#
++# Partition Types
++#
++# CONFIG_PARTITION_ADVANCED is not set
++CONFIG_MSDOS_PARTITION=y
++
++#
++# Native Language Support
++#
++CONFIG_NLS=y
++CONFIG_NLS_DEFAULT="iso8859-1"
++CONFIG_NLS_CODEPAGE_437=y
++# CONFIG_NLS_CODEPAGE_737 is not set
++# CONFIG_NLS_CODEPAGE_775 is not set
++# CONFIG_NLS_CODEPAGE_850 is not set
++# CONFIG_NLS_CODEPAGE_852 is not set
++# CONFIG_NLS_CODEPAGE_855 is not set
++# CONFIG_NLS_CODEPAGE_857 is not set
++# CONFIG_NLS_CODEPAGE_860 is not set
++# CONFIG_NLS_CODEPAGE_861 is not set
++# CONFIG_NLS_CODEPAGE_862 is not set
++# CONFIG_NLS_CODEPAGE_863 is not set
++# CONFIG_NLS_CODEPAGE_864 is not set
++# CONFIG_NLS_CODEPAGE_865 is not set
++# CONFIG_NLS_CODEPAGE_866 is not set
++# CONFIG_NLS_CODEPAGE_869 is not set
++# CONFIG_NLS_CODEPAGE_936 is not set
++# CONFIG_NLS_CODEPAGE_950 is not set
++# CONFIG_NLS_CODEPAGE_932 is not set
++# CONFIG_NLS_CODEPAGE_949 is not set
++# CONFIG_NLS_CODEPAGE_874 is not set
++# CONFIG_NLS_ISO8859_8 is not set
++# CONFIG_NLS_CODEPAGE_1250 is not set
++# CONFIG_NLS_CODEPAGE_1251 is not set
++# CONFIG_NLS_ASCII is not set
++CONFIG_NLS_ISO8859_1=y
++# CONFIG_NLS_ISO8859_2 is not set
++# CONFIG_NLS_ISO8859_3 is not set
++# CONFIG_NLS_ISO8859_4 is not set
++# CONFIG_NLS_ISO8859_5 is not set
++# CONFIG_NLS_ISO8859_6 is not set
++# CONFIG_NLS_ISO8859_7 is not set
++# CONFIG_NLS_ISO8859_9 is not set
++# CONFIG_NLS_ISO8859_13 is not set
++# CONFIG_NLS_ISO8859_14 is not set
++# CONFIG_NLS_ISO8859_15 is not set
++# CONFIG_NLS_KOI8_R is not set
++# CONFIG_NLS_KOI8_U is not set
++# CONFIG_NLS_UTF8 is not set
++
++#
++# Distributed Lock Manager
++#
++# CONFIG_DLM is not set
++
++#
++# Profiling support
++#
++# CONFIG_PROFILING is not set
++
++#
++# Instrumentation Support
++#
++# CONFIG_KPROBES is not set
++# CONFIG_KPTRACE is not set
++# CONFIG_MARKERS is not set
++CONFIG_LTT_TIMESTAMP=y
++
++#
++# Kernel hacking
++#
++CONFIG_TRACE_IRQFLAGS_SUPPORT=y
++# CONFIG_PRINTK_TIME is not set
++CONFIG_ENABLE_MUST_CHECK=y
++# CONFIG_MAGIC_SYSRQ is not set
++# CONFIG_UNUSED_SYMBOLS is not set
++# CONFIG_DEBUG_FS is not set
++# CONFIG_HEADERS_CHECK is not set
++# CONFIG_DEBUG_KERNEL is not set
++# CONFIG_DEBUG_BUGVERBOSE is not set
++# CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
++# CONFIG_UNWIND_INFO is not set
++# CONFIG_SH_STANDARD_BIOS is not set
++# CONFIG_EARLY_SCIF_CONSOLE is not set
++
++#
++# Security options
++#
++# CONFIG_KEYS is not set
++# CONFIG_SECURITY is not set
++# CONFIG_CRYPTO is not set
++
++#
++# Library routines
++#
++CONFIG_BITREVERSE=y
++# CONFIG_CRC_CCITT is not set
++# CONFIG_CRC16 is not set
++# CONFIG_CRC_ITU_T is not set
++CONFIG_CRC32=y
++# CONFIG_CRC7 is not set
++# CONFIG_LIBCRC32C is not set
++CONFIG_ZLIB_INFLATE=y
++CONFIG_ZLIB_DEFLATE=y
++CONFIG_PLIST=y
++CONFIG_HAS_IOMEM=y
++CONFIG_HAS_IOPORT=y
++CONFIG_HAS_DMA=y
+Index: linux-2.6.23-stm/arch/sh/configs/mb618se_defconfig
+===================================================================
+--- /dev/null
++++ linux-2.6.23-stm/arch/sh/configs/mb618se_defconfig
+@@ -0,0 +1,1173 @@
++#
++# Automatically generated make config: don't edit
++# Linux kernel version: 2.6.23.13
++# Mon Jan 28 12:18:51 2008
++#
++CONFIG_SUPERH=y
++CONFIG_RWSEM_GENERIC_SPINLOCK=y
++CONFIG_GENERIC_BUG=y
++CONFIG_GENERIC_FIND_NEXT_BIT=y
++CONFIG_GENERIC_HWEIGHT=y
++CONFIG_GENERIC_HARDIRQS=y
++CONFIG_GENERIC_IRQ_PROBE=y
++CONFIG_GENERIC_CALIBRATE_DELAY=y
++CONFIG_GENERIC_TIME=y
++CONFIG_GENERIC_CLOCKEVENTS=y
++CONFIG_STACKTRACE_SUPPORT=y
++CONFIG_LOCKDEP_SUPPORT=y
++# CONFIG_ARCH_HAS_ILOG2_U32 is not set
++# CONFIG_ARCH_HAS_ILOG2_U64 is not set
++CONFIG_ARCH_NO_VIRT_TO_BUS=y
++CONFIG_ARCH_SUPPORTS_LTT_CLOCK=y
++CONFIG_ARCH_NEEDS_LTT_SYNTHETIC_TSC=y
++CONFIG_DEFCONFIG_LIST="/lib/modules/$UNAME_RELEASE/.config"
++
++#
++# General setup
++#
++CONFIG_EXPERIMENTAL=y
++CONFIG_BROKEN_ON_SMP=y
++CONFIG_LOCK_KERNEL=y
++CONFIG_INIT_ENV_ARG_LIMIT=32
++CONFIG_LOCALVERSION="-mb618"
++# CONFIG_LOCALVERSION_AUTO is not set
++CONFIG_SWAP=y
++CONFIG_SYSVIPC=y
++CONFIG_SYSVIPC_SYSCTL=y
++# CONFIG_POSIX_MQUEUE is not set
++# CONFIG_BSD_PROCESS_ACCT is not set
++# CONFIG_TASKSTATS is not set
++# CONFIG_USER_NS is not set
++# CONFIG_AUDIT is not set
++CONFIG_IKCONFIG=y
++CONFIG_IKCONFIG_PROC=y
++CONFIG_LOG_BUF_SHIFT=14
++CONFIG_SYSFS_DEPRECATED=y
++# CONFIG_RELAY is not set
++CONFIG_BLK_DEV_INITRD=y
++CONFIG_INITRAMFS_SOURCE=""
++# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
++CONFIG_SYSCTL=y
++CONFIG_EMBEDDED=y
++CONFIG_UID16=y
++CONFIG_SYSCTL_SYSCALL=y
++CONFIG_KALLSYMS=y
++# CONFIG_KALLSYMS_EXTRA_PASS is not set
++CONFIG_HOTPLUG=y
++CONFIG_PRINTK=y
++CONFIG_BUG=y
++CONFIG_ELF_CORE=y
++CONFIG_BASE_FULL=y
++CONFIG_FUTEX=y
++CONFIG_ANON_INODES=y
++CONFIG_EPOLL=y
++CONFIG_SIGNALFD=y
++CONFIG_EVENTFD=y
++CONFIG_SHMEM=y
++CONFIG_VM_EVENT_COUNTERS=y
++CONFIG_SLAB=y
++# CONFIG_SLUB is not set
++# CONFIG_SLOB is not set
++CONFIG_RT_MUTEXES=y
++# CONFIG_TINY_SHMEM is not set
++CONFIG_BASE_SMALL=0
++CONFIG_MODULES=y
++CONFIG_MODULE_UNLOAD=y
++# CONFIG_MODULE_FORCE_UNLOAD is not set
++# CONFIG_MODVERSIONS is not set
++# CONFIG_MODULE_SRCVERSION_ALL is not set
++CONFIG_KMOD=y
++CONFIG_BLOCK=y
++# CONFIG_LBD is not set
++# CONFIG_BLK_DEV_IO_TRACE is not set
++# CONFIG_LSF is not set
++# CONFIG_BLK_DEV_BSG is not set
++
++#
++# IO Schedulers
++#
++CONFIG_IOSCHED_NOOP=y
++CONFIG_IOSCHED_AS=y
++CONFIG_IOSCHED_DEADLINE=y
++CONFIG_IOSCHED_CFQ=y
++CONFIG_DEFAULT_AS=y
++# CONFIG_DEFAULT_DEADLINE is not set
++# CONFIG_DEFAULT_CFQ is not set
++# CONFIG_DEFAULT_NOOP is not set
++CONFIG_DEFAULT_IOSCHED="anticipatory"
++
++#
++# System type
++#
++CONFIG_CPU_SH4=y
++CONFIG_CPU_SUBTYPE_ST40=y
++# CONFIG_CPU_SUBTYPE_SH7619 is not set
++# CONFIG_CPU_SUBTYPE_SH7206 is not set
++# CONFIG_CPU_SUBTYPE_SH7705 is not set
++# CONFIG_CPU_SUBTYPE_SH7706 is not set
++# CONFIG_CPU_SUBTYPE_SH7707 is not set
++# CONFIG_CPU_SUBTYPE_SH7708 is not set
++# CONFIG_CPU_SUBTYPE_SH7709 is not set
++# CONFIG_CPU_SUBTYPE_SH7710 is not set
++# CONFIG_CPU_SUBTYPE_SH7712 is not set
++# CONFIG_CPU_SUBTYPE_SH7720 is not set
++# CONFIG_CPU_SUBTYPE_SH7750 is not set
++# CONFIG_CPU_SUBTYPE_SH7091 is not set
++# CONFIG_CPU_SUBTYPE_SH7750R is not set
++# CONFIG_CPU_SUBTYPE_SH7750S is not set
++# CONFIG_CPU_SUBTYPE_SH7751 is not set
++# CONFIG_CPU_SUBTYPE_SH7751R is not set
++# CONFIG_CPU_SUBTYPE_SH7760 is not set
++# CONFIG_CPU_SUBTYPE_SH4_202 is not set
++# CONFIG_CPU_SUBTYPE_ST40STB1 is not set
++# CONFIG_CPU_SUBTYPE_ST40GX1 is not set
++# CONFIG_CPU_SUBTYPE_STB7100 is not set
++CONFIG_CPU_SUBTYPE_STX7111=y
++# CONFIG_CPU_SUBTYPE_STX7200 is not set
++# CONFIG_CPU_SUBTYPE_SH7770 is not set
++# CONFIG_CPU_SUBTYPE_SH7780 is not set
++# CONFIG_CPU_SUBTYPE_SH7785 is not set
++# CONFIG_CPU_SUBTYPE_SHX3 is not set
++# CONFIG_CPU_SUBTYPE_SH7343 is not set
++# CONFIG_CPU_SUBTYPE_SH7722 is not set
++
++#
++# Memory management options
++#
++CONFIG_QUICKLIST=y
++CONFIG_MMU=y
++CONFIG_PAGE_OFFSET=0x80000000
++CONFIG_MEMORY_START=0x40000000
++CONFIG_MEMORY_SIZE=0x08000000
++CONFIG_SUPPORTS_32BIT=y
++CONFIG_32BIT=y
++# CONFIG_VSYSCALL is not set
++CONFIG_ARCH_FLATMEM_ENABLE=y
++CONFIG_ARCH_SPARSEMEM_ENABLE=y
++CONFIG_ARCH_SPARSEMEM_DEFAULT=y
++CONFIG_MAX_ACTIVE_REGIONS=1
++CONFIG_ARCH_POPULATES_NODE_MAP=y
++CONFIG_ARCH_SELECT_MEMORY_MODEL=y
++CONFIG_PAGE_SIZE_4KB=y
++# CONFIG_PAGE_SIZE_8KB is not set
++# CONFIG_PAGE_SIZE_64KB is not set
++CONFIG_SELECT_MEMORY_MODEL=y
++CONFIG_FLATMEM_MANUAL=y
++# CONFIG_DISCONTIGMEM_MANUAL is not set
++# CONFIG_SPARSEMEM_MANUAL is not set
++CONFIG_FLATMEM=y
++CONFIG_FLAT_NODE_MEM_MAP=y
++CONFIG_SPARSEMEM_STATIC=y
++CONFIG_SPLIT_PTLOCK_CPUS=4
++# CONFIG_RESOURCES_64BIT is not set
++CONFIG_ZONE_DMA_FLAG=0
++CONFIG_NR_QUICK=2
++# CONFIG_BPA2 is not set
++
++#
++# Cache configuration
++#
++# CONFIG_SH_DIRECT_MAPPED is not set
++CONFIG_CACHE_WRITEBACK=y
++# CONFIG_CACHE_WRITETHROUGH is not set
++# CONFIG_CACHE_OFF is not set
++
++#
++# Processor features
++#
++CONFIG_CPU_LITTLE_ENDIAN=y
++# CONFIG_CPU_BIG_ENDIAN is not set
++CONFIG_SH_FPU=y
++# CONFIG_SH_STORE_QUEUES is not set
++CONFIG_CPU_HAS_INTEVT=y
++CONFIG_CPU_HAS_SR_RB=y
++CONFIG_CPU_HAS_FPU=y
++# CONFIG_SH_GRB is not set
++
++#
++# Board support
++#
++CONFIG_SH_ST_MB618=y
++
++#
++# Timer and clock configuration
++#
++CONFIG_SH_TMU=y
++CONFIG_SH_TIMER_IRQ=16
++CONFIG_SH_PCLK_FREQ=66000000
++# CONFIG_TICK_ONESHOT is not set
++# CONFIG_NO_HZ is not set
++# CONFIG_HIGH_RES_TIMERS is not set
++# CONFIG_SH_FAST_HZ is not set
++
++#
++# CPU Frequency scaling
++#
++# CONFIG_CPU_FREQ is not set
++
++#
++# DMA support
++#
++CONFIG_SH_DMA_API=y
++
++#
++# Companion Chips
++#
++
++#
++# Additional SuperH Device Drivers
++#
++# CONFIG_HEARTBEAT is not set
++# CONFIG_PUSH_SWITCH is not set
++
++#
++# Kernel features
++#
++# CONFIG_HZ_100 is not set
++CONFIG_HZ_250=y
++# CONFIG_HZ_300 is not set
++# CONFIG_HZ_1000 is not set
++CONFIG_HZ=250
++# CONFIG_KEXEC is not set
++# CONFIG_CRASH_DUMP is not set
++# CONFIG_PREEMPT_NONE is not set
++# CONFIG_PREEMPT_VOLUNTARY is not set
++CONFIG_PREEMPT=y
++CONFIG_PREEMPT_BKL=y
++CONFIG_GUSA=y
++
++#
++# Boot options
++#
++CONFIG_ZERO_PAGE_OFFSET=0x00001000
++CONFIG_BOOT_LINK_OFFSET=0x00800000
++# CONFIG_UBC_WAKEUP is not set
++# CONFIG_CMDLINE_BOOL is not set
++
++#
++# Bus options
++#
++# CONFIG_ARCH_SUPPORTS_MSI is not set
++
++#
++# PCCARD (PCMCIA/CardBus) support
++#
++# CONFIG_PCCARD is not set
++
++#
++# Executable file formats
++#
++CONFIG_BINFMT_ELF=y
++# CONFIG_BINFMT_MISC is not set
++# CONFIG_PM_SH3_FRQCR is not set
++
++#
++# Networking
++#
++CONFIG_NET=y
++
++#
++# Networking options
++#
++CONFIG_PACKET=y
++# CONFIG_PACKET_MMAP is not set
++CONFIG_UNIX=y
++CONFIG_XFRM=y
++# CONFIG_XFRM_USER is not set
++# CONFIG_XFRM_SUB_POLICY is not set
++# CONFIG_XFRM_MIGRATE is not set
++# CONFIG_NET_KEY is not set
++CONFIG_INET=y
++# CONFIG_IP_MULTICAST is not set
++# CONFIG_IP_ADVANCED_ROUTER is not set
++CONFIG_IP_FIB_HASH=y
++CONFIG_IP_PNP=y
++# CONFIG_IP_PNP_DHCP is not set
++# CONFIG_IP_PNP_BOOTP is not set
++# CONFIG_IP_PNP_RARP is not set
++# CONFIG_NET_IPIP is not set
++# CONFIG_NET_IPGRE is not set
++# CONFIG_ARPD is not set
++# CONFIG_SYN_COOKIES is not set
++# CONFIG_INET_AH is not set
++# CONFIG_INET_ESP is not set
++# CONFIG_INET_IPCOMP is not set
++# CONFIG_INET_XFRM_TUNNEL is not set
++# CONFIG_INET_TUNNEL is not set
++CONFIG_INET_XFRM_MODE_TRANSPORT=y
++CONFIG_INET_XFRM_MODE_TUNNEL=y
++CONFIG_INET_XFRM_MODE_BEET=y
++CONFIG_INET_DIAG=y
++CONFIG_INET_TCP_DIAG=y
++# CONFIG_TCP_CONG_ADVANCED is not set
++CONFIG_TCP_CONG_CUBIC=y
++CONFIG_DEFAULT_TCP_CONG="cubic"
++# CONFIG_TCP_MD5SIG is not set
++# CONFIG_IP_VS is not set
++# CONFIG_IPV6 is not set
++# CONFIG_INET6_XFRM_TUNNEL is not set
++# CONFIG_INET6_TUNNEL is not set
++# CONFIG_NETWORK_SECMARK is not set
++CONFIG_NETFILTER=y
++# CONFIG_NETFILTER_DEBUG is not set
++
++#
++# Core Netfilter Configuration
++#
++# CONFIG_NETFILTER_NETLINK is not set
++# CONFIG_NF_CONNTRACK_ENABLED is not set
++# CONFIG_NF_CONNTRACK is not set
++# CONFIG_NETFILTER_XTABLES is not set
++
++#
++# IP: Netfilter Configuration
++#
++# CONFIG_IP_NF_QUEUE is not set
++# CONFIG_IP_NF_IPTABLES is not set
++# CONFIG_IP_NF_ARPTABLES is not set
++# CONFIG_IP_DCCP is not set
++# CONFIG_IP_SCTP is not set
++# CONFIG_TIPC is not set
++# CONFIG_ATM is not set
++# CONFIG_BRIDGE is not set
++# CONFIG_VLAN_8021Q is not set
++# CONFIG_DECNET is not set
++# CONFIG_LLC2 is not set
++# CONFIG_IPX is not set
++# CONFIG_ATALK is not set
++# CONFIG_X25 is not set
++# CONFIG_LAPB is not set
++# CONFIG_ECONET is not set
++# CONFIG_WAN_ROUTER is not set
++
++#
++# QoS and/or fair queueing
++#
++# CONFIG_NET_SCHED is not set
++
++#
++# Network testing
++#
++# CONFIG_NET_PKTGEN is not set
++# CONFIG_HAMRADIO is not set
++# CONFIG_IRDA is not set
++# CONFIG_BT is not set
++# CONFIG_AF_RXRPC is not set
++
++#
++# Wireless
++#
++# CONFIG_CFG80211 is not set
++# CONFIG_WIRELESS_EXT is not set
++# CONFIG_MAC80211 is not set
++# CONFIG_IEEE80211 is not set
++# CONFIG_RFKILL is not set
++# CONFIG_NET_9P is not set
++
++#
++# Device Drivers
++#
++
++#
++# Generic Driver Options
++#
++CONFIG_STANDALONE=y
++CONFIG_PREVENT_FIRMWARE_BUILD=y
++CONFIG_FW_LOADER=y
++# CONFIG_SYS_HYPERVISOR is not set
++# CONFIG_CONNECTOR is not set
++CONFIG_MTD=y
++# CONFIG_MTD_DEBUG is not set
++# CONFIG_MTD_CONCAT is not set
++CONFIG_MTD_PARTITIONS=y
++# CONFIG_MTD_REDBOOT_PARTS is not set
++CONFIG_MTD_CMDLINE_PARTS=y
++
++#
++# User Modules And Translation Layers
++#
++CONFIG_MTD_CHAR=y
++CONFIG_MTD_BLKDEVS=y
++CONFIG_MTD_BLOCK=y
++# CONFIG_FTL is not set
++# CONFIG_NFTL is not set
++# CONFIG_INFTL is not set
++# CONFIG_RFD_FTL is not set
++# CONFIG_SSFDC is not set
++
++#
++# RAM/ROM/Flash chip drivers
++#
++CONFIG_MTD_CFI=y
++# CONFIG_MTD_JEDECPROBE is not set
++CONFIG_MTD_GEN_PROBE=y
++# CONFIG_MTD_CFI_ADV_OPTIONS is not set
++CONFIG_MTD_MAP_BANK_WIDTH_1=y
++CONFIG_MTD_MAP_BANK_WIDTH_2=y
++CONFIG_MTD_MAP_BANK_WIDTH_4=y
++# CONFIG_MTD_MAP_BANK_WIDTH_8 is not set
++# CONFIG_MTD_MAP_BANK_WIDTH_16 is not set
++# CONFIG_MTD_MAP_BANK_WIDTH_32 is not set
++CONFIG_MTD_CFI_I1=y
++CONFIG_MTD_CFI_I2=y
++# CONFIG_MTD_CFI_I4 is not set
++# CONFIG_MTD_CFI_I8 is not set
++CONFIG_MTD_CFI_INTELEXT=y
++# CONFIG_MTD_CFI_AMDSTD is not set
++# CONFIG_MTD_CFI_STAA is not set
++CONFIG_MTD_CFI_UTIL=y
++# CONFIG_MTD_RAM is not set
++# CONFIG_MTD_ROM is not set
++# CONFIG_MTD_ABSENT is not set
++
++#
++# Mapping drivers for chip access
++#
++# CONFIG_MTD_COMPLEX_MAPPINGS is not set
++CONFIG_MTD_PHYSMAP=y
++CONFIG_MTD_PHYSMAP_START=0x0
++CONFIG_MTD_PHYSMAP_LEN=0
++CONFIG_MTD_PHYSMAP_BANKWIDTH=0
++# CONFIG_MTD_PLATRAM is not set
++
++#
++# Self-contained MTD device drivers
++#
++# CONFIG_MTD_SLRAM is not set
++# CONFIG_MTD_PHRAM is not set
++# CONFIG_MTD_MTDRAM is not set
++# CONFIG_MTD_BLOCK2MTD is not set
++
++#
++# Disk-On-Chip Device Drivers
++#
++# CONFIG_MTD_DOC2000 is not set
++# CONFIG_MTD_DOC2001 is not set
++# CONFIG_MTD_DOC2001PLUS is not set
++CONFIG_MTD_NAND=y
++# CONFIG_MTD_NAND_VERIFY_WRITE is not set
++# CONFIG_MTD_NAND_ECC_SMC is not set
++# CONFIG_MTD_NAND_MUSEUM_IDS is not set
++CONFIG_MTD_NAND_IDS=y
++# CONFIG_MTD_NAND_DISKONCHIP is not set
++# CONFIG_MTD_NAND_NANDSIM is not set
++CONFIG_MTD_NAND_PLATFORM=y
++# CONFIG_MTD_ONENAND is not set
++
++#
++# UBI - Unsorted block images
++#
++# CONFIG_MTD_UBI is not set
++# CONFIG_PARPORT is not set
++CONFIG_BLK_DEV=y
++# CONFIG_BLK_DEV_COW_COMMON is not set
++# CONFIG_BLK_DEV_LOOP is not set
++# CONFIG_BLK_DEV_NBD is not set
++# CONFIG_BLK_DEV_UB is not set
++CONFIG_BLK_DEV_RAM=y
++CONFIG_BLK_DEV_RAM_COUNT=16
++CONFIG_BLK_DEV_RAM_SIZE=4096
++CONFIG_BLK_DEV_RAM_BLOCKSIZE=1024
++# CONFIG_CDROM_PKTCDVD is not set
++# CONFIG_ATA_OVER_ETH is not set
++CONFIG_MISC_DEVICES=y
++# CONFIG_EEPROM_93CX6 is not set
++# CONFIG_IDE is not set
++
++#
++# SCSI device support
++#
++# CONFIG_RAID_ATTRS is not set
++CONFIG_SCSI=y
++CONFIG_SCSI_DMA=y
++# CONFIG_SCSI_TGT is not set
++# CONFIG_SCSI_NETLINK is not set
++# CONFIG_SCSI_PROC_FS is not set
++
++#
++# SCSI support type (disk, tape, CD-ROM)
++#
++CONFIG_BLK_DEV_SD=y
++# CONFIG_CHR_DEV_ST is not set
++# CONFIG_CHR_DEV_OSST is not set
++# CONFIG_BLK_DEV_SR is not set
++# CONFIG_CHR_DEV_SG is not set
++# CONFIG_CHR_DEV_SCH is not set
++
++#
++# Some SCSI devices (e.g. CD jukebox) support multiple LUNs
++#
++# CONFIG_SCSI_MULTI_LUN is not set
++# CONFIG_SCSI_CONSTANTS is not set
++# CONFIG_SCSI_LOGGING is not set
++# CONFIG_SCSI_SCAN_ASYNC is not set
++CONFIG_SCSI_WAIT_SCAN=m
++
++#
++# SCSI Transports
++#
++# CONFIG_SCSI_SPI_ATTRS is not set
++# CONFIG_SCSI_FC_ATTRS is not set
++# CONFIG_SCSI_ISCSI_ATTRS is not set
++# CONFIG_SCSI_SAS_LIBSAS is not set
++CONFIG_SCSI_LOWLEVEL=y
++# CONFIG_ISCSI_TCP is not set
++# CONFIG_SCSI_DEBUG is not set
++# CONFIG_ATA is not set
++# CONFIG_MD is not set
++CONFIG_NETDEVICES=y
++# CONFIG_NETDEVICES_MULTIQUEUE is not set
++# CONFIG_DUMMY is not set
++# CONFIG_BONDING is not set
++# CONFIG_MACVLAN is not set
++# CONFIG_EQUALIZER is not set
++# CONFIG_TUN is not set
++# CONFIG_NWHW_CONFIG is not set
++CONFIG_PHYLIB=y
++
++#
++# PHY device drivers
++#
++# CONFIG_MARVELL_PHY is not set
++# CONFIG_DAVICOM_PHY is not set
++# CONFIG_QSEMI_PHY is not set
++# CONFIG_LXT_PHY is not set
++# CONFIG_CICADA_PHY is not set
++# CONFIG_VITESSE_PHY is not set
++# CONFIG_SMSC_PHY is not set
++# CONFIG_BROADCOM_PHY is not set
++# CONFIG_ICPLUS_PHY is not set
++# CONFIG_STE10XP is not set
++# CONFIG_LAN8700 is not set
++# CONFIG_FIXED_PHY is not set
++CONFIG_NET_ETHERNET=y
++CONFIG_MII=y
++# CONFIG_STNIC is not set
++# CONFIG_SMSC911x is not set
++# CONFIG_SMC91X is not set
++CONFIG_NETDEV_1000=y
++# CONFIG_STMMAC_ETH is not set
++CONFIG_NETDEV_10000=y
++
++#
++# Wireless LAN
++#
++# CONFIG_WLAN_PRE80211 is not set
++# CONFIG_WLAN_80211 is not set
++
++#
++# USB Network Adapters
++#
++# CONFIG_USB_CATC is not set
++# CONFIG_USB_KAWETH is not set
++# CONFIG_USB_PEGASUS is not set
++CONFIG_USB_RTL8150=y
++CONFIG_USB_USBNET_MII=y
++CONFIG_USB_USBNET=y
++CONFIG_USB_NET_AX8817X=y
++# CONFIG_USB_NET_CDCETHER is not set
++# CONFIG_USB_NET_DM9601 is not set
++# CONFIG_USB_NET_GL620A is not set
++# CONFIG_USB_NET_NET1080 is not set
++# CONFIG_USB_NET_PLUSB is not set
++# CONFIG_USB_NET_MCS7830 is not set
++# CONFIG_USB_NET_RNDIS_HOST is not set
++# CONFIG_USB_NET_CDC_SUBSET is not set
++# CONFIG_USB_NET_ZAURUS is not set
++# CONFIG_WAN is not set
++# CONFIG_PPP is not set
++# CONFIG_SLIP is not set
++# CONFIG_SHAPER is not set
++# CONFIG_NETCONSOLE is not set
++# CONFIG_NETPOLL is not set
++# CONFIG_NET_POLL_CONTROLLER is not set
++# CONFIG_ISDN is not set
++# CONFIG_PHONE is not set
++
++#
++# Input device support
++#
++CONFIG_INPUT=y
++# CONFIG_INPUT_FF_MEMLESS is not set
++# CONFIG_INPUT_POLLDEV is not set
++
++#
++# Userland interfaces
++#
++CONFIG_INPUT_MOUSEDEV=y
++CONFIG_INPUT_MOUSEDEV_PSAUX=y
++CONFIG_INPUT_MOUSEDEV_SCREEN_X=1024
++CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
++# CONFIG_INPUT_JOYDEV is not set
++# CONFIG_INPUT_TSDEV is not set
++# CONFIG_INPUT_EVDEV is not set
++# CONFIG_INPUT_EVBUG is not set
++
++#
++# Input Device Drivers
++#
++CONFIG_INPUT_KEYBOARD=y
++# CONFIG_KEYBOARD_ATKBD is not set
++# CONFIG_KEYBOARD_SUNKBD is not set
++# CONFIG_KEYBOARD_LKKBD is not set
++# CONFIG_KEYBOARD_XTKBD is not set
++# CONFIG_KEYBOARD_NEWTON is not set
++# CONFIG_KEYBOARD_STOWAWAY is not set
++CONFIG_INPUT_MOUSE=y
++# CONFIG_MOUSE_PS2 is not set
++# CONFIG_MOUSE_SERIAL is not set
++# CONFIG_MOUSE_APPLETOUCH is not set
++# CONFIG_MOUSE_VSXXXAA is not set
++# CONFIG_INPUT_JOYSTICK is not set
++# CONFIG_INPUT_TABLET is not set
++# CONFIG_INPUT_TOUCHSCREEN is not set
++# CONFIG_INPUT_MISC is not set
++
++#
++# Hardware I/O ports
++#
++CONFIG_SERIO=y
++# CONFIG_SERIO_I8042 is not set
++CONFIG_SERIO_SERPORT=y
++# CONFIG_SERIO_LIBPS2 is not set
++# CONFIG_SERIO_RAW is not set
++# CONFIG_GAMEPORT is not set
++
++#
++# Character devices
++#
++CONFIG_VT=y
++# CONFIG_VT_CONSOLE is not set
++CONFIG_HW_CONSOLE=y
++# CONFIG_VT_HW_CONSOLE_BINDING is not set
++# CONFIG_SERIAL_NONSTANDARD is not set
++
++#
++# Serial drivers
++#
++# CONFIG_SERIAL_8250 is not set
++
++#
++# Non-8250 serial port support
++#
++# CONFIG_SERIAL_SH_SCI is not set
++CONFIG_SERIAL_CORE=y
++CONFIG_SERIAL_CORE_CONSOLE=y
++CONFIG_SERIAL_ST_ASC=y
++CONFIG_SERIAL_ST_ASC_CONSOLE=y
++# CONFIG_SERIAL_ST_ASC_DMA is not set
++CONFIG_UNIX98_PTYS=y
++# CONFIG_LEGACY_PTYS is not set
++
++#
++# Linux InfraRed Controller
++#
++# CONFIG_LIRC_SUPPORT is not set
++# CONFIG_IPMI_HANDLER is not set
++# CONFIG_WATCHDOG is not set
++CONFIG_HW_RANDOM=y
++# CONFIG_R3964 is not set
++# CONFIG_RAW_DRIVER is not set
++# CONFIG_TCG_TPM is not set
++CONFIG_I2C=y
++CONFIG_I2C_BOARDINFO=y
++CONFIG_I2C_CHARDEV=y
++
++#
++# I2C Algorithms
++#
++CONFIG_I2C_ALGOBIT=y
++# CONFIG_I2C_ALGOPCF is not set
++# CONFIG_I2C_ALGOPCA is not set
++
++#
++# I2C Hardware Bus support
++#
++# CONFIG_I2C_OCORES is not set
++# CONFIG_I2C_PARPORT_LIGHT is not set
++# CONFIG_I2C_SIMTEC is not set
++# CONFIG_I2C_TAOS_EVM is not set
++# CONFIG_I2C_STUB is not set
++# CONFIG_I2C_TINY_USB is not set
++# CONFIG_I2C_ST40_PIO is not set
++CONFIG_I2C_STM=y
++# CONFIG_I2C_STM_HW_FIFO is not set
++# CONFIG_I2C_STM_GLITCH_SUPPORT is not set
++
++#
++# Miscellaneous I2C Chip support
++#
++# CONFIG_SENSORS_DS1337 is not set
++# CONFIG_SENSORS_DS1374 is not set
++# CONFIG_DS1682 is not set
++# CONFIG_I2C_AT24C is not set
++# CONFIG_SENSORS_EEPROM is not set
++# CONFIG_SENSORS_PCF8574 is not set
++# CONFIG_SENSORS_PCA9539 is not set
++# CONFIG_SENSORS_PCF8591 is not set
++# CONFIG_SENSORS_MAX6875 is not set
++# CONFIG_SENSORS_TSL2550 is not set
++# CONFIG_I2C_DEBUG_CORE is not set
++# CONFIG_I2C_DEBUG_ALGO is not set
++# CONFIG_I2C_DEBUG_BUS is not set
++# CONFIG_I2C_DEBUG_CHIP is not set
++
++#
++# SPI support
++#
++# CONFIG_SPI is not set
++# CONFIG_SPI_MASTER is not set
++# CONFIG_W1 is not set
++# CONFIG_POWER_SUPPLY is not set
++CONFIG_HWMON=y
++# CONFIG_HWMON_VID is not set
++# CONFIG_SENSORS_ABITUGURU is not set
++# CONFIG_SENSORS_ABITUGURU3 is not set
++# CONFIG_SENSORS_AD7418 is not set
++# CONFIG_SENSORS_ADM1021 is not set
++# CONFIG_SENSORS_ADM1025 is not set
++# CONFIG_SENSORS_ADM1026 is not set
++# CONFIG_SENSORS_ADM1029 is not set
++# CONFIG_SENSORS_ADM1031 is not set
++# CONFIG_SENSORS_ADM9240 is not set
++# CONFIG_SENSORS_ASB100 is not set
++# CONFIG_SENSORS_ATXP1 is not set
++# CONFIG_SENSORS_DS1621 is not set
++# CONFIG_SENSORS_F71805F is not set
++# CONFIG_SENSORS_FSCHER is not set
++# CONFIG_SENSORS_FSCPOS is not set
++# CONFIG_SENSORS_GL518SM is not set
++# CONFIG_SENSORS_GL520SM is not set
++# CONFIG_SENSORS_IT87 is not set
++# CONFIG_SENSORS_LM63 is not set
++# CONFIG_SENSORS_LM75 is not set
++# CONFIG_SENSORS_LM77 is not set
++# CONFIG_SENSORS_LM78 is not set
++# CONFIG_SENSORS_LM80 is not set
++# CONFIG_SENSORS_LM83 is not set
++# CONFIG_SENSORS_LM85 is not set
++# CONFIG_SENSORS_LM87 is not set
++# CONFIG_SENSORS_LM90 is not set
++# CONFIG_SENSORS_LM92 is not set
++# CONFIG_SENSORS_LM93 is not set
++# CONFIG_SENSORS_MAX1619 is not set
++# CONFIG_SENSORS_MAX6650 is not set
++# CONFIG_SENSORS_PC87360 is not set
++# CONFIG_SENSORS_PC87427 is not set
++# CONFIG_SENSORS_DME1737 is not set
++# CONFIG_SENSORS_SMSC47M1 is not set
++# CONFIG_SENSORS_SMSC47M192 is not set
++# CONFIG_SENSORS_SMSC47B397 is not set
++# CONFIG_SENSORS_THMC50 is not set
++CONFIG_SENSORS_STM_PWM=y
++# CONFIG_SENSORS_VT1211 is not set
++# CONFIG_SENSORS_W83781D is not set
++# CONFIG_SENSORS_W83791D is not set
++# CONFIG_SENSORS_W83792D is not set
++# CONFIG_SENSORS_W83793 is not set
++# CONFIG_SENSORS_W83L785TS is not set
++# CONFIG_SENSORS_W83627HF is not set
++# CONFIG_SENSORS_W83627EHF is not set
++# CONFIG_HWMON_DEBUG_CHIP is not set
++
++#
++# Multifunction device drivers
++#
++# CONFIG_MFD_SM501 is not set
++
++#
++# Multimedia devices
++#
++# CONFIG_VIDEO_DEV is not set
++# CONFIG_DVB_CORE is not set
++CONFIG_DAB=y
++# CONFIG_USB_DABUSB is not set
++
++#
++# Graphics support
++#
++# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
++
++#
++# Display device support
++#
++# CONFIG_DISPLAY_SUPPORT is not set
++# CONFIG_VGASTATE is not set
++# CONFIG_VIDEO_OUTPUT_CONTROL is not set
++# CONFIG_FB is not set
++
++#
++# Console display driver support
++#
++CONFIG_DUMMY_CONSOLE=y
++
++#
++# Sound
++#
++# CONFIG_SOUND is not set
++# CONFIG_HID_SUPPORT is not set
++CONFIG_USB_SUPPORT=y
++CONFIG_USB_ARCH_HAS_HCD=y
++CONFIG_USB_ARCH_HAS_OHCI=y
++CONFIG_USB_ARCH_HAS_EHCI=y
++CONFIG_USB=y
++CONFIG_USB_DEBUG=y
++
++#
++# Miscellaneous USB options
++#
++CONFIG_USB_DEVICEFS=y
++CONFIG_USB_DEVICE_CLASS=y
++# CONFIG_USB_DYNAMIC_MINORS is not set
++# CONFIG_USB_OTG is not set
++
++#
++# USB Host Controller Drivers
++#
++CONFIG_USB_EHCI_HCD=y
++# CONFIG_USB_EHCI_SPLIT_ISO is not set
++# CONFIG_USB_EHCI_ROOT_HUB_TT is not set
++# CONFIG_USB_EHCI_TT_NEWSCHED is not set
++# CONFIG_USB_ISP116X_HCD is not set
++CONFIG_USB_OHCI_HCD=y
++# CONFIG_USB_OHCI_BIG_ENDIAN_DESC is not set
++# CONFIG_USB_OHCI_BIG_ENDIAN_MMIO is not set
++CONFIG_USB_OHCI_LITTLE_ENDIAN=y
++# CONFIG_USB_SL811_HCD is not set
++# CONFIG_USB_R8A66597_HCD is not set
++
++#
++# USB Device Class drivers
++#
++# CONFIG_USB_ACM is not set
++# CONFIG_USB_PRINTER is not set
++
++#
++# NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support'
++#
++
++#
++# may also be needed; see USB_STORAGE Help for more information
++#
++# CONFIG_USB_STORAGE is not set
++# CONFIG_USB_LIBUSUAL is not set
++
++#
++# USB Imaging devices
++#
++# CONFIG_USB_MDC800 is not set
++# CONFIG_USB_MICROTEK is not set
++CONFIG_USB_MON=y
++
++#
++# USB port drivers
++#
++
++#
++# USB Serial Converter support
++#
++# CONFIG_USB_SERIAL is not set
++
++#
++# USB Miscellaneous drivers
++#
++# CONFIG_USB_EMI62 is not set
++# CONFIG_USB_EMI26 is not set
++# CONFIG_USB_ADUTUX is not set
++# CONFIG_USB_AUERSWALD is not set
++# CONFIG_USB_RIO500 is not set
++# CONFIG_USB_LEGOTOWER is not set
++# CONFIG_USB_LCD is not set
++# CONFIG_USB_BERRY_CHARGE is not set
++# CONFIG_USB_LED is not set
++# CONFIG_USB_CYPRESS_CY7C63 is not set
++# CONFIG_USB_CYTHERM is not set
++# CONFIG_USB_PHIDGET is not set
++# CONFIG_USB_IDMOUSE is not set
++# CONFIG_USB_FTDI_ELAN is not set
++# CONFIG_USB_APPLEDISPLAY is not set
++# CONFIG_USB_SISUSBVGA is not set
++# CONFIG_USB_LD is not set
++# CONFIG_USB_TRANCEVIBRATOR is not set
++# CONFIG_USB_IOWARRIOR is not set
++# CONFIG_USB_TEST is not set
++
++#
++# USB DSL modem support
++#
++
++#
++# USB Gadget Support
++#
++# CONFIG_USB_GADGET is not set
++# CONFIG_MMC is not set
++CONFIG_NEW_LEDS=y
++CONFIG_LEDS_CLASS=y
++
++#
++# LED drivers
++#
++CONFIG_LEDS_MB618=y
++
++#
++# LED Triggers
++#
++CONFIG_LEDS_TRIGGERS=y
++# CONFIG_LEDS_TRIGGER_TIMER is not set
++CONFIG_LEDS_TRIGGER_HEARTBEAT=y
++# CONFIG_RTC_CLASS is not set
++
++#
++# DMA Engine support
++#
++# CONFIG_DMA_ENGINE is not set
++
++#
++# DMA Clients
++#
++
++#
++# DMA Devices
++#
++
++#
++# Userspace I/O
++#
++# CONFIG_UIO is not set
++CONFIG_STM_DRIVERS=y
++
++#
++# STM specific devices
++#
++CONFIG_STM_PIO=y
++CONFIG_STM_DMA=y
++CONFIG_MIN_STM_DMA_CHANNEL_NR=0
++CONFIG_MAX_STM_DMA_CHANNEL_NR=15
++# CONFIG_STM_DMA_DEBUG is not set
++# CONFIG_STM_DMA_FW_USERSPACE is not set
++CONFIG_STM_DMA_FW_KERNEL=y
++# CONFIG_STM_SPI is not set
++
++#
++# File systems
++#
++CONFIG_EXT2_FS=y
++CONFIG_EXT2_FS_XATTR=y
++# CONFIG_EXT2_FS_POSIX_ACL is not set
++# CONFIG_EXT2_FS_SECURITY is not set
++# CONFIG_EXT2_FS_XIP is not set
++CONFIG_EXT3_FS=y
++CONFIG_EXT3_FS_XATTR=y
++# CONFIG_EXT3_FS_POSIX_ACL is not set
++# CONFIG_EXT3_FS_SECURITY is not set
++# CONFIG_EXT4DEV_FS is not set
++CONFIG_JBD=y
++# CONFIG_JBD_DEBUG is not set
++CONFIG_FS_MBCACHE=y
++# CONFIG_REISERFS_FS is not set
++# CONFIG_JFS_FS is not set
++# CONFIG_FS_POSIX_ACL is not set
++# CONFIG_XFS_FS is not set
++# CONFIG_GFS2_FS is not set
++# CONFIG_OCFS2_FS is not set
++# CONFIG_MINIX_FS is not set
++CONFIG_ROMFS_FS=y
++CONFIG_INOTIFY=y
++CONFIG_INOTIFY_USER=y
++# CONFIG_QUOTA is not set
++CONFIG_DNOTIFY=y
++# CONFIG_AUTOFS_FS is not set
++# CONFIG_AUTOFS4_FS is not set
++# CONFIG_FUSE_FS is not set
++
++#
++# CD-ROM/DVD Filesystems
++#
++CONFIG_ISO9660_FS=y
++CONFIG_JOLIET=y
++# CONFIG_ZISOFS is not set
++CONFIG_UDF_FS=y
++CONFIG_UDF_NLS=y
++
++#
++# DOS/FAT/NT Filesystems
++#
++CONFIG_FAT_FS=y
++CONFIG_MSDOS_FS=y
++CONFIG_VFAT_FS=y
++CONFIG_FAT_DEFAULT_CODEPAGE=437
++CONFIG_FAT_DEFAULT_IOCHARSET="iso8859-1"
++# CONFIG_NTFS_FS is not set
++
++#
++# Pseudo filesystems
++#
++CONFIG_PROC_FS=y
++CONFIG_PROC_KCORE=y
++CONFIG_PROC_SYSCTL=y
++CONFIG_SYSFS=y
++CONFIG_TMPFS=y
++# CONFIG_TMPFS_POSIX_ACL is not set
++# CONFIG_HUGETLBFS is not set
++# CONFIG_HUGETLB_PAGE is not set
++CONFIG_RAMFS=y
++# CONFIG_CONFIGFS_FS is not set
++
++#
++# Miscellaneous filesystems
++#
++# CONFIG_ADFS_FS is not set
++# CONFIG_AFFS_FS is not set
++# CONFIG_HFS_FS is not set
++# CONFIG_HFSPLUS_FS is not set
++# CONFIG_BEFS_FS is not set
++# CONFIG_BFS_FS is not set
++# CONFIG_EFS_FS is not set
++CONFIG_JFFS2_FS=y
++CONFIG_JFFS2_FS_DEBUG=0
++CONFIG_JFFS2_FS_WRITEBUFFER=y
++# CONFIG_JFFS2_SUMMARY is not set
++# CONFIG_JFFS2_FS_XATTR is not set
++# CONFIG_JFFS2_COMPRESSION_OPTIONS is not set
++CONFIG_JFFS2_ZLIB=y
++CONFIG_JFFS2_RTIME=y
++# CONFIG_JFFS2_RUBIN is not set
++CONFIG_CRAMFS=y
++# CONFIG_SQUASHFS is not set
++# CONFIG_VXFS_FS is not set
++# CONFIG_HPFS_FS is not set
++# CONFIG_QNX4FS_FS is not set
++# CONFIG_SYSV_FS is not set
++# CONFIG_UFS_FS is not set
++
++#
++# Network File Systems
++#
++CONFIG_NFS_FS=y
++CONFIG_NFS_V3=y
++# CONFIG_NFS_V3_ACL is not set
++# CONFIG_NFS_V4 is not set
++# CONFIG_NFS_DIRECTIO is not set
++# CONFIG_NFSD is not set
++CONFIG_ROOT_NFS=y
++CONFIG_LOCKD=y
++CONFIG_LOCKD_V4=y
++CONFIG_NFS_COMMON=y
++CONFIG_SUNRPC=y
++# CONFIG_SUNRPC_BIND34 is not set
++# CONFIG_RPCSEC_GSS_KRB5 is not set
++# CONFIG_RPCSEC_GSS_SPKM3 is not set
++# CONFIG_SMB_FS is not set
++# CONFIG_CIFS is not set
++# CONFIG_NCP_FS is not set
++# CONFIG_CODA_FS is not set
++# CONFIG_AFS_FS is not set
++
++#
++# Partition Types
++#
++# CONFIG_PARTITION_ADVANCED is not set
++CONFIG_MSDOS_PARTITION=y
++
++#
++# Native Language Support
++#
++CONFIG_NLS=y
++CONFIG_NLS_DEFAULT="iso8859-1"
++CONFIG_NLS_CODEPAGE_437=y
++# CONFIG_NLS_CODEPAGE_737 is not set
++# CONFIG_NLS_CODEPAGE_775 is not set
++# CONFIG_NLS_CODEPAGE_850 is not set
++# CONFIG_NLS_CODEPAGE_852 is not set
++# CONFIG_NLS_CODEPAGE_855 is not set
++# CONFIG_NLS_CODEPAGE_857 is not set
++# CONFIG_NLS_CODEPAGE_860 is not set
++# CONFIG_NLS_CODEPAGE_861 is not set
++# CONFIG_NLS_CODEPAGE_862 is not set
++# CONFIG_NLS_CODEPAGE_863 is not set
++# CONFIG_NLS_CODEPAGE_864 is not set
++# CONFIG_NLS_CODEPAGE_865 is not set
++# CONFIG_NLS_CODEPAGE_866 is not set
++# CONFIG_NLS_CODEPAGE_869 is not set
++# CONFIG_NLS_CODEPAGE_936 is not set
++# CONFIG_NLS_CODEPAGE_950 is not set
++# CONFIG_NLS_CODEPAGE_932 is not set
++# CONFIG_NLS_CODEPAGE_949 is not set
++# CONFIG_NLS_CODEPAGE_874 is not set
++# CONFIG_NLS_ISO8859_8 is not set
++# CONFIG_NLS_CODEPAGE_1250 is not set
++# CONFIG_NLS_CODEPAGE_1251 is not set
++# CONFIG_NLS_ASCII is not set
++CONFIG_NLS_ISO8859_1=y
++# CONFIG_NLS_ISO8859_2 is not set
++# CONFIG_NLS_ISO8859_3 is not set
++# CONFIG_NLS_ISO8859_4 is not set
++# CONFIG_NLS_ISO8859_5 is not set
++# CONFIG_NLS_ISO8859_6 is not set
++# CONFIG_NLS_ISO8859_7 is not set
++# CONFIG_NLS_ISO8859_9 is not set
++# CONFIG_NLS_ISO8859_13 is not set
++# CONFIG_NLS_ISO8859_14 is not set
++# CONFIG_NLS_ISO8859_15 is not set
++# CONFIG_NLS_KOI8_R is not set
++# CONFIG_NLS_KOI8_U is not set
++# CONFIG_NLS_UTF8 is not set
++
++#
++# Distributed Lock Manager
++#
++# CONFIG_DLM is not set
++
++#
++# Profiling support
++#
++# CONFIG_PROFILING is not set
++
++#
++# Instrumentation Support
++#
++# CONFIG_KPROBES is not set
++# CONFIG_KPTRACE is not set
++# CONFIG_MARKERS is not set
++CONFIG_LTT_TIMESTAMP=y
++
++#
++# Kernel hacking
++#
++CONFIG_TRACE_IRQFLAGS_SUPPORT=y
++# CONFIG_PRINTK_TIME is not set
++CONFIG_ENABLE_MUST_CHECK=y
++# CONFIG_MAGIC_SYSRQ is not set
++# CONFIG_UNUSED_SYMBOLS is not set
++# CONFIG_DEBUG_FS is not set
++# CONFIG_HEADERS_CHECK is not set
++# CONFIG_DEBUG_KERNEL is not set
++# CONFIG_DEBUG_BUGVERBOSE is not set
++# CONFIG_WANT_EXTRA_DEBUG_INFORMATION is not set
++# CONFIG_UNWIND_INFO is not set
++# CONFIG_SH_STANDARD_BIOS is not set
++# CONFIG_EARLY_SCIF_CONSOLE is not set
++
++#
++# Security options
++#
++# CONFIG_KEYS is not set
++# CONFIG_SECURITY is not set
++# CONFIG_CRYPTO is not set
++
++#
++# Library routines
++#
++CONFIG_BITREVERSE=y
++# CONFIG_CRC_CCITT is not set
++# CONFIG_CRC16 is not set
++# CONFIG_CRC_ITU_T is not set
++CONFIG_CRC32=y
++# CONFIG_CRC7 is not set
++# CONFIG_LIBCRC32C is not set
++CONFIG_ZLIB_INFLATE=y
++CONFIG_ZLIB_DEFLATE=y
++CONFIG_PLIST=y
++CONFIG_HAS_IOMEM=y
++CONFIG_HAS_IOPORT=y
++CONFIG_HAS_DMA=y

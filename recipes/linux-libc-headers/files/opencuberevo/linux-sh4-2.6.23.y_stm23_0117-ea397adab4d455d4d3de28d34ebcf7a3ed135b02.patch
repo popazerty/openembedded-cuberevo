@@ -1,0 +1,30 @@
+From ea397adab4d455d4d3de28d34ebcf7a3ed135b02 Mon Sep 17 00:00:00 2001
+From: Pawel Moll <pawel.moll@st.com>
+Date: Fri, 28 Nov 2008 12:37:21 +0000
+Subject: [PATCH] sound_stm: Removed unnecessary pcm_lib call
+
+The snd_pcm_lib_preallocate-ed buffers are freed automagically
+when PCM device is being removed.
+
+Signed-off-by: Pawel Moll <pawel.moll@st.com>
+---
+ sound/stm/common.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/sound/stm/common.c b/sound/stm/common.c
+index 6808399..1c4ed0f 100644
+--- a/sound/stm/common.c
++++ b/sound/stm/common.c
+@@ -385,8 +385,7 @@ void snd_stm_buffer_dispose(struct snd_stm_buffer *buffer)
+ 	snd_stm_magic_assert(buffer, return);
+ 	snd_stm_assert(!buffer->allocated, return);
+ 
+-	if (!buffer->bpa2_part)
+-		snd_pcm_lib_preallocate_free_for_all(buffer->pcm);
++	/* snd_pcm_lib__preallocate*-ed buffer is freed automagically */
+ 
+ 	snd_stm_magic_clear(buffer);
+ 	kfree(buffer);
+-- 
+1.5.3.6
+
