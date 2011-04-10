@@ -13,7 +13,7 @@
 
 
 #include "tuxtxt.h"
-#include "stmfb.h"
+#include <linux/stmfb.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -65,6 +65,7 @@ void blit()
 	   bltData.src_left   = 0;
 	   bltData.src_right  = 720;
 	   bltData.src_bottom = 576;
+    bltData.srcFormat = SURF_BGRA8888;
 
 	   bltData.dstOffset  = 0;
 	   bltData.dstPitch   = stride;
@@ -72,6 +73,7 @@ void blit()
 	   bltData.dst_left   = 0;
 	   bltData.dst_right  = var_screeninfo.xres;
 	   bltData.dst_bottom = var_screeninfo.yres;
+    bltData.dstFormat  = SURF_BGRA8888;
 	} else
 	if (zoommode == 1)
 	{
@@ -83,6 +85,7 @@ void blit()
 	   bltData.src_left   = 0;
 	   bltData.src_right  = 720;
 	   bltData.src_bottom = 576 / 2;
+    bltData.srcFormat  = SURF_BGRA8888;
 
 	   bltData.dstOffset  = 0;
 	   bltData.dstPitch   = stride;
@@ -90,6 +93,7 @@ void blit()
 	   bltData.dst_left   = 0;
 	   bltData.dst_right  = var_screeninfo.xres;
 	   bltData.dst_bottom = var_screeninfo.yres;
+    bltData.dstFormat  = SURF_BGRA8888;
 	} else
 	if (zoommode == 2)
 	{
@@ -101,6 +105,7 @@ void blit()
 	   bltData.src_left   = 0;
 	   bltData.src_right  = 720;
 	   bltData.src_bottom = 576;
+    bltData.srcFormat  = SURF_BGRA8888;
 
 	   bltData.dstOffset  = 0;
 	   bltData.dstPitch   = stride;
@@ -108,6 +113,7 @@ void blit()
 	   bltData.dst_left   = 0;
 	   bltData.dst_right  = var_screeninfo.xres;
 	   bltData.dst_bottom = var_screeninfo.yres;
+    bltData.dstFormat  = SURF_BGRA8888;
 	} else
 		return;
 	
@@ -1525,6 +1531,8 @@ static void sbSigHandler(int signo)
 	
 	unlink ("/tmp/block.tmp");
 	unlink ("/tmp/rc.socket");
+
+
  	debugf(1, "Tuxtxt dies with signal %d\n", signo);
 
 	debugf(1, "%s: <\n", __func__);
@@ -1610,10 +1618,10 @@ void * rcThread(void *vData)
 		           case KEY_MUTE:      RCCode = RC_MUTE;    break;
 		           case KEY_HELP:      RCCode = RC_HELP;    break;
 		           case KEY_MENU:        RCCode = RC_DBOX;    break;
-		           case KEY_HOME:
-			   case KEY_TEXT:
+		           /*case KEY_HOME:
+			   case KEY_TEXT:*/
 			   case 158/*KEY_EXIT*/:
-		           case KEY_POWER:        RCCode = RC_HOME;    break;
+		           /*case KEY_POWER:*/        RCCode = RC_HOME;    break;
 		           default:  RCCode = -1;
 		       }
 	       
@@ -1719,6 +1727,7 @@ int main(int argc, char **argv)
 
 	unlink ("/tmp/block.tmp");
 	unlink ("/tmp/rc.socket");
+
 
 	/* initialisations */
 	if (Init() == 0)
@@ -1873,7 +1882,7 @@ int main(int argc, char **argv)
 			}
 		}
 		//usleep(100000);
-	} while ((RCCode != RC_HOME) && (RCCode != RC_STANDBY));
+	} while ((RCCode != RC_HOME) /*&& (RCCode != RC_STANDBY)*/);
 
 	/* exit */
 	CleanUp();
@@ -1884,6 +1893,7 @@ int main(int argc, char **argv)
 #endif
 	unlink ("/tmp/block.tmp");
 	unlink ("/tmp/rc.socket");
+
 
 	debugf(1, "%s: <\n", __func__);
 
@@ -1980,7 +1990,7 @@ int Init()
 	screen_mode2 = 0;
 	color_mode   = 10;
 	trans_mode   = 10;
-	menulanguage = 0;	/* german */
+	menulanguage = 1;	/* english */
 	national_subset = 0;/* default */
 	auto_national   = 1;
 	swapupdown      = 0;
@@ -4154,6 +4164,15 @@ void setCurrentPIGSettings(int left, int top, int width, int height)
 
 	fd = fopen("/proc/stb/vmpeg/0/dst_top", "w");
 	fprintf(fd, "%x", top);
+	fclose(fd);
+
+	// this is needed because it seems not to set correctly width and height at first (and doing only after causes crash)
+	fd = fopen("/proc/stb/vmpeg/0/dst_width", "w");
+	fprintf(fd, "%x", width);
+	fclose(fd);
+
+	fd = fopen("/proc/stb/vmpeg/0/dst_height", "w");
+	fprintf(fd, "%x", height);
 	fclose(fd);
 }
 

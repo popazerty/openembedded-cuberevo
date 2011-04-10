@@ -32,26 +32,30 @@ class ShellStarter(Screen):
 		#if self.container.execute("/usr/bin/tuxtxt "+self.getValue(iServiceInformation.sTXTPID)):
 		s="/usr/bin/tuxtxt "
 		s+=self.getValue(iServiceInformation.sTXTPID)
-		feInfo = service.frontendInfo()
+		feInfo = service and service.frontendInfo()
 		feNumber = feInfo and feInfo.getFrontendInfo(iFrontendInformation.frontendNumber)
-		s+= " "
-		s+=str(feNumber)
-		s+=" &"
-		print s
-		try:
-			os.popen(s)
-		except OSError, e: 
-			print "OSError: ", e
-			#print "OSError"
-			#Why cant i use openWithCallback?
-			#from Screens.MessageBox import MessageBox
-			#def msgClosed(ret):
-			#	return
-			#self.session.openWithCallback(msgClosed, MessageBox, _("Swap needed"), MessageBox.TYPE_INFO)
+		if feNumber is not None:
+			s+= " "
+			s+=str(feNumber)
+			s+=" &"
+			print s
+			try:
+				os.popen(s)
+			except OSError, e: 
+				print "OSError: ", e
+				#print "OSError"
+				#Why cant i use openWithCallback?
+				#from Screens.MessageBox import MessageBox
+				#def msgClosed(ret):
+				#	return
+				#self.session.openWithCallback(msgClosed, MessageBox, _("Swap needed"), MessageBox.TYPE_INFO)
 
+				self.finished(-1)
 			self.finished(-1)
-		self.finished(-1)
-
+		else:
+			print "tuxtxt: No frontend detected!"
+			self.finished(-1)
+			
 	def finished(self,retval):
 		print "finished"
 		#fbClass.getInstance().unlock()
