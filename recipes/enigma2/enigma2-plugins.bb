@@ -6,11 +6,15 @@ PACKAGES_DYNAMIC = "enigma2-plugin-*"
 # if you want experimental, use:
 SRCREV="87fd2f1120962f553ecb1a88bbee46ed821df975"
 SRCDATE="20110215"
+SRCREV_opencuberevo="87fd2f1120962f553ecb1a88bbee46ed821df975"
+SRCDATE_opencuberevo="20110215"
 BRANCH="master"
 PV = "experimental-git${SRCDATE}"
+PV_opencuberevo = "master-git${SRCDATE}"
 
 PR = "r0"
 SRC_URI="git://schwerkraft.elitedvb.net/enigma2-plugins/enigma2-plugins.git;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_opencuberevo = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2pluginscuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
 
 EXTRA_OECONF = " \
         BUILD_SYS=${BUILD_SYS} \

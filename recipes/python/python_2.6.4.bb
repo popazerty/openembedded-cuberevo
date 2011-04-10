@@ -37,7 +37,6 @@ SRC_URI_append_opendreambox = " \
   file://forced_largefile_support.patch;patch=1;pnum=1"
   
 SRC_URI_append_opencuberevo = " \
-  file://some_configure_fixes.patch;patch=1;pnum=0 \
   file://strict_aliasing_site.patch;patch=0;pnum=0 \
   file://fix_pthread_site.patch;patch=0;pnum=0 \
   file://forced_largefile_support.patch;patch=1;pnum=1"

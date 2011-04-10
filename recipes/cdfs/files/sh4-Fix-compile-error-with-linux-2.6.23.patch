@@ -1,0 +1,11 @@
+--- a/cddata.c	2009-12-21 15:04:03.000000000 +0100
++++ b/cddata.c	2010-12-03 17:12:07.000000000 +0100
+@@ -82,7 +82,7 @@
+   .mmap             = generic_file_mmap
+ #else
+   .mmap             = generic_file_readonly_mmap,
+-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,27)
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
+   .sendfile         = generic_file_sendfile
+ #else
+   .splice_read      = generic_file_splice_read

@@ -12,6 +12,13 @@ SRC_URI = "svn://svn.eglibc.org/branches;module=${EGLIBC_BRANCH};rev=${SVN_REV};
            file://IO-acquire-lock-fix.patch;patch=1 \
            file://etc/ld.so.conf \
            file://generate-supported.mk"
+SRC_URI_opencuberevo = "svn://svn.eglibc.org/branches;module=${EGLIBC_BRANCH};rev=${SVN_REV};proto=svn \
+           file://eglibc-svn-arm-lowlevellock-include-tls.patch;patch=1 \
+           file://armv4t-interworking.patch;patch=1 \
+           file://IO-acquire-lock-fix.patch;patch=1 \
+           file://sh4-ptrace-fix.patch;patch=1 \
+           file://etc/ld.so.conf \
+           file://generate-supported.mk"
 S = "${WORKDIR}/${EGLIBC_BRANCH}/libc"
 B = "${WORKDIR}/build-${TARGET_SYS}"
 

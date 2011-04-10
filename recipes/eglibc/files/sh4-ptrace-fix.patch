@@ -1,0 +1,20 @@
+Index: libc/sysdeps/unix/sysv/linux/sys/ptrace.h
+===================================================================
+--- libc.orig/sysdeps/unix/sysv/linux/sys/ptrace.h	2009-09-03 16:12:00.000000000 -0700
++++ libc/sysdeps/unix/sysv/linux/sys/ptrace.h	2009-10-28 12:51:22.000000000 -0700
+@@ -131,6 +131,7 @@
+ 
+ 
+ /* Options set using PTRACE_SETOPTIONS.  */
++#if 0
+ enum __ptrace_setoptions {
+   PTRACE_O_TRACESYSGOOD	= 0x00000001,
+   PTRACE_O_TRACEFORK	= 0x00000002,
+@@ -141,6 +142,7 @@
+   PTRACE_O_TRACEEXIT	= 0x00000040,
+   PTRACE_O_MASK		= 0x0000007f
+ };
++#endif
+ 
+ /* Wait extended result codes for the above trace options.  */
+ enum __ptrace_eventcodes {

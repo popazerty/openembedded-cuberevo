@@ -18,6 +18,14 @@ SRC_URI = "http://snapshots.madwifi-project.org/madwifi-trunk/${SRCNAME}-${PV}.t
 	   file://powerpc-fix.patch;patch=1 \
            ${WACKELF_SRC_URI}"
 
+SRC_URI_opencuberevo = "http://snapshots.madwifi-project.org/madwifi-trunk/${SRCNAME}-${PV}.tar.gz \
+           file://10-xscale-be-elf-copts.patch;patch=1 \
+           file://10-xscale-le-elf-copts.patch;patch=1 \
+           file://10-sh4-le-elf-copts.patch;patch=1 \
+	   file://powerpc-fix.patch;patch=1 \
+	   file://sh4-fix.patch;patch=1 \
+           ${WACKELF_SRC_URI}"
+
 S = "${WORKDIR}/${SRCNAME}-${PV}"
 
 inherit module-base

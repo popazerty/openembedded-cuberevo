@@ -1,0 +1,20 @@
+--- madwifi-ng-r3314-20080131.orig/Makefile	2010-12-03 17:37:01.000000000 +0100
++++ madwifi-ng-r3314-20080131/Makefile	2010-12-03 17:37:10.000000000 +0100
+@@ -171,16 +171,7 @@
+ 	    echo "FAILED"; \
+ 	    echo "Please enable sysctl support."; \
+ 	    exit 1; \
+-	fi
+-	
+-ifeq ($(strip $(BUS)),PCI)
+-	@# check PCI support
+-	@if [ -z "$(CONFIG_PCI)" ]; then \
+-	    echo "FAILED"; \
+-	    echo "Please enable PCI support."; \
+-	    exit 1; \
+-	fi
+-endif
++	fi	
+ 	
+ 	@# check wireless extensions support is enabled
+ 	@if [ -z "$(CONFIG_NET_RADIO)$(CONFIG_WIRELESS_EXT)" ]; then \
