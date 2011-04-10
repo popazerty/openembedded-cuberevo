@@ -47,11 +47,11 @@ RDEPENDS_append_cuberevo-mini2 = " module-init-tools-depmod"
 PR = "r0"
 GCC ?= ""
 
-SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-${MACHINE}-${PV}${GCC}.tar.bz2 "
+SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-cuberevo-${PV}${GCC}.tar.bz2"
 
 S = "${WORKDIR}"
 
-TOOLSBIN = "cubefpctl devinit eplayer3 grab hdmi-control hdmi-info rset showiframe stfbcontrol stfbset streamproxy ustslave vdstandby"
+TOOLSBIN = "cubefpctl devinit eplayer3 grab hdmi-control hdmi-info rset shmE2 showiframe stfbcontrol stfbset streamproxy stslave vdstandby"
 
 do_install_sh4() {
 	install -d ${D}/bin
