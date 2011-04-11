@@ -2,12 +2,12 @@ require linux-libc-headers.inc
 
 DEFAULT_PREFERENCE = "-1"
 INHIBIT_DEFAULT_DEPS = "1"
-PR = "r1"
+PR = "r2"
 
 SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}.tar.bz2 \
            file://dvb-api-2.6.17.patch;patch=1 \
            file://Kconfig.patch;patch=1 \
-           file://autoconf.h"
+           file://autoconf.h "
 
 SRC_URI_append_opencuberevo = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}${PATCHLEVEL}.tar.bz2 \
 	file://patch-2.6.17.14;patch=1;pnum=1 \
