@@ -1,8 +1,8 @@
 require linux-libc-headers.inc
 
+DEFAULT_PREFERENCE = "-1"
 INHIBIT_DEFAULT_DEPS = "1"
-DEPENDS += "unifdef-native"
-PR = "r0"
+PR = "r1"
 
 SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}.tar.bz2 \
            file://dvb-api-2.6.17.patch;patch=1 \
@@ -837,7 +837,7 @@ SRC_URI_stm23 = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}${PATCHLEV
 
 S = "${WORKDIR}/linux-${PV}"
 
-set_arch() {
+do_configure () {
 	case ${TARGET_ARCH} in
 		alpha*)   ARCH=alpha ;;
 		arm*)     ARCH=arm ;;
@@ -847,40 +847,36 @@ set_arch() {
 		ia64*)    ARCH=ia64 ;;
 		mips*)    ARCH=mips ;;
 		m68k*)    ARCH=m68k ;;
-		powerpc*) ARCH=powerpc ;;
+		powerpc*) ARCH=ppc ;;
 		s390*)    ARCH=s390 ;;
 		sh*)      ARCH=sh ;;
 		sparc64*) ARCH=sparc64 ;;
 		sparc*)   ARCH=sparc ;;
 		x86_64*)  ARCH=x86_64 ;;
 	esac
+	if test !  -e include/asm-$ARCH; then
+		oefatal unable to create asm symlink in kernel headers
+	fi
+	rm "include/asm"
+	cp -pPR "include/asm-$ARCH" "include/asm"
+	if test "$ARCH" = "arm"; then
+		cp -pPR include/asm/arch-ebsa285 include/asm/arch
+	elif test "$ARCH" = "sh"; then
+		cp -pPR include/asm/cpu-${TARGET_ARCH} include/asm/cpu || die "unable to create include/asm/cpu"
+	fi
 }
 
-do_configure() {
-	set_arch
-	oe_runmake allnoconfig ARCH=$ARCH
-}
-
-do_compile () {
+do_stage () {
+	install -d ${STAGING_INCDIR}
+	rm -rf ${STAGING_INCDIR}/linux ${STAGING_INCDIR}/asm ${STAGING_INCDIR}/asm-generic
+	cp -pfLR include/linux ${STAGING_INCDIR}/
+	cp -pfLR include/asm ${STAGING_INCDIR}/
+	cp -pfLR include/asm-generic ${STAGING_INCDIR}/
 }
 
 do_install() {
-	set_arch
-	oe_runmake headers_install INSTALL_HDR_PATH=${D}${exec_prefix} ARCH=$ARCH
+	install -d ${D}${includedir}
+	cp -pfLR include/linux ${D}${includedir}/
+	cp -pfLR include/asm ${D}${includedir}/
+	cp -pfLR include/asm-generic ${D}${includedir}/
 }
-
-STAGE_TEMP="${WORKDIR}/temp-staging"
-
-do_stage () {
-	set_arch
-	echo $ARCH
-	rm -rf ${STAGE_TEMP}
-	mkdir -p ${STAGE_TEMP}
-	oe_runmake headers_install INSTALL_HDR_PATH=${STAGE_TEMP}${exec_prefix} ARCH=$ARCH
-	install -d ${STAGING_INCDIR}
-	rm -rf ${STAGING_INCDIR}/linux ${STAGING_INCDIR}/asm ${STAGING_INCDIR}/asm-generic
-	cp -pfLR ${STAGE_TEMP}${includedir}/linux ${STAGING_INCDIR}/
-	cp -pfLR ${STAGE_TEMP}${includedir}/asm ${STAGING_INCDIR}/
-	cp -pfLR ${STAGE_TEMP}${includedir}/asm-generic ${STAGING_INCDIR}/
-}
-
