@@ -6,7 +6,8 @@ PR = "r1"
 
 SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}.tar.bz2 \
            file://dvb-api-2.6.17.patch;patch=1 \
-           file://Kconfig.patch;patch=1"
+           file://Kconfig.patch;patch=1 \
+           file://autoconf.h"
 
 SRC_URI_append_opencuberevo = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}${PATCHLEVEL}.tar.bz2 \
 	file://patch-2.6.17.14;patch=1;pnum=1 \
@@ -873,6 +874,7 @@ do_stage () {
 	install -d ${STAGING_INCDIR}
 	rm -rf ${STAGING_INCDIR}/linux ${STAGING_INCDIR}/asm ${STAGING_INCDIR}/asm-generic
 	cp -pfLR include/linux ${STAGING_INCDIR}/
+	cp -pfLR ${WORKDIR}/autoconf.h ${STAGING_INCDIR}/linux/
 	cp -pfLR include/asm ${STAGING_INCDIR}/
 	cp -pfLR include/asm-generic ${STAGING_INCDIR}/
 }
@@ -880,6 +882,7 @@ do_stage () {
 do_install() {
 	install -d ${D}${includedir}
 	cp -pfLR include/linux ${D}${includedir}/
+	cp -pfLR ${WORKDIR}/autoconf.h ${D}${includedir}/linux/
 	cp -pfLR include/asm ${D}${includedir}/
 	cp -pfLR include/asm-generic ${D}${includedir}/
 }
