@@ -857,7 +857,7 @@ do_configure () {
 	if test !  -e include/asm-$ARCH; then
 		oefatal unable to create asm symlink in kernel headers
 	fi
-	rm "include/asm"
+#	rm "include/asm"
 	cp -pPR "include/asm-$ARCH" "include/asm"
 	if test "$ARCH" = "arm"; then
 		cp -pPR include/asm/arch-ebsa285 include/asm/arch

@@ -12,6 +12,9 @@ PR = "r11"
 SRC_URI += "http://sources.dreamboxupdate.com/download/snapshots/openwrt_madwifi_patches_20080829.tar.bz2 \
 	http://sources.dreamboxupdate.com/download/snapshots/ath_hal-20080815.tgz \
 	file://40-fix-warnings.patch;patch=1;pnum=1"
+SRC_URI_opencuberevo += "http://sources.dreamboxupdate.com/download/snapshots/openwrt_madwifi_patches_20080829.tar.bz2 \
+	http://sources.dreamboxupdate.com/download/snapshots/ath_hal-20080815.tgz \
+	file://40-fix-warnings.patch;patch=1;pnum=1"
 
 do_munge() {
 	rm -rf ${S}/hal || /bin/true
