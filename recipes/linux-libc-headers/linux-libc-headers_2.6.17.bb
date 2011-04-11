@@ -866,6 +866,9 @@ do_configure () {
 	fi
 }
 
+do_compile () {
+}
+
 do_stage () {
 	install -d ${STAGING_INCDIR}
 	rm -rf ${STAGING_INCDIR}/linux ${STAGING_INCDIR}/asm ${STAGING_INCDIR}/asm-generic
