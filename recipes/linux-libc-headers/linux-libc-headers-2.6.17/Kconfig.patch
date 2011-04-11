@@ -1,5 +1,5 @@
---- linux-libc-headers-2.6.17-r0.orig/linux-2.6.17/arch/sh/Kconfig	2011-04-10 19:43:14.000000000 +0200
-+++ linux-libc-headers-2.6.17-r0/linux-2.6.17/arch/sh/Kconfig	2011-04-10 19:32:11.000000000 +0200
+--- linux-libc-headers-2.6.17-r0.orig/arch/sh/Kconfig	2011-04-10 19:43:14.000000000 +0200
++++ linux-libc-headers-2.6.17-r0/arch/sh/Kconfig	2011-04-10 19:32:11.000000000 +0200
 @@ -626,6 +626,7 @@
  	default "33333333" if CPU_SUBTYPE_SH7300 || CPU_SUBTYPE_SH7770 || CPU_SUBTYPE_SH7760
  	default "27000000" if CPU_SUBTYPE_SH73180
