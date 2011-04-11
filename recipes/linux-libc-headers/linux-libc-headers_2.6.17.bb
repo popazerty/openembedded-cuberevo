@@ -10,8 +10,7 @@ SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}.tar.bz2 \
            file://autoconf.h \
            file://version.h "
 
-SRC_URI_append_opencuberevo = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}${PATCHLEVEL}.tar.bz2 \
-	file://patch-2.6.17.14;patch=1;pnum=1 \
+SRC_URI_append_opencuberevo = "file://patch-2.6.17.14;patch=1;pnum=1 \
 #	file://linux-2.6.17.8-mm6-mtd.patch;patch=1;pnum=1 \
 	file://linux-2.6.17.8-sh-allpatches.patch;patch=1;pnum=1 \
 	file://linux-2.6.17_stm22-gcc-4.1.patch;patch=1;pnum=1 \
@@ -147,8 +146,7 @@ SRC_URI_append_opencuberevo = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-$
 # kernel 41 released here
 "
 
-SRC_URI_stm23 = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}${PATCHLEVEL}.tar.bz2 \
-       file://linux-2.6.23.17-update.patch.bz2;patch=1;pnum=1 \
+SRC_URI_stm23 = "file://linux-2.6.23.17-update.patch.bz2;patch=1;pnum=1 \
        file://linux-2.6.23.1-sh-wavefront.patch.bz2;patch=1;pnum=1 \
        file://linux-2.6.23.1-stm-20071101.patch;patch=1;pnum=1 \
        file://linux-2.6.23.1-stm-20071023-iounmap-fix.patch;patch=1;pnum=1 \
