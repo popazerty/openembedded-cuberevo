@@ -13,6 +13,8 @@ PV = "0.10+git${SRCDATE}"
 
 SRC_URI="git://schwerkraft.elitedvb.net/libdreamdvd/libdreamdvd.git;protocol=git;branch=${BRANCH};tag=${SRCREV}"
 
+SRC_URI_append_opencuberevo=" file://sh4-fixes.patch;patch=1;pnum=1"
+
 CFLAGS_dm500hd_append = " -DHARDWARE_SUPPORT_LPCM"
 CFLAGS_dm800se_append = " -DHARDWARE_SUPPORT_LPCM"
 CFLAGS_dm7020hd_append = " -DHARDWARE_SUPPORT_LPCM"

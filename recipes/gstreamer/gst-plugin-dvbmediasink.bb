@@ -14,6 +14,8 @@ inherit autotools pkgconfig
 
 SRC_URI = "git://schwerkraft.elitedvb.net/dvbmediasink/dvbmediasink.git;protocol=git;branch=${BRANCH};tag=${SRCREV}"
 
+SRC_URI_append_opencuberevo=" file://sh4-fixes.patch;patch=1;pnum=1"
+
 S = "${WORKDIR}/git"
 
 FILES_${PN} = "${libdir}/gstreamer-0.10/*.so*"
