@@ -75,9 +75,9 @@ PN = "enigma2"
 PR = "r0"
 
 SRCDATE = "20110217"
-SRCDATE_opencuberevo = "20110410"
+SRCDATE_opencuberevo = "20110412"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
-SRCREV_opencuberevo = "fcb768910b48700d4b429f3d8f0b3f1fd12e1868"
+SRCREV_opencuberevo = "2399c46cd95a4a63bdf6aa2c5fc4a6d4798177ee"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need
@@ -112,6 +112,35 @@ EXTRA_OECONF = " \
         STAGING_LIBDIR=${STAGING_LIBDIR} \
 "
 
+EXTRA_OECONF_append_opencuberevo = " \
+		--enable-cuberevo \
+"
+
+EXTRA_OECONF_append_cuberevo = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_100HD"
+"
+EXTRA_OECONF_append_cuberevo-250hd = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_250HD"
+"
+EXTRA_OECONF_append_cuberevo-mini-fta = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_MINI_FTA"
+"
+EXTRA_OECONF_append_cuberevo-mini = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_MINI"
+"
+EXTRA_OECONF_append_cuberevo-mini2 = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_MINI2"
+"
+EXTRA_OECONF_append_cuberevo-2000hd = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_2000HD"
+"
+EXTRA_OECONF_append_cuberevo-9500hd = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_9500HD"
+"
+EXTRA_OECONF_append_cuberevo-100hd = " \
+		CPPFLAGS="$(CPPFLAGS) -DPLATFORM_CUBEREVO_100HD"
+"
+
 python populate_packages_prepend () {
 	enigma2_plugindir = bb.data.expand('${libdir}/enigma2/python/Plugins', d)
 
@@ -121,7 +150,7 @@ python populate_packages_prepend () {
 RCONFLICTS_${PN} = "dreambox-keymaps"
 RREPLACES_${PN} = "dreambox-keymaps tuxbox-tuxtxt-32bpp (<= 0.0+cvs20090130-r1)"
 RCONFLICTS_${PN}_opencuberevo = "cuberevo-keymaps"
-RREPLACES_${PN}_opencuberevo = "cuberevo-keymaps tuxbox-tuxtxt-32bpp (<= 0.0+cvs20090130-r1)"
+RREPLACES_${PN}_opencuberevo = "cuberevo-keymaps"
 
 # workaround for opkg <= 0.1.7+svnr455-r19.1
 pkg_preinst_${PN} () {
