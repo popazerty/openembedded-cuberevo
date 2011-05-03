@@ -51,7 +51,7 @@ SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-${MACHI
 
 S = "${WORKDIR}"
 
-TOOLSBIN = "cubefpctl devinit eplayer3 grab hdmi-control hdmi-info rset shmE2 showiframe stfbcontrol stfbset streamproxy stslave vdstandby"
+TOOLSBIN = "cubefpctl devinit eplayer3 grab hdmi-control hdmi-info rset shmE2 showiframe stfbcontrol stfbset streamproxy ustslave vdstandby"
 
 do_install_sh4() {
 	install -d ${D}/bin

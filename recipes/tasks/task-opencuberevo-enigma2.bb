@@ -19,6 +19,9 @@ PACKAGES = "\
 #
 RPROVIDES_task-opencuberevo-enigma2 = "task-opencuberevo-ui"
 DESCRIPTION_task-opencuberevo-enigma2 = "OpenCuberevo: Enigma2 Dependencies"
+
+#  tuxbox-tuxtxt-32bpp \
+
 RDEPENDS_task-opencuberevo-enigma2 = "\
   enigma2 \
   enigma2-defaultservices \
@@ -29,7 +32,6 @@ RDEPENDS_task-opencuberevo-enigma2 = "\
   enigma2-plugin-systemplugins-softwaremanager \
   enigma2-plugin-systemplugins-videotune \
   enigma2-streamproxy \
-  tuxbox-tuxtxt-32bpp \
   enigma2-meta \
   enigma2-plugins-meta \
   enigma2-skins-meta \  
