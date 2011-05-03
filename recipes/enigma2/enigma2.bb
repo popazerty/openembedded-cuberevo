@@ -77,7 +77,7 @@ PR = "r0"
 SRCDATE = "20110217"
 SRCDATE_opencuberevo = "20110503"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
-SRCREV_opencuberevo = "90b7ee9b734e745470267ba15a9ec4be2bed302f"
+SRCREV_opencuberevo = "d9077cd5761ba2ccd39baf548afc2f61ba6f7ef6"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need
