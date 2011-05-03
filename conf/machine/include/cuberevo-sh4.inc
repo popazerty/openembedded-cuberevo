@@ -2,8 +2,8 @@
 
 MACHINE_FEATURES += "alsa pci"
 
-OLDEST_KERNEL = "2.6.17"
-#OLDEST_KERNEL = "2.6.23"
+#OLDEST_KERNEL = "2.6.17"
+OLDEST_KERNEL = "2.6.23"
 
 PREFERRED_PROVIDER_task-opencuberevo-dvbapi = "task-opencuberevo-dvbapi3"
 PREFERRED_PROVIDER_task-opencuberevo-ui = "task-opencuberevo-enigma2"

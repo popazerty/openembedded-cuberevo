@@ -6,7 +6,7 @@
  
 +/* parse a printk option to the kernel
 + * to enable printk while booting
-+ * needs CONFIG_RPINTK too
++ * needs CONFIG_PRINTK too
 + */
 +static int use_printk = 0;
 +

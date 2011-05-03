@@ -1,17 +1,17 @@
 DESCRIPTION = "Linux kernel for Cuberevo-9500hd"
 LICENSE = "GPL"
 PN = "linux-cuberevo-9500hd"
-KV = "2.6.17"
-#KV = "2.6.23"
-PV = "2.6.17"
-#PV = "2.6.23"
+#KV = "2.6.17"
+KV = "2.6.23"
+#PV = "2.6.17"
+PV = "2.6.23"
 
-require linux-opencuberevo-2.6.17.inc
-#require linux-opencuberevo-2.6.23.inc
+#require linux-opencuberevo-2.6.17.inc
+require linux-opencuberevo-2.6.23.inc
 
 PR="${PR_INC}.1"
 
-SRC_URI += "\
+SRC_URI_stm22 += "\
 	file://nosquashfs3.1.patch;patch=1 \
 	file://squashfs3.0.patch;patch=1 \
 	file://squashfs3.0_lzma.patch;patch=1 \
@@ -36,13 +36,16 @@ SRC_URI += "\
 	file://cuberevo-9500hd_setup_p0041.patch;patch=1 \
 	file://cuberevo-9500hd_defconfig"
 
-SRC_URI_stm23 += "\
-	file://linuxdvb_stm23_0123.patch;patch=1 \
-	file://time_stlinux23_0123.diff;patch=1 \
+SRC_URI += "\
 	file://cpp_stm23_0123.patch;patch=1 \
-	file://mtd_stm23_0123.patch;patch=1 \
+	file://time_stlinux23_0123.diff;patch=1 \
 	file://cmdline_printk_stm23_0123.patch;patch=1 \
+	file://linux-sh4-shksyms-gcc43_stm23.patch;patch=1 \
+	file://mtd_stm23_0123.patch;patch=1 \
+	file://linux-sh4-strcpy_stm23_0123.patch;patch=1 \
+	file://linux-sh4-asm_mov_0xffffff_stm23_0123.patch;patch=1 \
 	file://kernel23_depmod_0123.patch;patch=1 \
+	file://linuxdvb_stm23_0123.patch;patch=1 \
 	file://sound_stm23_0123.diff;patch=1 \
 	file://cuberevo_patches_stlinux23_0123.patch;patch=1 \
 	file://cuberevo_rtl8201_stlinux23_0123.patch;patch=1 \

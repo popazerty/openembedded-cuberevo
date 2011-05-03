@@ -4,32 +4,32 @@ PRIORITY = "required"
 LICENSE = "proprietary"
 MAINTAINER = "Felix Domke <tmbinc@elitedvb.net>"
 
-#KV_cuberevo = "${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
-#PV_cuberevo = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', '20101107', '20090820', d)}"
+KV_cuberevo = "${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', '20101107', '20090820', d)}"
 
-KV_cuberevo = "${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.17', '20110410', '20090820', d)}"
+#KV_cuberevo = "${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
+#PV_cuberevo = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.17', '20110410', '20090820', d)}"
 
-KV_cuberevo-100hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo-100hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.17', '20110410', '20090820', d)}"
+KV_cuberevo-100hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo-100hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.23', '20110410', '20090820', d)}"
 
-KV_cuberevo-mini-fta = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo-mini-fta = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.17', '20110410', '20090820', d)}"
+KV_cuberevo-mini-fta = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo-mini-fta = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.23', '20110410', '20090820', d)}"
 
-KV_cuberevo-250hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo-250hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.17', '20110410', '20090820', d)}"
+KV_cuberevo-250hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo-250hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.23', '20110410', '20090820', d)}"
 
-KV_cuberevo-2000hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo-2000hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.17', '20110410', '20090820', d)}"
+KV_cuberevo-2000hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo-2000hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.23', '20110410', '20090820', d)}"
 
-KV_cuberevo-9500hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo-9500hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.17', '20110410', '20090820', d)}"
+KV_cuberevo-9500hd = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo-9500hd = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.23', '20110410', '20090820', d)}"
 
-KV_cuberevo-mini = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo-mini = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.17', '20110410', '20090820', d)}"
+KV_cuberevo-mini = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo-mini = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.23', '20110410', '20090820', d)}"
 
-KV_cuberevo-mini2 = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.17', '2.6.17.14_stm22_0041', '2.6.30', d)}"
-PV_cuberevo-mini2 = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.17', '20110410', '20090820', d)}"
+KV_cuberevo-mini2 = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
+PV_cuberevo-mini2 = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.23', '20110410', '20090820', d)}"
 
 RDEPENDS = "kernel (${KV})"
 
@@ -47,7 +47,7 @@ RDEPENDS_append_cuberevo-mini2 = " module-init-tools-depmod"
 PR = "r0"
 GCC ?= ""
 
-SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-cuberevo-${PV}${GCC}.tar.bz2"
+SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-${MACHINE}-${PV}${GCC}.tar.bz2"
 
 S = "${WORKDIR}"
 

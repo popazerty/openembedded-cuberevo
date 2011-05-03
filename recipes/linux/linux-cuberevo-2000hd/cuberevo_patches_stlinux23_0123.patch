@@ -296,9 +296,9 @@ diff -u --recursive --new-file linux-2.6.17.14_stm22_0041/mm/bpa2.c linux-2.6.17
  
  /*
   * Create "bpa2parts"-defined partitions
-diff -u --recursive --new-file linux-2.6.17.14_stm22_0041/arch/sh/kernel/cpu/sh4/setup-stb7100.c linux-2.6.17.14/arch/sh/kernel/cpu/sh4/setup-stb7100.c
---- linux-2.6.17.14_stm22_0041/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2009-06-06 20:17:15.000000000 +0200
-+++ linux-2.6.17.14/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2009-06-10 23:17:19.000000000 +0200
+diff -u --recursive --new-file linux-sh4-2.6.23.17_stm23_0119-orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c linux-sh4/arch/sh/kernel/cpu/sh4/setup-stb7100.c
+--- linux-sh4-2.6.23.17_stm23_0119-orig/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2009-06-06 20:17:15.000000000 +0200
++++ linux-sh4/arch/sh/kernel/cpu/sh4/setup-stb7100.c	2009-06-10 23:17:19.000000000 +0200
 @@ -126,8 +126,8 @@
  	 * option to select an inverted output from the TPS2052, so no
  	 * software work around is required.)

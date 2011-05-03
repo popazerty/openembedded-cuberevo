@@ -2,7 +2,7 @@ DESCRIPTION = "udev is a daemon which dynamically creates and removes device nod
 /dev/, handles hotplug events and loads drivers at boot time. It replaces \
 the hotplug package and requires a kernel not older than 2.6.12."
 RPROVIDES_${PN} = "hotplug"
-PR = "r20"
+PR = "r21"
 
 SRC_URI = "http://kernel.org/pub/linux/utils/kernel/hotplug/udev-${PV}.tar.gz \
 	   file://noasmlinkage.patch;patch=1 \
@@ -30,23 +30,24 @@ SRC_URI_append_dm800 = " ${@base_contains('PREFERRED_VERSION_linux-dm800', '2.6.
 SRC_URI_append_dm800se = " ${@base_contains('PREFERRED_VERSION_linux-dm800se', '2.6.18', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
 SRC_URI_append_dm7020hd = " ${@base_contains('PREFERRED_VERSION_linux-dm7020hd', '2.6.18', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
 SRC_URI_append_dm500hd = " ${@base_contains('PREFERRED_VERSION_linux-dm500hd', '2.6.18', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo-mini = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo-mini2 = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo-mini-fta = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo-2000hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo-9500hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo-250hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-SRC_URI_append_cuberevo-100hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
 
-#SRC_URI_append_cuberevo = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-#SRC_URI_append_cuberevo-mini = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-#SRC_URI_append_cuberevo-mini2 = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-#SRC_URI_append_cuberevo-mini-fta = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-#SRC_URI_append_cuberevo-2000hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-#SRC_URI_append_cuberevo-9500hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-#SRC_URI_append_cuberevo-250hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
-#SRC_URI_append_cuberevo-100hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo-mini = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo-mini2 = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo-mini-fta = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo-2000hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo-9500hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo-250hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+#SRC_URI_append_cuberevo-100hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.17', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+
+SRC_URI_append_cuberevo = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+SRC_URI_append_cuberevo-mini = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+SRC_URI_append_cuberevo-mini2 = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+SRC_URI_append_cuberevo-mini-fta = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini-fta', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+SRC_URI_append_cuberevo-2000hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-2000hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+SRC_URI_append_cuberevo-9500hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-9500hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+SRC_URI_append_cuberevo-250hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-250hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
+SRC_URI_append_cuberevo-100hd = " ${@base_contains('PREFERRED_VERSION_linux-cuberevo-100hd', '2.6.23', 'file://41-od-linux-2.6.18-misc.rules', '', d)}"
 
 require udev.inc
 
