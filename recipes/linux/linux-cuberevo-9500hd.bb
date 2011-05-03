@@ -50,7 +50,6 @@ SRC_URI += "\
 	file://cuberevo_patches_stlinux23_0123.patch;patch=1 \
 	file://cuberevo_rtl8201_stlinux23_0123.patch;patch=1 \
 	file://cuberevo-9500hd_setup_stlinux23_0123.patch;patch=1 \
-	file://gcc-4.3-compilation-fix.diff;patch=1 \
 	file://cuberevo-9500hd_defconfig"
 
 do_configure_prepend () {
