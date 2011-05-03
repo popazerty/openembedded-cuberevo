@@ -9,7 +9,8 @@ SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}.tar.bz2 \
            file://procinfo.h \
            file://unifdef.patch;patch=1"
 
-SRC_URI_append_opencuberevo = "file://linux-2.6.23.17-update.patch.bz2;patch=1;pnum=1 \
+SRC_URI_append_opencuberevo = " \
+       file://linux-2.6.23.17-update.patch.bz2;patch=1;pnum=1 \
        file://linux-2.6.23.1-sh-wavefront.patch.bz2;patch=1;pnum=1 \
        file://linux-2.6.23.1-stm-20071101.patch;patch=1;pnum=1 \
        file://linux-2.6.23.1-stm-20071023-iounmap-fix.patch;patch=1;pnum=1 \
