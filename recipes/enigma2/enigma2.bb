@@ -77,7 +77,7 @@ PR = "r0"
 SRCDATE = "20110217"
 SRCDATE_opencuberevo = "20110503"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
-SRCREV_opencuberevo = "8790259bc9365458eb4d22fb397f78b0990abafe"
+SRCREV_opencuberevo = "90b7ee9b734e745470267ba15a9ec4be2bed302f"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need
@@ -112,33 +112,19 @@ EXTRA_OECONF = " \
         STAGING_LIBDIR=${STAGING_LIBDIR} \
 "
 
+PLATFORM_CUBEREVO_cuberevo = " -DPLATFORM_CUBEREVO_100HD "
+PLATFORM_CUBEREVO_cuberevo-250hd = " -DPLATFORM_CUBEREVO_250HD "
+PLATFORM_CUBEREVO_cuberevo-mini-fta = " -DPLATFORM_CUBEREVO_MINI_FTA "
+PLATFORM_CUBEREVO_cuberevo-mini = " -DPLATFORM_CUBEREVO_MINI "
+PLATFORM_CUBEREVO_cuberevo-mini2 = " -DPLATFORM_CUBEREVO_MINI2 "
+PLATFORM_CUBEREVO_cuberevo-2000hd = " -DPLATFORM_CUBEREVO_2000HD "
+PLATFORM_CUBEREVO_cuberevo-9500hd = " -DPLATFORM_CUBEREVO_9500HD "
+PLATFORM_CUBEREVO_cuberevo-100hd = " -DPLATFORM_CUBEREVO_100HD "
+
+CPPFLAGS_opencuberevo+="${PLATFORM_CUBEREVO}"
+
 EXTRA_OECONF_append_opencuberevo = " \
 		--enable-cuberevo \
-"
-
-EXTRA_OECONF_append_cuberevo = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_100HD' \
-"
-EXTRA_OECONF_append_cuberevo-250hd = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_250HD' \
-"
-EXTRA_OECONF_append_cuberevo-mini-fta = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_MINI_FTA' \
-"
-EXTRA_OECONF_append_cuberevo-mini = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_MINI' \
-"
-EXTRA_OECONF_append_cuberevo-mini2 = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_MINI2' \
-"
-EXTRA_OECONF_append_cuberevo-2000hd = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_2000HD' \
-"
-EXTRA_OECONF_append_cuberevo-9500hd = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_9500HD' \
-"
-EXTRA_OECONF_append_cuberevo-100hd = " \
-		CPPFLAGS='${CPPFLAGS} -DPLATFORM_CUBEREVO_100HD' \
 "
 
 python populate_packages_prepend () {
