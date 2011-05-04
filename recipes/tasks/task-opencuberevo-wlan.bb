@@ -17,6 +17,8 @@ RDEPENDS_${PN} = "\
 "
 
 # TIDEGLO: these modules actually can't be installed
+WLAN_CRYPTO_MODULES = ""
+WLAN_PCI_MODULES = ""
 #WLAN_CRYPTO_MODULES = "\
 #  kernel-module-aes-generic \
 #  kernel-module-arc4 \

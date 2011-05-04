@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: Enigma2 Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r6"
+PR = "r7"
 
 inherit task
 
