@@ -75,9 +75,9 @@ PN = "enigma2"
 PR = "r0"
 
 SRCDATE = "20110217"
-SRCDATE_opencuberevo = "20110503"
+SRCDATE_opencuberevo = "20110504"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
-SRCREV_opencuberevo = "7c03f1511e4079423b809dcc41282ec205296623"
+SRCREV_opencuberevo = "59642d0b733ec7f5652016d26da2206ef7b9d123"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need
@@ -121,7 +121,10 @@ PLATFORM_CUBEREVO_cuberevo-2000hd = " -DPLATFORM_CUBEREVO_2000HD "
 PLATFORM_CUBEREVO_cuberevo-9500hd = " -DPLATFORM_CUBEREVO_9500HD "
 PLATFORM_CUBEREVO_cuberevo-100hd = " -DPLATFORM_CUBEREVO_100HD "
 
-CPPFLAGS_opencuberevo+="${PLATFORM_CUBEREVO}"
+# I know this sucks a bit, but it works and I need it in this way
+CPPFLAGS_opencuberevo += "${PLATFORM_CUBEREVO} -I${STAGING_INCDIR}/freetype2"
+
+export CPPFLAGS
 
 EXTRA_OECONF_append_opencuberevo = " \
 		--enable-cuberevo \
