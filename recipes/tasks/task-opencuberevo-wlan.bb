@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: W-LAN Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r3"
+PR = "r4"
 
 inherit task
 
@@ -16,21 +16,22 @@ RDEPENDS_${PN} = "\
   wpa-supplicant \
 "
 
-WLAN_CRYPTO_MODULES = "\
-  kernel-module-aes-generic \
-  kernel-module-arc4 \
-  kernel-module-ecb \
-  kernel-module-cryptomgr \
-  kernel-module-crypto-hash \
-  kernel-module-aead \
-  kernel-module-pcompress \
-  kernel-module-crypto-blkcipher \
-  kernel-module-crypto-algapi \
-"
-
-WLAN_PCI_MODULES = "\
-  kernel-module-ath5k \
-"
+# TIDEGLO: these modules actually can't be installed
+#WLAN_CRYPTO_MODULES = "\
+#  kernel-module-aes-generic \
+#  kernel-module-arc4 \
+#  kernel-module-ecb \
+#  kernel-module-cryptomgr \
+#  kernel-module-crypto-hash \
+#  kernel-module-aead \
+#  kernel-module-pcompress \
+#  kernel-module-crypto-blkcipher \
+#  kernel-module-crypto-algapi \
+#"
+#
+#WLAN_PCI_MODULES = "\
+#  kernel-module-ath5k \
+#"
 
 WLAN_USB_MODULES = "\
   kernel-module-rt73usb \

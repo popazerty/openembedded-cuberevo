@@ -66,13 +66,13 @@ RDEPENDS_enigma2-plugin-systemplugins-crashlogautosubmit = "twisted-mail twisted
 DESCRIPTION_append_enigma2-plugin-systemplugins-cleanupwizard = "informs you on low internal memory on system startup."
 DESCRIPTION_append_enigma2-plugin-extenstions-modem = "opens a menu to connect to internet via builtin modem."
 RDEPENDS_enigma2-plugin-extensions-modem = "dreambox-modem-ppp-scripts ppp"
-RDEPENDS_opencuberevo_enigma2-plugin-extensions-modem = "cuberevo-modem-ppp-scripts ppp"
+RDEPENDS_enigma2-plugin-extensions-modem_opencuberevo = "cuberevo-modem-ppp-scripts ppp"
 DESCRIPTION_append_enigma2-plugin-systemplugins-wirelesslan = "helps you configuring your wireless lan"
 RDEPENDS_enigma2-plugin-systemplugins-wirelesslan = "wpa-supplicant wireless-tools python-wifi"
 DESCRIPTION_append_enigma2-plugin-systemplugins-networkwizard = "provides easy step by step network configuration"
 
 PN = "enigma2"
-PR = "r0"
+PR = "r1"
 
 SRCDATE = "20110217"
 SRCDATE_opencuberevo = "20110504"
