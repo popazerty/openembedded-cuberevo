@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: W-LAN Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r4"
+PR = "r6"
 
 inherit task
 
@@ -45,6 +45,8 @@ WLAN_USB_MODULES = "\
 WLAN_USB_MODULES_LEGACY = "\
   zd1211b \
   wlan-rt73 \
+  r8712u \
+  rt3070 \
 "
 
 RDEPENDS_${PN}_append_cuberevo = "\
