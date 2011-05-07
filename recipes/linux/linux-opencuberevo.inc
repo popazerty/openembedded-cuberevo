@@ -837,7 +837,7 @@ S = "${WORKDIR}/linux-${PV}"
 
 FILES_kernel-image = "/boot/vmlinux.gz /boot/autoexec.bat"
 
-KERNEL_IMAGETYPE = "vmlinux"
+KERNEL_IMAGETYPE = "uImage"
 KERNEL_OUTPUT = "vmlinux"
 
 PKG_kernel-image = "kernel-image"
@@ -851,10 +851,7 @@ addtask munge after before do_patch after do_unpack
 
 do_install_append () {
 	install -d ${D}/boot
-	install -m 0755 vmlinux ${D}/boot/vmlinux
-	echo "/flash/bootlogo.elf" > ${D}/boot/autoexec.bat
-	gzip ${D}/boot/vmlinux
-	echo "/flash/vmlinux.gz" >> ${D}/boot/autoexec.bat
+	install -m 0755 ${S}/arch/sh/boot/uImage ${D}/boot/uImage
 }
 
 pkg_preinst_kernel-image () {

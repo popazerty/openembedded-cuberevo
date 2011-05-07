@@ -22,6 +22,7 @@ fi
 
 showiframe /usr/share/switchoff.mvi
 
-halt -d -f -i -p $hddown
+#halt -d -f -i -p $hddown
+/bin/cubefpctl --poweroff
 
 : exit 0
