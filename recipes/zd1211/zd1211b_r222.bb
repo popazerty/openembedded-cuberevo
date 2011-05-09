@@ -8,11 +8,14 @@ RDEPENDS = "wireless-tools"
 
 inherit module
 
-PR = "r2"
+PR = "r3"
 
 SRC_URI = "http://www.reactivated.net/software/zd1211-vendor/releases/ZD1211LnxDrv_2_22_0_0.tar.gz \
            file://ZD1211LnxDrv_2_22_0_0.patch;patch=1 \
            file://zdiface.patch;patch=1"
+
+SRC_URI_append_opencuberevo = " \
+			file://fix_sh4_stm23.patch;patch=1"
            
 S = "${WORKDIR}/ZD1211LnxDrv_2_22_0_0"
 

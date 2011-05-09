@@ -835,7 +835,7 @@ SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}${PATCHLEVEL}.ta
 
 S = "${WORKDIR}/linux-${PV}"
 
-FILES_kernel-image = "/boot/vmlinux.gz /boot/autoexec.bat"
+FILES_kernel-image = "/boot/vmlinux.gz /boot/uImage"
 
 KERNEL_IMAGETYPE = "uImage"
 KERNEL_OUTPUT = "vmlinux"
