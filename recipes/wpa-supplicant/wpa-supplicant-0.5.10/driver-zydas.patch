@@ -58,7 +58,7 @@ diff -Naur wpa_supplicant-0.5.8.orig/driver_zydas.c wpa_supplicant-0.5.8/driver_
 +#include <string.h>
 +#include <sys/ioctl.h>
 +#include <errno.h>
-+
++#include <asm/types.h>
 +#include "common.h"
 +#include "driver.h"
 +#include "driver_wext.h"
@@ -67,8 +67,8 @@ diff -Naur wpa_supplicant-0.5.8.orig/driver_zydas.c wpa_supplicant-0.5.8/driver_
 +#include "wpa.h"
 +
 +#include "zydas_common.h"
-+
 +#include <net/if_arp.h>
++#include <linux/if.h>
 +#include <linux/wireless.h>
 +
 +struct wpa_driver_zydas_data {
@@ -288,7 +288,7 @@ diff -Naur wpa_supplicant-0.5.8.orig/driver_zydas.c wpa_supplicant-0.5.8/driver_
 +	if (addr != NULL)
 +		memcpy(param->sta_addr, addr, ETH_ALEN);
 +#endif
-+	strncpy(param->u.crypt.alg, alg_name, ZD_CRYPT_ALG_NAME_LEN);
++	strncpy((char*)param->u.crypt.alg, alg_name, ZD_CRYPT_ALG_NAME_LEN);
 +	param->u.crypt.flags = set_tx ? ZD_FLAG_SET_TX_KEY : 0;
 +	param->u.crypt.idx = key_idx;
 +	memcpy(param->u.crypt.seq, seq, seq_len);
@@ -407,7 +407,7 @@ diff -Naur wpa_supplicant-0.5.8.orig/driver_zydas.c wpa_supplicant-0.5.8/driver_
 +
 +	/* Because there might be the case, two or more APs with the same
 +	 * SSID, in order to identify them, we need to set the BSSID. */
-+ 	if (wpa_driver_zydas_set_wpa_ie(drv, params->wpa_ie, params->wpa_ie_len) < 0)
++ 	if (wpa_driver_zydas_set_wpa_ie(drv, (const char*)params->wpa_ie, params->wpa_ie_len) < 0)
 +		ret = -1;
 +	
 +	if (params->pairwise_suite == CIPHER_NONE &&
