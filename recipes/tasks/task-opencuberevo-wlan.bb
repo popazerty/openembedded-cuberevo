@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: W-LAN Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r7"
+PR = "r8"
 
 inherit task
 
