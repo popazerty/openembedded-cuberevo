@@ -835,10 +835,7 @@ SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}${PATCHLEVEL}.ta
 
 S = "${WORKDIR}/linux-${PV}"
 
-FILES_kernel-image = "/boot/vmlinux.gz /boot/uImage-${KERNEL_VERSION}"
-
 KERNEL_IMAGETYPE = "uImage"
-KERNEL_OUTPUT = "vmlinux"
 
 PKG_kernel-image = "kernel-image"
 PKG_kernel-base = "kernel-base"
@@ -849,27 +846,3 @@ PROVIDES += "kernel-${KERNEL_VERSION} kernel-image-${KERNEL_VERSION} kernel-base
 
 addtask munge after before do_patch after do_unpack
 
-do_install_append () {
-	install -d ${D}/boot
-	install -m 0755 ${S}/arch/sh/boot/uImage ${D}/boot/uImage-${KERNEL_VERSION}
-}
-
-pkg_preinst_kernel-image () {
-	[ -d /proc/stb ] && mount -o rw,remount /boot
-	true
-}
-
-pkg_postinst_kernel-image () {
-	[ -d /proc/stb ] && mount -o ro,remount /boot
-	true
-}
-
-pkg_prerm_kernel-image () {
-	[ -d /proc/stb ] && mount -o rw,remount /boot
-	true
-}
-
-pkg_postrm_kernel-image () {
-	[ -d /proc/stb ] && mount -o ro,remount /boot
-	true
-}

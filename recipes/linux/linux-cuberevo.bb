@@ -9,7 +9,7 @@ PV = "2.6.23"
 #require linux-opencuberevo-2.6.17.inc
 require linux-opencuberevo-2.6.23.inc
 
-PR="${PR_INC}.1"
+PR="${PR_INC}.0"
 
 SRC_URI_stm22 += "\
 	file://nosquashfs3.1.patch;patch=1 \
