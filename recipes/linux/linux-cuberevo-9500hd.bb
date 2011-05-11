@@ -53,6 +53,6 @@ SRC_URI += "\
 	file://cuberevo-9500hd_defconfig"
 
 do_configure_prepend () {
-	install -m 0644 ${WORKDIR}/cuberevo-9500hd_defconfig ${S}/.config
+	oe_machinstall -m 0644 ${WORKDIR}/cuberevo-9500hd_defconfig ${S}/.config
 	oe_runmake oldconfig
 }

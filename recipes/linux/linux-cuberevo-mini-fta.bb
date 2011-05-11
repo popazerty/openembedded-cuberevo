@@ -53,6 +53,6 @@ SRC_URI += "\
 	file://cuberevo-mini-fta_defconfig"
 
 do_configure_prepend () {
-	install -m 0644 ${WORKDIR}/cuberevo-mini-fta_defconfig ${S}/.config
+	oe_machinstall -m 0644 ${WORKDIR}/cuberevo-mini-fta_defconfig ${S}/.config
 	oe_runmake oldconfig
 }
