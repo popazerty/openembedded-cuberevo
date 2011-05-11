@@ -1,17 +1,16 @@
---- ZD1211LnxDrv_2_22_0_0/src/zddebug.c.orig	2007-11-09 17:16:17.000000000 +0100
-+++ ZD1211LnxDrv_2_22_0_0/src/zddebug.c	2011-05-11 09:45:06.000000000 +0200
-@@ -12,7 +12,13 @@
- #if WIRELESS_EXT > 12
-     #include <net/iw_handler.h>
- #endif
--
-+
+diff -Naur org/src/zddebug.c patched/src/zddebug.c
+--- org/src/zddebug.c	2007-11-09 17:16:17.000000000 +0100
++++ patched/src/zddebug.c	2011-05-11 09:45:06.000000000 +0200
+@@ -39,6 +39,12 @@
+ extern U8 mMacMode;
+ #if ZDCONF_APC == 1
+ extern U8 APC_NT[256][6];
++#endif
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18))
 +static inline void * __deprecated bus_to_virt(unsigned long address)
 +{
 +	return __va(address);
 +}
-+#endif
- 
- extern zd_80211Obj_t dot11Obj;
- 
+ #endif
+ void zd1205_list_STAs(struct zd1205_private *macp)
+ {
