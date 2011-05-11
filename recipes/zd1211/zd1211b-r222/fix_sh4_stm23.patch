@@ -14,3 +14,4 @@ diff -Naur org/src/zddebug.c patched/src/zddebug.c
  #endif
  void zd1205_list_STAs(struct zd1205_private *macp)
  {
+
