@@ -845,4 +845,3 @@ RPROVIDES_kernel-base = "kernel-base-${KERNEL_VERSION}"
 PROVIDES += "kernel-${KERNEL_VERSION} kernel-image-${KERNEL_VERSION} kernel-base-${KERNEL_VERSION}"
 
 addtask munge after before do_patch after do_unpack
-
