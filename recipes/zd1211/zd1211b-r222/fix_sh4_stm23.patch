@@ -1,9 +1,10 @@
---- ZD1211LnxDrv_2_22_0_0.orig/src/zddebug.c	2007-11-09 17:16:17.000000000 +0100
-+++ ZD1211LnxDrv_2_22_0_0/src/zddebug.c	2011-05-09 18:00:06.000000000 +0200
-@@ -608,6 +608,13 @@
- {
- 
- }
+--- ZD1211LnxDrv_2_22_0_0/src/zddebug.c.orig	2007-11-09 17:16:17.000000000 +0100
++++ ZD1211LnxDrv_2_22_0_0/src/zddebug.c	2011-05-11 09:45:06.000000000 +0200
+@@ -12,7 +12,13 @@
+ #if WIRELESS_EXT > 12
+     #include <net/iw_handler.h>
+ #endif
+-
 +
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18))
 +static inline void * __deprecated bus_to_virt(unsigned long address)
@@ -12,5 +13,5 @@
 +}
 +#endif
  
- int zd1205_zd_dbg_ioctl(struct zd1205_private *macp, struct zdap_ioctl *zdreq)
- {
+ extern zd_80211Obj_t dot11Obj;
+ 

@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: W-LAN Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r8"
+PR = "r9"
 
 inherit task
 
@@ -18,7 +18,6 @@ RDEPENDS_${PN} = "\
 
 # TIDEGLO: these modules actually can't be installed
 WLAN_CRYPTO_MODULES = ""
-WLAN_PCI_MODULES = ""
 #WLAN_CRYPTO_MODULES = "\
 #  kernel-module-aes-generic \
 #  kernel-module-arc4 \
@@ -30,10 +29,10 @@ WLAN_PCI_MODULES = ""
 #  kernel-module-crypto-blkcipher \
 #  kernel-module-crypto-algapi \
 #"
-#
-#WLAN_PCI_MODULES = "\
-#  kernel-module-ath5k \
-#"
+
+WLAN_PCI_MODULES = "\
+  kernel-module-ath5k \
+"
 
 WLAN_USB_MODULES = "\
   kernel-module-rt73usb \
@@ -45,11 +44,11 @@ WLAN_USB_MODULES = "\
 WLAN_USB_MODULES_LEGACY = "\
   wlan-rt73 \
   rt3070 \
+  zd1211b \
 "
 
-#TIDEGLO: don't compile... must be fixed
+#TIDEGLO: doesn't compile... must be fixed
 #  r8712u \
-#  zd1211b \
 
 RDEPENDS_${PN}_append_cuberevo = "\
   ${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', '${WLAN_USB_MODULES_LEGACY}', '${WLAN_CRYPTO_MODULES} ${WLAN_USB_MODULES}', d)} \
