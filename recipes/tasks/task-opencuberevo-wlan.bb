@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: W-LAN Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r9"
+PR = "r10"
 
 inherit task
 
@@ -43,12 +43,10 @@ WLAN_USB_MODULES = "\
 
 WLAN_USB_MODULES_LEGACY = "\
   wlan-rt73 \
+  r8712u \
   rt3070 \
   zd1211b \
 "
-
-#TIDEGLO: doesn't compile... must be fixed
-#  r8712u \
 
 RDEPENDS_${PN}_append_cuberevo = "\
   ${@base_contains('PREFERRED_VERSION_linux-cuberevo', '2.6.23', '${WLAN_USB_MODULES_LEGACY}', '${WLAN_CRYPTO_MODULES} ${WLAN_USB_MODULES}', d)} \

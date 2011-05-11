@@ -8,11 +8,13 @@ SRC_URI = " \
         file://config \
 "
 
+SRC_URI_append_opencuberevo = " file://sh4_fix.patch;patch=1"
+
 S = "${WORKDIR}/rtl8712_8188_8191_8192SU_usb_linux_v${PV}"
 
 inherit module siteinfo
 
-PR = "r1"
+PR = "r2"
 
 do_configure() {
         install -m 644 ${WORKDIR}/config ${S}
@@ -24,14 +26,6 @@ do_install() {
 
 MODULE_MAKE_FLAGS += " \
         EXTRA_CFLAGS=-DCONFIG_${@base_conditional('SITEINFO_ENDIANESS', 'le', 'LITTLE', 'BIG', d)}_ENDIAN \
-        ARCH=${ARCH} \
-        CROSS_COMPILE=${TARGET_PREFIX} \
-        KVER=${KERNEL_VERSION} \
-        KSRC=${STAGING_KERNEL_DIR} \
-"
-
-MODULE_MAKE_FLAGS_opencuberevo += " \
-        EXTRA_CFLAGS=-DCONFIG_LITTLE_ENDIAN \
         ARCH=${ARCH} \
         CROSS_COMPILE=${TARGET_PREFIX} \
         KVER=${KERNEL_VERSION} \

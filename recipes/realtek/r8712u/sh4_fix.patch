@@ -1,0 +1,11 @@
+--- rtl8712_8188_8191_8192SU_usb_linux_v2.6.6.0.20101111/include/drv_conf.orig.h	2010-11-11 14:16:17.000000000 +0100
++++ rtl8712_8188_8191_8192SU_usb_linux_v2.6.6.0.20101111/include/drv_conf.h	2011-05-11 14:32:35.000000000 +0200
+@@ -21,6 +21,8 @@
+ #define __DRV_CONF_H__
+ #include "autoconf.h"
+ 
++#define CONFIG_LITTLE_ENDIAN 1
++
+ #if defined (PLATFORM_LINUX) && defined (PLATFORM_WINDOWS)
+ 
+ #error "Shall be Linux or Windows, but not both!\n"
