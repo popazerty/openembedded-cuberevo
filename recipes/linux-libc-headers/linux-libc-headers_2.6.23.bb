@@ -2,7 +2,7 @@ require linux-libc-headers.inc
 
 INHIBIT_DEFAULT_DEPS = "1"
 DEPENDS += "unifdef-native"
-PR = "r4"
+PR = "r5"
 
 SRC_URI = "${KERNELORG_MIRROR}/pub/linux/kernel/v2.6/linux-${PV}.tar.bz2 \
            file://dvb-api-2.6.23.patch;patch=1 \
@@ -755,4 +755,28 @@ do_stage () {
 	cp -pfLR ${STAGE_TEMP}${includedir}/linux ${STAGING_INCDIR}/
 	cp -pfLR ${STAGE_TEMP}${includedir}/asm ${STAGING_INCDIR}/
 	cp -pfLR ${STAGE_TEMP}${includedir}/asm-generic ${STAGING_INCDIR}/
+}
+
+do_stage_opencuberevo () {
+	set_arch
+	echo $ARCH
+	rm -rf ${STAGE_TEMP}
+	mkdir -p ${STAGE_TEMP}
+	oe_runmake headers_install INSTALL_HDR_PATH=${STAGE_TEMP}${exec_prefix} ARCH=$ARCH
+	if [ "$ARCH" = "arm" ]; then
+		cp ${WORKDIR}/procinfo.h ${STAGE_TEMP}${includedir}/asm/
+	fi
+	if [ "${DISTRO}" = "opencuberevo" ]; then
+		cp ${S}/include/asm-${ARCH}/cachectl.h ${STAGE_TEMP}${includedir}/asm/
+	fi
+	install -d ${STAGING_INCDIR}
+	rm -rf ${STAGING_INCDIR}/linux ${STAGING_INCDIR}/asm ${STAGING_INCDIR}/asm-generic
+	cp -pfLR ${STAGE_TEMP}${includedir}/linux ${STAGING_INCDIR}/
+	cp -pfLR ${STAGE_TEMP}${includedir}/asm ${STAGING_INCDIR}/
+	cp -pfLR ${STAGE_TEMP}${includedir}/asm-generic ${STAGING_INCDIR}/
+	install -d ${CROSS_DIR}/${TARGET_SYS}/include
+	for x in linux asm asm-generic scsi; do
+		rm -rf ${CROSS_DIR}/${TARGET_SYS}/include/$x;
+		cp -pfLR ${STAGE_TEMP}${includedir}/$x ${CROSS_DIR}/${TARGET_SYS}/include/
+	done
 }
