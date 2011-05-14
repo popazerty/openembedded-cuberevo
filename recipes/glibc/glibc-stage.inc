@@ -14,3 +14,13 @@ do_stage() {
 		install -m 0644 ${S}/sunrpc/rpcsvc/$h ${STAGING_INCDIR}/rpcsvc/
 	done
 }
+
+# is this really necessary? got from demsey code
+do_stage_append_opencuberevo(){
+	for i in ${STAGING_INCDIR}/*.h; do
+		cp -pr ${i} ${CROSS_DIR}/${TARGET_SYS}/include/
+	done
+	for i in gnu sys bits net; do
+		cp -pr ${STAGING_INCDIR}/${i} ${CROSS_DIR}/${TARGET_SYS}/include/
+	done
+}

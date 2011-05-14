@@ -9,8 +9,11 @@ PREFERRED_PROVIDER_task-opencuberevo-dvbapi = "task-opencuberevo-dvbapi3"
 PREFERRED_PROVIDER_task-opencuberevo-ui = "task-opencuberevo-enigma2"
 
 TARGET_ARCH = "sh4"
+PACKAGE_ARCH = ${TARGET_ARCH}
+MACHINE_ARCH = "sh4"
 
-DISTRO_FEATURES += " mplt"
+#DISTRO_FEATURES += " mplt"
+DISTRO_FEATURES ?= ""
 
 require conf/machine/include/cuberevo.inc
 require conf/machine/include/tune-sh4.inc
