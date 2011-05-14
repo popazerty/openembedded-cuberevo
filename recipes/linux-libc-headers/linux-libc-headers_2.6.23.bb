@@ -739,6 +739,10 @@ do_install_append_arm() {
 	cp ${WORKDIR}/procinfo.h ${D}${includedir}/asm/
 }
 
+do_install_append_opencuberevo() {
+	cp ${S}/include/asm-sh/cachectl.h ${D}${includedir}/asm/
+}
+
 STAGE_TEMP="${WORKDIR}/temp-staging"
 
 do_stage () {
@@ -750,24 +754,8 @@ do_stage () {
 	if [ "$ARCH" = "arm" ]; then
 		cp ${WORKDIR}/procinfo.h ${STAGE_TEMP}${includedir}/asm/
 	fi
-	install -d ${STAGING_INCDIR}
-	rm -rf ${STAGING_INCDIR}/linux ${STAGING_INCDIR}/asm ${STAGING_INCDIR}/asm-generic
-	cp -pfLR ${STAGE_TEMP}${includedir}/linux ${STAGING_INCDIR}/
-	cp -pfLR ${STAGE_TEMP}${includedir}/asm ${STAGING_INCDIR}/
-	cp -pfLR ${STAGE_TEMP}${includedir}/asm-generic ${STAGING_INCDIR}/
-}
-
-do_stage_opencuberevo () {
-	set_arch
-	echo $ARCH
-	rm -rf ${STAGE_TEMP}
-	mkdir -p ${STAGE_TEMP}
-	oe_runmake headers_install INSTALL_HDR_PATH=${STAGE_TEMP}${exec_prefix} ARCH=$ARCH
-	if [ "$ARCH" = "arm" ]; then
-		cp ${WORKDIR}/procinfo.h ${STAGE_TEMP}${includedir}/asm/
-	fi
 	if [ "${DISTRO}" = "opencuberevo" ]; then
-		cp ${S}/include/asm-${ARCH}/cachectl.h ${STAGE_TEMP}${includedir}/asm/
+		cp ${S}/include/asm-sh/cachectl.h ${STAGE_TEMP}${includedir}/asm/
 	fi
 	install -d ${STAGING_INCDIR}
 	rm -rf ${STAGING_INCDIR}/linux ${STAGING_INCDIR}/asm ${STAGING_INCDIR}/asm-generic
