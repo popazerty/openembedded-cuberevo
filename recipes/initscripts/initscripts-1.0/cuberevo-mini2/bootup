@@ -2,7 +2,6 @@ mkdir /dev/dbox
 mknod /dev/dbox/fp0 c 10 0
 
 mknod /dev/sci0 c 253 0
-mknod /dev/sci1 c 253 1
 
 MODDIR=/lib/modules/2.6.23.17_stm23_0123/extra
 echo "LOADING MODULES"
