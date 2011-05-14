@@ -40,13 +40,13 @@ SRC_URI_append_sh4  = " file://sh_unwind.patch;patch=1 \
 "
 
 SRC_URI_append_opencuberevo = " \
-	file://gcc-4.1.1-st40r2-4.0.1.patch;patch=1 \
-	file://gcc-4.1.1-st40r2-4.0.1-no-cbranchdi.patch;patch=1 \
-	file://gcc-4.1.1-cross_search_paths-sh4.patch;patch=1 \
-	file://gcc-4.1.1-recursive_inline_fix.patch;patch=1 \
-	file://gcc-4.1.1-linux-multilib-fix.patch;patch=1 \
-	file://gcc-4.1.1-PR27781-fix.patch;patch=1 \
-	file://gcc-4.1.1-regmove-fix-20061130.patch;patch=1 \
+	file://opencuberevo/gcc-4.1.1-st40r2-4.0.1.patch;patch=1 \
+	file://opencuberevo/gcc-4.1.1-st40r2-4.0.1-no-cbranchdi.patch;patch=1 \
+	file://opencuberevo/gcc-4.1.1-cross_search_paths-sh4.patch;patch=1 \
+	file://opencuberevo/gcc-4.1.1-recursive_inline_fix.patch;patch=1 \
+	file://opencuberevo/gcc-4.1.1-linux-multilib-fix.patch;patch=1 \
+	file://opencuberevo/gcc-4.1.1-PR27781-fix.patch;patch=1 \
+	file://opencuberevo/gcc-4.1.1-regmove-fix-20061130.patch;patch=1 \
 "
 
 #This is a dirty hack to get gcc 4.1.1 to compile for glibc AND uclibc on ppc

@@ -3,7 +3,7 @@ LICENSE = "GPLv3"
 
 DEPENDS = "mpfr gmp"
 
-INC_PR = "r11"
+INC_PR = "r12"
 
 SRC_URI = "${GNU_MIRROR}/gcc/gcc-${PV}/gcc-${PV}.tar.bz2 \
 	file://100-uclibc-conf.patch;patch=1 \
@@ -78,27 +78,27 @@ SRC_URI_append_sh4  = " file://sh_unwind.patch;patch=1 \
 		      "
 
 SRC_URI_append_opencuberevo  = " \
-	file://cache-amnesia-revert.patch;patch=1 \
+	file://opencuberevo/cache-amnesia-revert.patch;patch=1 \
 # stm23 common
-	file://gcc-4.2.4-stm-release.patch;patch=1 \
-	file://gcc-4.2.4-multilibpath.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-stm-release.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-multilibpath.patch;patch=1 \
 # stm23 sh4 common
-	file://gcc-4.2.4-090602.patch;patch=1;pnum=0 \
-	file://gcc-4.2.4-sh-use-gnu-hash-style.patch;patch=1 \
-	file://gcc-4.2.4-icache-flush.patch;patch=1 \
-	file://gcc-4.2.4-multilib-opts.patch;patch=1 \
-	file://gcc-4.2.4-cbranchdi.patch;patch=1 \
-	file://gcc-4.2.4-pref.patch;patch=1 \
-	file://gcc-4.2.4-structalias.patch;patch=1 \
-	file://gcc-4.2.4-unlikely.patch;patch=1 \
-	file://gcc-4.2.4-pcrelalign.patch;patch=1 \
-	file://gcc-4.2.4-warn-branchprob.patch;patch=1 \
-	file://gcc-4.2.4-brafix.patch;patch=1 \
-	file://gcc-4.2.4-asmlength.patch;patch=1 \
-	file://gcc-4.2.4-gp-pic-1.patch;patch=1 \
-	file://gcc-4.2.4-stdarg-unwind.patch;patch=1 \
-	file://gcc-4.2.4-dwarfctors.patch;patch=1 \
-	file://cache-amnesia-merge.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-090602.patch;patch=1;pnum=0 \
+	file://opencuberevo/gcc-4.2.4-sh-use-gnu-hash-style.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-icache-flush.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-multilib-opts.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-cbranchdi.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-pref.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-structalias.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-unlikely.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-pcrelalign.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-warn-branchprob.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-brafix.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-asmlength.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-gp-pic-1.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-stdarg-unwind.patch;patch=1 \
+	file://opencuberevo/gcc-4.2.4-dwarfctors.patch;patch=1 \
+	file://opencuberevo/cache-amnesia-merge.patch;patch=1 \
 "
 
 # Language Overrides
