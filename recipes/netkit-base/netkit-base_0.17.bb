@@ -1,7 +1,7 @@
 SECTION = "base"
 DESCRIPTION = "netkit-base includes the inetd daemon."
 LICENSE = "BSD"
-PR = "r1"
+PR = "r2"
 
 SRC_URI = "ftp://ftp.uk.linux.org/pub/linux/Networking/netkit/netkit-base-${PV}.tar.gz \
            file://configure.patch;patch=1 \
@@ -19,6 +19,12 @@ EXTRA_OEMAKE = "-C inetd"
 
 do_compile () {
 	oe_runmake 'CC=${CC}' 'LD=${LD}' all
+}
+
+EXTRA_CFLAGS_opencuberevo = "-I${STAGING_DIR_TARGET}${layout_includedir} -O2 -Wall -W -Wpointer-arith -Wbad-function-cast -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wnested-externs -Winline"
+
+do_compile_opencuberevo () {
+	oe_runmake 'CC=${CC}' 'LD=${LD}' 'CFLAGS=${EXTRA_CFLAGS}' all
 }
 
 do_install () {
