@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: DVD-Burn Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r0"
+PR = "r1"
 
 inherit task
 
@@ -16,7 +16,8 @@ RDEPENDS_${PN} = "\
   dvdauthor \
   enigma2-plugin-extensions-dvdburn \
   mjpegtools \
-  projectx \
   python-imaging \
 "
 
+# Actually this seems useless for cuberevo
+#  projectx \
