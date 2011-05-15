@@ -1,8 +1,3 @@
-mkdir /dev/dbox
-mknod /dev/dbox/fp0 c 10 0
-
-mknod /dev/sci0 c 253 0
-
 MODDIR=/lib/modules/2.6.23.17_stm23_0123/extra
 echo "LOADING MODULES"
 insmod $MODDIR/e2_proc.ko
