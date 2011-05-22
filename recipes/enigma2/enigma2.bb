@@ -79,9 +79,9 @@ PN = "enigma2"
 PR = "r0"
 
 SRCDATE = "20110217"
-SRCDATE_opencuberevo = "20110513"
+SRCDATE_opencuberevo = "20110522"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
-SRCREV_opencuberevo = "1208e6a56a04787d56c543713d62b9d77524fedd"
+SRCREV_opencuberevo = "320197b8424fcce6ae345a8abdf61ffe3150c667"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need

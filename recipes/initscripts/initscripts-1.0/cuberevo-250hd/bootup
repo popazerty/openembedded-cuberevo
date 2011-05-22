@@ -106,8 +106,9 @@ if [ -d /proc/stb ]; then
                 fi;
         done;
 fi;
-[ -e /etc/dropbear/dropbear_rsa_host_key ] && /usr/bin/showiframe /boot/bootlogo.mvi || /usr/bin/showiframe /boot/bootlogo_wait.mvi;
+[ -e /etc/dropbear/dropbear_rsa_host_key ] && /bin/showiframe -p /boot/bootlogo.mvi || /bin/showiframe -p /boot/bootlogo_wait.mvi;
 ) &
+stfbcontrol a 0
 
 echo 21 > /proc/progress
 

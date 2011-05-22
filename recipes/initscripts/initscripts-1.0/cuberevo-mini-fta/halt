@@ -20,7 +20,8 @@ then
 	hddown=""
 fi
 
-showiframe /usr/share/switchoff.mvi
+/bin/showiframe -p /usr/share/switchoff.mvi
+stfbcontrol a 0
 
 #halt -d -f -i -p $hddown
 /bin/cubefpctl --poweroff
