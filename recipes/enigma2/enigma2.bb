@@ -79,9 +79,9 @@ PN = "enigma2"
 PR = "r0"
 
 SRCDATE = "20110217"
-SRCDATE_opencuberevo = "20110522"
+SRCDATE_opencuberevo = "20110523"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
-SRCREV_opencuberevo = "320197b8424fcce6ae345a8abdf61ffe3150c667"
+SRCREV_opencuberevo = "dfdf6ed574952944c541aca82faa4b0798943632"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need
@@ -97,7 +97,19 @@ PV_opencuberevo = "master-git${SRCDATE}"
 ####################################################
 
 SRC_URI = "git://git.opendreambox.org/git/enigma2.git;protocol=git;branch=${BRANCH};tag=${SRCREV}"
-SRC_URI_opencuberevo = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV}"
+SRC_URI_opencuberevo = "git://opencuberevo.git.sourceforge.net/gitroot/opencuberevo/enigma2cuberevo;protocol=git;branch=${BRANCH};tag=${SRCREV} \
+						file://rc_cuberevo.png \
+						file://rcold_cuberevo.png \
+						file://rcpositions_cuberevo.xml \ 
+						file://keymap_cuberevo.xml \
+						file://rc_cuberevo_small.png \
+						file://rcold_cuberevo_small.png \
+						file://rcpositions_cuberevo_small.xml \ 
+						file://keymap_cuberevo_small.xml \
+						file://rc_cuberevo_mini.png \
+						file://rcold_cuberevo_mini.png \
+						file://rcpositions_cuberevo_mini.xml \ 
+						file://keymap_cuberevo_mini.xml "
 SRC_URI_append_dm7025 = " file://7025_pvr_device_compatibility.diff;patch=1;pnum=1"
 
 S = "${WORKDIR}/git"
@@ -144,6 +156,62 @@ RCONFLICTS_${PN} = "dreambox-keymaps"
 RREPLACES_${PN} = "dreambox-keymaps tuxbox-tuxtxt-32bpp (<= 0.0+cvs20090130-r1)"
 RCONFLICTS_${PN}_opencuberevo = "cuberevo-keymaps"
 RREPLACES_${PN}_opencuberevo = "cuberevo-keymaps"
+
+do_configure_prepend_cuberevo () {
+	cp ${WORKDIR}/rc_cuberevo.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo.xml ${S}/data/keymap.xml
+}
+
+do_configure_prepend_cuberevo-mini () {
+	cp ${WORKDIR}/rc_cuberevo.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo.xml ${S}/data/keymap.xml
+}
+
+do_configure_prepend_cuberevo-mini2 () {
+	cp ${WORKDIR}/rc_cuberevo.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo.xml ${S}/data/keymap.xml
+}
+
+do_configure_prepend_cuberevo-mini-fta () {
+	cp ${WORKDIR}/rc_cuberevo_small.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo_small.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo_small.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo_small.xml ${S}/data/keymap.xml
+}
+
+do_configure_prepend_cuberevo-250hd () {
+	cp ${WORKDIR}/rc_cuberevo_small.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo_small.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo_small.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo_small.xml ${S}/data/keymap.xml
+}
+
+do_configure_prepend_cuberevo-2000hd () {
+	cp ${WORKDIR}/rc_cuberevo.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo.xml ${S}/data/keymap.xml
+}
+
+do_configure_prepend_cuberevo-9500hd () {
+	cp ${WORKDIR}/rc_cuberevo.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo.xml ${S}/data/keymap.xml
+}
+
+do_configure_prepend_cuberevo-100hd () {
+	cp ${WORKDIR}/rc_cuberevo_mini.png ${S}/data/skin_default/rc.png
+	cp ${WORKDIR}/rcold_cuberevo_mini.png ${S}/data/skin_default/rcold.png
+	cp ${WORKDIR}/rcpositions_cuberevo_mini.xml ${S}/data/rcpositions.xml
+	cp ${WORKDIR}/keymap_cuberevo_mini.xml ${S}/data/keymap.xml
+}
 
 # workaround for opkg <= 0.1.7+svnr455-r19.1
 pkg_preinst_${PN} () {
