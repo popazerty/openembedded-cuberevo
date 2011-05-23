@@ -76,12 +76,12 @@ RDEPENDS_enigma2-plugin-systemplugins-wirelesslan = "wpa-supplicant wireless-too
 DESCRIPTION_append_enigma2-plugin-systemplugins-networkwizard = "provides easy step by step network configuration"
 
 PN = "enigma2"
-PR = "r1"
+PR = "r2"
 
 SRCDATE = "20110217"
 SRCDATE_opencuberevo = "20110523"
 SRCREV = "5e19a3f8a5e8ce8a4e2cb2b601a1b8ef3554e4be"
-SRCREV_opencuberevo = "59a735aedc3a0c4b4e360f0a2a13ad1fc2a53753"
+SRCREV_opencuberevo = "310f6ccf54ac2d7edf34a3ad1eb60f5a6e33c4e0"
 #SRCDATE is NOT used by git to checkout a specific revision
 #but we need it to build a ipk package version
 #when you like to checkout a specific revision of e2 you need
