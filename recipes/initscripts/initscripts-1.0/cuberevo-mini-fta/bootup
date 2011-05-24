@@ -1,3 +1,6 @@
+mkdir /dev/dbox
+mknod /dev/dbox/fp0 c 10 0
+
 MODDIR=/lib/modules/2.6.23.17_stm23_0123/extra
 echo "LOADING MODULES"
 insmod $MODDIR/e2_proc.ko
@@ -104,7 +107,7 @@ if [ -d /proc/stb ]; then
                 fi;
         done;
 fi;
-[ -e /etc/dropbear/dropbear_rsa_host_key ] && /bin/showiframe -p /boot/bootlogo.mvi || /bin/showiframe -p /boot/bootlogo_wait.mvi;
+[ -e /etc/dropbear/dropbear_rsa_host_key ] && /usr/bin/showiframe -p /boot/bootlogo.mvi || /usr/bin/showiframe -p /boot/bootlogo_wait.mvi;
 ) &
 stfbcontrol a 0
 

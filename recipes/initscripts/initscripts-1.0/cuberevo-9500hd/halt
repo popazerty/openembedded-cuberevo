@@ -20,7 +20,7 @@ then
 	hddown=""
 fi
 
-/bin/showiframe -p /usr/share/switchoff.mvi
+showiframe -p /usr/share/switchoff.mvi
 stfbcontrol a 0
 
 #halt -d -f -i -p $hddown
