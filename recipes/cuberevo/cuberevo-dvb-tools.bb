@@ -44,7 +44,7 @@ RDEPENDS_append_cuberevo-9500hd = " module-init-tools-depmod"
 RDEPENDS_append_cuberevo-mini = " module-init-tools-depmod"
 RDEPENDS_append_cuberevo-mini2 = " module-init-tools-depmod"
 
-PR = "r1"
+PR = "r2"
 GCC ?= ""
 
 SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-${MACHINE}-${PV}${GCC}.tar.bz2 \
@@ -60,7 +60,7 @@ S = "${WORKDIR}/showiframe"
 TOOLSBIN = "cubefpctl devinit eplayer3 grab hdmi-control hdmi-info rset shmE2 stfbcontrol stfbset streamproxy ustslave vdstandby"
 
 do_configure_prepend() {
-	install -d ${S}
+	install -d ${S}/
 	cd ${S}/
 	echo "TEMPLATE=subdirs" > dmutils.pro
 	echo "CONFIG=console" >> dmutils.pro
@@ -69,7 +69,7 @@ do_configure_prepend() {
 	install -m 0644 ${WORKDIR}/showiframe.pro	${S}/
 }
 
-do_stage_prepend() {
+do_stage() {
 	install -m 0755 ${WORKDIR}/libdreamdvd.so.0.0.0 ${D}/usr/lib/libdreamdvd.so.0.0.0
 	install -m 0755 ${WORKDIR}/libeplayer3.so.0.0.0 ${D}/lib/libeplayer3.so.0.0.0
 	ln -s libeplayer3.so.0.0.0 ${D}/lib/libeplayer3.so.0
@@ -80,10 +80,10 @@ do_stage_prepend() {
 }
 
 do_install() {
-	install -d ${D}/bin
-	install -d ${D}/lib
-	install -d ${D}/lib/firmware
-	install -d ${D}/usr/lib
+	install -d ${D}/bin/
+	install -d ${D}/lib/
+	install -d ${D}/lib/firmware/
+	install -d ${D}/usr/lib/
 	for i in ${TOOLSBIN}; do
 		install -m 0755 ${WORKDIR}/$i ${D}/bin/$i;
 	done;
