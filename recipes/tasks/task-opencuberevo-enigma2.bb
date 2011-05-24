@@ -1,7 +1,7 @@
 DESCRIPTION = "OpenCuberevo: Enigma2 Task for the OpenCuberevo Distribution"
 SECTION = "opencuberevo/base"
 LICENSE = "MIT"
-PR = "r9"
+PR = "r10"
 
 inherit task
 
@@ -31,6 +31,9 @@ RDEPENDS_task-opencuberevo-enigma2 = "\
   enigma2-plugin-systemplugins-networkwizard \
   enigma2-plugin-systemplugins-softwaremanager \
   enigma2-plugin-systemplugins-videotune \
+  enigma2-plugin-extensions-cuberevovfd \
+  enigma2-plugin-systemplugins-tuxtxt \
+  enigma2-plugin-systemplugins-vfdicons \
   enigma2-streamproxy \
   enigma2-meta \
   enigma2-plugins-meta \
