@@ -29,6 +29,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+typedef unsigned char bool;
+#define true 1
+#define false 0
+
 void usage(char* name)
 {
     printf("usage:\n\n");
