@@ -44,7 +44,7 @@ RDEPENDS_append_cuberevo-9500hd = " module-init-tools-depmod"
 RDEPENDS_append_cuberevo-mini = " module-init-tools-depmod"
 RDEPENDS_append_cuberevo-mini2 = " module-init-tools-depmod"
 
-PR = "r3"
+PR = "r4"
 GCC ?= ""
 
 SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-${MACHINE}-${PV}${GCC}.tar.bz2 \
@@ -86,12 +86,12 @@ do_install() {
 #       install -m 0755 ${WORKDIR}/showiframe ${D}/${bindir}/
         install -m 0755 ${WORKDIR}/libdvbsi++.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/usr/lib/libdvbsi++.so.0.0.0
         install -m 0755 ${WORKDIR}/libdreamdvd.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/usr/lib/libdreamdvd.so.0.0.0
-        install -m 0755 ${WORKDIR}/libeplayer3.so.0.0.0 ${STAGING_LIBDIR}/libeplayer3.so.0.0.0
-        ln -s libeplayer3.so.0.0.0 ${STAGING_LIBDIR}/libeplayer3.so.0
-        ln -s libeplayer3.so.0.0.0 ${STAGING_LIBDIR}/libeplayer3.so
-        install -m 0755 ${WORKDIR}/libmmeimage.so.0.0.0 ${STAGING_LIBDIR}/libmmeimage.so.0.0.0
-        ln -s libmmeimage.so.0.0.0 ${STAGING_LIBDIR}/libmmeimage.so.0
-        ln -s libmmeimage.so.0.0.0 ${STAGING_LIBDIR}/libmmeimage.so
+        install -m 0755 ${WORKDIR}/libeplayer3.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/lib/libeplayer3.so.0.0.0
+        ln -s libeplayer3.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/lib/libeplayer3.so.0
+        ln -s libeplayer3.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/lib/libeplayer3.so
+        install -m 0755 ${WORKDIR}/libmmeimage.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/lib/libmmeimage.so.0.0.0
+        ln -s libmmeimage.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/lib/libmmeimage.so.0
+        ln -s libmmeimage.so.0.0.0 ${STAGING_DIR}/${HOST_SYS}/lib/libmmeimage.so
         install -m 0755 ${WORKDIR}/libeplayer3.so.0.0.0 ${D}/lib/libeplayer3.so.0.0.0
         ln -s libeplayer3.so.0.0.0 ${D}/lib/libeplayer3.so.0
         ln -s libeplayer3.so.0.0.0 ${D}/lib/libeplayer3.so
