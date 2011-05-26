@@ -31,12 +31,10 @@ PV_cuberevo-mini = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-min
 KV_cuberevo-mini2 = "${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.23', '2.6.23.17_stm23_0123', '2.6.30', d)}"
 PV_cuberevo-mini2 = "${KV}-${@base_contains('PREFERRED_VERSION_linux-cuberevo-mini2', '2.6.23', '20110522', '20090820', d)}"
 
-RDEPENDS = "kernel (${KV})"
+RDEPENDS = "kernel (${KV}) ffmpeg libass "
 
 #hack for broken busybox depmod (v4l-dvb dvb-core isn't automatically loaded on cpu load)
-DEPENDS = " module-init-tools"
-
-RDEPENDS_append_opencuberevo = " ffmpeg libass "
+DEPENDS = " module-init-tools ffmpeg libass "
 
 RDEPENDS_append_cuberevo = " module-init-tools-depmod"
 RDEPENDS_append_cuberevo-100hd = " module-init-tools-depmod"
@@ -47,7 +45,7 @@ RDEPENDS_append_cuberevo-9500hd = " module-init-tools-depmod"
 RDEPENDS_append_cuberevo-mini = " module-init-tools-depmod"
 RDEPENDS_append_cuberevo-mini2 = " module-init-tools-depmod"
 
-PR = "r5"
+PR = "r6"
 GCC ?= ""
 
 SRC_URI = "http://enigma2.sifteam.eu/tmp/opencuberevo/cuberevo-dvb-tools-${MACHINE}-${PV}${GCC}.tar.bz2 \
